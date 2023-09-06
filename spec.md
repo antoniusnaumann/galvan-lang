@@ -26,25 +26,52 @@ main {
 Turns into this:
 
 ```rust
-struct MyType {
-  a: TypeA
-  b: Arc<Mutex<TypeB>>
-}
+    use std::{
+        borrow::Cow,
+        sync::{Arc, Mutex},
+    };
+    #[derive(Clone)]
+    struct TypeA {}
+    #[derive(Clone)]
+    struct TypeB {}
 
-fn make_t(a: &TypeA, b: Arc<Mutex<TypeB>>) -> MyType {
-  MyType { a: a.clone(), b: b.clone() }
-}
+    struct MyType {
+        a: TypeA,
+        b: Arc<Mutex<TypeB>>,
+    }
 
-fn main() {
-  let a = TypeA { }
-  let b = TypeB { }
-  let t = MyType { 
-    a: a.clone(), 
-    b: Arc::new(Mutex::new(b.clone())),
-  }
+    fn make_t<A>(a: &A, b: Arc<Mutex<TypeB>>) -> MyType
+    where
+        A: ToOwned<Owned = TypeA>,
+    {
+        MyType {
+            a: a.to_owned(),
+            b: b.clone(),
+        }
+    }
 
-  print_a(Cow::from(t.a))
+    fn print<T, A>(a: &A)
+    where
+        A: ToOwned<Owned = T>,
+    {
+        let a: Cow<A> = Cow::Borrowed(a);
+    }
 
-  let t_new = Cow::from(make_t(t.a.borrow(), t.b.clone()))
+    #[test]
+    fn main() {
+        let a = TypeA {};
+        let b = TypeB {};
+        let t = MyType {
+            a: a.clone(),
+            b: Arc::new(Mutex::new(b.clone())),
+        };
+
+        print(&t.a);
+
+        let t_new = make_t(&t.a, t.b.clone());
+
+        let x = Cow::Borrowed(&a);
+        print(&x);
+    }
 }
 ```

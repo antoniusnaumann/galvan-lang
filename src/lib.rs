@@ -50,6 +50,7 @@ impl<'a, T: Clone> From<&'a StoredVal<T>> for Val<'a, T> {
     }
 }
 
+/*
 impl<T: Clone> ToOwned for Val<'_, T> {
     type Owned = StoredVal<T>;
 
@@ -57,6 +58,7 @@ impl<T: Clone> ToOwned for Val<'_, T> {
         todo!()
     }
 }
+*/
 
 /// The owned version of a variable
 struct StoredVal<T: Clone>(T);
@@ -135,12 +137,11 @@ mod test {
         }
     }
 
-    fn print<T, A>(a: A)
+    fn print<T, A>(a: &A)
     where
-        T: 'static,
         A: ToOwned<Owned = T>,
     {
-        let a: Cow<A> = Cow::Borrowed(&a);
+        let a: Cow<A> = Cow::Borrowed(a);
     }
 
     #[test]
