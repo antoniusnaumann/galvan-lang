@@ -1,5 +1,8 @@
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::{
+    borrow::{Borrow, BorrowMut, Cow},
+    sync::Arc,
+};
 
 trait Wrapped<T>: Clone {}
 
@@ -32,6 +35,49 @@ impl<T> Wrap<Arc<Mutex<T>>> for T {
         Arc::new(Mutex::new(self))
     }
 }
+
+/// A variable that follows value semantics and Clone-on-Write behavior
+struct Val<'a, T: Clone>(Cow<'a, T>);
+impl<'a, T: Clone> Borrow<T> for Val<'a, T> {
+    fn borrow(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<'a, T: Clone> From<&'a StoredVal<T>> for Val<'a, T> {
+    fn from(val: &'a StoredVal<T>) -> Self {
+        Val(Cow::Borrowed(val.borrow()))
+    }
+}
+
+impl<T: Clone> ToOwned for Val<'_, T> {
+    type Owned = StoredVal<T>;
+
+    fn to_owned(&self) -> Self::Owned {
+        todo!()
+    }
+}
+
+/// The owned version of a variable
+struct StoredVal<T: Clone>(T);
+impl<T: Clone> Borrow<T> for StoredVal<T> {
+    fn borrow(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T: Clone> BorrowMut<T> for StoredVal<T> {
+    fn borrow_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+/// A variable that follows reference semantics and is mutable
+/// As opposed to Rust, references are not neccessarily exclusive
+trait Ref {}
+
+///
+trait StoredRef {}
 
 #[cfg(test)]
 mod test {
