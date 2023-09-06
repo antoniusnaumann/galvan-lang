@@ -81,6 +81,7 @@ trait StoredRef {}
 
 #[cfg(test)]
 mod test {
+
     use crate::{Wrap, WrapCopy, Wrapped};
 
     struct ComplexType {
@@ -108,5 +109,54 @@ mod test {
         let _arc_copied = arc_ref.clone();
 
         example_method(input_int, input_string, input_complex);
+    }
+
+    use std::{
+        borrow::Cow,
+        sync::{Arc, Mutex},
+    };
+    #[derive(Clone)]
+    struct TypeA {}
+    #[derive(Clone)]
+    struct TypeB {}
+
+    struct MyType {
+        a: TypeA,
+        b: Arc<Mutex<TypeB>>,
+    }
+
+    fn make_t<A>(a: &A, b: Arc<Mutex<TypeB>>) -> MyType
+    where
+        A: ToOwned<Owned = TypeA>,
+    {
+        MyType {
+            a: a.to_owned(),
+            b: b.clone(),
+        }
+    }
+
+    fn print<T, A>(a: A)
+    where
+        T: 'static,
+        A: ToOwned<Owned = T>,
+    {
+        let a: Cow<A> = Cow::Borrowed(&a);
+    }
+
+    #[test]
+    fn main() {
+        let a = TypeA {};
+        let b = TypeB {};
+        let t = MyType {
+            a: a.clone(),
+            b: Arc::new(Mutex::new(b.clone())),
+        };
+
+        print(&t.a);
+
+        let t_new = make_t(&t.a, t.b.clone());
+
+        let x = Cow::Borrowed(&a);
+        print(&x);
     }
 }
