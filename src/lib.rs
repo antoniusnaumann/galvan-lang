@@ -14,7 +14,7 @@ type StoredRef<T> = Arc<Mutex<T>>;
 
 trait AsLocalVal {
     type Return: AsStoredVal + AsLocalVal + ToOwned;
-    fn as_local_val(&self) -> Cow<Self::Return>;
+    fn as_local_val(&self) -> LocalVal<Self::Return>;
 }
 
 impl<T: Type + Clone> AsLocalVal for LocalVal<'_, T> {
@@ -33,32 +33,44 @@ impl<T: Type + Clone> AsLocalVal for T {
 
 trait AsStoredVal {
     type Stored: Type;
-    fn as_stored_val(&self) -> Self::Stored;
+    fn as_stored_val(&self) -> StoredVal<Self::Stored>;
 }
 
 impl<T: Type + Clone> AsStoredVal for LocalVal<'_, T> {
-    type Stored = StoredVal<T>;
+    type Stored = T;
 
-    fn as_stored_val(&self) -> Self::Stored {
+    fn as_stored_val(&self) -> StoredVal<Self::Stored> {
         self.as_ref().clone()
     }
 }
 
 impl<T: Type + Clone> AsStoredVal for T {
-    type Stored = StoredVal<T>;
+    type Stored = T;
 
-    fn as_stored_val(&self) -> Self::Stored {
+    fn as_stored_val(&self) -> StoredVal<Self::Stored> {
         self.clone()
     }
 }
 
+trait AsLocalRef {
+    type Return: Type;
+    fn as_local_ref(&self) -> LocalRef<Self::Return>;
+}
+// TODO: Blanket Implementations
+
+trait AsStoredRef {
+    type Stored: Type;
+    fn as_stored_ref(&self) -> StoredRef<Self::Stored>;
+}
+// TODO: Blanket Implementations
+
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
-    use crate::StoredVal;
+    use parking_lot::Mutex;
 
-    use super::{AsLocalVal, AsStoredVal, Type};
+    use super::{AsLocalRef, AsLocalVal, AsStoredRef, AsStoredVal, Type};
 
     #[derive(Clone)]
     struct TypeA {}
@@ -77,7 +89,7 @@ mod test {
 
     fn make_t<A>(a: &A, b: Arc<Mutex<TypeB>>) -> MyType
     where
-        A: AsStoredVal<Stored = StoredVal<TypeA>> + AsLocalVal,
+        A: AsStoredVal<Stored = TypeA> + AsLocalVal,
     {
         MyType {
             a: a.as_stored_val(),
@@ -87,7 +99,7 @@ mod test {
 
     fn print<T, A>(a: A)
     where
-        A: AsStoredVal<Stored = StoredVal<T>> + AsLocalVal,
+        A: AsStoredVal<Stored = T> + AsLocalVal,
         T: Type,
     {
         let a = a.as_local_val();
@@ -99,8 +111,8 @@ mod test {
         let a = TypeA {};
         let b = TypeB {};
         let t = MyType {
-            a: a.clone(),
-            b: Arc::new(Mutex::new(b.clone())),
+            a: a.as_stored_val(),
+            b: b.as_stored_ref(),
         };
 
         print(t.a.as_local_val());
