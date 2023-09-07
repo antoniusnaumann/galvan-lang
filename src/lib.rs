@@ -1,22 +1,32 @@
-use std::borrow::{Borrow, Cow};
+use std::{
+    borrow::{Borrow, Cow},
+    sync::Arc,
+};
+
+use parking_lot::Mutex;
 
 trait Type {}
+
+type LocalVal<'a, T> = Cow<'a, T>;
+type StoredVal<T> = T;
+type LocalRef<'a, T> = &'a T;
+type StoredRef<T> = Arc<Mutex<T>>;
 
 trait AsLocalVal {
     type Return: AsStoredVal + AsLocalVal + ToOwned;
     fn as_local_val(&self) -> Cow<Self::Return>;
 }
 
-impl<T: Type + Clone> AsLocalVal for Cow<'_, T> {
+impl<T: Type + Clone> AsLocalVal for LocalVal<'_, T> {
     type Return = T;
-    fn as_local_val(&self) -> Cow<Self::Return> {
+    fn as_local_val(&self) -> LocalVal<Self::Return> {
         self.clone()
     }
 }
 
 impl<T: Type + Clone> AsLocalVal for T {
     type Return = T;
-    fn as_local_val(&self) -> Cow<Self::Return> {
+    fn as_local_val(&self) -> LocalVal<Self::Return> {
         Cow::Borrowed(self.borrow())
     }
 }
@@ -26,8 +36,8 @@ trait AsStoredVal {
     fn as_stored_val(&self) -> Self::Stored;
 }
 
-impl<T: Type + Clone> AsStoredVal for Cow<'_, T> {
-    type Stored = T;
+impl<T: Type + Clone> AsStoredVal for LocalVal<'_, T> {
+    type Stored = StoredVal<T>;
 
     fn as_stored_val(&self) -> Self::Stored {
         self.as_ref().clone()
@@ -35,7 +45,7 @@ impl<T: Type + Clone> AsStoredVal for Cow<'_, T> {
 }
 
 impl<T: Type + Clone> AsStoredVal for T {
-    type Stored = T;
+    type Stored = StoredVal<T>;
 
     fn as_stored_val(&self) -> Self::Stored {
         self.clone()
@@ -45,6 +55,8 @@ impl<T: Type + Clone> AsStoredVal for T {
 #[cfg(test)]
 mod test {
     use std::sync::{Arc, Mutex};
+
+    use crate::StoredVal;
 
     use super::{AsLocalVal, AsStoredVal, Type};
 
@@ -65,7 +77,7 @@ mod test {
 
     fn make_t<A>(a: &A, b: Arc<Mutex<TypeB>>) -> MyType
     where
-        A: AsStoredVal<Stored = TypeA> + AsLocalVal,
+        A: AsStoredVal<Stored = StoredVal<TypeA>> + AsLocalVal,
     {
         MyType {
             a: a.as_stored_val(),
@@ -75,7 +87,7 @@ mod test {
 
     fn print<T, A>(a: A)
     where
-        A: AsStoredVal<Stored = T> + AsLocalVal,
+        A: AsStoredVal<Stored = StoredVal<T>> + AsLocalVal,
         T: Type,
     {
         let a = a.as_local_val();
