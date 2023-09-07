@@ -70,6 +70,8 @@ mod test {
 
     use parking_lot::Mutex;
 
+    use crate::StoredRef;
+
     use super::{AsLocalRef, AsLocalVal, AsStoredRef, AsStoredVal, Type};
 
     #[derive(Clone)]
@@ -87,13 +89,13 @@ mod test {
         b: Arc<Mutex<TypeB>>,
     }
 
-    fn make_t<A>(a: &A, b: Arc<Mutex<TypeB>>) -> MyType
+    fn make_t<A>(a: A, b: StoredRef<TypeB>) -> MyType
     where
         A: AsStoredVal<Stored = TypeA> + AsLocalVal,
     {
         MyType {
             a: a.as_stored_val(),
-            b: b.clone(),
+            b: b.as_stored_ref(),
         }
     }
 
@@ -119,7 +121,7 @@ mod test {
 
         let c = &a;
 
-        let t_new = make_t(&t.a, t.b.clone());
+        let t_new = make_t(t.a.as_local_val(), t.b.as_stored_ref());
 
         let x = a.as_local_val();
         let y = c.as_local_val();

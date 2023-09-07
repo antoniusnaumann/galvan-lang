@@ -1,7 +1,9 @@
 # Arc
 ## Examples
 ```arc
-struct MyType {
+type TypeA
+type TypeB
+type MyType {
   a: TypeA
   b: ~TypeB
 }
@@ -15,63 +17,58 @@ fn make_t(a: TypeA, b: ~TypeB) -> MyType(a, b)
 main {
   let a = TypeA {}
   let b = TypeB {}
-  let t = MyType(a, <: b) // <: (copy b) or <- b (move b) possible
+  let t = MyType(a, <:b) // <:b (copy b) or <-b (move b) possible
 
   print_a(t.a)
 
   let t_new = make_t(t.a, t.b)
-} 
+}
 ```
 
 Turns into this:
 
 ```rust
-    use std::{
-        borrow::Cow,
-        sync::{Arc, Mutex},
-    };
-    #[derive(Clone)]
+    #[derive(Clone, Type)]
     struct TypeA {}
-    #[derive(Clone)]
+
+    #[derive(Clone, Type)]
     struct TypeB {}
 
+    #[derive(Clone, Type)]
     struct MyType {
-        a: TypeA,
-        b: Arc<Mutex<TypeB>>,
+        a: StoredVal<TypeA>,
+        b: StoredRef<TypeB>>,
     }
 
-    fn make_t<A>(a: &A, b: Arc<Mutex<TypeB>>) -> MyType
+    fn make_t<A>(a: &A, b: StoredRef<TypeB>) -> MyType
     where
-        A: ToOwned<Owned = TypeA>,
+        A: AsStoredVal<Stored = TypeA> + AsLocalVal,
     {
         MyType {
-            a: a.to_owned(),
-            b: b.clone(),
+            a: a.as_stored_val(),
+            b: b.as_stored_ref(),
         }
     }
 
-    fn print<T, A>(a: &A)
+    fn print<T, A>(a: A)
     where
-        A: ToOwned<Owned = T>,
+        A: AsStoredVal<Stored = T> + AsLocalVal,
+        T: Type,
     {
-        let a: Cow<A> = Cow::Borrowed(a);
+        let a = a.as_local_val();
+        let b = a.as_local_val();
     }
 
-    #[test]
     fn main() {
         let a = TypeA {};
         let b = TypeB {};
         let t = MyType {
-            a: a.clone(),
-            b: Arc::new(Mutex::new(b.clone())),
+            a: a.as_stored_val(),
+            b: b.as_stored_ref(),
         };
 
-        print(&t.a);
+        print(t.a.as_local_val());
 
-        let t_new = make_t(&t.a, t.b.clone());
-
-        let x = Cow::Borrowed(&a);
-        print(&x);
+        let t_new = make_t(t.a.as_local_ref(), t.b.as_stored_ref());
     }
-}
 ```
