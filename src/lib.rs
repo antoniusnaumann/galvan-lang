@@ -5,26 +5,39 @@ use std::{
 
 use parking_lot::Mutex;
 
-trait Type {}
+trait Type: Clone {}
 
 type LocalVal<'a, T> = Cow<'a, T>;
 type StoredVal<T> = T;
 type LocalRef<'a, T> = &'a T;
 type StoredRef<T> = Arc<Mutex<T>>;
 
+trait CreateStoredRef {
+    type Stored: Type;
+    fn create(stored: Self::Stored) -> Self;
+}
+
+impl<T: Type> CreateStoredRef for StoredRef<T> {
+    type Stored = T;
+
+    fn create(stored: Self::Stored) -> Self {
+        Arc::new(Mutex::new(stored))
+    }
+}
+
 trait AsLocalVal {
     type Return: AsStoredVal + AsLocalVal + ToOwned;
     fn as_local_val(&self) -> LocalVal<Self::Return>;
 }
 
-impl<T: Type + Clone> AsLocalVal for LocalVal<'_, T> {
+impl<T: Type> AsLocalVal for LocalVal<'_, T> {
     type Return = T;
     fn as_local_val(&self) -> LocalVal<Self::Return> {
         self.clone()
     }
 }
 
-impl<T: Type + Clone> AsLocalVal for T {
+impl<T: Type> AsLocalVal for T {
     type Return = T;
     fn as_local_val(&self) -> LocalVal<Self::Return> {
         Cow::Borrowed(self.borrow())
@@ -36,7 +49,7 @@ trait AsStoredVal {
     fn as_stored_val(&self) -> StoredVal<Self::Stored>;
 }
 
-impl<T: Type + Clone> AsStoredVal for LocalVal<'_, T> {
+impl<T: Type> AsStoredVal for LocalVal<'_, T> {
     type Stored = T;
 
     fn as_stored_val(&self) -> StoredVal<Self::Stored> {
@@ -44,7 +57,7 @@ impl<T: Type + Clone> AsStoredVal for LocalVal<'_, T> {
     }
 }
 
-impl<T: Type + Clone> AsStoredVal for T {
+impl<T: Type> AsStoredVal for T {
     type Stored = T;
 
     fn as_stored_val(&self) -> StoredVal<Self::Stored> {
@@ -62,7 +75,33 @@ trait AsStoredRef {
     type Stored: Type;
     fn as_stored_ref(&self) -> StoredRef<Self::Stored>;
 }
-// TODO: Blanket Implementations
+
+/// Enables implicitly cloning stored refs
+impl<T: Type> AsStoredRef for StoredRef<T> {
+    type Stored = T;
+
+    fn as_stored_ref(&self) -> StoredRef<Self::Stored> {
+        StoredRef::clone(self)
+    }
+}
+
+/// This conversion must be invoked explicitly by using the copy keyword or the copy operator <:
+impl<T: Type> AsStoredRef for StoredVal<T> {
+    type Stored = T;
+
+    fn as_stored_ref(&self) -> StoredRef<Self::Stored> {
+        StoredRef::create(self.clone())
+    }
+}
+
+/// This conversion must be invoked explicitly by using the copy keyword or the copy operator <:
+impl<T: Type> AsStoredRef for LocalVal<'_, T> {
+    type Stored = T;
+
+    fn as_stored_ref(&self) -> StoredRef<Self::Stored> {
+        StoredRef::create(self.as_ref().clone())
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -86,7 +125,7 @@ mod test {
 
     struct MyType {
         a: TypeA,
-        b: Arc<Mutex<TypeB>>,
+        b: StoredRef<TypeB>,
     }
 
     fn make_t<A>(a: A, b: StoredRef<TypeB>) -> MyType
@@ -112,6 +151,9 @@ mod test {
     fn main() {
         let a = TypeA {};
         let b = TypeB {};
+
+        let a = a.as_local_val();
+        let b = b.as_local_val();
         let t = MyType {
             a: a.as_stored_val(),
             b: b.as_stored_ref(),
