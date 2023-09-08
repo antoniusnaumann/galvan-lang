@@ -1,9 +1,10 @@
-[package]
-name = "arc"
-version = "0.1.0"
+[workspace.package]
+authors = ["Antonius Naumann"]
 edition = "2021"
+version = "0.0.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-parking_lot = { version = "0.12.1", features = ["arc_lock"] }
+[workspace]
+resolver = "2"
+members = [
+  "arc-core",
+]
