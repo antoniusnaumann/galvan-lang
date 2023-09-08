@@ -12,7 +12,15 @@ fn print_a(a: TypeA) {
   print(a)
 }
 
+// Short-hand syntax for one-liners with inferred return type
 fn make_t(a: TypeA, b: ~TypeB) -> MyType(a, b)
+
+// Usual syntax for functions with return type
+fn return_something(): TypeA {
+  val a = TypeA()
+  -> a // The return operator or keyword must be used
+  // as opposed to Rust there is no implicit return at the end of the function
+}
 
 main {
   val a = TypeA {}
@@ -33,7 +41,7 @@ type MyType {
   b: stored ref TypeB // the stored keyword can be ommitted here (and above) since it is implied in type attributes
 }
 
-// As for structs, you 
+// As for structs, you can omit the val keyword here
 fn print_a(a: TypeA) {
   print(a)
 }
@@ -41,6 +49,13 @@ fn print_a(a: TypeA) {
 // You can just take val instead of stored val (and leave the keyword out), since they are implicitly convertible
 // You must take stored ref since a (local) ref cannot be turned into a stored ref
 fn make_t(a: stored val TypeA, b: stored ref TypeB) -> MyType(a, b)
+
+// Usual syntax for functions with return type
+fn return_something(): TypeA {
+  val a = TypeA()
+  return a // The return operator or keyword must be used
+  // as opposed to Rust there is no implicit return at the end of the function
+}
 
 main {
   val a = TypeA {}
@@ -78,6 +93,11 @@ Turns into this:
             a: a.as_stored_val(),
             b: b.as_stored_ref(),
         }
+    }
+
+    fn return_something() -> StoredVal<TypeA> {
+      let a = TypeA {};
+      return a;
     }
 
     fn print<T, A>(a: A)
