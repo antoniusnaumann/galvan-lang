@@ -2,7 +2,7 @@ use logos::Logos;
 
 #[derive(Debug, Logos)]
 #[logos(skip r"[ \t\f]+")]
-enum Token {
+pub enum Token {
     // Delimiters
     #[token("{")]
     BraceOpen,

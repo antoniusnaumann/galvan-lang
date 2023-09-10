@@ -8,4 +8,5 @@ resolver = "2"
 members = [
   "arc-core",
   "arc-lexer",
+  "arc-parser",
 ]
