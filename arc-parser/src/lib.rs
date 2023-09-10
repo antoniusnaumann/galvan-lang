@@ -1,7 +1,7 @@
-mod fn_decl;
+mod declaration;
 mod modifier;
 mod parse;
 
-pub use fn_decl::*;
+pub use declaration::*;
 pub use modifier::*;
 pub use parse::*;
