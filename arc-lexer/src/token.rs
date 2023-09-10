@@ -22,9 +22,8 @@ enum Token {
     Semicolon,
     #[token(",")]
     Comma,
-    #[regex(r"\r|[\r?\n]")]
+    #[regex(r"\r?\n]")]
     Newline,
-
     // Comments
     #[token("///")]
     TripleSlash,
@@ -82,7 +81,12 @@ enum Token {
     // Comparison Operators
     #[token("==")]
     Equals,
-    // TODO: more
+    #[token("!=")]
+    NotEquals,
+    #[token(">=")]
+    GreaterEquals,
+    #[token("<=")]
+    SmallerEquals,
 
     // Access
     #[token("::")]
@@ -91,6 +95,14 @@ enum Token {
     Dot,
     #[token("_")]
     Underscore,
+
+    // Error Handling
+    #[token("?.")]
+    SafeCall,
+    #[token("?")]
+    QuestionMark,
+    #[token("catch")]
+    CatchKeyword,
 
     // Declaration Keywords
     #[token("stored")]
@@ -118,6 +130,8 @@ enum Token {
     // reserved for future use
     #[token("build")]
     BuildKeyword,
+    #[token("infix")]
+    InfixKeyword,
     // not used but reserved
     #[token("struct")]
     StructKeyword,
@@ -150,19 +164,15 @@ enum Token {
     StoredRefPrefix,
     #[token("&")]
     LocalRefPrefix,
-
-    // TODO: Capture name and content separately
-    #[regex(r"@[_|a-z|A-Z][\(\)]?")]
-    Annotation(),
+    // TODO: Parse complete annotation as token and
+    // capture name and content separately
+    // #[regex(r"@[_a-zA-Z]?[_a-zA-Z0-9]*")]
+    // Annotation(),
+    #[token("@")]
+    AtSign,
     // TODO: Allow all unicode characters that are valid for Rusts identifiers
     // TODO: Handle raw identifiers
     // TODO: Allow ? in identifiers and handle that in parser
-    #[regex(r"[_|a-z|A-Z]", |lex| lex.slice().to_owned())]
+    #[regex(r"[_a-zA-Z]?[_a-zA-Z0-9]*", |lex| lex.slice().to_owned())]
     Ident(String),
-}
-
-impl Default for Token {
-    fn default() -> Self {
-        Self::BraceOpen
-    }
 }
