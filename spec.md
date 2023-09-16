@@ -5,7 +5,7 @@ type TypeA
 type TypeB
 type MyType {
   a: TypeA
-  b: ~TypeB
+  b: $TypeB
 }
 
 fn print_a(a: TypeA) {
@@ -13,7 +13,7 @@ fn print_a(a: TypeA) {
 }
 
 // Short-hand syntax for one-liners with inferred return type
-fn make_t(a: TypeA, b: ~TypeB) -> MyType(a, b)
+fn make_t(a: TypeA, b: $TypeB) -> MyType(a, b)
 
 // Usual syntax for functions with return type
 fn return_something(): TypeA {
@@ -25,7 +25,7 @@ fn return_something(): TypeA {
 main {
   val a = TypeA {}
   val b = TypeB {}
-  val t = MyType(a, <:b) // <:b (copy b) or <-b (move b) possible
+  val t = MyType(a, <: b) // <: b (copy b) or <- b (move b) possible
 
   print_a(t.a)
 

@@ -22,7 +22,7 @@ pub enum Token {
     Semicolon,
     #[token(",")]
     Comma,
-    #[regex(r"\r?\n]")]
+    #[regex(r"\r?\n")]
     Newline,
     // Comments
     #[token("///")]
@@ -61,14 +61,19 @@ pub enum Token {
     MinusAssign,
     #[token("+=")]
     PlusAssign,
+    #[token("**")]
+    Pow,
+    #[token("**=")]
+    PowAssing,
 
     // Logical Operators
     #[token("||")]
     LogicalOr,
     #[token("&&")]
     LogicalAnd,
+    // More generic token name, since operator is also used for short circuiting on error
     #[token("!")]
-    LogicalNot,
+    ExclamationMark,
 
     // Logical Operator keywords
     #[token("or")]
@@ -77,6 +82,8 @@ pub enum Token {
     LogicalAndKeyword,
     #[token("not")]
     LogicalNotKeyword,
+    #[token("xor")]
+    LogicalXorKeyword,
 
     // Comparison Operators
     #[token("==")]
@@ -88,6 +95,12 @@ pub enum Token {
     #[token("<=")]
     SmallerEquals,
 
+    // Other Keywords
+    #[token("is")]
+    IsKeyword,
+    #[token("assert")]
+    AssertKeyword,
+
     // Access
     #[token("::")]
     DoubleColon,
@@ -96,11 +109,15 @@ pub enum Token {
     #[token("_")]
     Underscore,
 
-    // Error Handling
+    // Error and Null Handling
     #[token("?.")]
     SafeCall,
     #[token("?")]
     QuestionMark,
+    #[token("??")]
+    CatchOperator,
+    #[token("??=")]
+    NullCoalescingAssign,
     #[token("catch")]
     CatchKeyword,
 
@@ -119,6 +136,8 @@ pub enum Token {
     DataKeyword,
     #[token("pub")]
     PublicKeyword,
+    #[token("const")]
+    ConstKeyword,
     #[token("async")]
     AsyncKeyword,
     #[token("trait")]
@@ -160,7 +179,7 @@ pub enum Token {
     #[token("|>")]
     BreakOperator,
 
-    #[token("~")]
+    #[token("$")]
     StoredRefPrefix,
     #[token("&")]
     LocalRefPrefix,

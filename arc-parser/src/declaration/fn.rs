@@ -28,16 +28,4 @@ pub struct Block {
     pub statements: Vec<Statement>,
 }
 
-pub struct Ident {
-    inner: String,
-}
-
-pub enum TypeDecl {
-    TupleType(TupleTypeDecl),
-    StructType(StructTypeDecl),
-    AliasType(AliasTypeDecl),
-}
-
-pub struct TupleTypeDecl {}
-pub struct StructTypeDecl {}
-pub struct AliasTypeDecl {}
+pub struct Statement {}

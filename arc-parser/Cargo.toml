@@ -10,3 +10,4 @@ version.workspace = true
 logos = "0.13.0"
 
 arc-lexer = { path = "../arc-lexer" }
+derive_more = "0.99.17"
