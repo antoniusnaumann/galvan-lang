@@ -1,37 +1,8 @@
 use arc_lexer::Token;
-use logos::{Lexer, Span};
 
-use crate::{Async, Const, FnDecl, Ident, Modifiers, TypeDecl, Visibility as Vis};
-
-pub type Error = (String, Span);
-pub type Result<T> = std::result::Result<T, Error>;
-
-type Tokenizer<'a> = Lexer<'a, Token>;
-
-trait TokenizerExt {
-    fn err<S, T>(&self, msg: S) -> Result<T>
-    where
-        S: Into<String>;
-    fn msg<S>(&self, msg: S) -> Error
-    where
-        S: Into<String>;
-}
-
-impl TokenizerExt for Tokenizer<'_> {
-    fn err<S, T>(&self, msg: S) -> Result<T>
-    where
-        S: Into<String>,
-    {
-        Err(self.msg(msg))
-    }
-
-    fn msg<S>(&self, msg: S) -> Error
-    where
-        S: Into<String>,
-    {
-        (msg.into(), self.span())
-    }
-}
+use crate::{
+    Async, Const, FnDecl, Modifiers, Result, Tokenizer, TokenizerExt, TypeDecl, Visibility as Vis,
+};
 
 // TODO: Introduce type for parsed source
 type ParsedSource = ();
@@ -69,7 +40,7 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
             Ok(Token::AsyncKeyword) if !m.has_async_modifier() => m.asyncness = Async::Async,
 
             // TODO: Add stringified token
-            _ => return lexer.err("Unexpected token at: "),
+            _ => return Err(lexer.unexpected_token()),
         }
     }
 
@@ -84,15 +55,20 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
         .map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
 
     if let Token::Ident(name) = token {
-        match lexer.next() {
-            Ok(Token::BraceOpen) => {
-                let tokens = todo!("Parse tokens until matching closing brace is found")
+        let token = lexer
+            .next()
+            .ok_or(lexer.msg("Expected type name but found end of file."))?
+            .map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+
+        match token {
+            Token::BraceOpen => {
+                let tokens = todo!("Parse tokens until matching closing brace is found");
             }
-            Ok(Token::ParenOpen) => {
-                let tokens = todo!("Parse tokens until matching closing parenthesis is found")
+            Token::ParenOpen => {
+                let tokens = todo!("Parse tokens until matching closing parenthesis is found");
             }
-            Ok(Token::Assign) => {
-                let tokens = todo!("Parse tokens until newline")
+            Token::Assign => {
+                let tokens = todo!("Parse tokens until newline");
             }
             _ => lexer.err(format!(
                 "Expected one of the following:

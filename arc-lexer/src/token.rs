@@ -1,6 +1,6 @@
 use logos::Logos;
 
-#[derive(Debug, Logos)]
+#[derive(PartialEq, Eq, Debug, Logos)]
 #[logos(skip r"[ \t\f]+")]
 pub enum Token {
     // Delimiters
