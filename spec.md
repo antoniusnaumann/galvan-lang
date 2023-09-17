@@ -9,6 +9,8 @@ type MyType {
 }
 
 fn print_a(a: TypeA) {
+  // Like in rust, shadowing variables is allowed
+  val a = a
   print(a)
 }
 
@@ -43,6 +45,8 @@ type MyType {
 
 // As for structs, you can omit the val keyword here
 fn print_a(a: TypeA) {
+  // Like in rust, shadowing variables is allowed
+  val a = a
   print(a)
 }
 
@@ -100,13 +104,13 @@ Turns into this:
       return a;
     }
 
-    fn print<T, A>(a: A)
+    fn print_a<T, A>(a: A)
     where
         A: AsStoredVal<Stored = T> + AsLocalVal,
         T: Type,
     {
         let a = a.as_local_val();
-        let b = a.as_local_val();
+        println!(a);
     }
 
     fn main() {
@@ -117,7 +121,7 @@ Turns into this:
             b: b.as_stored_ref(),
         };
 
-        print(t.a.as_local_val());
+        print_a(t.a.as_local_val());
 
         let t_new = make_t(t.a.as_local_ref(), t.b.as_stored_ref());
     }

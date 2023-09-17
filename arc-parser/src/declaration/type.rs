@@ -7,10 +7,25 @@ pub enum TypeDecl {
 }
 
 pub struct TupleTypeDecl {
-    pub members: Vec<TypeItem<BasicTypeItem>>,
+    pub members: Vec<TupleTypeMember>,
 }
-pub struct StructTypeDecl {}
-pub struct AliasTypeDecl {}
+pub struct TupleTypeMember {
+    pub visibility: Visibility,
+    pub r#type: TypeItem<BasicTypeItem>,
+}
+
+pub struct StructTypeDecl {
+    pub members: Vec<StructTypeMember>,
+}
+pub struct StructTypeMember {
+    pub visibility: Visibility,
+    pub ident: Ident,
+    pub r#type: TypeItem<BasicTypeItem>,
+}
+
+pub struct AliasTypeDecl {
+    pub r#type: TypeItem<BasicTypeItem>,
+}
 
 pub enum TypeItem<T> {
     Array(Box<ArrayTypeItem<T>>),
