@@ -4,6 +4,10 @@ use logos::Logos;
 #[logos(skip r"[ \t\f]+")]
 pub enum Token {
     // Delimiters
+    #[token("(")]
+    ParenOpen,
+    #[token(")")]
+    ParenClose,
     #[token("{")]
     BraceOpen,
     #[token("}")]

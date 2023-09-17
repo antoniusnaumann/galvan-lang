@@ -85,24 +85,27 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
 
     if let Token::Ident(name) = token {
         match lexer.next() {
-            _ => Err((
-                format!(
-                    "Expected one of the following:
+            Ok(Token::BraceOpen) => {
+                let tokens = todo!("Parse tokens until matching closing brace is found")
+            }
+            Ok(Token::ParenOpen) => {
+                let tokens = todo!("Parse tokens until matching closing parenthesis is found")
+            }
+            Ok(Token::Assign) => {
+                let tokens = todo!("Parse tokens until newline")
+            }
+            _ => lexer.err(format!(
+                "Expected one of the following:
                         - type alias:  'type {name} = TypeA'
                         - struct type: 'type {name} {{ attr: TypeA, ... }}'
                         - tuple type:  'type {name}(TypeA, TypeB, ...)
                                 
                     ...but found unexpected token instead at:
                     "
-                ),
-                lexer.span(),
             )),
         }
     } else {
-        Err((
-            "Invalid identifier for type name at: ".to_owned(),
-            lexer.span(),
-        ))
+        lexer.err("Invalid identifier for type name at: ")
     }
 }
 
