@@ -17,10 +17,10 @@ pub trait TokenizerExt {
 
     /// Advances the lexer until the next matching token
     /// Supported tokens: (, {, [, ", '
-    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<Token>>;
+    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>>;
 
     /// Advances the lexer until the given token is encountered
-    fn parse_until_token(&mut self, token: Token) -> Result<Vec<Token>>;
+    fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>>;
 }
 
 pub enum MatchingToken {
@@ -72,15 +72,18 @@ impl TokenizerExt for Tokenizer<'_> {
         self.msg("Unexpected token at:")
     }
 
-    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<Token>> {
+    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
         let mut dangling_open = 1;
         let mut tokens = vec![];
 
+        let spanned = self.spanned();
+
         while dangling_open > 0 {
-            let token = self
+            let (token, span) = spanned
                 .next()
-                .ok_or(self.msg("Expected matching token but found end of file!"))?
-                .map_err(|_| self.unexpected_token())?;
+                .ok_or(self.msg("Expected matching token but found end of file!"))?;
+
+            let token = token.map_err(|_| self.unexpected_token())?;
 
             if token == matching.closing() {
                 dangling_open -= 1;
@@ -88,15 +91,76 @@ impl TokenizerExt for Tokenizer<'_> {
                 dangling_open += 1;
             }
 
-            tokens.push(token)
+            tokens.push((token, span))
         }
 
         Ok(tokens)
     }
 
-    fn parse_until_token(&mut self, token: Token) -> Result<Vec<Token>> {
+    fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>> {
         let mut tokens = vec![];
 
         Ok(tokens)
+    }
+}
+
+pub type SpannedToken = (Token, Span);
+pub trait TokenExt {
+    /// Ensures that the receiver is a certain token, returns an error otherwise
+    fn ensure_token(self, token: Token) -> Result<SpannedToken>;
+
+    /// Ensures that the receiver is a valid identifier token and gets its name, returns an error otherwise
+    fn ident(&self) -> Result<String>;
+}
+
+pub trait OptTokenExt {
+    /// Ensures that the receiver is some token, returns an error otherwise
+    fn unpack(self) -> Result<SpannedToken>;
+}
+
+impl TokenExt for SpannedToken {
+    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
+        if self.0 != token {
+            Err((
+                format!("Expected token {:#?} but found {:#?} at:", token, self.0),
+                self.1,
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    fn ident(&self) -> Result<String> {
+        match self.0 {
+            Token::Ident(name) => Ok(name),
+            _ => Err((format!("Invalid identifier at:"), self.1)),
+        }
+    }
+}
+
+impl TokenExt for Option<SpannedToken> {
+    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
+        if let Some(t) = self {
+            t.ensure_token(token)
+        } else {
+            // TODO: Return a span that makes sense here (or dont and just return an optional)
+            Err((format!("Expected token {:#?} but found none", token), 0..0))
+        }
+    }
+
+    fn ident(&self) -> Result<String> {
+        let t = self.unpack()?;
+        t.ident()
+    }
+}
+
+impl OptTokenExt for Option<SpannedToken> {
+    fn unpack(self) -> Result<SpannedToken> {
+        if let Some(t) = self {
+            Ok(t)
+        } else {
+            // TODO: Return a span that makes sense here (or dont and just return an optional)
+            Err(("Expected token but found none".to_owned(), 0..0))
+        }
     }
 }
