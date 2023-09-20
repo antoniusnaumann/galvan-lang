@@ -1,5 +1,7 @@
 use crate::*;
 
+use super::ident;
+
 pub enum TypeDecl {
     TupleType(TupleTypeDecl),
     StructType(StructTypeDecl),
@@ -32,6 +34,14 @@ pub enum TypeItem<T> {
     Dictionary(Box<DictionaryTypeItem<T>>),
     Tuple(Box<TupleTypeItem<T>>),
     Plain(T),
+}
+
+impl TypeItem<BasicTypeItem> {
+    pub fn plain(ident: String) -> Self {
+        Self::Plain(BasicTypeItem {
+            ident: Ident::new(ident),
+        })
+    }
 }
 
 // TODO: Add a marker trait to constrain this to only type decls

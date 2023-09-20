@@ -1,3 +1,5 @@
+use std::vec::IntoIter;
+
 use arc_lexer::Token;
 
 use crate::*;
@@ -87,8 +89,33 @@ fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructType
     Ok(members)
 }
 
-fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Vec<TupleTypeMember> {
-    todo!()
+fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMember>> {
+    fn push_member(
+        token_iter: &mut IntoIter<SpannedToken>,
+        members: &mut Vec<TupleTypeMember>,
+    ) -> Result<()> {
+        // TODO: parse visibility modifiers and keywords here
+        let type_name = token_iter.next().ident()?;
+        let member_type = TypeItem::plain(type_name);
+        let member = TupleTypeMember {
+            visibility: Visibility::Inherited,
+            r#type: member_type,
+        };
+        members.push(member);
+        Ok(())
+    }
+
+    let mut token_iter = tokens.into_iter();
+    let mut members = vec![];
+    push_member(&mut token_iter, &mut members);
+
+    while let Some(name) = token_iter.next() {
+        // TODO: also allow newlines here
+        let _ = token_iter.next().ensure_token(Token::Comma);
+        push_member(&mut token_iter, &mut members);
+    }
+
+    Ok(members)
 }
 
 fn parse_type_alias(tokens: Vec<SpannedToken>) -> TypeItem<BasicTypeItem> {
