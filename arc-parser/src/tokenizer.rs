@@ -1,10 +1,10 @@
 use arc_lexer::Token;
-use logos::{Lexer, Span};
+use logos::{Span, SpannedIter};
 
 pub type Error = (String, Span);
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub type Tokenizer<'a> = Lexer<'a, Token>;
+pub type Tokenizer<'a> = SpannedIter<'a, Token>;
 
 pub trait TokenizerExt {
     fn err<S, T>(&self, msg: S) -> Result<T>
@@ -76,10 +76,8 @@ impl TokenizerExt for Tokenizer<'_> {
         let mut dangling_open = 1;
         let mut tokens = vec![];
 
-        let spanned = self.spanned();
-
         while dangling_open > 0 {
-            let (token, span) = spanned
+            let (token, span) = self
                 .next()
                 .ok_or(self.msg("Expected matching token but found end of file!"))?;
 
@@ -99,7 +97,7 @@ impl TokenizerExt for Tokenizer<'_> {
 
     fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>> {
         let mut tokens = vec![];
-
+        todo!("Implement");
         Ok(tokens)
     }
 }
@@ -110,7 +108,7 @@ pub trait TokenExt {
     fn ensure_token(self, token: Token) -> Result<SpannedToken>;
 
     /// Ensures that the receiver is a valid identifier token and gets its name, returns an error otherwise
-    fn ident(&self) -> Result<String>;
+    fn ident(self) -> Result<String>;
 }
 
 pub trait OptTokenExt {
@@ -130,7 +128,7 @@ impl TokenExt for SpannedToken {
         }
     }
 
-    fn ident(&self) -> Result<String> {
+    fn ident(self) -> Result<String> {
         match self.0 {
             Token::Ident(name) => Ok(name),
             _ => Err((format!("Invalid identifier at:"), self.1)),
@@ -148,7 +146,7 @@ impl TokenExt for Option<SpannedToken> {
         }
     }
 
-    fn ident(&self) -> Result<String> {
+    fn ident(self) -> Result<String> {
         let t = self.unpack()?;
         t.ident()
     }

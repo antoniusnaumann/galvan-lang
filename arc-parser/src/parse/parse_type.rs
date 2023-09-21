@@ -6,20 +6,20 @@ use crate::*;
 
 /// Parses a type definition. This method assumes that modifiers and the type keyword were already consumed
 pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
-    let token = lexer
+    let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected type name but found end of file."))?
-        .map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+        .ok_or(lexer.msg("Expected type name but found end of file."))?;
+    let token = token.map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
 
     if let Token::Ident(name) = token {
-        let token = lexer
+        let (token, _span) = lexer
             .next()
-            .ok_or(lexer.msg("Expected type name but found end of file."))?
-            .map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+            .ok_or(lexer.msg("Expected type name but found end of file."))?;
+        let token = token.map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
 
         match token {
             Token::BraceOpen => {
-                let mut tokens = lexer.parse_until_matching(crate::MatchingToken::Brace)?;
+                let mut tokens = lexer.parse_until_matching(MatchingToken::Brace)?;
                 let (_, _) = tokens.pop().ensure_token(Token::BraceClose)?;
 
                 let members = parse_struct_type_members(tokens)?;
@@ -27,7 +27,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                 Ok(TypeDecl::StructType(t))
             }
             Token::ParenOpen => {
-                let mut tokens = lexer.parse_until_matching(crate::MatchingToken::Paren)?;
+                let mut tokens = lexer.parse_until_matching(MatchingToken::Paren)?;
                 let (_, _) = tokens.pop().ensure_token(Token::ParenClose)?;
 
                 let members = parse_tuple_type_members(tokens)?;
@@ -105,11 +105,11 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
 
     let mut token_iter = tokens.into_iter();
     let mut members = vec![];
-    push_member(&mut token_iter, &mut members);
+    push_member(&mut token_iter, &mut members)?;
     // TODO: Also allow newlines here instead
     // TODO: Allow trailing commas and trailing newlines
     while let Ok(_) = token_iter.next().ensure_token(Token::Comma) {
-        push_member(&mut token_iter, &mut members);
+        push_member(&mut token_iter, &mut members)?;
     }
 
     Ok(members)

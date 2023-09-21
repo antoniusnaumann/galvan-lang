@@ -12,33 +12,36 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
     let mut m = Modifiers::new();
 
     // TODO: Drain the spanned lexer completely into a peekable iterator and store occuring errors
-    while let Some(ref token) = lexer.next() {
+    while let Some(spanned_token) = lexer.next() {
+        let (token, _span) = spanned_token;
+        let token = token.map_err(|_| lexer.unexpected_token())?;
+
         match token {
-            Ok(Token::FnKeyword) => {
+            Token::FnKeyword => {
                 parse_fn(lexer, &m)?;
                 m.reset();
             }
-            Ok(Token::TypeKeyword) => {
+            Token::TypeKeyword => {
                 parse_type(lexer, &m)?;
                 m.reset();
             }
-            Ok(Token::MainKeyword) if !m.has_vis_modifier() && !m.has_const_modifier() => {
+            Token::MainKeyword if !m.has_vis_modifier() && !m.has_const_modifier() => {
                 parse_main(lexer, m.asyncness)?;
                 m.reset();
             }
-            Ok(Token::TestKeyword) if !m.has_vis_modifier() && !m.has_const_modifier() => {
+            Token::TestKeyword if !m.has_vis_modifier() && !m.has_const_modifier() => {
                 parse_test(lexer, m.asyncness)?;
                 m.reset();
             }
-            Ok(Token::BuildKeyword) => {
+            Token::BuildKeyword => {
                 return lexer.err(
                     "The build keyword is reserved but currently not implemented yet. Found at: ",
                 );
             }
 
-            Ok(Token::PublicKeyword) if !m.has_vis_modifier() => m.visibility = Visibility::Public,
-            Ok(Token::ConstKeyword) if !m.has_const_modifier() => m.constness = Const::Const,
-            Ok(Token::AsyncKeyword) if !m.has_async_modifier() => m.asyncness = Async::Async,
+            Token::PublicKeyword if !m.has_vis_modifier() => m.visibility = Visibility::Public,
+            Token::ConstKeyword if !m.has_const_modifier() => m.constness = Const::Const,
+            Token::AsyncKeyword if !m.has_async_modifier() => m.asyncness = Async::Async,
 
             // TODO: Add stringified token
             _ => return Err(lexer.unexpected_token()),
@@ -49,27 +52,31 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
 }
 
 pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
-    let token = lexer
+    let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected function name but found end of file."))?
-        .map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+        .ok_or(lexer.msg("Expected function name but found end of file."))?;
+
+    let token = token.map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
 
     todo!("Parse function declaration")
 }
 
 pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
-    let token = lexer
+    let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected main body but found end of file."))?
-        .map_err(|_| lexer.msg("Invalid identifier, expected '{' at: "))?;
+        .ok_or(lexer.msg("Expected main body but found end of file."))?;
+
+    let token = token.map_err(|_| lexer.msg("Invalid identifier, expected '{' at: "))?;
 
     todo!("Parse main function")
 }
 
 pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
-    let token = lexer
+    let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected test body or test description but found end of file."))?
+        .ok_or(lexer.msg("Expected test body or test description but found end of file."))?;
+
+    let token = token
         .map_err(|_| lexer.msg("Invalid identifier, expected '{' or test description at: "))?;
 
     todo!("Parse main function")
