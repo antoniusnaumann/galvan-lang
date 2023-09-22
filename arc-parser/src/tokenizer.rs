@@ -181,3 +181,19 @@ impl OptTokenExt for SpannedParseResult {
         }
     }
 }
+
+pub trait TokensExt {
+    fn trim_trailing(&mut self, token: Token);
+}
+
+impl TokensExt for Vec<SpannedToken> {
+    fn trim_trailing(&mut self, token: Token) {
+        while let Some(t) = self.last() {
+            if t.0 != token {
+                return;
+            }
+
+            self.pop();
+        }
+    }
+}

@@ -21,6 +21,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
             Token::BraceOpen => {
                 let mut tokens = lexer.parse_until_matching(MatchingToken::Brace)?;
                 let (_, _) = tokens.pop().ensure_token(Token::BraceClose)?;
+                tokens.trim_trailing(Token::Newline);
 
                 let members = parse_struct_type_members(tokens)?;
                 let t = StructTypeDecl { members };
@@ -29,6 +30,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
             Token::ParenOpen => {
                 let mut tokens = lexer.parse_until_matching(MatchingToken::Paren)?;
                 let (_, _) = tokens.pop().ensure_token(Token::ParenClose)?;
+                tokens.trim_trailing(Token::Newline);
 
                 let members = parse_tuple_type_members(tokens)?;
                 let t = TupleTypeDecl { members };
@@ -133,12 +135,10 @@ mod test {
     #[test]
     fn test_parse_struct_type() -> Result<()> {
         // Note that type keyword is expected to be consumed already
-        let src = "
-            TypeA {
-                member_b: TypeB
-                member_c: TypeC
-            }
-        ";
+        let src = "TypeA {
+                        member_b: TypeB
+                        member_c: TypeC
+                   }";
         let mut tokenizer = Tokenizer::from_str(src);
         let parsed = parse_type(&mut tokenizer, &Modifiers::default())?;
 
@@ -151,15 +151,14 @@ mod test {
     fn test_parse_struct_type_members() -> Result<()> {
         let src = "
             a: TypeA
-            b: TypeB
-        ";
+            b: TypeB";
         let tokenizer = Tokenizer::from_str(src);
         let tokens = tokenizer
             .map(|spanned_token| spanned_token.unpack())
             .collect::<Result<Vec<SpannedToken>>>()?;
         let parsed = parse_struct_type_members(tokens)?;
 
-        assert!(parsed.len() == 2);
+        assert!(dbg!(parsed.len()) == 2);
         // TODO: Assert that parsed contains the members
 
         Ok(())
