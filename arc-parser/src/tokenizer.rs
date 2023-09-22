@@ -1,5 +1,5 @@
 use arc_lexer::Token;
-use logos::{Span, SpannedIter};
+use logos::{Logos, Span, SpannedIter};
 
 pub type Error = (String, Span);
 pub type Result<T> = std::result::Result<T, Error>;
@@ -21,6 +21,8 @@ pub trait TokenizerExt {
 
     /// Advances the lexer until the given token is encountered
     fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>>;
+
+    fn from_str<'a>(s: &'a str) -> Tokenizer<'a>;
 }
 
 pub enum MatchingToken {
@@ -100,6 +102,11 @@ impl TokenizerExt for Tokenizer<'_> {
         todo!("Implement");
         Ok(tokens)
     }
+
+    fn from_str<'a>(s: &'a str) -> Tokenizer<'a> {
+        let lexer = Token::lexer(s);
+        lexer.spanned()
+    }
 }
 
 pub type SpannedToken = (Token, Span);
@@ -159,6 +166,18 @@ impl OptTokenExt for Option<SpannedToken> {
         } else {
             // TODO: Return a span that makes sense here (or dont and just return an optional)
             Err(("Expected token but found none".to_owned(), 0..0))
+        }
+    }
+}
+
+pub type SpannedParseResult = (std::result::Result<Token, ()>, Span);
+impl OptTokenExt for SpannedParseResult {
+    fn unpack(self) -> Result<SpannedToken> {
+        let (token, span) = self;
+        if let Ok(t) = token {
+            Ok((t, span))
+        } else {
+            Err(("Expected token but found none".to_owned(), span))
         }
     }
 }

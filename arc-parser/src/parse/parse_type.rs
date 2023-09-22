@@ -64,10 +64,12 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
 fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructTypeMember>> {
     let mut token_iter = tokens.into_iter();
     let mut members = vec![];
-    while let Some(name) = token_iter.next() {
+    // TODO: Also allow comma here
+    // TODO: Allow directly starting with members without newline
+    while let Ok(_) = token_iter.next().ensure_token(Token::Newline) {
         // TODO: parse visibility modifiers and keywords such as ref here, probably parse all until newline to do that
-
-        let field_name = Ident::new(name.ident()?);
+        let field_name = token_iter.next().ident()?;
+        let field = Ident::new(field_name);
         let (_, _) = token_iter.next().ensure_token(Token::Colon)?;
         let type_name = token_iter.next().ident()?;
 
@@ -77,7 +79,7 @@ fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructType
 
         let member = StructTypeMember {
             visibility: Visibility::Inherited,
-            ident: field_name,
+            ident: field,
             r#type: member_type,
         };
 
@@ -122,4 +124,44 @@ fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem<BasicTypeItem>
     let member_type = TypeItem::plain(type_name);
 
     Ok(member_type)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse_struct_type() -> Result<()> {
+        // Note that type keyword is expected to be consumed already
+        let src = "
+            TypeA {
+                member_b: TypeB
+                member_c: TypeC
+            }
+        ";
+        let mut tokenizer = Tokenizer::from_str(src);
+        let parsed = parse_type(&mut tokenizer, &Modifiers::default())?;
+
+        assert!(matches!(parsed, TypeDecl::StructType(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_struct_type_members() -> Result<()> {
+        let src = "
+            a: TypeA
+            b: TypeB
+        ";
+        let tokenizer = Tokenizer::from_str(src);
+        let tokens = tokenizer
+            .map(|spanned_token| spanned_token.unpack())
+            .collect::<Result<Vec<SpannedToken>>>()?;
+        let parsed = parse_struct_type_members(tokens)?;
+
+        assert!(parsed.len() == 2);
+        // TODO: Assert that parsed contains the members
+
+        Ok(())
+    }
 }
