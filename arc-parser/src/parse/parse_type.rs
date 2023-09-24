@@ -68,7 +68,7 @@ fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructType
     let mut members = vec![];
     // TODO: Also allow comma here
     // TODO: Allow directly starting with members without newline
-    while let Ok(_) = token_iter.next().ensure_token(Token::Newline) {
+    while token_iter.next().ensure_token(Token::Newline).is_ok() {
         // TODO: parse visibility modifiers and keywords such as ref here, probably parse all until newline to do that
         let field_name = token_iter.next().ident()?;
         let field = Ident::new(field_name);
@@ -112,7 +112,7 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
     push_member(&mut token_iter, &mut members)?;
     // TODO: Also allow newlines here instead
     // TODO: Allow trailing commas and trailing newlines
-    while let Ok(_) = token_iter.next().ensure_token(Token::Comma) {
+    while token_iter.next().ensure_token(Token::Comma).is_ok() {
         push_member(&mut token_iter, &mut members)?;
     }
 

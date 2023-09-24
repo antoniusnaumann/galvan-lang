@@ -22,7 +22,7 @@ pub trait TokenizerExt {
     /// Advances the lexer until the given token is encountered
     fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>>;
 
-    fn from_str<'a>(s: &'a str) -> Tokenizer<'a>;
+    fn from_str(s: &str) -> Tokenizer<'_>;
 }
 
 pub enum MatchingToken {
@@ -103,7 +103,7 @@ impl TokenizerExt for Tokenizer<'_> {
         Ok(tokens)
     }
 
-    fn from_str<'a>(s: &'a str) -> Tokenizer<'a> {
+    fn from_str(s: &str) -> Tokenizer<'_> {
         let lexer = Token::lexer(s);
         lexer.spanned()
     }
@@ -138,7 +138,7 @@ impl TokenExt for SpannedToken {
     fn ident(self) -> Result<String> {
         match self.0 {
             Token::Ident(name) => Ok(name),
-            _ => Err((format!("Invalid identifier at:"), self.1)),
+            _ => Err(("Invalid identifier at:".to_string(), self.1)),
         }
     }
 }

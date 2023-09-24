@@ -105,13 +105,8 @@ impl<T: Type> AsStoredRef for LocalVal<'_, T> {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
-    use parking_lot::Mutex;
-
-    use crate::StoredRef;
-
     use super::{AsLocalRef, AsLocalVal, AsStoredRef, AsStoredVal, Type};
+    use crate::StoredRef;
 
     #[derive(Clone)]
     struct TypeA {}
