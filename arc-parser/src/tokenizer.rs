@@ -19,7 +19,7 @@ pub trait TokenizerExt {
     /// Supported tokens: (, {, [, ", '
     fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>>;
 
-    /// Advances the lexer until the given token is encountered
+    /// Advances the lexer until the given token is encountered, including the token
     fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>>;
 
     fn from_str(s: &str) -> Tokenizer<'_>;
@@ -97,10 +97,24 @@ impl TokenizerExt for Tokenizer<'_> {
         Ok(tokens)
     }
 
-    fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>> {
+    fn parse_until_token(&mut self, end_token: Token) -> Result<Vec<(Token, Span)>> {
         let mut tokens = vec![];
-        todo!("Implement");
-        Ok(tokens)
+
+        loop {
+            let (token, span) = self
+                .next()
+                .ok_or(self.msg("Expected matching token but found end of file!"))?;
+
+            let token = token.map_err(|_| self.unexpected_token())?;
+
+            if token == end_token {
+                tokens.push((token, span));
+
+                return Ok(tokens);
+            } else {
+                tokens.push((token, span));
+            }
+        }
     }
 
     fn from_str(s: &str) -> Tokenizer<'_> {
