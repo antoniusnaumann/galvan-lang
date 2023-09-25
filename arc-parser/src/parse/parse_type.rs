@@ -158,8 +158,28 @@ mod test {
             .collect::<Result<Vec<SpannedToken>>>()?;
         let parsed = parse_struct_type_members(tokens)?;
 
-        assert!(dbg!(parsed.len()) == 2);
-        // TODO: Assert that parsed contains the members
+        assert!(parsed.len() == 2);
+        let a = &parsed[0];
+        let b = &parsed[1];
+
+        assert!(matches!(a.visibility, Visibility::Inherited));
+        assert!(matches!(b.visibility, Visibility::Inherited));
+
+        assert_eq!(a.ident, Ident::new("a".to_owned()));
+        assert_eq!(b.ident, Ident::new("b".to_owned()));
+
+        assert!(matches!(a.r#type, TypeItem::Plain(_)));
+        assert!(matches!(b.r#type, TypeItem::Plain(_)));
+
+        match a.r#type {
+            TypeItem::Plain(ref inner) => assert_eq!(inner.ident, Ident::new("TypeA".to_owned())),
+            _ => unreachable!(),
+        }
+
+        match b.r#type {
+            TypeItem::Plain(ref inner) => assert_eq!(inner.ident, Ident::new("TypeB".to_owned())),
+            _ => unreachable!(),
+        }
 
         Ok(())
     }
