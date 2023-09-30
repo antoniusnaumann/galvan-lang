@@ -71,7 +71,7 @@ impl TokenizerExt for Tokenizer<'_> {
     }
 
     fn unexpected_token(&self) -> Error {
-        self.msg("Unexpected token at:")
+        self.msg("Unexpected token")
     }
 
     fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
@@ -141,7 +141,7 @@ impl TokenExt for SpannedToken {
     fn ensure_token(self, token: Token) -> Result<SpannedToken> {
         if self.0 != token {
             Err((
-                format!("Expected token {:#?} but found {:#?} at:", token, self.0),
+                format!("Expected token {:#?} but found {:#?}", token, self.0),
                 self.1,
             ))
         } else {
@@ -152,7 +152,7 @@ impl TokenExt for SpannedToken {
     fn ident(self) -> Result<String> {
         match self.0 {
             Token::Ident(name) => Ok(name),
-            _ => Err(("Invalid identifier at:".to_string(), self.1)),
+            _ => Err(("Invalid identifier".to_string(), self.1)),
         }
     }
 }

@@ -133,14 +133,14 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_parse_struct_type() -> Result<()> {
+    fn test_parse_struct_type() -> DisplayResult<'static, ()> {
         // Note that type keyword is expected to be consumed already
         let src = "TypeA {
-                        member_b: TypeB
-                        member_c: TypeC
-                   }";
+    member_b -> TypeB
+    member_c: TypeC
+}";
         let mut tokenizer = Tokenizer::from_str(src);
-        let parsed = parse_type(&mut tokenizer, &Modifiers::default())?;
+        let parsed = parse_type(&mut tokenizer, &Modifiers::default()).leak_with_source(&src)?;
 
         assert!(matches!(parsed, TypeDecl::StructType(_)));
 
@@ -148,15 +148,16 @@ mod test {
     }
 
     #[test]
-    fn test_parse_struct_type_members() -> Result<()> {
+    fn test_parse_struct_type_members() -> DisplayResult<'static, ()> {
         let src = "
-            a: TypeA
-            b: TypeB";
+a: TypeA
+b: TypeB";
         let tokenizer = Tokenizer::from_str(src);
         let tokens = tokenizer
             .map(|spanned_token| spanned_token.unpack())
-            .collect::<Result<Vec<SpannedToken>>>()?;
-        let parsed = parse_struct_type_members(tokens)?;
+            .collect::<Result<Vec<SpannedToken>>>()
+            .leak_with_source(&src)?;
+        let parsed = parse_struct_type_members(tokens).leak_with_source(&src)?;
 
         assert!(parsed.len() == 2);
         let a = &parsed[0];

@@ -34,9 +34,8 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
                 m.reset();
             }
             Token::BuildKeyword => {
-                return lexer.err(
-                    "The build keyword is reserved but currently not implemented yet. Found at: ",
-                );
+                return lexer
+                    .err("The build keyword is reserved but currently not implemented yet.");
             }
 
             Token::PublicKeyword if !m.has_vis_modifier() => m.visibility = Visibility::Public,
@@ -56,7 +55,7 @@ pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
         .next()
         .ok_or(lexer.msg("Expected function name but found end of file."))?;
 
-    let token = token.map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+    let token = token.map_err(|_| lexer.msg("Invalid identifier for type name"))?;
 
     todo!("Parse function declaration")
 }
@@ -66,7 +65,7 @@ pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
         .next()
         .ok_or(lexer.msg("Expected main body but found end of file."))?;
 
-    let token = token.map_err(|_| lexer.msg("Invalid identifier, expected '{' at: "))?;
+    let token = token.map_err(|_| lexer.msg("Invalid identifier, expected '{'"))?;
 
     todo!("Parse main function")
 }
@@ -76,8 +75,8 @@ pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
         .next()
         .ok_or(lexer.msg("Expected test body or test description but found end of file."))?;
 
-    let token = token
-        .map_err(|_| lexer.msg("Invalid identifier, expected '{' or test description at: "))?;
+    let token =
+        token.map_err(|_| lexer.msg("Invalid identifier, expected '{' or test description"))?;
 
     todo!("Parse main function")
 }
