@@ -8,14 +8,15 @@ use crate::*;
 pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
     let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected type name but found end of file."))?;
-    let token = token.map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+        .ok_or(lexer.eof("Expected type name but found end of file."))?;
+    let token = token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
 
     if let Token::Ident(name) = token {
         let (token, _span) = lexer
             .next()
-            .ok_or(lexer.msg("Expected type name but found end of file."))?;
-        let token = token.map_err(|_| lexer.msg("Invalid identifier for type name at: "))?;
+            .ok_or(lexer.eof("Expected type name but found end of file."))?;
+        let token =
+            token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
 
         match token {
             Token::BraceOpen => {
@@ -48,18 +49,18 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                 };
                 Ok(TypeDecl::AliasType(t))
             }
-            _ => lexer.err(format!(
+            _ => Err(lexer.unexpected(format!(
                 "Expected one of the following:
                         - type alias:  'type {name} = TypeA'
                         - struct type: 'type {name} {{ attr: TypeA, ... }}'
                         - tuple type:  'type {name}(TypeA, TypeB, ...)
                                 
-                    ...but found unexpected token instead at:
+                    ...but found unexpected token instead
                     "
-            )),
+            ))),
         }
     } else {
-        lexer.err("Invalid identifier for type name at: ")
+        Err(lexer.invalid_idenfier("Invalid identifier for type name at: "))
     }
 }
 
@@ -136,7 +137,7 @@ mod test {
     fn test_parse_struct_type() -> DisplayResult<'static, ()> {
         // Note that type keyword is expected to be consumed already
         let src = "TypeA {
-    member_b -> TypeB
+    member_b: TypeB
     member_c: TypeC
 }";
         let mut tokenizer = Tokenizer::from_str(src);

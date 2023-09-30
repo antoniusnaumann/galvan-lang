@@ -34,8 +34,10 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
                 m.reset();
             }
             Token::BuildKeyword => {
-                return lexer
-                    .err("The build keyword is reserved but currently not implemented yet.");
+                return Err(lexer.msg(
+                    "The build keyword is reserved but currently not implemented yet.",
+                    "keyword used here",
+                ));
             }
 
             Token::PublicKeyword if !m.has_vis_modifier() => m.visibility = Visibility::Public,
@@ -53,9 +55,9 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
 pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
     let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected function name but found end of file."))?;
+        .ok_or(lexer.eof("Expected function name but found end of file."))?;
 
-    let token = token.map_err(|_| lexer.msg("Invalid identifier for type name"))?;
+    let token = token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
 
     todo!("Parse function declaration")
 }
@@ -63,9 +65,9 @@ pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
 pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
     let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected main body but found end of file."))?;
+        .ok_or(lexer.eof("Expected main body but found end of file."))?;
 
-    let token = token.map_err(|_| lexer.msg("Invalid identifier, expected '{'"))?;
+    let token = token.map_err(|_| lexer.invalid_idenfier("Invalid identifier, expected '{'"))?;
 
     todo!("Parse main function")
 }
@@ -73,10 +75,11 @@ pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
 pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
     let (token, _span) = lexer
         .next()
-        .ok_or(lexer.msg("Expected test body or test description but found end of file."))?;
+        .ok_or(lexer.eof("Expected test body or test description but found end of file."))?;
 
-    let token =
-        token.map_err(|_| lexer.msg("Invalid identifier, expected '{' or test description"))?;
+    let token = token.map_err(|_| {
+        lexer.invalid_idenfier("Invalid identifier, expected '{' or test description")
+    })?;
 
     todo!("Parse main function")
 }

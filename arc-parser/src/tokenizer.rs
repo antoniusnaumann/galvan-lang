@@ -1,19 +1,31 @@
 use arc_lexer::Token;
 use logos::{Logos, Span, SpannedIter};
 
-pub type Error = (String, Span);
+use crate::TokenError;
+
+pub type Error = TokenError;
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub type Tokenizer<'a> = SpannedIter<'a, Token>;
 
 pub trait TokenizerExt {
-    fn err<S, T>(&self, msg: S) -> Result<T>
-    where
-        S: Into<String>;
-    fn msg<S>(&self, msg: S) -> Error
-    where
-        S: Into<String>;
-    fn unexpected_token(&self) -> Error;
+    fn msg(&self, msg: impl Into<String>, annotation: impl Into<String>) -> Error;
+
+    fn invalid_idenfier(&self, msg: impl Into<String>) -> Error {
+        self.msg(msg, "Invalid identifier here")
+    }
+
+    fn eof(&self, msg: impl Into<String>) -> Error {
+        self.msg(msg, "File ends here")
+    }
+
+    fn unexpected_token(&self) -> Error {
+        self.unexpected("Unexpected token")
+    }
+
+    fn unexpected(&self, msg: impl Into<String>) -> Error {
+        self.msg(msg, "Expected ") // TODO: list expected tokens here
+    }
 
     /// Advances the lexer until the next matching token
     /// Supported tokens: (, {, [, ", '
@@ -56,22 +68,12 @@ impl MatchingToken {
 }
 
 impl TokenizerExt for Tokenizer<'_> {
-    fn err<S, T>(&self, msg: S) -> Result<T>
-    where
-        S: Into<String>,
-    {
-        Err(self.msg(msg))
-    }
-
-    fn msg<S>(&self, msg: S) -> Error
-    where
-        S: Into<String>,
-    {
-        (msg.into(), self.span())
-    }
-
-    fn unexpected_token(&self) -> Error {
-        self.msg("Unexpected token")
+    fn msg(&self, msg: impl Into<String>, annotation: impl Into<String>) -> Error {
+        Error {
+            msg: msg.into(),
+            span: self.span(),
+            annotation: annotation.into(),
+        }
     }
 
     fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
@@ -81,7 +83,7 @@ impl TokenizerExt for Tokenizer<'_> {
         while dangling_open > 0 {
             let (token, span) = self
                 .next()
-                .ok_or(self.msg("Expected matching token but found end of file!"))?;
+                .ok_or(self.eof("Expected matching token but found end of file!"))?;
 
             let token = token.map_err(|_| self.unexpected_token())?;
 
@@ -103,7 +105,7 @@ impl TokenizerExt for Tokenizer<'_> {
         loop {
             let (token, span) = self
                 .next()
-                .ok_or(self.msg("Expected matching token but found end of file!"))?;
+                .ok_or(self.eof("Expected matching token but found end of file!"))?;
 
             let token = token.map_err(|_| self.unexpected_token())?;
 
@@ -140,10 +142,11 @@ pub trait OptTokenExt {
 impl TokenExt for SpannedToken {
     fn ensure_token(self, token: Token) -> Result<SpannedToken> {
         if self.0 != token {
-            Err((
-                format!("Expected token {:#?} but found {:#?}", token, self.0),
-                self.1,
-            ))
+            Err(TokenError {
+                msg: format!("Expected token {:#?} but found {:#?}", token, self.0),
+                span: self.1,
+                annotation: format!("Expected {:#?} here", token),
+            })
         } else {
             Ok(self)
         }
@@ -152,7 +155,11 @@ impl TokenExt for SpannedToken {
     fn ident(self) -> Result<String> {
         match self.0 {
             Token::Ident(name) => Ok(name),
-            _ => Err(("Invalid identifier".to_string(), self.1)),
+            _ => Err(TokenError {
+                msg: "Invalid identifier".to_owned(),
+                span: self.1,
+                annotation: "Invalid identifier here".to_owned(),
+            }),
         }
     }
 }
@@ -162,8 +169,12 @@ impl TokenExt for Option<SpannedToken> {
         if let Some(t) = self {
             t.ensure_token(token)
         } else {
-            // TODO: Return a span that makes sense here (or dont and just return an optional)
-            Err((format!("Expected token {:#?} but found none", token), 0..0))
+            Err(TokenError {
+                msg: format!("Expected token {:#?} but found none", token),
+                // TODO: Return a span that makes sense here (or dont and just return an optional)
+                span: 0..0,
+                annotation: "".to_owned(),
+            })
         }
     }
 
@@ -178,8 +189,12 @@ impl OptTokenExt for Option<SpannedToken> {
         if let Some(t) = self {
             Ok(t)
         } else {
-            // TODO: Return a span that makes sense here (or dont and just return an optional)
-            Err(("Expected token but found none".to_owned(), 0..0))
+            Err(TokenError {
+                msg: "Expected token but found none".to_owned(),
+                // TODO: Return a span that makes sense here (or dont and just return an optional)
+                span: 0..0,
+                annotation: "".to_owned(),
+            })
         }
     }
 }
@@ -191,7 +206,12 @@ impl OptTokenExt for SpannedParseResult {
         if let Ok(t) = token {
             Ok((t, span))
         } else {
-            Err(("Expected token but found none".to_owned(), span))
+            Err(TokenError {
+                msg: "Expected token but found none".to_owned(),
+                // TODO: Return a span that makes sense here (or dont and just return an optional)
+                span,
+                annotation: "".to_owned(),
+            })
         }
     }
 }

@@ -1,31 +1,31 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 use annotate_snippets::display_list::{DisplayList, FormatOptions};
 use annotate_snippets::snippet::{Annotation, AnnotationType, Slice, Snippet, SourceAnnotation};
 use derive_more::{Display, From};
 
-use crate::Error;
+use crate::TokenError;
 
 pub trait FormattedOutput {
     fn formatted_output<'a>(&'a self, source: &'a str) -> DisplayList;
 }
 
-impl FormattedOutput for Error {
+impl FormattedOutput for TokenError {
     fn formatted_output<'a>(&'a self, source: &'a str) -> DisplayList {
         let snippet = Snippet {
             title: Some(Annotation {
-                label: Some(&self.0),
+                label: Some(&self.msg),
                 id: None,
                 annotation_type: AnnotationType::Error,
             }),
             footer: vec![],
             slices: vec![Slice {
                 source,
-                line_start: self.1.start,
+                line_start: self.span.start,
                 origin: None,
                 annotations: vec![SourceAnnotation {
-                    range: (self.1.start, self.1.end),
-                    label: &self.0,
+                    range: (self.span.start, self.span.end),
+                    label: &self.annotation,
                     annotation_type: AnnotationType::Error,
                 }],
                 fold: false,
