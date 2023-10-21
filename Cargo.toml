@@ -5,4 +5,10 @@ version = "0.0.0"
 
 [workspace]
 resolver = "2"
-members = ["galvan-core", "galvan-lexer", "galvan-parser", "galvan-transpiler"]
+members = [
+  "galvan-core",
+  "galvan-lexer",
+  "galvan-parser",
+  "galvan-transpiler",
+  "galvan-macro",
+]
