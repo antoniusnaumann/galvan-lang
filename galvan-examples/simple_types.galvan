@@ -1,0 +1,24 @@
+// An example file containing simple struct types without stored refs or more complex types such as arrays or dicts
+
+pub type Struct {
+  a: TypeA,
+  b: TypeB,
+}
+
+/*
+A block comment
+*/
+
+pub type OtherStruct {
+  member: TypeC
+
+  other_member: TypeD
+}
+
+/// A type alias for Struct
+type Alias = Struct
+
+/*
+ * A tuple type
+ */
+type Tuple(TypeA, TypeB)

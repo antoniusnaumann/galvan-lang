@@ -1,8 +1,10 @@
-use std::sync::Arc;
-
 use logos::Logos;
 
 use crate::LexerString;
+
+pub trait GalvanToken {
+    fn stringified(&self) -> String;
+}
 
 #[derive(PartialEq, Eq, Debug, Logos)]
 #[logos(skip r"[ \t\f]+")]
@@ -42,18 +44,18 @@ pub enum Token {
     DocComment, //(&'source str),
     #[regex(r"//[^/][^\n]*", logos::skip)]
     Comment, //(&'source str),
-    #[regex(r"/\*\*.*\*\*/", logos::skip)]
+    #[regex(r"/\*\*([^*]|\*[^/])*\*/", logos::skip, priority = 6)]
     MultiLineDocComment, //(&'source str),
-    #[regex(r"/\*.*\*/", logos::skip)]
+    #[regex(r"/\*([^*]|\*[^/])*\*/", logos::skip, priority = 5)]
     MultiLineComment, //(&'source str),
     // Tokens for multi line comments that can be used to detect dangling comments
-    #[token("/*")]
+    #[token("/*", priority = 1)]
     StarSlashOpen,
-    #[token("*/")]
+    #[token("*/", priority = 1)]
     StarSlashClose,
-    #[token("/**")]
+    #[token("/**", priority = 1)]
     DoubleStarSlashOpen,
-    #[token("**/")]
+    #[token("**/", priority = 1)]
     DoubleStarSlashClose,
 
     // Arithmetic Operators

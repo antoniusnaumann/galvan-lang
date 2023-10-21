@@ -18,7 +18,6 @@ fn main() {
 
     // TODO: Aggregate and print errors
 
-    // TODO: Transpile to Rust
     for (parsed, source) in src {
         println!();
         println!("----- Source: {:?} -----", source.origin());

@@ -5,8 +5,7 @@ use crate::*;
 mod parse_type;
 pub use parse_type::*;
 
-// TODO: Introduce type for parsed source
-type ParsedSource = Vec<RootItem>;
+pub type ParsedSource = Vec<RootItem>;
 
 pub fn parse_source(source: &Source) -> Result<ParsedSource> {
     let mut lexer = Tokenizer::from_str(source);
@@ -18,10 +17,12 @@ pub fn parse_root(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
     // TODO: store types, fns, main, etc. separately and add their span
     let mut parsed = Vec::new();
 
+    let allowed = ["fn", "type", "main", "test", "pub", "async", "const"];
+
     // TODO: Drain the spanned lexer completely into a peekable iterator and store occuring errors
     while let Some(spanned_token) = lexer.next() {
         let (token, _span) = spanned_token;
-        let token = token.map_err(|_| lexer.unexpected_token())?;
+        let token = token.map_err(|_| lexer.invalid_token())?;
 
         match token {
             Token::FnKeyword => {
@@ -60,8 +61,10 @@ pub fn parse_root(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
             Token::ConstKeyword if !m.has_const_modifier() => m.constness = Const::Const,
             Token::AsyncKeyword if !m.has_async_modifier() => m.asyncness = Async::Async,
 
+            Token::Newline => continue,
+
             // TODO: Add stringified token
-            _ => return Err(lexer.unexpected_token()),
+            _ => return Err(lexer.unexpected_token(token, &allowed)),
         }
     }
 

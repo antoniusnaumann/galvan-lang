@@ -9,5 +9,14 @@ version.workspace = true
 [dependencies]
 derive_more = "0.99.17"
 annotate-snippets = { version = "0.9.1", features = ["color"] }
+walkdir = { version = "2.3.1", optional = true }
 
 galvan-lexer = { path = "../galvan-lexer" }
+
+[features]
+exec = ["dep:walkdir"]
+
+[[bin]]
+name = "galvan-parse"
+required-features = ["exec"]
+path = "src/main.rs"

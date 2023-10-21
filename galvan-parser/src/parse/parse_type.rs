@@ -49,15 +49,18 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                 };
                 Ok(TypeDecl::AliasType(t))
             }
-            _ => Err(lexer.unexpected(format!(
-                "Expected one of the following:
+            _ => Err(lexer.unexpected(
+                format!(
+                    "Expected one of the following:
                         - type alias:  'type {name} = TypeA'
                         - struct type: 'type {name} {{ attr: TypeA, ... }}'
                         - tuple type:  'type {name}(TypeA, TypeB, ...)
                                 
                     ...but found unexpected token instead
                     "
-            ))),
+                ),
+                &[],
+            )),
         }
     } else {
         Err(lexer.invalid_idenfier("Invalid identifier for type name at: "))

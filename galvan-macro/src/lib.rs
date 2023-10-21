@@ -25,7 +25,7 @@ pub fn token(input: TokenStream) -> TokenStream {
     let token = lex_input(parse_macro_input!(input as LitStr));
     let token_stream: proc_macro2::TokenStream = match token {
         Token::Ident(ident) => {
-            panic!("Cannot create ident with this macro, use `ident!(\"{ident}\")` instead!")
+            panic!("\'{ident}\' is not a valid token. To create an identifier, use `ident!(\"{ident}\")` instead!")
         }
         _ => {
             let debug = format!("galvan_lexer::Token::{:?}", token);

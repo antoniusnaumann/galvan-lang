@@ -17,16 +17,29 @@ pub trait TokenizerExt {
         self.msg(msg, "Invalid identifier here")
     }
 
+    fn invalid_token(&self) -> Error {
+        self.msg("Invalid token", "Invalid token here")
+    }
+
     fn eof(&self, msg: impl Into<String>) -> Error {
         self.msg(msg, "File ends here")
     }
 
-    fn unexpected_token(&self) -> Error {
-        self.unexpected("Unexpected token")
+    fn unexpected_token(&self, found: Token, expected: &[&str]) -> Error {
+        self.unexpected(format!("Unexpected token: {:?}", found), expected)
     }
 
-    fn unexpected(&self, msg: impl Into<String>) -> Error {
-        self.msg(msg, "Expected ") // TODO: list expected tokens here
+    fn unexpected(&self, msg: impl Into<String>, expected: &[&str]) -> Error {
+        if expected.is_empty() {
+            return self.msg(msg, "Unexpected token");
+        }
+
+        let expected = expected
+            .iter()
+            .map(|s| format!("'{s}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.msg(msg, format!("Expected: {expected}")) // TODO: list expected tokens here
     }
 
     /// Advances the lexer until the next matching token
@@ -87,7 +100,7 @@ impl TokenizerExt for Tokenizer<'_> {
                 .next()
                 .ok_or(self.eof("Expected matching token but found end of file!"))?;
 
-            let token = token.map_err(|_| self.unexpected_token())?;
+            let token = token.map_err(|_| self.invalid_token())?;
 
             if token == matching.closing() {
                 dangling_open -= 1;
@@ -109,7 +122,7 @@ impl TokenizerExt for Tokenizer<'_> {
                 .next()
                 .ok_or(self.eof("Expected matching token but found end of file!"))?;
 
-            let token = token.map_err(|_| self.unexpected_token())?;
+            let token = token.map_err(|_| self.invalid_token())?;
 
             if token == end_token {
                 tokens.push((token, span));
