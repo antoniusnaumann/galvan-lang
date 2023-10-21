@@ -1,4 +1,4 @@
-use crate::{AnnotationType, ParserMessage, Source, Span};
+use crate::{AnnotationType, AsParserMessage, ParserMessage, Source, SourceAnnotation, Span};
 
 pub struct TokenError {
     pub msg: String,
@@ -6,21 +6,25 @@ pub struct TokenError {
     pub annotation: String,
 }
 
-impl Into<ParserMessage<'_>> for (Source, TokenError) {
-    fn into(self) -> ParserMessage<'static> {
-        let (src, err) = self;
+impl AsParserMessage for TokenError {
+    fn as_parser_message(&self, src: Source) -> ParserMessage<'_> {
         let TokenError {
             msg,
             span,
             annotation,
-        } = err;
+        } = self;
+
         ParserMessage {
-            issue: msg,
+            issue: msg.into(),
             hint: None,
             msg_type: AnnotationType::Error,
             src,
             // TODO: Create annotations
-            annotations: vec![],
+            annotations: vec![SourceAnnotation {
+                label: annotation,
+                range: (span.start, span.end),
+                annotation_type: AnnotationType::Error,
+            }],
         }
     }
 }

@@ -1,19 +1,22 @@
+use std::borrow::Cow;
 use std::ops::Range;
 
+use annotate_snippets::display_list::FormatOptions;
 pub use annotate_snippets::snippet::AnnotationType;
 pub use annotate_snippets::snippet::SourceAnnotation;
-use annotate_snippets::{
-    display_list::FormatOptions,
-    snippet::{Annotation, Slice, Snippet},
-};
+pub use annotate_snippets::snippet::{Annotation, Slice, Snippet};
 
 use crate::Source;
 
 pub type Span = Range<usize>;
 
+pub trait AsParserMessage {
+    fn as_parser_message(&self, src: Source) -> ParserMessage<'_>;
+}
+
 pub type MessageType = AnnotationType;
 pub struct ParserMessage<'a> {
-    pub issue: String,
+    pub issue: Cow<'a, str>,
     // TODO: This should probably be its own data structure instead of just a string
     pub hint: Option<String>,
     pub msg_type: MessageType,
@@ -21,8 +24,8 @@ pub struct ParserMessage<'a> {
     pub annotations: Vec<SourceAnnotation<'a>>,
 }
 
-impl<'a> Into<Snippet<'a>> for &'a ParserMessage<'a> {
-    fn into(self) -> Snippet<'a> {
+impl<'a> ParserMessage<'a> {
+    pub fn as_snippet(&'a self) -> Snippet<'a> {
         let ParserMessage {
             issue,
             hint,

@@ -8,7 +8,7 @@ version.workspace = true
 
 [dependencies]
 logos = "0.13.0"
-
-galvan-lexer = { path = "../galvan-lexer" }
 derive_more = "0.99.17"
 annotate-snippets = { version = "0.9.1", features = ["color"] }
+
+galvan-lexer = { path = "../galvan-lexer" }

@@ -8,7 +8,12 @@ pub use parse_type::*;
 // TODO: Introduce type for parsed source
 type ParsedSource = Vec<RootItem>;
 
-pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
+pub fn parse_source(source: &Source) -> Result<ParsedSource> {
+    let mut lexer = Tokenizer::from_str(source);
+    parse_root(&mut lexer)
+}
+
+pub fn parse_root(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
     let mut m = Modifiers::new();
     // TODO: store types, fns, main, etc. separately and add their span
     let mut parsed = Vec::new();

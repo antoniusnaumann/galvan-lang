@@ -1,67 +1,97 @@
-use std::fmt::Debug;
+use annotate_snippets::display_list::DisplayList;
 
-use annotate_snippets::display_list::{DisplayList, FormatOptions};
-use annotate_snippets::snippet::{Annotation, AnnotationType, Slice, Snippet, SourceAnnotation};
-use derive_more::{Display, From};
-
-use crate::TokenError;
+use crate::{AsParserMessage, ParserMessage, Source, TokenError};
 
 pub trait FormattedOutput {
-    fn formatted_output<'a>(&'a self, source: &'a str) -> DisplayList;
+    fn as_formatted_output(&self) -> DisplayList;
 }
 
-impl FormattedOutput for TokenError {
-    fn formatted_output<'a>(&'a self, source: &'a str) -> DisplayList {
-        let snippet = Snippet {
-            title: Some(Annotation {
-                label: Some(&self.msg),
-                id: None,
-                annotation_type: AnnotationType::Error,
-            }),
-            footer: vec![],
-            slices: vec![Slice {
-                source,
-                line_start: self.span.start,
-                origin: None,
-                annotations: vec![SourceAnnotation {
-                    range: (self.span.start, self.span.end),
-                    label: &self.annotation,
-                    annotation_type: AnnotationType::Error,
-                }],
-                fold: false,
-            }],
-            opt: FormatOptions {
-                color: true,
-                ..Default::default()
-            },
-        };
+impl FormattedOutput for ParserMessage<'_> {
+    fn as_formatted_output(&self) -> DisplayList {
+        let snippet = self.as_snippet();
 
         DisplayList::from(snippet)
     }
 }
 
-/// Converts a Result into a displayable result with a source string
-pub trait DisplayWithSource {
-    type Success;
-    /// Converts the error case into a formatted error and leaks both the underlying error
-    /// Note: Only use this for tests
-    fn leak_with_source(self, src: &'static str) -> DisplayResult<'static, Self::Success>;
+pub type SourceResult<T> = Result<T, SourceError>;
+pub type SourceError = WithSource<TokenError>;
+
+pub trait ToSourceResult<T> {
+    fn with_source(self, src: &Source) -> SourceResult<T>;
 }
 
-impl<T> DisplayWithSource for crate::Result<T> {
-    type Success = T;
-    fn leak_with_source(self, src: &'static str) -> DisplayResult<'static, Self::Success> {
-        self.map_err(|e| Box::leak(e.into()).formatted_output(src).into())
+impl<T> ToSourceResult<T> for Result<T, TokenError> {
+    fn with_source(self, src: &Source) -> SourceResult<T> {
+        self.map_err(|err| err.with_source(src.clone()))
     }
 }
 
-pub type DisplayResult<'a, T> = std::result::Result<T, DisplayedError<'a>>;
+pub struct WithSource<T> {
+    pub value: T,
+    pub source: Source,
+}
 
-#[derive(From, Display)]
-pub struct DisplayedError<'a>(DisplayList<'a>);
+pub trait ItemWithSource: Sized {
+    fn with_source(self, src: Source) -> WithSource<Self>;
+}
 
-impl Debug for DisplayedError<'_> {
+impl<T> ItemWithSource for T
+where
+    T: AsParserMessage,
+{
+    fn with_source(self, src: Source) -> WithSource<Self> {
+        WithSource {
+            value: self,
+            source: src,
+        }
+    }
+}
+
+impl<T> From<(Source, T)> for WithSource<T>
+where
+    T: AsParserMessage,
+{
+    fn from((source, value): (Source, T)) -> WithSource<T> {
+        WithSource { value, source }
+    }
+}
+
+impl<T> From<(T, Source)> for WithSource<T>
+where
+    T: AsParserMessage,
+{
+    fn from((value, source): (T, Source)) -> WithSource<T> {
+        WithSource { value, source }
+    }
+}
+
+impl<T> std::fmt::Debug for WithSource<T>
+where
+    T: AsParserMessage,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\n\n{}\n", self)
+        writeln!(
+            f,
+            "\n\n{}\n",
+            self.value
+                .as_parser_message(self.source.clone())
+                .as_formatted_output()
+        )
+    }
+}
+
+impl<T> std::fmt::Display for WithSource<T>
+where
+    T: AsParserMessage,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}",
+            self.value
+                .as_parser_message(self.source.clone())
+                .as_formatted_output()
+        )
     }
 }
