@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
 use logos::Logos;
+
+use crate::LexerString;
 
 #[derive(PartialEq, Eq, Debug, Logos)]
 #[logos(skip r"[ \t\f]+")]
@@ -28,11 +32,21 @@ pub enum Token {
     Comma,
     #[regex(r"\r?\n")]
     Newline,
+
     // Comments
-    #[token("///")]
-    TripleSlash,
-    #[token("//")]
-    DoubleSlash,
+    // For now comments are simply skipped
+    // TODO: Capture comments and add them to syntax tree
+    // TODO: Invoke separate parser for comment, this
+    //  allows checking doc comments and allowing nested comments
+    #[regex(r"///[^\n]*", logos::skip)]
+    DocComment, //(&'source str),
+    #[regex(r"//[^/][^\n]*", logos::skip)]
+    Comment, //(&'source str),
+    #[regex(r"/\*\*.*\*\*/", logos::skip)]
+    MultiLineDocComment, //(&'source str),
+    #[regex(r"/\*.*\*/", logos::skip)]
+    MultiLineComment, //(&'source str),
+    // Tokens for multi line comments that can be used to detect dangling comments
     #[token("/*")]
     StarSlashOpen,
     #[token("*/")]
@@ -196,6 +210,6 @@ pub enum Token {
     // TODO: Allow all unicode characters that are valid for Rusts identifiers
     // TODO: Handle raw identifiers
     // TODO: Allow ? in identifiers and handle that in parser
-    #[regex(r"[_a-zA-Z]?[_a-zA-Z0-9]*", |lex| lex.slice().to_owned())]
-    Ident(String),
+    #[regex(r"[_a-zA-Z]?[_a-zA-Z0-9]*", |lex| LexerString::from(lex.slice()))]
+    Ident(LexerString),
 }

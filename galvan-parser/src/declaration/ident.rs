@@ -1,10 +1,11 @@
 use derive_more::Display;
+use galvan_lexer::LexerString;
 
 #[derive(Debug, Display, PartialEq, Eq)]
-pub struct Ident(String);
+pub struct Ident(LexerString);
 
 impl Ident {
-    pub fn new<S: ToOwned<Owned = String>>(name: S) -> Ident {
-        Ident(name.to_owned())
+    pub fn new(name: impl Into<LexerString>) -> Ident {
+        Ident(name.into())
     }
 }

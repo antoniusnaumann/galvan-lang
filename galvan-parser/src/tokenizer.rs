@@ -1,5 +1,7 @@
+use galvan_lexer::LexerString;
 use galvan_lexer::Token;
-use logos::{Logos, Span, SpannedIter};
+use galvan_lexer::TokenExt as GalvanLexerTokenExt;
+use galvan_lexer::{Span, SpannedIter};
 
 use crate::TokenError;
 
@@ -131,7 +133,7 @@ pub trait TokenExt {
     fn ensure_token(self, token: Token) -> Result<SpannedToken>;
 
     /// Ensures that the receiver is a valid identifier token and gets its name, returns an error otherwise
-    fn ident(self) -> Result<String>;
+    fn ident(self) -> Result<LexerString>;
 }
 
 pub trait OptTokenExt {
@@ -152,7 +154,7 @@ impl TokenExt for SpannedToken {
         }
     }
 
-    fn ident(self) -> Result<String> {
+    fn ident(self) -> Result<LexerString> {
         match self.0 {
             Token::Ident(name) => Ok(name),
             _ => Err(TokenError {
@@ -178,7 +180,7 @@ impl TokenExt for Option<SpannedToken> {
         }
     }
 
-    fn ident(self) -> Result<String> {
+    fn ident(self) -> Result<LexerString> {
         let t = self.unpack()?;
         t.ident()
     }

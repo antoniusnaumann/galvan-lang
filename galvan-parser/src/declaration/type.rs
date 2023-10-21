@@ -1,3 +1,5 @@
+use galvan_lexer::LexerString;
+
 use crate::*;
 
 #[derive(Debug)]
@@ -43,7 +45,7 @@ pub enum TypeItem<T> {
 }
 
 impl TypeItem<BasicTypeItem> {
-    pub fn plain(ident: String) -> Self {
+    pub fn plain(ident: LexerString) -> Self {
         Self::Plain(BasicTypeItem {
             ident: Ident::new(ident),
         })
