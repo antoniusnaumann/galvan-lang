@@ -1,4 +1,4 @@
-use arc_lexer::Token;
+use galvan_lexer::Token;
 use logos::{Logos, Span, SpannedIter};
 
 use crate::TokenError;

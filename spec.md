@@ -1,6 +1,6 @@
-# Arc
+# Galvan
 ## Examples
-```arc
+```galvan
 type TypeA
 type TypeB
 type MyType {
@@ -35,7 +35,7 @@ main {
 }
 ```
 or expressed with keyword syntax:
-```arc
+```galvan
 type TypeA
 type TypeB
 type MyType {

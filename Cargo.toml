@@ -5,8 +5,4 @@ version = "0.0.0"
 
 [workspace]
 resolver = "2"
-members = [
-  "arc-core",
-  "arc-lexer",
-  "arc-parser",
-]
+members = ["galvan-core", "galvan-lexer", "galvan-parser"]
