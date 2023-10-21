@@ -6,10 +6,12 @@ mod parse_type;
 pub use parse_type::*;
 
 // TODO: Introduce type for parsed source
-type ParsedSource = ();
+type ParsedSource = Vec<RootItem>;
 
 pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
     let mut m = Modifiers::new();
+    // TODO: store types, fns, main, etc. separately and add their span
+    let mut parsed = Vec::new();
 
     // TODO: Drain the spanned lexer completely into a peekable iterator and store occuring errors
     while let Some(spanned_token) = lexer.next() {
@@ -18,20 +20,29 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
 
         match token {
             Token::FnKeyword => {
-                parse_fn(lexer, &m)?;
+                let parsed_fn = parse_fn(lexer, &m)?;
                 m.reset();
+
+                parsed.push(RootItem::Fn(parsed_fn));
             }
             Token::TypeKeyword => {
-                parse_type(lexer, &m)?;
+                let parsed_type = parse_type(lexer, &m)?;
                 m.reset();
+
+                parsed.push(RootItem::Type(parsed_type));
             }
             Token::MainKeyword if !m.has_vis_modifier() && !m.has_const_modifier() => {
-                parse_main(lexer, m.asyncness)?;
+                let parsed_main = parse_main(lexer, m.asyncness)?;
                 m.reset();
+
+                // TODO: Ensure that only one main function is defined
+                parsed.push(RootItem::Main(parsed_main));
             }
             Token::TestKeyword if !m.has_vis_modifier() && !m.has_const_modifier() => {
-                parse_test(lexer, m.asyncness)?;
+                let parsed_test = parse_test(lexer, m.asyncness)?;
                 m.reset();
+
+                parsed.push(RootItem::Test(parsed_test));
             }
             Token::BuildKeyword => {
                 return Err(lexer.msg(
@@ -49,7 +60,7 @@ pub fn parse_source(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
         }
     }
 
-    Ok(())
+    Ok(parsed)
 }
 
 pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
@@ -62,7 +73,7 @@ pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
     todo!("Parse function declaration")
 }
 
-pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
+pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<MainDecl> {
     let (token, _span) = lexer
         .next()
         .ok_or(lexer.eof("Expected main body but found end of file."))?;
@@ -72,7 +83,7 @@ pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
     todo!("Parse main function")
 }
 
-pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<()> {
+pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<TestDecl> {
     let (token, _span) = lexer
         .next()
         .ok_or(lexer.eof("Expected test body or test description but found end of file."))?;
