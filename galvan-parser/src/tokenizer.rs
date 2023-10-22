@@ -10,8 +10,16 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub type Tokenizer<'a> = SpannedIter<'a, Token>;
 
-pub trait TokenizerExt {
-    fn msg(&self, msg: impl Into<String>, annotation: impl Into<String>) -> Error;
+pub trait TokenizerMessage {
+    fn current_span(&self) -> Span;
+
+    fn msg(&self, msg: impl Into<String>, annotation: impl Into<String>) -> Error {
+        Error {
+            msg: msg.into(),
+            span: self.current_span(),
+            annotation: annotation.into(),
+        }
+    }
 
     fn invalid_idenfier(&self, msg: impl Into<String>) -> Error {
         self.msg(msg, "Invalid identifier here")
@@ -41,7 +49,9 @@ pub trait TokenizerExt {
             .join(", ");
         self.msg(msg, format!("Expected: {expected}")) // TODO: list expected tokens here
     }
+}
 
+pub trait TokenizerExt {
     /// Advances the lexer until the next matching token
     /// Supported tokens: (, {, [, ", '
     fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>>;
@@ -49,7 +59,19 @@ pub trait TokenizerExt {
     /// Advances the lexer until the given token is encountered, including the token
     fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>>;
 
+    /// Advances the lexer until a non-ignored token is encountered and returns it
+    fn parse_ignore_token(&mut self, ignored: Token) -> Result<Option<(Token, Span)>>;
+}
+
+pub trait SpannedLexerFromStr {
     fn from_str(s: &str) -> Tokenizer<'_>;
+}
+
+impl SpannedLexerFromStr for Tokenizer<'_> {
+    fn from_str(s: &str) -> Tokenizer<'_> {
+        let lexer = Token::lexer(s);
+        lexer.spanned()
+    }
 }
 
 pub enum MatchingToken {
@@ -83,14 +105,6 @@ impl MatchingToken {
 }
 
 impl TokenizerExt for Tokenizer<'_> {
-    fn msg(&self, msg: impl Into<String>, annotation: impl Into<String>) -> Error {
-        Error {
-            msg: msg.into(),
-            span: self.span(),
-            annotation: annotation.into(),
-        }
-    }
-
     fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
         let mut dangling_open = 1;
         let mut tokens = vec![];
@@ -134,13 +148,95 @@ impl TokenizerExt for Tokenizer<'_> {
         }
     }
 
-    fn from_str(s: &str) -> Tokenizer<'_> {
-        let lexer = Token::lexer(s);
-        lexer.spanned()
+    fn parse_ignore_token(&mut self, ignored: Token) -> Result<Option<(Token, Span)>> {
+        while let Some((token, span)) = self.next() {
+            let token = token.map_err(|_| self.invalid_token())?;
+            if token != ignored {
+                return Ok(Some((token, span)));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+impl TokenizerMessage for Tokenizer<'_> {
+    fn current_span(&self) -> Span {
+        self.span()
     }
 }
 
 pub type SpannedToken = (Token, Span);
+pub struct TokenIter<T>
+where
+    T: Iterator<Item = SpannedToken>,
+{
+    iter: T,
+    span: Span,
+}
+
+impl<T> TokenizerMessage for TokenIter<T>
+where
+    T: Iterator<Item = SpannedToken>,
+{
+    fn current_span(&self) -> Span {
+        self.span.clone()
+    }
+}
+
+impl<T> Iterator for TokenIter<T>
+where
+    T: Iterator<Item = SpannedToken>,
+{
+    type Item = SpannedToken;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.iter.next();
+        match next {
+            Some((_, ref span)) => {
+                self.span = span.clone();
+            }
+            None => {
+                self.span = Span {
+                    start: self.span.end,
+                    end: self.span.end,
+                };
+            }
+        }
+
+        next
+    }
+}
+
+impl<T> From<T> for TokenIter<T>
+where
+    T: Iterator<Item = SpannedToken>,
+{
+    fn from(iter: T) -> Self {
+        TokenIter {
+            iter,
+            span: Span { start: 0, end: 0 },
+        }
+    }
+}
+
+impl<T> TokenizerExt for TokenIter<T>
+where
+    T: Iterator<Item = SpannedToken>,
+{
+    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
+        todo!()
+    }
+
+    fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>> {
+        todo!()
+    }
+
+    fn parse_ignore_token(&mut self, ignored: Token) -> Result<Option<(Token, Span)>> {
+        Ok(self.find(|(t, _)| *t != ignored))
+    }
+}
+
 pub trait TokenExt {
     /// Ensures that the receiver is a certain token, returns an error otherwise
     fn ensure_token(self, token: Token) -> Result<SpannedToken>;

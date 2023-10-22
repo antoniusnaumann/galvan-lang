@@ -68,13 +68,13 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
 }
 
 fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructTypeMember>> {
-    let mut token_iter = tokens.into_iter();
+    let mut token_iter: TokenIter<_> = tokens.into_iter().into();
     let mut members = vec![];
     // TODO: Also allow comma here
     // TODO: Allow directly starting with members without newline
     while token_iter.next().ensure_token(Token::Newline).is_ok() {
         // TODO: parse visibility modifiers and keywords such as ref here, probably parse all until newline to do that
-        let field_name = token_iter.next().ident()?;
+        let field_name = token_iter.parse_ignore_token(Token::Newline)?.ident()?;
         let field = Ident::new(field_name);
         let (_, _) = token_iter.next().ensure_token(Token::Colon)?;
         let type_name = token_iter.next().ident()?;
