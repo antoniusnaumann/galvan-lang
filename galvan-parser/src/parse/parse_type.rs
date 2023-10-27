@@ -123,7 +123,7 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
     Ok(members)
 }
 
-fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem<BasicTypeItem>> {
+fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
     // TODO: parse more complex types such as Copy + Clone or Array types or dicts
     let mut token_iter = tokens.into_iter();
     let type_name = token_iter.next().ident()?;

@@ -17,7 +17,7 @@ pub struct TupleTypeDecl {
 #[derive(Debug)]
 pub struct TupleTypeMember {
     pub visibility: Visibility,
-    pub r#type: TypeItem<BasicTypeItem>,
+    pub r#type: TypeItem,
 }
 
 #[derive(Debug)]
@@ -28,23 +28,24 @@ pub struct StructTypeDecl {
 pub struct StructTypeMember {
     pub visibility: Visibility,
     pub ident: Ident,
-    pub r#type: TypeItem<BasicTypeItem>,
+    pub r#type: TypeItem,
 }
 
 #[derive(Debug)]
 pub struct AliasTypeDecl {
-    pub r#type: TypeItem<BasicTypeItem>,
+    pub r#type: TypeItem,
 }
 
 #[derive(Debug)]
-pub enum TypeItem<T> {
-    Array(Box<ArrayTypeItem<T>>),
-    Dictionary(Box<DictionaryTypeItem<T>>),
-    Tuple(Box<TupleTypeItem<T>>),
-    Plain(T),
+pub enum TypeItem {
+    Array(Box<ArrayTypeItem>),
+    Dictionary(Box<DictionaryTypeItem>),
+    Set(Box<SetTypeItem>),
+    Tuple(Box<TupleTypeItem>),
+    Plain(BasicTypeItem),
 }
 
-impl TypeItem<BasicTypeItem> {
+impl TypeItem {
     pub fn plain(ident: LexerString) -> Self {
         Self::Plain(BasicTypeItem {
             ident: Ident::new(ident),
@@ -54,19 +55,24 @@ impl TypeItem<BasicTypeItem> {
 
 // TODO: Add a marker trait to constrain this to only type decls
 #[derive(Debug)]
-pub struct ArrayTypeItem<T> {
-    pub elements: TypeItem<T>,
+pub struct ArrayTypeItem {
+    pub elements: TypeItem,
 }
 
 #[derive(Debug)]
-pub struct DictionaryTypeItem<T> {
-    pub key: TypeItem<T>,
-    pub value: TypeItem<T>,
+pub struct DictionaryTypeItem {
+    pub key: TypeItem,
+    pub value: TypeItem,
 }
 
 #[derive(Debug)]
-pub struct TupleTypeItem<T> {
-    pub elements: Vec<TypeItem<T>>,
+pub struct SetTypeItem {
+    pub elements: TypeItem,
+}
+
+#[derive(Debug)]
+pub struct TupleTypeItem {
+    pub elements: Vec<TypeItem>,
 }
 
 #[derive(Debug)]
