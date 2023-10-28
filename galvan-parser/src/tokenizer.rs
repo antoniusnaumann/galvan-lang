@@ -201,7 +201,7 @@ where
     T: AsRef<[SpannedToken]>,
 {
     fn span_all(&self) -> Option<Span> {
-        let mut iter = TokenIter::from(self.as_ref().into_iter());
+        let mut iter = TokenIter::from(self.as_ref().iter());
         iter.span_all()
     }
 }

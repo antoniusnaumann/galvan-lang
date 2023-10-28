@@ -25,7 +25,7 @@ fn parse_basic_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
         // TODO: ensure that type item is capitalized, otherwise emit a warning
         Some(token) if tokens.len() == 1 => token
             .ident()
-            .map(|s| Ident::new(s))
+            .map(Ident::new)
             .map(|ident| BasicTypeItem { ident }.into())
             .ok(),
         _ => None,
