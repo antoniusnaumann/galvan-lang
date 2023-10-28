@@ -1,3 +1,4 @@
+use derive_more::From;
 use galvan_lexer::LexerString;
 
 use crate::*;
@@ -36,7 +37,7 @@ pub struct AliasTypeDecl {
     pub r#type: TypeItem,
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum TypeItem {
     Array(Box<ArrayTypeItem>),
     Dictionary(Box<DictionaryTypeItem>),

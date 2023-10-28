@@ -6,7 +6,7 @@ pub trait GalvanToken {
     fn stringified(&self) -> String;
 }
 
-#[derive(PartialEq, Eq, Debug, Logos)]
+#[derive(Clone, Debug, PartialEq, Eq, Logos)]
 #[logos(skip r"[ \t\f]+")]
 pub enum Token {
     // Delimiters

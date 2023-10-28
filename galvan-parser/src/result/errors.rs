@@ -2,7 +2,7 @@ use crate::{AnnotationType, AsParserMessage, ParserMessage, Source, SourceAnnota
 
 pub struct TokenError {
     pub msg: String,
-    pub span: Span,
+    pub span: Option<Span>,
     pub annotation: String,
 }
 
@@ -22,7 +22,7 @@ impl AsParserMessage for TokenError {
             // TODO: Create annotations
             annotations: vec![SourceAnnotation {
                 label: annotation,
-                range: (span.start, span.end),
+                range: span.as_ref().map_or((0, 0), |span| (span.start, span.end)),
                 annotation_type: AnnotationType::Error,
             }],
         }

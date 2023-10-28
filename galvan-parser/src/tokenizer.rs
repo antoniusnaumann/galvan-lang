@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use galvan_lexer::LexerString;
 use galvan_lexer::Token;
 use galvan_lexer::TokenExt as GalvanLexerTokenExt;
@@ -16,7 +18,7 @@ pub trait TokenizerMessage {
     fn msg(&self, msg: impl Into<String>, annotation: impl Into<String>) -> Error {
         Error {
             msg: msg.into(),
-            span: self.current_span(),
+            span: self.current_span().into(),
             annotation: annotation.into(),
         }
     }
@@ -166,29 +168,67 @@ impl TokenizerMessage for Tokenizer<'_> {
     }
 }
 
-pub type SpannedToken = (Token, Span);
-pub struct TokenIter<T>
+pub trait SpanInfoForIter {
+    fn span_all(&mut self) -> Option<Span>;
+    /// Gets the span from the current item to the last item, assuming that all items in between are included there
+    fn spanned_error(
+        &mut self,
+        msg: impl Into<String>,
+        annotation: impl Into<String>,
+    ) -> TokenError {
+        TokenError {
+            msg: msg.into(),
+            span: self.span_all(),
+            annotation: annotation.into(),
+        }
+    }
+}
+
+pub trait SpanInfo {
+    fn span_all(&self) -> Option<Span>;
+    /// Gets the span from the first item to the last item, assuming that all items in between are included there
+    fn spanned_error(&self, msg: impl Into<String>, annotation: impl Into<String>) -> TokenError {
+        TokenError {
+            msg: msg.into(),
+            span: self.span_all(),
+            annotation: annotation.into(),
+        }
+    }
+}
+
+impl<T> SpanInfo for T
 where
-    T: Iterator<Item = SpannedToken>,
+    T: AsRef<[SpannedToken]>,
+{
+    fn span_all(&self) -> Option<Span> {
+        let mut iter = TokenIter::from(self.as_ref().into_iter());
+        iter.span_all()
+    }
+}
+
+pub type SpannedToken = (Token, Span);
+pub struct TokenIter<'a, T>
+where
+    T: Iterator<Item = &'a SpannedToken>,
 {
     iter: T,
     span: Span,
 }
 
-impl<T> TokenizerMessage for TokenIter<T>
+impl<'a, T> TokenizerMessage for TokenIter<'a, T>
 where
-    T: Iterator<Item = SpannedToken>,
+    T: Iterator<Item = &'a SpannedToken>,
 {
     fn current_span(&self) -> Span {
         self.span.clone()
     }
 }
 
-impl<T> Iterator for TokenIter<T>
+impl<'a, T> Iterator for TokenIter<'a, T>
 where
-    T: Iterator<Item = SpannedToken>,
+    T: Iterator<Item = &'a SpannedToken>,
 {
-    type Item = SpannedToken;
+    type Item = &'a SpannedToken;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next();
@@ -208,9 +248,9 @@ where
     }
 }
 
-impl<T> From<T> for TokenIter<T>
+impl<'a, T> From<T> for TokenIter<'a, T>
 where
-    T: Iterator<Item = SpannedToken>,
+    T: Iterator<Item = &'a SpannedToken>,
 {
     fn from(iter: T) -> Self {
         TokenIter {
@@ -220,9 +260,9 @@ where
     }
 }
 
-impl<T> TokenizerExt for TokenIter<T>
+impl<'a, T> TokenizerExt for TokenIter<'a, T>
 where
-    T: Iterator<Item = SpannedToken>,
+    T: Iterator<Item = &'a SpannedToken>,
 {
     fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
         todo!()
@@ -233,7 +273,24 @@ where
     }
 
     fn parse_ignore_token(&mut self, ignored: Token) -> Result<Option<(Token, Span)>> {
-        Ok(self.find(|(t, _)| *t != ignored))
+        Ok(self.find(|(t, _)| *t != ignored).cloned())
+    }
+}
+
+impl<'a, T> SpanInfoForIter for TokenIter<'a, T>
+where
+    T: Iterator<Item = &'a SpannedToken>,
+{
+    fn span_all(&mut self) -> Option<Span> {
+        let current = self.next()?;
+        let (_, last) = self.last().unwrap_or(current);
+        let (_, first) = current;
+
+        Range {
+            start: first.start,
+            end: last.end,
+        }
+        .into()
     }
 }
 
@@ -255,7 +312,7 @@ impl TokenExt for SpannedToken {
         if self.0 != token {
             Err(TokenError {
                 msg: format!("Expected token {:#?} but found {:#?}", token, self.0),
-                span: self.1,
+                span: self.1.into(),
                 annotation: format!("Expected {:#?} here", token),
             })
         } else {
@@ -268,10 +325,20 @@ impl TokenExt for SpannedToken {
             Token::Ident(name) => Ok(name),
             _ => Err(TokenError {
                 msg: "Invalid identifier".to_owned(),
-                span: self.1,
-                annotation: "Invalid identifier here".to_owned(),
+                span: self.1.into(),
+                annotation: "Expected identifier here".to_owned(),
             }),
         }
+    }
+}
+
+impl TokenExt for &SpannedToken {
+    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
+        self.clone().ensure_token(token)
+    }
+
+    fn ident(self) -> Result<LexerString> {
+        self.clone().ident()
     }
 }
 
@@ -283,7 +350,7 @@ impl TokenExt for Option<SpannedToken> {
             Err(TokenError {
                 msg: format!("Expected token {:#?} but found none", token),
                 // TODO: Return a span that makes sense here (or dont and just return an optional)
-                span: 0..0,
+                span: None,
                 annotation: "".to_owned(),
             })
         }
@@ -295,6 +362,16 @@ impl TokenExt for Option<SpannedToken> {
     }
 }
 
+impl TokenExt for Option<&SpannedToken> {
+    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
+        self.cloned().ensure_token(token)
+    }
+
+    fn ident(self) -> Result<LexerString> {
+        self.cloned().ident()
+    }
+}
+
 impl OptTokenExt for Option<SpannedToken> {
     fn unpack(self) -> Result<SpannedToken> {
         if let Some(t) = self {
@@ -302,11 +379,16 @@ impl OptTokenExt for Option<SpannedToken> {
         } else {
             Err(TokenError {
                 msg: "Expected token but found none".to_owned(),
-                // TODO: Return a span that makes sense here (or dont and just return an optional)
-                span: 0..0,
+                span: None,
                 annotation: "".to_owned(),
             })
         }
+    }
+}
+
+impl OptTokenExt for Option<&SpannedToken> {
+    fn unpack(self) -> Result<SpannedToken> {
+        self.cloned().unpack()
     }
 }
 
@@ -320,7 +402,7 @@ impl OptTokenExt for SpannedParseResult {
             Err(TokenError {
                 msg: "Expected token but found none".to_owned(),
                 // TODO: Return a span that makes sense here (or dont and just return an optional)
-                span,
+                span: span.into(),
                 annotation: "".to_owned(),
             })
         }

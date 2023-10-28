@@ -40,7 +40,7 @@ impl<T: Type> AsLocalVal for LocalVal<'_, T> {
 impl<T: Type> AsLocalVal for T {
     type Return = T;
     fn as_local_val(&self) -> LocalVal<Self::Return> {
-        Cow::Borrowed(self.borrow())
+        Cow::Borrowed(self)
     }
 }
 

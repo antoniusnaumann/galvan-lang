@@ -5,6 +5,9 @@ use crate::*;
 mod parse_type;
 pub use parse_type::*;
 
+mod parse_type_item;
+pub use parse_type_item::*;
+
 pub type ParsedSource = Vec<RootItem>;
 
 pub fn parse_source(source: &Source) -> Result<ParsedSource> {

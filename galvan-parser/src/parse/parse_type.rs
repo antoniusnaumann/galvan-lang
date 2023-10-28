@@ -68,7 +68,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
 }
 
 fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructTypeMember>> {
-    let mut token_iter: TokenIter<_> = tokens.into_iter().into();
+    let mut token_iter: TokenIter<_> = tokens.iter().into();
     let mut members = vec![];
     // TODO: Also allow comma here
     // TODO: Allow directly starting with members without newline
