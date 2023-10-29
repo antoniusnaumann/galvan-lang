@@ -1,8 +1,8 @@
 // An example file containing simple struct types without stored refs or more complex types such as arrays or dicts
 
 pub type Struct {
-  a: TypeA,
-  b: TypeB,
+  a: TypeA
+  b: TypeB
 }
 
 /*

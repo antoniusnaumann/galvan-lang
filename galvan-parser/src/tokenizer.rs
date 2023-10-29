@@ -112,9 +112,10 @@ impl TokenizerExt for Tokenizer<'_> {
         let mut tokens = vec![];
 
         while dangling_open > 0 {
-            let (token, span) = self
-                .next()
-                .ok_or(self.eof("Expected matching token but found end of file!"))?;
+            let (token, span) = self.next().ok_or(self.eof(format!(
+                "Expected matching token \"{:?}\" but found end of file!",
+                matching.closing()
+            )))?;
 
             let token = token.map_err(|_| self.invalid_token())?;
 
@@ -134,9 +135,10 @@ impl TokenizerExt for Tokenizer<'_> {
         let mut tokens = vec![];
 
         loop {
-            let (token, span) = self
-                .next()
-                .ok_or(self.eof("Expected matching token but found end of file!"))?;
+            let (token, span) = self.next().ok_or(self.eof(format!(
+                "Expected token {:?} but found end of file!",
+                end_token
+            )))?;
 
             let token = token.map_err(|_| self.invalid_token())?;
 
@@ -155,6 +157,62 @@ impl TokenizerExt for Tokenizer<'_> {
             let token = token.map_err(|_| self.invalid_token())?;
             if token != ignored {
                 return Ok(Some((token, span)));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+impl<'a, T> TokenizerExt for TokenIter<'a, T>
+where
+    T: Iterator<Item = &'a SpannedToken>,
+{
+    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
+        let mut dangling_open = 1;
+        let mut tokens = vec![];
+
+        while dangling_open > 0 {
+            let (token, span) = self.next().ok_or(self.eof(format!(
+                "Expected matching token \"{:?}\" but found end of file!",
+                matching.closing()
+            )))?;
+
+            if *token == matching.closing() {
+                dangling_open -= 1;
+            } else if *token == matching.opening() {
+                dangling_open += 1;
+            }
+
+            tokens.push((token.clone(), span.clone()))
+        }
+
+        Ok(tokens)
+    }
+
+    fn parse_until_token(&mut self, end_token: Token) -> Result<Vec<(Token, Span)>> {
+        let mut tokens = vec![];
+
+        loop {
+            let (token, span) = self.next().ok_or(self.eof(format!(
+                "Expected token {:?} but found end of file!",
+                end_token
+            )))?;
+
+            if *token == end_token {
+                tokens.push((token.clone(), span.clone()));
+
+                return Ok(tokens);
+            } else {
+                tokens.push((token.clone(), span.clone()));
+            }
+        }
+    }
+
+    fn parse_ignore_token(&mut self, ignored: Token) -> Result<Option<(Token, Span)>> {
+        while let Some((token, span)) = self.next() {
+            if *token != ignored {
+                return Ok(Some((token.clone(), span.clone())));
             }
         }
 
@@ -257,23 +315,6 @@ where
             iter,
             span: Span { start: 0, end: 0 },
         }
-    }
-}
-
-impl<'a, T> TokenizerExt for TokenIter<'a, T>
-where
-    T: Iterator<Item = &'a SpannedToken>,
-{
-    fn parse_until_matching(&mut self, matching: MatchingToken) -> Result<Vec<(Token, Span)>> {
-        todo!()
-    }
-
-    fn parse_until_token(&mut self, token: Token) -> Result<Vec<(Token, Span)>> {
-        todo!()
-    }
-
-    fn parse_ignore_token(&mut self, ignored: Token) -> Result<Option<(Token, Span)>> {
-        Ok(self.find(|(t, _)| *t != ignored).cloned())
     }
 }
 

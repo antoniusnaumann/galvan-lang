@@ -1,8 +1,11 @@
 use std::vec::IntoIter;
 
 use galvan_lexer::Token;
+use galvan_macro::token;
 
 use crate::*;
+
+use super::parse_type_item;
 
 /// Parses a type definition. This method assumes that modifiers and the type keyword were already consumed
 pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
@@ -22,7 +25,6 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
             Token::BraceOpen => {
                 let mut tokens = lexer.parse_until_matching(MatchingToken::Brace)?;
                 let (_, _) = tokens.pop().ensure_token(Token::BraceClose)?;
-                tokens.trim_trailing(Token::Newline);
 
                 let members = parse_struct_type_members(tokens)?;
                 let t = StructTypeDecl { members };
@@ -31,7 +33,6 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
             Token::ParenOpen => {
                 let mut tokens = lexer.parse_until_matching(MatchingToken::Paren)?;
                 let (_, _) = tokens.pop().ensure_token(Token::ParenClose)?;
-                tokens.trim_trailing(Token::Newline);
 
                 let members = parse_tuple_type_members(tokens)?;
                 let t = TupleTypeDecl { members };
@@ -40,8 +41,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
             Token::Assign => {
                 // TODO: Allow newlines after some symbols like +
                 // TODO: Also allow an end of file here
-                let mut tokens = lexer.parse_until_token(Token::Newline)?;
-                let (_, _) = tokens.pop().ensure_token(Token::Newline)?;
+                let tokens = lexer.parse_until_token(Token::Newline)?;
 
                 let aliased_type = parse_type_alias(tokens)?;
                 let t = AliasTypeDecl {
@@ -72,16 +72,14 @@ fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructType
     let mut members = vec![];
     // TODO: Also allow comma here
     // TODO: Allow directly starting with members without newline
-    while token_iter.next().ensure_token(Token::Newline).is_ok() {
+    while let Some(field_name) = token_iter.parse_ignore_token(Token::Newline)? {
         // TODO: parse visibility modifiers and keywords such as ref here, probably parse all until newline to do that
-        let field_name = token_iter.parse_ignore_token(Token::Newline)?.ident()?;
+        let field_name = field_name.ident()?;
         let field = Ident::new(field_name);
         let (_, _) = token_iter.next().ensure_token(Token::Colon)?;
-        let type_name = token_iter.next().ident()?;
 
-        let member_type = TypeItem::Plain(BasicTypeItem {
-            ident: Ident::new(type_name),
-        });
+        let type_tokens = token_iter.parse_until_token(token!("\n"))?;
+        let member_type = parse_type_item(type_tokens)?;
 
         let member = StructTypeMember {
             visibility: Visibility::Inherited,
@@ -102,6 +100,7 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
     ) -> Result<()> {
         // TODO: parse visibility modifiers and keywords here
         let type_name = token_iter.next().ident()?;
+        // TODO: parse all kinds of type items here
         let member_type = TypeItem::plain(type_name);
         let member = TupleTypeMember {
             visibility: Visibility::Inherited,
@@ -124,10 +123,9 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
 }
 
 fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
-    // TODO: parse more complex types such as Copy + Clone or Array types or dicts
-    let mut token_iter = tokens.into_iter();
-    let type_name = token_iter.next().ident()?;
-    let member_type = TypeItem::plain(type_name);
+    let mut token_iter: TokenIter<_> = tokens.iter().into();
+    let type_tokens = token_iter.parse_until_token(token!("\n"))?;
+    let member_type = parse_type_item(type_tokens)?;
 
     Ok(member_type)
 }

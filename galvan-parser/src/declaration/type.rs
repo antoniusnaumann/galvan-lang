@@ -39,11 +39,21 @@ pub struct AliasTypeDecl {
 
 #[derive(Debug, From)]
 pub enum TypeItem {
+    // #[from(forward)]
     Array(Box<ArrayTypeItem>),
+    // #[from(forward)]
     Dictionary(Box<DictionaryTypeItem>),
+    // #[from(forward)]
     Set(Box<SetTypeItem>),
+    // #[from(forward)]
     Tuple(Box<TupleTypeItem>),
     Plain(BasicTypeItem),
+}
+
+impl From<Ident> for TypeItem {
+    fn from(value: Ident) -> Self {
+        Self::Plain(BasicTypeItem { ident: value })
+    }
 }
 
 impl TypeItem {
@@ -51,6 +61,22 @@ impl TypeItem {
         Self::Plain(BasicTypeItem {
             ident: Ident::new(ident),
         })
+    }
+
+    pub fn array(elements: TypeItem) -> Self {
+        Self::Array(Box::new(ArrayTypeItem { elements }))
+    }
+
+    pub fn dict(key: TypeItem, value: TypeItem) -> Self {
+        Self::Dictionary(Box::new(DictionaryTypeItem { key, value }))
+    }
+
+    pub fn set(elements: TypeItem) -> Self {
+        Self::Set(Box::new(SetTypeItem { elements }))
+    }
+
+    pub fn tuple(elements: Vec<TypeItem>) -> Self {
+        Self::Tuple(Box::new(TupleTypeItem { elements }))
     }
 }
 
