@@ -13,7 +13,12 @@ pub fn parse_type_item(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
 }
 
 fn parse_type_item_rec(tokens: &[SpannedToken]) -> Option<TypeItem> {
-    let type_item_parsers = [parse_basic_type_item.boxed(), parse_array_type_item.boxed()];
+    let type_item_parsers = [
+        parse_basic_type_item.boxed(),
+        parse_array_type_item.boxed(),
+        parse_dict_type_item.boxed(),
+        parse_ordered_dict_type_item.boxed(),
+    ];
 
     for parser in &type_item_parsers {
         let result = parser.try_parse(tokens);
@@ -37,17 +42,51 @@ fn parse_basic_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
 }
 
 fn parse_array_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
-    let tokens = dbg!(tokens);
+    parse_enclosed(MatchingToken::Bracket, tokens, |t| {
+        parse_type_item_rec(&t).map(|elements| TypeItem::array(elements))
+    })
+}
+
+fn parse_dict_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
+    parse_enclosed(MatchingToken::Brace, tokens, |t| {
+        let (k, v) = parse_key_value(t)?;
+        Some(TypeItem::dict(k, v))
+    })
+}
+
+fn parse_ordered_dict_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
+    parse_enclosed(MatchingToken::Bracket, tokens, |t| {
+        let (k, v) = parse_key_value(t)?;
+        Some(TypeItem::ordered_dict(k, v))
+    })
+}
+
+fn parse_enclosed(
+    delimiters: MatchingToken,
+    tokens: &[SpannedToken],
+    parse: impl FnOnce(&[SpannedToken]) -> Option<TypeItem>,
+) -> Option<TypeItem> {
     match (tokens.get(0), tokens.last()) {
         (Some(first), Some(last))
-            if first.ensure_token(token!("[")).is_ok()
-                && last.ensure_token(token!("]")).is_ok() =>
+            if first.ensure_token(delimiters.opening()).is_ok()
+                && last.ensure_token(delimiters.closing()).is_ok() =>
         {
-            parse_type_item_rec(&tokens[1..tokens.len() - 1])
-                .map(|elements| TypeItem::array(elements))
+            parse(&tokens[1..tokens.len() - 1])
         }
         _ => None,
     }
+}
+
+fn parse_key_value(tokens: &[SpannedToken]) -> Option<(TypeItem, TypeItem)> {
+    let split: Vec<_> = tokens
+        .splitn(2, |(t, _)| *t == token!(":"))
+        .take(2)
+        .collect();
+    let (before_colon, after_colon) = (split.get(0)?, split.get(1)?);
+    let key = parse_basic_type_item(before_colon)?;
+    let value = parse_type_item_rec(after_colon)?;
+
+    Some((key, value))
 }
 
 trait ParseItemType {

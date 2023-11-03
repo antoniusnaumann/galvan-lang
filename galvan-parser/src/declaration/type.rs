@@ -43,6 +43,7 @@ pub enum TypeItem {
     Array(Box<ArrayTypeItem>),
     // #[from(forward)]
     Dictionary(Box<DictionaryTypeItem>),
+    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
     // #[from(forward)]
     Set(Box<SetTypeItem>),
     // #[from(forward)]
@@ -71,6 +72,10 @@ impl TypeItem {
         Self::Dictionary(Box::new(DictionaryTypeItem { key, value }))
     }
 
+    pub fn ordered_dict(key: TypeItem, value: TypeItem) -> Self {
+        Self::OrderedDictionary(Box::new(OrderedDictionaryTypeItem { key, value }))
+    }
+
     pub fn set(elements: TypeItem) -> Self {
         Self::Set(Box::new(SetTypeItem { elements }))
     }
@@ -88,6 +93,12 @@ pub struct ArrayTypeItem {
 
 #[derive(Debug)]
 pub struct DictionaryTypeItem {
+    pub key: TypeItem,
+    pub value: TypeItem,
+}
+
+#[derive(Debug)]
+pub struct OrderedDictionaryTypeItem {
     pub key: TypeItem,
     pub value: TypeItem,
 }

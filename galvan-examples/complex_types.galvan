@@ -1,10 +1,15 @@
 pub type IntArray = [Int]
 
 // Use [] for ordered and {} for unordered collections
+// This is a dict
 pub type MyDict = {String : Int}
+// This is an ordered dict, this will probably be backed by https://crates.io/crates/indexmap
+pub type MyOrderedDict = [String : Int]
+// This is a set
 pub type MySet = {SomeObject}
 
 // Complex types can be nested
+// TODO: Allow complex types in key position, currently only basic types are allowed as dict key
 pub type DictOf2DArrays = {String : [[Int]]}
 
 // TODO: should we use get and set for generating public getters and setters like this?
