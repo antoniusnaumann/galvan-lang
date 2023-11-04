@@ -16,8 +16,10 @@ fn parse_type_item_rec(tokens: &[SpannedToken]) -> Option<TypeItem> {
     let type_item_parsers = [
         parse_basic_type_item.boxed(),
         parse_array_type_item.boxed(),
+        parse_set_type_item.boxed(),
         parse_dict_type_item.boxed(),
         parse_ordered_dict_type_item.boxed(),
+        parse_tuple_type_item.boxed(),
     ];
 
     for parser in &type_item_parsers {
@@ -47,6 +49,12 @@ fn parse_array_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
     })
 }
 
+fn parse_set_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
+    parse_enclosed(MatchingToken::Brace, tokens, |t| {
+        parse_type_item_rec(&t).map(|elements| TypeItem::set(elements))
+    })
+}
+
 fn parse_dict_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
     parse_enclosed(MatchingToken::Brace, tokens, |t| {
         let (k, v) = parse_key_value(t)?;
@@ -58,6 +66,13 @@ fn parse_ordered_dict_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
     parse_enclosed(MatchingToken::Bracket, tokens, |t| {
         let (k, v) = parse_key_value(t)?;
         Some(TypeItem::ordered_dict(k, v))
+    })
+}
+
+fn parse_tuple_type_item(tokens: &[SpannedToken]) -> Option<TypeItem> {
+    parse_enclosed(MatchingToken::Paren, tokens, |t| {
+        let elements = parse_comma_separated(t)?;
+        Some(TypeItem::tuple(elements))
     })
 }
 
@@ -87,6 +102,14 @@ fn parse_key_value(tokens: &[SpannedToken]) -> Option<(TypeItem, TypeItem)> {
     let value = parse_type_item_rec(after_colon)?;
 
     Some((key, value))
+}
+
+fn parse_comma_separated(tokens: &[SpannedToken]) -> Option<Vec<TypeItem>> {
+    tokens
+        // TODO: Do not split tuples that are contained in this tuple
+        .split(|(token, _)| *token == token!(","))
+        .map(|t| parse_type_item_rec(t))
+        .collect::<Option<Vec<_>>>()
 }
 
 trait ParseItemType {
