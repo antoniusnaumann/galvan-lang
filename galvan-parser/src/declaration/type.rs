@@ -39,15 +39,18 @@ pub struct AliasTypeDecl {
 
 #[derive(Debug, From)]
 pub enum TypeItem {
-    // #[from(forward)]
+    // Collection Types
     Array(Box<ArrayTypeItem>),
-    // #[from(forward)]
     Dictionary(Box<DictionaryTypeItem>),
     OrderedDictionary(Box<OrderedDictionaryTypeItem>),
-    // #[from(forward)]
     Set(Box<SetTypeItem>),
-    // #[from(forward)]
     Tuple(Box<TupleTypeItem>),
+
+    // Error handling monads
+    Optional(Box<OptionalTypeItem>),
+    Result(Box<ResultTypeItem>),
+
+    // Primitive type
     Plain(BasicTypeItem),
 }
 
@@ -83,6 +86,24 @@ impl TypeItem {
     pub fn tuple(elements: Vec<TypeItem>) -> Self {
         Self::Tuple(Box::new(TupleTypeItem { elements }))
     }
+
+    pub fn optional(some: TypeItem) -> Self {
+        Self::Optional(Box::new(OptionalTypeItem { some }))
+    }
+
+    pub fn result(success: TypeItem) -> Self {
+        Self::Result(Box::new(ResultTypeItem {
+            success,
+            error: None,
+        }))
+    }
+
+    pub fn result_with_typed_error(success: TypeItem, error: TypeItem) -> Self {
+        Self::Result(Box::new(ResultTypeItem {
+            success,
+            error: Some(error),
+        }))
+    }
 }
 
 // TODO: Add a marker trait to constrain this to only type decls
@@ -111,6 +132,17 @@ pub struct SetTypeItem {
 #[derive(Debug)]
 pub struct TupleTypeItem {
     pub elements: Vec<TypeItem>,
+}
+
+#[derive(Debug)]
+pub struct OptionalTypeItem {
+    pub some: TypeItem,
+}
+
+#[derive(Debug)]
+pub struct ResultTypeItem {
+    pub success: TypeItem,
+    pub error: Option<TypeItem>,
 }
 
 #[derive(Debug)]
