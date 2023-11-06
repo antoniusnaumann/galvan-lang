@@ -1,3 +1,4 @@
+use galvan_transpiler::transpile_source;
 use std::env;
 use walkdir::WalkDir;
 
@@ -22,7 +23,7 @@ fn main() {
         println!();
         println!("----- Source: {:?} -----", source.origin());
         match parsed {
-            Ok(p) => println!("Parsed: {:?}", p),
+            Ok(p) => println!("{}", transpile_source(p)),
             Err(e) => println!("Error: {}", e.with_source(source)),
         }
     }
