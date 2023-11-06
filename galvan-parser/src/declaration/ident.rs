@@ -1,7 +1,7 @@
-use derive_more::Display;
+use derive_more::{Display, From};
 use galvan_lexer::LexerString;
 
-#[derive(Debug, Display, PartialEq, Eq)]
+#[derive(Debug, Display, PartialEq, Eq, From)]
 pub struct Ident(LexerString);
 
 impl Ident {

@@ -4,14 +4,21 @@ use galvan_lexer::LexerString;
 use crate::*;
 
 #[derive(Debug)]
-pub enum TypeDecl {
-    TupleType(TupleTypeDecl),
-    StructType(StructTypeDecl),
-    AliasType(AliasTypeDecl),
+pub struct TypeDecl {
+    pub visibility: Visibility,
+    pub ident: Ident,
+    pub def: TypeDef,
+}
+
+#[derive(Debug, From)]
+pub enum TypeDef {
+    TupleType(TupleTypeDef),
+    StructType(StructTypeDef),
+    AliasType(AliasTypeDef),
 }
 
 #[derive(Debug)]
-pub struct TupleTypeDecl {
+pub struct TupleTypeDef {
     pub members: Vec<TupleTypeMember>,
 }
 
@@ -22,7 +29,7 @@ pub struct TupleTypeMember {
 }
 
 #[derive(Debug)]
-pub struct StructTypeDecl {
+pub struct StructTypeDef {
     pub members: Vec<StructTypeMember>,
 }
 #[derive(Debug)]
@@ -33,7 +40,7 @@ pub struct StructTypeMember {
 }
 
 #[derive(Debug)]
-pub struct AliasTypeDecl {
+pub struct AliasTypeDef {
     pub r#type: TypeItem,
 }
 

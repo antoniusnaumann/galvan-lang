@@ -21,22 +21,24 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
         let token =
             token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
 
-        match token {
+        // TODO: Parse visibility
+        let visibility = Visibility::Inherited;
+        let def = match token {
             Token::BraceOpen => {
                 let mut tokens = lexer.parse_until_matching(MatchingToken::Brace)?;
                 let (_, _) = tokens.pop().ensure_token(Token::BraceClose)?;
 
                 let members = parse_struct_type_members(tokens)?;
-                let t = StructTypeDecl { members };
-                Ok(TypeDecl::StructType(t))
+                let t = StructTypeDef { members };
+                TypeDef::StructType(t)
             }
             Token::ParenOpen => {
                 let mut tokens = lexer.parse_until_matching(MatchingToken::Paren)?;
                 let (_, _) = tokens.pop().ensure_token(Token::ParenClose)?;
 
                 let members = parse_tuple_type_members(tokens)?;
-                let t = TupleTypeDecl { members };
-                Ok(TypeDecl::TupleType(t))
+                let t = TupleTypeDef { members };
+                TypeDef::TupleType(t)
             }
             Token::Assign => {
                 // TODO: Allow newlines after some symbols like +
@@ -44,24 +46,32 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                 let tokens = lexer.parse_until_token(Token::Newline)?;
 
                 let aliased_type = parse_type_alias(tokens)?;
-                let t = AliasTypeDecl {
+                let t = AliasTypeDef {
                     r#type: aliased_type,
                 };
-                Ok(TypeDecl::AliasType(t))
+                TypeDef::AliasType(t)
             }
-            _ => Err(lexer.unexpected(
-                format!(
-                    "Expected one of the following:
+            _ => {
+                return Err(lexer.unexpected(
+                    format!(
+                        "Expected one of the following:
                         - type alias:  'type {name} = TypeA'
                         - struct type: 'type {name} {{ attr: TypeA, ... }}'
                         - tuple type:  'type {name}(TypeA, TypeB, ...)
                                 
                     ...but found unexpected token instead
                     "
-                ),
-                &[],
-            )),
-        }
+                    ),
+                    &[],
+                ))
+            }
+        };
+
+        Ok(TypeDecl {
+            visibility,
+            def,
+            ident: name.into(),
+        })
     } else {
         Err(lexer.invalid_idenfier("Invalid identifier for type name at: "))
     }
