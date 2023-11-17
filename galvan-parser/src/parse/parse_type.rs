@@ -84,8 +84,7 @@ fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructType
     // TODO: Allow directly starting with members without newline
     while let Some(field_name) = token_iter.parse_ignore_token(Token::Newline)? {
         // TODO: parse visibility modifiers and keywords such as ref here, probably parse all until newline to do that
-        let field_name = field_name.ident()?;
-        let field = Ident::new(field_name);
+        let ident = field_name.ident()?;
         let (_, _) = token_iter.next().ensure_token(Token::Colon)?;
 
         let type_tokens = token_iter.parse_until_token(token!("\n"))?;
@@ -93,7 +92,7 @@ fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructType
 
         let member = StructTypeMember {
             visibility: Visibility::Inherited,
-            ident: field,
+            ident,
             r#type: member_type,
         };
 
@@ -155,7 +154,8 @@ mod test {
         let mut tokenizer = Tokenizer::from_str(src.content());
         let parsed = parse_type(&mut tokenizer, &Modifiers::default()).with_source(&src)?;
 
-        assert!(matches!(parsed, TypeDecl::StructType(_)));
+        assert!(matches!(parsed.def, TypeDef::StructType(_)));
+        assert!(matches!(parsed.visibility, Visibility::Inherited));
 
         Ok(())
     }

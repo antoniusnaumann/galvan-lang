@@ -68,10 +68,8 @@ impl From<Ident> for TypeItem {
 }
 
 impl TypeItem {
-    pub fn plain(ident: LexerString) -> Self {
-        Self::Plain(BasicTypeItem {
-            ident: Ident::new(ident),
-        })
+    pub fn plain(ident: Ident) -> Self {
+        Self::Plain(BasicTypeItem { ident })
     }
 
     pub fn array(elements: TypeItem) -> Self {

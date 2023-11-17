@@ -1,4 +1,5 @@
 use galvan_lexer::Token;
+use galvan_macro::token;
 
 use crate::*;
 
@@ -75,13 +76,38 @@ pub fn parse_root(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
 }
 
 pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
-    let (token, _span) = lexer
+    let ident = lexer
         .next()
-        .ok_or(lexer.eof("Expected function name but found end of file."))?;
+        .ok_or(lexer.eof("Expected function name but found end of file."))?
+        .ident()?;
 
-    let token = token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
+    // TODO: Handle namespaced functions
+    let receiver = None;
+    let _open_paren = lexer
+        .next()
+        .ok_or(lexer.eof("Expected function parameters but found end of file."))?
+        .ensure_token(token!("("))?;
 
-    todo!("Parse function declaration")
+    let parameter_list = lexer.parse_until_matching(MatchingToken::Paren)?;
+    let parameters = parse_parameter_list(parameter_list)?;
+
+    // TODO: Also handle shorthand functions with -> here
+    let return_tokens = lexer.parse_until_token(token!("{"))?;
+    let return_type = parse_return_type(return_tokens)?;
+
+    let signature = FnSignature::new(mods.clone(), receiver, ident, parameters, return_type);
+    // TODO: Parse block. Probably also let a block have a return statement and nested blocks
+    let block = Block { statements: vec![] };
+
+    Ok(FnDecl { signature, block })
+}
+
+fn parse_parameter_list(parameter_list: Vec<SpannedToken>) -> Result<ParamList> {
+    todo!()
+}
+
+fn parse_return_type(return_tokens: Vec<SpannedToken>) -> Result<Option<ReturnType>> {
+    todo!()
 }
 
 pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<MainDecl> {
@@ -103,5 +129,5 @@ pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<TestDecl> {
         lexer.invalid_idenfier("Invalid identifier, expected '{' or test description")
     })?;
 
-    todo!("Parse main function")
+    todo!("Parse test")
 }

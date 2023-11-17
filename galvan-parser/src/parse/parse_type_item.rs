@@ -38,9 +38,7 @@ fn parse_type_item_rec(tokens: &[SpannedToken]) -> Option<TypeItem> {
 fn parse_basic_type(tokens: &[SpannedToken]) -> Option<TypeItem> {
     match tokens.get(0) {
         // TODO: ensure that type item is capitalized, otherwise emit a warning
-        Some(token) if tokens.len() == 1 => {
-            token.ident().map(Ident::new).map(|ident| ident.into()).ok()
-        }
+        Some(token) if tokens.len() == 1 => token.ident().map(|ident| ident.into()).ok(),
         _ => None,
     }
 }

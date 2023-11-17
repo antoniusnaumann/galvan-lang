@@ -1,10 +1,12 @@
 use std::ops::Range;
 
+use galvan_lexer::LexerError;
 use galvan_lexer::LexerString;
 use galvan_lexer::Token;
 use galvan_lexer::TokenExt as GalvanLexerTokenExt;
 use galvan_lexer::{Span, SpannedIter};
 
+use crate::Ident;
 use crate::TokenError;
 
 pub type Error = TokenError;
@@ -340,7 +342,7 @@ pub trait TokenExt {
     fn ensure_token(self, token: Token) -> Result<SpannedToken>;
 
     /// Ensures that the receiver is a valid identifier token and gets its name, returns an error otherwise
-    fn ident(self) -> Result<LexerString>;
+    fn ident(self) -> Result<Ident>;
 }
 
 pub trait OptTokenExt {
@@ -361,9 +363,9 @@ impl TokenExt for SpannedToken {
         }
     }
 
-    fn ident(self) -> Result<LexerString> {
+    fn ident(self) -> Result<Ident> {
         match self.0 {
-            Token::Ident(name) => Ok(name),
+            Token::Ident(name) => Ok(name.into()),
             _ => Err(TokenError {
                 msg: "Invalid identifier".to_owned(),
                 span: self.1.into(),
@@ -378,7 +380,7 @@ impl TokenExt for &SpannedToken {
         self.clone().ensure_token(token)
     }
 
-    fn ident(self) -> Result<LexerString> {
+    fn ident(self) -> Result<Ident> {
         self.clone().ident()
     }
 }
@@ -397,9 +399,32 @@ impl TokenExt for Option<SpannedToken> {
         }
     }
 
-    fn ident(self) -> Result<LexerString> {
+    fn ident(self) -> Result<Ident> {
         let t = self.unpack()?;
         t.ident()
+    }
+}
+
+impl TokenExt for (std::result::Result<Token, LexerError>, Span) {
+    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
+        let (actual_token, span) = self;
+        let actual_token = actual_token.map_err(|_| TokenError {
+            msg: format!("Could not parse token!"),
+            span: span.clone().into(),
+            // TODO: Make token displayable
+            annotation: format!("Expected token {:?} here", token),
+        })?;
+        (actual_token, span).ensure_token(token)
+    }
+
+    fn ident(self) -> Result<Ident> {
+        let (token, span) = self;
+        let token = token.map_err(|_| TokenError {
+            msg: "Could not parse ident!".into(),
+            span: span.clone().into(),
+            annotation: "Expected ident here".into(),
+        })?;
+        (token, span).ident()
     }
 }
 
@@ -408,7 +433,7 @@ impl TokenExt for Option<&SpannedToken> {
         self.cloned().ensure_token(token)
     }
 
-    fn ident(self) -> Result<LexerString> {
+    fn ident(self) -> Result<Ident> {
         self.cloned().ident()
     }
 }
