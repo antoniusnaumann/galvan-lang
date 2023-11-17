@@ -8,24 +8,17 @@ use crate::*;
 use super::parse_type_item;
 
 /// Parses a type definition. This method assumes that modifiers and the type keyword were already consumed
-pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
-    let (token, _span) = lexer
+pub fn parse_type(token_iter: &TokenIter<'_>, mods: &Modifiers) -> Result<TypeDecl> {
+    let (token, span) = token_iter
         .next()
-        .ok_or(lexer.eof("Expected type name but found end of file."))?;
-    let token = token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
+        .ok_or_else(|| TokenError::eof("type name"))?;
 
     if let Token::Ident(name) = token {
-        let (token, _span) = lexer
-            .next()
-            .ok_or(lexer.eof("Expected type name but found end of file."))?;
-        let token =
-            token.map_err(|_| lexer.invalid_idenfier("Invalid identifier for type name"))?;
-
         // TODO: Parse visibility
         let visibility = Visibility::Inherited;
         let def = match token {
             Token::BraceOpen => {
-                let mut tokens = lexer.parse_until_matching(MatchingToken::Brace)?;
+                let mut tokens = token_iter.parse_until_matching(MatchingToken::Brace)?;
                 let (_, _) = tokens.pop().ensure_token(Token::BraceClose)?;
 
                 let members = parse_struct_type_members(tokens)?;
@@ -33,7 +26,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                 TypeDef::StructType(t)
             }
             Token::ParenOpen => {
-                let mut tokens = lexer.parse_until_matching(MatchingToken::Paren)?;
+                let mut tokens = token_iter.parse_until_matching(MatchingToken::Paren)?;
                 let (_, _) = tokens.pop().ensure_token(Token::ParenClose)?;
 
                 let members = parse_tuple_type_members(tokens)?;
@@ -43,7 +36,7 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
             Token::Assign => {
                 // TODO: Allow newlines after some symbols like +
                 // TODO: Also allow an end of file here
-                let tokens = lexer.parse_until_token(Token::Newline)?;
+                let tokens = token_iter.parse_until_token(Token::Newline)?;
 
                 let aliased_type = parse_type_alias(tokens)?;
                 let t = AliasTypeDef {
@@ -52,8 +45,8 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                 TypeDef::AliasType(t)
             }
             _ => {
-                return Err(lexer.unexpected(
-                    format!(
+                return Err(TokenError {
+                    msg: format!(
                         "Expected one of the following:
                         - type alias:  'type {name} = TypeA'
                         - struct type: 'type {name} {{ attr: TypeA, ... }}'
@@ -61,24 +54,27 @@ pub fn parse_type(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<TypeDecl> {
                                 
                     ...but found unexpected token instead
                     "
-                    ),
-                    &[],
-                ))
+                    )
+                    .into(),
+                    expected: None,
+                    span: span.clone(),
+                    kind: TokenErrorKind::UnexpectedToken,
+                })
             }
         };
 
         Ok(TypeDecl {
             visibility,
             def,
-            ident: name.into(),
+            ident: *name.into(),
         })
     } else {
-        Err(lexer.invalid_idenfier("Invalid identifier for type name at: "))
+        Err(TokenError::unexpected("type name", span.clone()))
     }
 }
 
 fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructTypeMember>> {
-    let mut token_iter: TokenIter<_> = tokens.iter().into();
+    let mut token_iter: TokenIter = tokens.iter().into();
     let mut members = vec![];
     // TODO: Also allow comma here
     // TODO: Allow directly starting with members without newline
@@ -132,7 +128,7 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
 }
 
 fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
-    let mut token_iter: TokenIter<_> = tokens.iter().into();
+    let mut token_iter: TokenIter = tokens.iter().into();
     let type_tokens = token_iter.parse_until_token(token!("\n"))?;
     let member_type = parse_type_item(type_tokens)?;
 
@@ -141,6 +137,8 @@ fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
 
 #[cfg(test)]
 mod test {
+    use galvan_lexer::lex;
+
     use super::*;
 
     #[test]
@@ -151,8 +149,11 @@ mod test {
     member_c: TypeC
 }"
         .into();
-        let mut tokenizer = Tokenizer::from_str(src.content());
-        let parsed = parse_type(&mut tokenizer, &Modifiers::default()).with_source(&src)?;
+        let mut token_iter = lex(src.content())
+            .map_err(TokenError::from)
+            .with_source(&src)?
+            .iter();
+        let parsed = parse_type(&token_iter, &Modifiers::default()).with_source(&src)?;
 
         assert!(matches!(parsed.def, TypeDef::StructType(_)));
         assert!(matches!(parsed.visibility, Visibility::Inherited));
@@ -166,10 +167,8 @@ mod test {
 a: TypeA
 b: TypeB"
             .into();
-        let tokenizer = Tokenizer::from_str(src.content());
-        let tokens = tokenizer
-            .map(|spanned_token| spanned_token.unpack())
-            .collect::<Result<Vec<SpannedToken>>>()
+        let tokens = lex(src.content())
+            .map_err(TokenError::from)
             .with_source(&src)?;
 
         let parsed = parse_struct_type_members(tokens).with_source(&src)?;

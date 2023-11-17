@@ -7,7 +7,7 @@ pub trait GalvanToken {
 }
 
 // TODO: Create an error type here that contains useful information
-pub type LexerError = ();
+pub type Error = ();
 
 #[derive(Clone, Debug, PartialEq, Eq, Logos)]
 #[logos(skip r"[ \t\f]+")]

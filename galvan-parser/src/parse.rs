@@ -1,7 +1,7 @@
-use galvan_lexer::Token;
-use galvan_macro::token;
+use std::slice::Iter;
 
-use crate::*;
+use galvan_lexer::{lex, Token};
+use galvan_macro::token;
 
 mod parse_type;
 pub use parse_type::*;
@@ -9,56 +9,63 @@ pub use parse_type::*;
 mod parse_type_item;
 pub use parse_type_item::*;
 
+use crate::*;
+
 pub type ParsedSource = Vec<RootItem>;
+pub type TokenIter<'a> = Iter<'a, SpannedToken>;
 
 pub fn parse_source(source: &Source) -> Result<ParsedSource> {
-    let mut lexer = Tokenizer::from_str(source);
-    parse_root(&mut lexer)
+    let lexed = lex(source.content())?;
+    parse_root(&lexed)
 }
 
-pub fn parse_root(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
+pub fn parse_root(tokens: &[SpannedToken]) -> Result<ParsedSource> {
     let mut m = Modifiers::new();
     // TODO: store types, fns, main, etc. separately and add their span
     let mut parsed = Vec::new();
 
     let allowed = ["fn", "type", "main", "test", "pub", "async", "const"];
 
-    // TODO: Drain the spanned lexer completely into a peekable iterator and store occuring errors
-    while let Some(spanned_token) = lexer.next() {
-        let (token, _span) = spanned_token;
-        let token = token.map_err(|_| lexer.invalid_token())?;
+    let mut token_iter = tokens.iter();
+    // TODO: Peek here instead and use peekable iterator to not consume first token
+    while let Some(spanned_token) = token_iter.next() {
+        let (token, span) = spanned_token;
 
         match token {
             Token::FnKeyword => {
-                let parsed_fn = parse_fn(lexer, &m)?;
+                let parsed_fn = parse_fn(&mut token_iter, &m)?;
                 m.reset();
 
                 parsed.push(RootItem::Fn(parsed_fn));
             }
             Token::TypeKeyword => {
-                let parsed_type = parse_type(lexer, &m)?;
+                let parsed_type = parse_type(&token_iter, &m)?;
                 m.reset();
 
                 parsed.push(RootItem::Type(parsed_type));
             }
             Token::MainKeyword if !m.has_vis_modifier() && !m.has_const_modifier() => {
-                let parsed_main = parse_main(lexer, m.asyncness)?;
+                let parsed_main = parse_main(&mut token_iter, m.asyncness)?;
                 m.reset();
 
                 // TODO: Ensure that only one main function is defined
                 parsed.push(RootItem::Main(parsed_main));
             }
             Token::TestKeyword if !m.has_vis_modifier() && !m.has_const_modifier() => {
-                let parsed_test = parse_test(lexer, m.asyncness)?;
+                let parsed_test = parse_test(&mut token_iter, m.asyncness)?;
                 m.reset();
 
                 parsed.push(RootItem::Test(parsed_test));
             }
             Token::BuildKeyword => {
-                return Err(lexer.msg(
-                    "The build keyword is reserved but currently not implemented yet.",
-                    "keyword used here",
-                ));
+                return Err(TokenError {
+                    msg: Some(
+                        "The build keyword is reserved but currently not implemented yet.".into(),
+                    ),
+                    expected: None,
+                    span: span.clone(),
+                    kind: TokenErrorKind::InvalidToken,
+                });
             }
 
             Token::PublicKeyword if !m.has_vis_modifier() => m.visibility = Visibility::Public,
@@ -68,31 +75,36 @@ pub fn parse_root(lexer: &mut Tokenizer<'_>) -> Result<ParsedSource> {
             Token::Newline => continue,
 
             // TODO: Add stringified token
-            _ => return Err(lexer.unexpected_token(token, &allowed)),
+            _ => {
+                return Err(TokenError::unexpected(
+                    format!("one of: {}", &allowed.join(", ")),
+                    span.clone(),
+                ))
+            }
         }
     }
 
     Ok(parsed)
 }
 
-pub fn parse_fn(lexer: &mut Tokenizer, mods: &Modifiers) -> Result<FnDecl> {
-    let ident = lexer
+pub fn parse_fn(token_iter: &mut TokenIter<'_>, mods: &Modifiers) -> Result<FnDecl> {
+    let ident = token_iter
         .next()
-        .ok_or(lexer.eof("Expected function name but found end of file."))?
+        .ok_or_else(|| TokenError::eof("function name"))?
         .ident()?;
 
     // TODO: Handle namespaced functions
     let receiver = None;
-    let _open_paren = lexer
+    let _open_paren = token_iter
         .next()
-        .ok_or(lexer.eof("Expected function parameters but found end of file."))?
+        .ok_or(TokenError::eof("function parameters"))?
         .ensure_token(token!("("))?;
 
-    let parameter_list = lexer.parse_until_matching(MatchingToken::Paren)?;
+    let parameter_list = token_iter.parse_until_matching(MatchingToken::Paren)?;
     let parameters = parse_parameter_list(parameter_list)?;
 
     // TODO: Also handle shorthand functions with -> here
-    let return_tokens = lexer.parse_until_token(token!("{"))?;
+    let return_tokens = token_iter.parse_until_token(token!("{"))?;
     let return_type = parse_return_type(return_tokens)?;
 
     let signature = FnSignature::new(mods.clone(), receiver, ident, parameters, return_type);
@@ -110,24 +122,16 @@ fn parse_return_type(return_tokens: Vec<SpannedToken>) -> Result<Option<ReturnTy
     todo!()
 }
 
-pub fn parse_main(lexer: &mut Tokenizer, asyncness: Async) -> Result<MainDecl> {
-    let (token, _span) = lexer
-        .next()
-        .ok_or(lexer.eof("Expected main body but found end of file."))?;
-
-    let token = token.map_err(|_| lexer.invalid_idenfier("Invalid identifier, expected '{'"))?;
+pub fn parse_main(token_iter: &mut TokenIter<'_>, asyncness: Async) -> Result<MainDecl> {
+    let (token, _span) = token_iter.next().ok_or(TokenError::eof("main body"))?;
 
     todo!("Parse main function")
 }
 
-pub fn parse_test(lexer: &mut Tokenizer, asyncness: Async) -> Result<TestDecl> {
-    let (token, _span) = lexer
+pub fn parse_test(token_iter: &mut TokenIter<'_>, asyncness: Async) -> Result<TestDecl> {
+    let (token, _span) = token_iter
         .next()
-        .ok_or(lexer.eof("Expected test body or test description but found end of file."))?;
-
-    let token = token.map_err(|_| {
-        lexer.invalid_idenfier("Invalid identifier, expected '{' or test description")
-    })?;
+        .ok_or_else(|| TokenError::eof("test body or test description"))?;
 
     todo!("Parse test")
 }
