@@ -64,8 +64,8 @@ val_declaration = { val_keyword ~ ident_ ~ (colon ~ type_item)? }
 assignment = { ident ~ assignment_operator ~ expression }
 
 ident_ = _{ ident | unused_ident | discard }
-ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-unused_ident = @{ "_" ~ (ASCII_ALPHANUMERIC | "_")* }
+ident = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
+unused_ident = @{ "_" ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
 discard = @{ "_" }
 
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
