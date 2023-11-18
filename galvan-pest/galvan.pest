@@ -1,0 +1,170 @@
+WHITESPACE = _{ whitespace }
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!"\n" ~ ANY)* ~ "\n") }
+
+source = _{ SOI ~ (space* ~ toplevel ~ space*)* ~ EOI }
+toplevel = { 
+	main
+	| build
+	| test
+	| function
+	| type_decl
+	| task
+}
+
+main = {
+    main_keyword ~ brace_open ~ body ~ brace_close
+}
+
+build = {
+    build_keyword ~ brace_open ~ body ~ brace_close
+}
+
+test = {
+    test_keyword ~ (string_literal)? ~ brace_open ~ body ~ brace_close
+}
+
+function = {
+    annotation? ~ func_modifiers ~ function_keyword ~ ident_ ~ param_list ~ colon ~ type_item ~ brace_open ~ body ~ brace_close
+}
+
+annotation = { at_sign ~ ident }
+func_modifiers = {
+    async_keyword
+    | const_keyword
+    | visibility
+}
+
+visibility = { pub_keyword? }
+
+type_decl = _{ struct_type_decl | alias_type_decl | tuple_type_decl }
+struct_type_decl = { visibility ~ type_keyword ~ ident_ ~ brace_open ~ struct_fields ~ brace_close }
+struct_fields = { (struct_field ~ ((comma | newline+) ~ struct_field)*)? }
+struct_field = { typed_param }
+alias_type_decl = { visibility ~ type_keyword ~ ident_ ~ assign ~ type_item }
+tuple_type_decl = { visibility ~ type_keyword ~ ident_ ~ tuple_type }
+
+param_list = { paren_open ~ (typed_param ~ (comma ~ typed_param)*)? ~ paren_close }
+// TODO: Allow patterns here instead of just identifiers
+typed_param = { ident_ ~ colon ~ type_item }
+
+task = { ident ~ brace_open ~ body ~ brace_close }
+
+body = { ((newline)* ~ statement ~ (newline)+)* }
+
+statement = { declaration | assignment | expression }
+
+expression = {
+    "TODO: Expression"
+}
+
+declaration = { ref_declaration | val_declaration }
+ref_declaration = { ref_keyword ~ ident_ ~ (colon ~ type_item)? }
+val_declaration = { val_keyword ~ ident_ ~ (colon ~ type_item)? }
+
+assignment = { ident ~ assignment_operator ~ expression }
+
+ident_ = _{ ident | unused_ident | discard }
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+unused_ident = @{ "_" ~ (ASCII_ALPHANUMERIC | "_")* }
+discard = @{ "_" }
+
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+keyword = _{
+    main_keyword
+    | build_keyword
+    | test_keyword
+    | function_keyword
+    | type_keyword
+    | ref_keyword
+    | val_keyword
+}
+
+// # Brackets
+bracket_open = _{ "[" ~ space* }
+bracket_close = _{ space* ~ "]" }
+paren_open = _{ "(" ~ space* }
+paren_close = _{ space* ~ ")" }
+brace_open = _{ "{" ~ space* }
+brace_close = _{ space* ~ "}" }
+
+// # Punctuation
+colon = _{ ":" }
+comma = _{ "," ~ space* }
+dot = _{ "." }
+semicolon = _{ ";" }
+
+// # Errors
+exclamation_mark = @{ "!" }
+question_mark = @{ "?" }
+
+// # Operators
+assignment_operator = @{ assign | plus_assign | minus_assign | multiply_assign | divide_assign | rem_assign }
+assign = @{ "=" }
+plus_assign = @{ "+=" }
+minus_assign = @{ "-=" }
+multiply_assign = @{ "*=" }
+divide_assign = @{ "/=" }
+int_divide_assign = @{ "//=" }
+rem_assign = @{ "%=" }
+
+// ## Arithmetic
+plus = @{ "+" }
+minus = @{ "-" }
+multiply = @{ "*" }
+divide = @{ "/" }
+int_divide = @{ "//" }
+rem = @{ "%" }
+
+// # Keywords
+// ## Top-Level
+main_keyword = @{ "main" }
+build_keyword = @{ "build" }
+test_keyword = @{ "test" }
+function_keyword = @{ "fn" }
+type_keyword = @{ "type" }
+
+// ## Declaration
+ref_keyword = @{ "ref" }
+val_keyword = @{ "val" }
+
+// ## Function Modifiers
+async_keyword = @{ "async" }
+const_keyword = @{ "const" }
+pub_keyword = @{ "pub" }
+
+// ### Shorthands
+ampersand = _{ "&" }
+dollar = _{ "$" }
+
+at_sign = @{ "@" }
+
+newline = _{ NEWLINE }
+whitespace = _{ " " | "\t" }
+space = _{ whitespace | newline }
+
+// # Type Definitions
+type_item = { result_type | optional_type | allowed_in_error_variant }
+// Add some additional restrictions on optional / result type nesting
+// - Result types can't be nested -> Flatten result instead
+// - Optional types can't be nested -> Flatten optional instead
+// - Optional types can't contain result types -> Use Option<Result<_>> if this is needed
+// - Result errors can't contain optional types -> If there is no error, the operation should have been successful
+// - Result errors can't contain result types -> The error itself should not fail
+allowed_in_error_variant = _{ basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
+allowed_in_success_variant = _{ optional_type | basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
+allowed_in_optional = _{ basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
+
+type_ident = { (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
+basic_type = { type_ident }
+array_type = { bracket_open ~ type_item ~ bracket_close }
+set_type = { brace_open ~ type_item ~ brace_close }
+dict_type = { brace_open ~ type_item ~ colon ~ type_item ~ brace_close }
+ordered_dict_type = { bracket_open ~ type_item ~ colon ~ type_item ~ bracket_close }
+tuple_type = { paren_open ~ (type_item ~ (comma ~ type_item)*)? ~ paren_close }
+ref_type = ${ ref_type_prefix ~ type_item }
+borrowed_type = ${ ampersand ~ type_item }
+result_type = ${ allowed_in_success_variant ~ exclamation_mark ~ allowed_in_error_variant? }
+optional_type = ${ allowed_in_optional ~ question_mark }
+
+ref_type_prefix = { dollar }

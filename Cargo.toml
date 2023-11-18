@@ -9,6 +9,7 @@ members = [
   "galvan-core",
   "galvan-lexer",
   "galvan-parser",
+  "galvan-pest",
   "galvan-transpiler",
   "galvan-macro",
 ]
