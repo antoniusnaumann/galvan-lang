@@ -27,7 +27,7 @@ function = {
     annotation? ~ func_modifiers ~ function_keyword ~ ident_ ~ param_list ~ colon ~ type_item ~ brace_open ~ body ~ brace_close
 }
 
-annotation = { at_sign ~ ident }
+annotation = ${ "@" ~ ident }
 func_modifiers = {
     async_keyword
     | const_keyword
@@ -95,8 +95,8 @@ dot = _{ "." }
 semicolon = _{ ";" }
 
 // # Errors
-exclamation_mark = @{ "!" }
-question_mark = @{ "?" }
+exclamation_mark = _{ "!" }
+question_mark = _{ "?" }
 
 // # Operators
 assignment_operator = @{ assign | plus_assign | minus_assign | multiply_assign | divide_assign | rem_assign }
@@ -118,11 +118,11 @@ rem = @{ "%" }
 
 // # Keywords
 // ## Top-Level
-main_keyword = @{ "main" }
-build_keyword = @{ "build" }
-test_keyword = @{ "test" }
-function_keyword = @{ "fn" }
-type_keyword = @{ "type" }
+main_keyword = _{ "main" }
+build_keyword = _{ "build" }
+test_keyword = _{ "test" }
+function_keyword = _{ "fn" }
+type_keyword = _{ "type" }
 
 // ## Declaration
 ref_keyword = @{ "ref" }
@@ -144,7 +144,7 @@ whitespace = _{ " " | "\t" }
 space = _{ whitespace | newline }
 
 // # Type Definitions
-type_item = { result_type | optional_type | allowed_in_error_variant }
+type_item = _{ result_type | optional_type | allowed_in_error_variant }
 // Add some additional restrictions on optional / result type nesting
 // - Result types can't be nested -> Flatten result instead
 // - Optional types can't be nested -> Flatten optional instead
@@ -155,16 +155,24 @@ allowed_in_error_variant = _{ basic_type | array_type | dict_type | ordered_dict
 allowed_in_success_variant = _{ optional_type | basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
 allowed_in_optional = _{ basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
 
-type_ident = { (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
+error_variant = { allowed_in_error_variant }
+success_variant = { allowed_in_success_variant }
+
+key_type = { type_item }
+value_type = { type_item }
+element_type = { type_item }
+opt_element_type = { allowed_in_optional }
+
+type_ident = @{ (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
 basic_type = { type_ident }
-array_type = { bracket_open ~ type_item ~ bracket_close }
-set_type = { brace_open ~ type_item ~ brace_close }
-dict_type = { brace_open ~ type_item ~ colon ~ type_item ~ brace_close }
-ordered_dict_type = { bracket_open ~ type_item ~ colon ~ type_item ~ bracket_close }
-tuple_type = { paren_open ~ (type_item ~ (comma ~ type_item)*)? ~ paren_close }
-ref_type = ${ ref_type_prefix ~ type_item }
-borrowed_type = ${ ampersand ~ type_item }
-result_type = ${ allowed_in_success_variant ~ exclamation_mark ~ allowed_in_error_variant? }
-optional_type = ${ allowed_in_optional ~ question_mark }
+array_type = { bracket_open ~ element_type ~ bracket_close }
+set_type = { brace_open ~ element_type ~ brace_close }
+dict_type = { brace_open ~ key_type ~ colon ~ value_type ~ brace_close }
+ordered_dict_type = { bracket_open ~ key_type ~ colon ~ value_type ~ bracket_close }
+tuple_type = { paren_open ~ (element_type ~ (comma ~ element_type)*)? ~ paren_close }
+ref_type = ${ ref_type_prefix ~ element_type }
+borrowed_type = ${ ampersand ~ element_type }
+result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
+optional_type = ${ opt_element_type ~ question_mark }
 
 ref_type_prefix = { dollar }
