@@ -36,29 +36,29 @@ pub struct TokenError {
 impl TokenError {
     pub fn message(&self) -> String {
         match self.msg {
-            Some(message) => format!("{}: {}", self.kind.message(), message),
+            Some(ref message) => format!("{}: {}", self.kind.message(), message),
             None => self.kind.message().to_owned(),
         }
     }
 
     pub fn annotation(&self) -> String {
         match self.expected {
-            Some(expected) => format!("Expected {expected} here"),
+            Some(ref expected) => format!("Expected {expected} here"),
             None => self.kind.default_annotation().into(),
         }
     }
 
-    pub fn with_expected(self, expected: impl Into<String>) -> Self {
+    pub fn with_expected(self, expected: impl ToString) -> Self {
         TokenError {
-            expected: Some(expected.into()),
+            expected: Some(expected.to_string()),
             ..self
         }
     }
 
-    pub fn eof(expected: impl Into<String>) -> TokenError {
+    pub fn eof(expected: impl ToString) -> TokenError {
         TokenError {
             msg: None,
-            expected: Some(expected.into()),
+            expected: Some(expected.to_string()),
             // TODO: Meaningful Span
             span: Span {
                 start: usize::MAX,
@@ -68,10 +68,10 @@ impl TokenError {
         }
     }
 
-    pub fn unexpected(expected: impl Into<String>, span: Span) -> TokenError {
+    pub fn unexpected(expected: impl ToString, span: Span) -> TokenError {
         TokenError {
             msg: None,
-            expected: Some(expected.into()),
+            expected: Some(expected.to_string()),
             span,
             kind: TokenErrorKind::UnexpectedToken,
         }

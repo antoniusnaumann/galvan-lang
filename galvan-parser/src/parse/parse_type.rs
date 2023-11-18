@@ -8,7 +8,7 @@ use crate::*;
 use super::parse_type_item;
 
 /// Parses a type definition. This method assumes that modifiers and the type keyword were already consumed
-pub fn parse_type(token_iter: &TokenIter<'_>, mods: &Modifiers) -> Result<TypeDecl> {
+pub fn parse_type(token_iter: &mut TokenIter<'_>, mods: &Modifiers) -> Result<TypeDecl> {
     let (token, span) = token_iter
         .next()
         .ok_or_else(|| TokenError::eof("type name"))?;
@@ -19,7 +19,7 @@ pub fn parse_type(token_iter: &TokenIter<'_>, mods: &Modifiers) -> Result<TypeDe
         let def = match token {
             Token::BraceOpen => {
                 let mut tokens = token_iter.parse_until_matching(MatchingToken::Brace)?;
-                let (_, _) = tokens.pop().ensure_token(Token::BraceClose)?;
+                let (_, _) = tokens.pop().unwrap().ensure_token(Token::BraceClose)?;
 
                 let members = parse_struct_type_members(tokens)?;
                 let t = StructTypeDef { members };
@@ -27,7 +27,7 @@ pub fn parse_type(token_iter: &TokenIter<'_>, mods: &Modifiers) -> Result<TypeDe
             }
             Token::ParenOpen => {
                 let mut tokens = token_iter.parse_until_matching(MatchingToken::Paren)?;
-                let (_, _) = tokens.pop().ensure_token(Token::ParenClose)?;
+                let (_, _) = tokens.pop().unwrap().ensure_token(Token::ParenClose)?;
 
                 let members = parse_tuple_type_members(tokens)?;
                 let t = TupleTypeDef { members };
@@ -66,7 +66,7 @@ pub fn parse_type(token_iter: &TokenIter<'_>, mods: &Modifiers) -> Result<TypeDe
         Ok(TypeDecl {
             visibility,
             def,
-            ident: *name.into(),
+            ident: Ident::from(name.clone()),
         })
     } else {
         Err(TokenError::unexpected("type name", span.clone()))
@@ -74,7 +74,7 @@ pub fn parse_type(token_iter: &TokenIter<'_>, mods: &Modifiers) -> Result<TypeDe
 }
 
 fn parse_struct_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<StructTypeMember>> {
-    let mut token_iter: TokenIter = tokens.iter().into();
+    let mut token_iter = tokens.iter();
     let mut members = vec![];
     // TODO: Also allow comma here
     // TODO: Allow directly starting with members without newline
@@ -120,7 +120,8 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
     push_member(&mut token_iter, &mut members)?;
     // TODO: Also allow newlines here instead
     // TODO: Allow trailing commas and trailing newlines
-    while token_iter.next().ensure_token(Token::Comma).is_ok() {
+    while let Some(token) = token_iter.next() {
+        token.ensure_token(Token::Comma)?;
         push_member(&mut token_iter, &mut members)?;
     }
 
@@ -128,7 +129,7 @@ fn parse_tuple_type_members(tokens: Vec<SpannedToken>) -> Result<Vec<TupleTypeMe
 }
 
 fn parse_type_alias(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
-    let mut token_iter: TokenIter = tokens.iter().into();
+    let mut token_iter = tokens.iter();
     let type_tokens = token_iter.parse_until_token(token!("\n"))?;
     let member_type = parse_type_item(type_tokens)?;
 
@@ -149,11 +150,11 @@ mod test {
     member_c: TypeC
 }"
         .into();
-        let mut token_iter = lex(src.content())
+        let tokens = lex(src.content())
             .map_err(TokenError::from)
-            .with_source(&src)?
-            .iter();
-        let parsed = parse_type(&token_iter, &Modifiers::default()).with_source(&src)?;
+            .with_source(&src)?;
+        let mut token_iter = tokens.iter();
+        let parsed = parse_type(&mut token_iter, &Modifiers::default()).with_source(&src)?;
 
         assert!(matches!(parsed.def, TypeDef::StructType(_)));
         assert!(matches!(parsed.visibility, Visibility::Inherited));

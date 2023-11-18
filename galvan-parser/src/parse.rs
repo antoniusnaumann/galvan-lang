@@ -39,7 +39,7 @@ pub fn parse_root(tokens: &[SpannedToken]) -> Result<ParsedSource> {
                 parsed.push(RootItem::Fn(parsed_fn));
             }
             Token::TypeKeyword => {
-                let parsed_type = parse_type(&token_iter, &m)?;
+                let parsed_type = parse_type(&mut token_iter, &m)?;
                 m.reset();
 
                 parsed.push(RootItem::Type(parsed_type));

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use logos::Logos;
 
 use crate::LexerString;
@@ -217,4 +219,11 @@ pub enum Token {
     // TODO: Allow ? in identifiers and handle that in parser
     #[regex(r"[_a-zA-Z]?[_a-zA-Z0-9]*", |lex| LexerString::from(lex.slice()))]
     Ident(LexerString),
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: Stringify token here
+        write!(f, "{:?}", self)
+    }
 }

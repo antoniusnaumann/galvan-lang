@@ -3,6 +3,7 @@ use galvan_lexer::Token;
 
 use crate::Ident;
 use crate::TokenError;
+use crate::TokenErrorKind;
 use crate::TokenIter;
 
 pub type Error = TokenError;
@@ -56,8 +57,8 @@ impl<'a> TokenizerExt for TokenIter<'a> {
         let mut tokens = vec![];
 
         while dangling_open > 0 {
-            let (token, span) = self.next().ok_or(self.eof(format!(
-                "Expected matching token \"{:?}\" but found end of file!",
+            let (token, span) = self.next().ok_or(TokenError::eof(format!(
+                "matching token \"{:?}\"",
                 matching.closing()
             )))?;
 
@@ -77,10 +78,9 @@ impl<'a> TokenizerExt for TokenIter<'a> {
         let mut tokens = vec![];
 
         loop {
-            let (token, span) = self.next().ok_or(self.eof(format!(
-                "Expected token {:?} but found end of file!",
-                end_token
-            )))?;
+            let (token, span) = self
+                .next()
+                .ok_or_else(|| TokenError::eof(end_token.clone()))?;
 
             if *token == end_token {
                 tokens.push((token.clone(), span.clone()));
@@ -103,18 +103,38 @@ impl<'a> TokenizerExt for TokenIter<'a> {
     }
 }
 
+pub trait SpanInfo {
+    fn span_all(&self) -> Span;
+    /// Gets the span from the current item to the last item, assuming that all items in between are included there
+    fn spanned_error(
+        &self,
+        msg: impl Into<String>,
+        annotation: impl Into<String>,
+        kind: TokenErrorKind,
+    ) -> TokenError {
+        TokenError {
+            msg: Some(msg.into()),
+            expected: None,
+            kind,
+            span: self.span_all(),
+        }
+    }
+}
+
 pub trait IterSpanInfo {
-    fn span_all(&mut self) -> Option<Span>;
+    fn span_all(&mut self) -> Span;
     /// Gets the span from the current item to the last item, assuming that all items in between are included there
     fn spanned_error(
         &mut self,
         msg: impl Into<String>,
         annotation: impl Into<String>,
+        kind: TokenErrorKind,
     ) -> TokenError {
         TokenError {
-            msg: msg.into(),
+            msg: Some(msg.into()),
+            expected: None,
+            kind,
             span: self.span_all(),
-            annotation: annotation.into(),
         }
     }
 }
@@ -123,7 +143,7 @@ impl<T> SpanInfo for T
 where
     T: AsRef<[SpannedToken]>,
 {
-    fn span_all(&self) -> Option<Span> {
+    fn span_all(&self) -> Span {
         let mut iter = TokenIter::from(self.as_ref().iter());
         iter.span_all()
     }
@@ -133,16 +153,16 @@ pub type SpannedToken = (Token, Span);
 
 pub trait TokenExt {
     /// Ensures that the receiver is a certain token, returns an error otherwise
-    fn ensure_token(self, token: Token) -> Result<SpannedToken>;
+    fn ensure_token(self, expected: Token) -> Result<SpannedToken>;
 
     /// Ensures that the receiver is a valid identifier token and gets its name, returns an error otherwise
     fn ident(self) -> Result<Ident>;
 }
 
 impl TokenExt for SpannedToken {
-    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
-        if self.0 != token {
-            Err(TokenError::unexpected(token, self.1))
+    fn ensure_token(self, expected: Token) -> Result<SpannedToken> {
+        if self.0 != expected {
+            Err(TokenError::unexpected(expected, self.1))
         } else {
             Ok(self)
         }
@@ -157,12 +177,44 @@ impl TokenExt for SpannedToken {
 }
 
 impl TokenExt for &SpannedToken {
-    fn ensure_token(self, token: Token) -> Result<SpannedToken> {
-        self.clone().ensure_token(token)
+    fn ensure_token(self, expected: Token) -> Result<SpannedToken> {
+        self.clone().ensure_token(expected)
     }
 
     fn ident(self) -> Result<Ident> {
         self.clone().ident()
+    }
+}
+
+impl TokenExt for Option<SpannedToken> {
+    fn ensure_token(self, expected: Token) -> Result<SpannedToken> {
+        match self {
+            Some(token) => token.ensure_token(expected),
+            None => Err(TokenError::eof(expected)),
+        }
+    }
+
+    fn ident(self) -> Result<Ident> {
+        match self {
+            Some(token) => token.ident(),
+            None => Err(TokenError::eof("identifier")),
+        }
+    }
+}
+
+impl TokenExt for Option<&SpannedToken> {
+    fn ensure_token(self, expected: Token) -> Result<SpannedToken> {
+        match self {
+            Some(token) => token.ensure_token(expected),
+            None => Err(TokenError::eof(expected)),
+        }
+    }
+
+    fn ident(self) -> Result<Ident> {
+        match self {
+            Some(token) => token.ident(),
+            None => Err(TokenError::eof("identifier")),
+        }
     }
 }
 

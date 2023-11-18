@@ -8,8 +8,11 @@ pub fn parse_type_item(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
         tokens.pop();
     }
     // TODO: This is not a token error, refactor error types
-    parse_type_item_rec(&tokens)
-        .ok_or(tokens.spanned_error("Could not parse type", "Type expected here"))
+    parse_type_item_rec(&tokens).ok_or(tokens.spanned_error(
+        "Could not parse type",
+        "Type expected here",
+        TokenErrorKind::UnexpectedToken,
+    ))
 }
 
 fn parse_type_item_rec(tokens: &[SpannedToken]) -> Option<TypeItem> {
