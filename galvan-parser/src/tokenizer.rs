@@ -139,13 +139,26 @@ pub trait IterSpanInfo {
     }
 }
 
-impl<T> SpanInfo for T
-where
-    T: AsRef<[SpannedToken]>,
-{
+impl SpanInfo for &[SpannedToken] {
     fn span_all(&self) -> Span {
-        let mut iter = TokenIter::from(self.as_ref().iter());
+        let mut iter = self.iter();
         iter.span_all()
+    }
+}
+
+impl IterSpanInfo for TokenIter<'_> {
+    fn span_all(&mut self) -> Span {
+        let Some(current) = self.next() else {
+            return Span { start: 0, end: 0 };
+        };
+        let (_, last) = self.last().unwrap_or(current);
+        let (_, first) = current;
+
+        Span {
+            start: first.start,
+            end: last.end,
+        }
+        .into()
     }
 }
 

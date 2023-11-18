@@ -4,11 +4,10 @@ use crate::*;
 
 pub fn parse_type_item(tokens: Vec<SpannedToken>) -> Result<TypeItem> {
     let mut tokens = tokens;
-    while matches!(tokens.last(), Some((token!("\n"), _))) {
-        tokens.pop();
-    }
+    tokens.trim_trailing(token!("\n"));
+
     // TODO: This is not a token error, refactor error types
-    parse_type_item_rec(&tokens).ok_or(tokens.spanned_error(
+    parse_type_item_rec(&tokens).ok_or(tokens.iter().spanned_error(
         "Could not parse type",
         "Type expected here",
         TokenErrorKind::UnexpectedToken,

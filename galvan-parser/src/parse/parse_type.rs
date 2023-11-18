@@ -14,6 +14,9 @@ pub fn parse_type(token_iter: &mut TokenIter<'_>, mods: &Modifiers) -> Result<Ty
         .ok_or_else(|| TokenError::eof("type name"))?;
 
     if let Token::Ident(name) = token {
+        let Some((token, span)) = token_iter.next() else {
+            Err(TokenError::eof("one of '(', '{' or '='"))?
+        };
         // TODO: Parse visibility
         let visibility = Visibility::Inherited;
         let def = match token {
