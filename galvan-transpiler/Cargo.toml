@@ -8,5 +8,3 @@ version.workspace = true
 
 [dependencies]
 walkdir = "2.4.0"
-
-galvan-parser = { path = "../galvan-parser" }

@@ -1,5 +1,6 @@
 use std::vec::IntoIter;
 
+use galvan_ast::*;
 use galvan_lexer::Token;
 use galvan_macro::token;
 
@@ -25,16 +26,16 @@ pub fn parse_type(token_iter: &mut TokenIter<'_>, mods: &Modifiers) -> Result<Ty
                 let (_, _) = tokens.pop().unwrap().ensure_token(Token::BraceClose)?;
 
                 let members = parse_struct_type_members(tokens)?;
-                let t = StructTypeDef { members };
-                TypeDef::StructType(t)
+                let t = StructTypeDecl { members };
+                TypeDecl::StructType(t)
             }
             Token::ParenOpen => {
                 let mut tokens = token_iter.parse_until_matching(MatchingToken::Paren)?;
                 let (_, _) = tokens.pop().unwrap().ensure_token(Token::ParenClose)?;
 
                 let members = parse_tuple_type_members(tokens)?;
-                let t = TupleTypeDef { members };
-                TypeDef::TupleType(t)
+                let t = TupleTypeDecl { members };
+                TypeDecl::TupleType(t)
             }
             Token::Assign => {
                 // TODO: Allow newlines after some symbols like +
@@ -42,10 +43,10 @@ pub fn parse_type(token_iter: &mut TokenIter<'_>, mods: &Modifiers) -> Result<Ty
                 let tokens = token_iter.parse_until_token(Token::Newline)?;
 
                 let aliased_type = parse_type_alias(tokens)?;
-                let t = AliasTypeDef {
+                let t = AliasTypeDecl {
                     r#type: aliased_type,
                 };
-                TypeDef::AliasType(t)
+                TypeDecl::AliasType(t)
             }
             _ => {
                 return Err(TokenError {
@@ -159,7 +160,7 @@ mod test {
         let mut token_iter = tokens.iter();
         let parsed = parse_type(&mut token_iter, &Modifiers::default()).with_source(&src)?;
 
-        assert!(matches!(parsed.def, TypeDef::StructType(_)));
+        assert!(matches!(parsed.def, TypeDecl::StructType(_)));
         assert!(matches!(parsed.visibility, Visibility::Inherited));
 
         Ok(())

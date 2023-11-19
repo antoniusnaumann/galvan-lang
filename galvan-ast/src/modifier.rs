@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Clone, Default, Debug)]
 pub struct Modifiers {
     pub visibility: Visibility,
@@ -27,8 +29,10 @@ impl Modifiers {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, FromPest)]
+#[pest_ast(rule(Rule::visibility))]
 pub enum Visibility {
+    #[pest_ast(rule(Rule::pub_keyword))]
     Public,
     Private,
     // Inherited usually means pub(crate)

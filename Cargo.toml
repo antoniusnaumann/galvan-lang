@@ -6,6 +6,7 @@ version = "0.0.0"
 [workspace]
 resolver = "2"
 members = [
+  "galvan-ast",
   "galvan-core",
   "galvan-lexer",
   "galvan-parser",

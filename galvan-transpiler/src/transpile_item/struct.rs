@@ -1,4 +1,4 @@
-use galvan_parser::{StructTypeMember, TupleTypeMember, TypeDecl, TypeDef};
+use galvan_parser::{StructTypeMember, TupleTypeMember, TypeDecl, TypeDecl};
 
 use crate::{transpile, Transpile};
 
@@ -15,11 +15,11 @@ fn transpile_type_decl(decl: TypeDecl) -> String {
         def,
     } = decl;
     match def {
-        TypeDef::TupleType(def) => transpile!("{} struct {}({});", visibility, ident, def.members),
-        TypeDef::StructType(def) => {
+        TypeDecl::TupleType(def) => transpile!("{} struct {}({});", visibility, ident, def.members),
+        TypeDecl::StructType(def) => {
             transpile!("{} struct {} {{ {} }}", visibility, ident, def.members)
         }
-        TypeDef::AliasType(def) => transpile!("{} type {} = {};", visibility, ident, def.r#type),
+        TypeDecl::AliasType(def) => transpile!("{} type {} = {};", visibility, ident, def.r#type),
     }
 }
 

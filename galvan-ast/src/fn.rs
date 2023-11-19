@@ -1,6 +1,7 @@
-use crate::*;
+use super::*;
 
-#[derive(Debug)]
+#[derive(Debug, /* FromPest */)]
+// #[pest_ast(rule(Rule::function))]
 pub struct FnDecl {
     pub signature: FnSignature,
     pub block: Block,

@@ -1,7 +1,4 @@
-WHITESPACE = _{ whitespace }
-COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!"\n" ~ ANY)* ~ "\n") }
-
-source = _{ SOI ~ (space* ~ toplevel ~ space*)* ~ EOI }
+source = { SOI ~ (space* ~ toplevel ~ space*)* ~ EOI }
 toplevel = { 
 	main
 	| build
@@ -24,8 +21,9 @@ test = {
 }
 
 function = {
-    annotation? ~ func_modifiers ~ function_keyword ~ ident_ ~ param_list ~ colon ~ type_item ~ brace_open ~ body ~ brace_close
+    annotation? ~ func_modifiers ~ function_keyword ~ ident ~ param_list ~ return_type? ~ brace_open ~ body ~ brace_close
 }
+return_type = { colon ~ type_item }
 
 annotation = ${ "@" ~ ident }
 func_modifiers = {
@@ -36,16 +34,17 @@ func_modifiers = {
 
 visibility = { pub_keyword? }
 
-type_decl = _{ struct_type_decl | alias_type_decl | tuple_type_decl }
-struct_type_decl = { visibility ~ type_keyword ~ ident_ ~ brace_open ~ struct_fields ~ brace_close }
+type_decl = { struct_type_decl | alias_type_decl | tuple_type_decl }
+type_decl_prelude = _{ visibility ~ type_keyword ~ ident }
+struct_type_decl = { type_decl_prelude ~ brace_open ~ struct_fields ~ brace_close }
 struct_fields = { (struct_field ~ ((comma | newline+) ~ struct_field)*)? }
 struct_field = { typed_param }
-alias_type_decl = { visibility ~ type_keyword ~ ident_ ~ assign ~ type_item }
-tuple_type_decl = { visibility ~ type_keyword ~ ident_ ~ tuple_type }
+alias_type_decl = { type_decl_prelude ~ assign ~ type_item }
+tuple_type_decl = { type_decl_prelude ~ tuple_type_ }
 
-param_list = { paren_open ~ (typed_param ~ (comma ~ typed_param)*)? ~ paren_close }
+param_list = { (paren_open ~ (typed_param ~ (comma ~ typed_param)*)? ~ paren_close)? }
 // TODO: Allow patterns here instead of just identifiers
-typed_param = { ident_ ~ colon ~ type_item }
+typed_param = { ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
@@ -53,22 +52,20 @@ body = { ((newline)* ~ statement ~ (newline)+)* }
 
 statement = { declaration | assignment | expression }
 
-expression = {
-    "TODO: Expression"
-}
-
-declaration = { ref_declaration | val_declaration }
-ref_declaration = { ref_keyword ~ ident_ ~ (colon ~ type_item)? }
-val_declaration = { val_keyword ~ ident_ ~ (colon ~ type_item)? }
+expression = { "TODO: Expression" }
 
 assignment = { ident ~ assignment_operator ~ expression }
 
-ident_ = _{ ident | unused_ident | discard }
-ident = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
-unused_ident = @{ "_" ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
-discard = @{ "_" }
+declaration = { ref_declaration | val_declaration }
+ref_declaration = { ref_keyword ~ ident ~ (colon ~ type_item)? }
+val_declaration = { val_keyword ~ ident ~ (colon ~ type_item)? }
 
-string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+ident = @{ used_ident | unused_ident | discard }
+used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
+unused_ident = _{ "_" ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
+discard = _{ "_" }
+
 
 keyword = _{
     main_keyword
@@ -79,6 +76,7 @@ keyword = _{
     | ref_keyword
     | val_keyword
 }
+
 
 // # Brackets
 bracket_open = _{ "[" ~ space* }
@@ -104,16 +102,16 @@ assign = @{ "=" }
 plus_assign = @{ "+=" }
 minus_assign = @{ "-=" }
 multiply_assign = @{ "*=" }
+pow_assign = @{ "**=" }
 divide_assign = @{ "/=" }
-int_divide_assign = @{ "//=" }
 rem_assign = @{ "%=" }
 
 // ## Arithmetic
 plus = @{ "+" }
 minus = @{ "-" }
 multiply = @{ "*" }
+pow = @{ "**" }
 divide = @{ "/" }
-int_divide = @{ "//" }
 rem = @{ "%" }
 
 // # Keywords
@@ -139,12 +137,8 @@ dollar = _{ "$" }
 
 at_sign = @{ "@" }
 
-newline = _{ NEWLINE }
-whitespace = _{ " " | "\t" }
-space = _{ whitespace | newline }
-
 // # Type Definitions
-type_item = _{ result_type | optional_type | allowed_in_error_variant }
+type_item = { result_type | optional_type | allowed_in_error_variant }
 // Add some additional restrictions on optional / result type nesting
 // - Result types can't be nested -> Flatten result instead
 // - Optional types can't be nested -> Flatten optional instead
@@ -169,10 +163,23 @@ array_type = { bracket_open ~ element_type ~ bracket_close }
 set_type = { brace_open ~ element_type ~ brace_close }
 dict_type = { brace_open ~ key_type ~ colon ~ value_type ~ brace_close }
 ordered_dict_type = { bracket_open ~ key_type ~ colon ~ value_type ~ bracket_close }
-tuple_type = { paren_open ~ (element_type ~ (comma ~ element_type)*)? ~ paren_close }
-ref_type = ${ ref_type_prefix ~ element_type }
+tuple_type = { tuple_type_ }
+ref_type = ${ dollar ~ element_type }
 borrowed_type = ${ ampersand ~ element_type }
 result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
 optional_type = ${ opt_element_type ~ question_mark }
 
-ref_type_prefix = { dollar }
+tuple_type_ = _{ paren_open ~ (element_type ~ (comma ~ element_type)*)? ~ paren_close }
+
+// # Basics
+WHITESPACE = _{ whitespace }
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!"\n" ~ ANY)* ~ "\n") }
+
+// ## Whitespace
+newline = _{ NEWLINE }
+whitespace = _{ " " | "\t" }
+space = _{ whitespace | newline }
+
+// ## Literals
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+raw_string_literal = @{ "#\"" ~ (!"\"#" ~ ANY)* ~ "\"#" }
