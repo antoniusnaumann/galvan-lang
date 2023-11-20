@@ -1,3 +1,4 @@
+use std::error::Error;
 use from_pest::FromPest;
 use galvan_ast::{AstResult, IntoAst, RootItem};
 use galvan_pest::exec::parse_current_dir;
@@ -16,7 +17,7 @@ fn main() {
             Ok(ast) => {
                 println!("AST: {:#?}", ast);
             }
-            Err(e) => println!("Error when converting to AST: {}", e)
+            Err(e) => println!("Error when converting to AST: {}", dbg!(e))
         }
     }
 }

@@ -18,5 +18,11 @@ pub struct TestDecl {
 pub struct TaskDecl {
     ident: Ident,
     // name: Option<String>,
-    // TODO: body
+    body: Body,
+}
+
+#[derive(Debug, FromPest)]
+#[pest_ast(rule(Rule::body))]
+pub struct Body {
+    // statements: Vec<Statement>,
 }

@@ -5,6 +5,7 @@ extern crate pest_ast;
 
 use derive_more::From;
 use from_pest::{ConversionError, FromPest, Void};
+use from_pest::pest::iterators::Pairs;
 
 use galvan_pest::*;
 
@@ -23,21 +24,11 @@ pub use modifier::*;
 
 #[derive(Debug, From, FromPest)]
 #[pest_ast(rule(Rule::source))]
-pub struct Ast(Vec<RootItem>, _EOI);
-
-impl Ast {
-    pub fn root_items(&self) -> &[RootItem] {
-        &self.0
-    }
-
-    pub fn into_root_items(self) -> Vec<RootItem> {
-        self.0
-    }
+pub struct Ast {
+    pub toplevel: Vec<RootItem>,
+    _eoi: _EOI,
 }
 
-#[derive(Debug, FromPest)]
-#[pest_ast(rule(Rule::EOI))]
-struct _EOI;
 
 #[derive(Debug, From, FromPest)]
 #[pest_ast(rule(Rule::toplevel))]
@@ -59,6 +50,10 @@ pub type AstResult = Result<Ast, AstError>;
 pub trait IntoAst {
     fn try_into_ast(self) -> AstResult;
 }
+
+#[derive(Debug, FromPest)]
+#[pest_ast(rule(Rule::EOI))]
+struct _EOI;
 
 impl IntoAst for ParserNodes<'_> {
     fn try_into_ast(mut self) -> AstResult {

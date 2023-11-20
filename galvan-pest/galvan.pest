@@ -35,16 +35,16 @@ func_modifiers = {
 visibility = { pub_keyword? }
 
 type_decl = { struct_type_decl | alias_type_decl | tuple_type_decl }
-type_decl_prelude = _{ visibility ~ type_keyword ~ ident }
+type_decl_prelude = _{ visibility ~ type_keyword ~ type_ident }
 struct_type_decl = { type_decl_prelude ~ brace_open ~ struct_fields ~ brace_close }
 struct_fields = { (struct_field ~ ((comma | newline+) ~ struct_field)*)? }
 struct_field = { typed_param }
-alias_type_decl = { type_decl_prelude ~ assign ~ type_item }
+alias_type_decl = { type_decl_prelude ~ assign_ ~ type_item }
 tuple_type_decl = { type_decl_prelude ~ tuple_type_ }
 
 param_list = { (paren_open ~ (typed_param ~ (comma ~ typed_param)*)? ~ paren_close)? }
 // TODO: Allow patterns here instead of just identifiers
-typed_param = { ident ~ colon ~ type_item }
+typed_param = _{ ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
@@ -98,7 +98,8 @@ question_mark = _{ "?" }
 
 // # Operators
 assignment_operator = @{ assign | plus_assign | minus_assign | multiply_assign | divide_assign | rem_assign }
-assign = @{ "=" }
+assign = @{ assign_ }
+assign_ = _{ "=" }
 plus_assign = @{ "+=" }
 minus_assign = @{ "-=" }
 multiply_assign = @{ "*=" }

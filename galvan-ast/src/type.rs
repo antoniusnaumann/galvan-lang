@@ -14,7 +14,7 @@ pub enum TypeDecl {
 #[pest_ast(rule(Rule::tuple_type_decl))]
 pub struct TupleTypeDecl {
     pub visibility: Visibility,
-    pub ident: Ident,
+    pub ident: TypeIdent,
     pub members: Vec<TupleTypeMember>,
 }
 
@@ -25,23 +25,26 @@ pub struct TupleTypeMember {
     pub r#type: TypeItem,
 }
 
-#[derive(Debug)]
+#[derive(Debug, FromPest)]
+#[pest_ast(rule(Rule::struct_type_decl))]
 pub struct StructTypeDecl {
     pub visibility: Visibility,
-    pub ident: Ident,
+    pub ident: TypeIdent,
     pub members: Vec<StructTypeMember>,
 }
-#[derive(Debug)]
+#[derive(Debug, FromPest)]
+#[pest_ast(rule(Rule::struct_field))]
 pub struct StructTypeMember {
-    pub visibility: Visibility,
+    // pub visibility: Visibility,
     pub ident: Ident,
     pub r#type: TypeItem,
 }
 
-#[derive(Debug)]
+#[derive(Debug, FromPest)]
+#[pest_ast(rule(Rule::alias_type_decl))]
 pub struct AliasTypeDecl {
     pub visibility: Visibility,
-    pub ident: Ident,
+    pub ident: TypeIdent,
     pub r#type: TypeItem,
 }
 
@@ -63,14 +66,14 @@ pub enum TypeItem {
     Plain(BasicTypeItem),
 }
 
-impl From<Ident> for TypeItem {
-    fn from(value: Ident) -> Self {
+impl From<TypeIdent> for TypeItem {
+    fn from(value: TypeIdent) -> Self {
         Self::Plain(BasicTypeItem { ident: value })
     }
 }
 
 impl TypeItem {
-    pub fn plain(ident: Ident) -> Self {
+    pub fn plain(ident: TypeIdent) -> Self {
         Self::Plain(BasicTypeItem { ident })
     }
 
@@ -162,7 +165,7 @@ pub struct ResultTypeItem {
 #[derive(Debug, FromPest)]
 #[pest_ast(rule(Rule::basic_type))]
 pub struct BasicTypeItem {
-    pub ident: Ident,
+    pub ident: TypeIdent,
     // TODO: Handle generics
 }
 
