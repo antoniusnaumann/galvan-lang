@@ -2,7 +2,7 @@ use derive_more::From;
 
 use super::*;
 
-#[derive(Debug, From, FromPest)]
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::type_decl))]
 pub enum TypeDecl {
     Tuple(TupleTypeDecl),
@@ -10,7 +10,7 @@ pub enum TypeDecl {
     Alias(AliasTypeDecl),
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::tuple_type_decl))]
 pub struct TupleTypeDecl {
     pub visibility: Visibility,
@@ -18,21 +18,21 @@ pub struct TupleTypeDecl {
     pub members: Vec<TupleTypeMember>,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::type_item))]
 pub struct TupleTypeMember {
     pub visibility: Visibility,
     pub r#type: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::struct_type_decl))]
 pub struct StructTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub members: Vec<StructTypeMember>,
 }
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::struct_field))]
 pub struct StructTypeMember {
     // pub visibility: Visibility,
@@ -40,7 +40,7 @@ pub struct StructTypeMember {
     pub r#type: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::alias_type_decl))]
 pub struct AliasTypeDecl {
     pub visibility: Visibility,
@@ -48,7 +48,7 @@ pub struct AliasTypeDecl {
     pub r#type: TypeItem,
 }
 
-#[derive(Debug, From, FromPest)]
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::type_item))]
 pub enum TypeItem {
     // Collection Types
@@ -117,61 +117,61 @@ impl TypeItem {
 }
 
 // TODO: Add a marker trait to constrain this to only type decls
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::array_type))]
 pub struct ArrayTypeItem {
     pub elements: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::dict_type))]
 pub struct DictionaryTypeItem {
     pub key: TypeItem,
     pub value: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::ordered_dict_type))]
 pub struct OrderedDictionaryTypeItem {
     pub key: TypeItem,
     pub value: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::set_type))]
 pub struct SetTypeItem {
     pub elements: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::tuple_type))]
 pub struct TupleTypeItem {
     pub elements: Vec<TypeItem>,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::optional_type))]
 pub struct OptionalTypeItem {
     pub some: TypeItem,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::result_type))]
 pub struct ResultTypeItem {
     pub success: TypeItem,
     pub error: Option<TypeItem>,
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::basic_type))]
 pub struct BasicTypeItem {
     pub ident: TypeIdent,
     // TODO: Handle generics
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReceiverType {}
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq,)]
 pub struct ReturnType {}
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq,)]
 pub struct ParamType {}

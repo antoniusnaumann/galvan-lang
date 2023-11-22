@@ -1,0 +1,6 @@
+AST Ast::new(vec![])
+---
+
+type SimpleStruct {
+    member: String
+}

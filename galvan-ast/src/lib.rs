@@ -21,16 +21,25 @@ pub use r#fn::*;
 pub use r#type::*;
 pub use tasks::*;
 pub use modifier::*;
+pub use literal::*;
 
-#[derive(Debug, From, FromPest)]
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::source))]
 pub struct Ast {
     pub toplevel: Vec<RootItem>,
     _eoi: _EOI,
 }
 
+impl Ast {
+    pub fn new(toplevel: Vec<RootItem>) -> Self {
+        Ast {
+            toplevel,
+            _eoi: _EOI,
+        }
+    }
+}
 
-#[derive(Debug, From, FromPest)]
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::toplevel))]
 pub enum RootItem {
     // Fn(FnDecl),
@@ -38,6 +47,12 @@ pub enum RootItem {
     Main(MainDecl),
     Test(TestDecl),
     CustomTask(TaskDecl),
+}
+
+impl From<RootItem> for Ast {
+    fn from(item: RootItem) -> Self {
+        Ast::new(vec![item])
+    }
 }
 
 fn string(span: BorrowedSpan<'_>) -> String {
@@ -51,7 +66,7 @@ pub trait IntoAst {
     fn try_into_ast(self) -> AstResult;
 }
 
-#[derive(Debug, FromPest)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::EOI))]
 struct _EOI;
 

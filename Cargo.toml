@@ -8,9 +8,7 @@ resolver = "2"
 members = [
   "galvan-ast",
   "galvan-core",
-  "galvan-lexer",
-  "galvan-parser",
   "galvan-pest",
-  "galvan-transpiler",
-  "galvan-macro",
+  # "galvan-transpiler",
+  "galvan-test-macro",
 ]

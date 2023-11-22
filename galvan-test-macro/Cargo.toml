@@ -1,5 +1,5 @@
 [package]
-name = "galvan-macro"
+name = "galvan-test-macro"
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
@@ -8,8 +8,6 @@ version.workspace = true
 proc-macro = true
 
 [dependencies]
-syn = "2.0"
+syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
-
-galvan-lexer = { path = "../galvan-lexer" }

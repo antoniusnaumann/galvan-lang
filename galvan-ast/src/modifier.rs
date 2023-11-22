@@ -29,7 +29,7 @@ impl Modifiers {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug, FromPest)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::visibility))]
 pub enum Visibility {
     #[pest_ast(rule(Rule::pub_keyword))]
@@ -40,14 +40,14 @@ pub enum Visibility {
     Inherited,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq,)]
 pub enum Ownership {
     Val,
     StoredRef,
     BorrowedRef,
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq,)]
 pub enum Async {
     Async,
     // This usually means sync
@@ -57,7 +57,7 @@ pub enum Async {
     Generic,
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq,)]
 pub enum Const {
     Const,
     // This usually means not const

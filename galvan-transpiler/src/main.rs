@@ -2,7 +2,7 @@ use galvan_transpiler::transpile_source;
 use std::env;
 use walkdir::WalkDir;
 
-use galvan_parser::{ItemWithSource, Source};
+use galvan_ast::{ItemWithSource, Source};
 
 #[allow(clippy::redundant_closure)]
 fn main() {

@@ -1,0 +1,4 @@
+AST Ast::new(vec![])
+---
+
+type EmptyMarker

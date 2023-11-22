@@ -14,6 +14,9 @@ derive_more = { version = "0.99.17", features = [] }
 
 galvan-pest = { path = "../galvan-pest" }
 
+[dev-dependencies]
+galvan-test-macro = { path = "../galvan-test-macro" }
+
 [features]
 exec = ["galvan-pest/exec"]
 
