@@ -32,13 +32,22 @@ impl Modifiers {
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::visibility))]
 pub enum Visibility {
-    #[pest_ast(rule(Rule::pub_keyword))]
-    Public,
-    Private,
     // Inherited usually means pub(crate)
     #[default]
     Inherited,
+    Public(Pub),
+    // Private,
 }
+
+impl Visibility {
+    pub fn public() -> Self {
+        Self::Public(Pub)
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::pub_keyword))]
+pub struct Pub;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq,)]
 pub enum Ownership {

@@ -1,4 +1,4 @@
-AST Ast::from(RootItem::Type(TypeDecl::Struct(StructTypeDecl { visibility: Visibility::Inherited, ident: TypeIdent::new("EmptyStruct"), members: vec![]})))
+AST ast(struct_type(inherited(), "EmptyStruct", vec![]))
 ---
 
 type EmptyStruct {}

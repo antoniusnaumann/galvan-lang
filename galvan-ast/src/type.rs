@@ -8,6 +8,7 @@ pub enum TypeDecl {
     Tuple(TupleTypeDecl),
     Struct(StructTypeDecl),
     Alias(AliasTypeDecl),
+    Empty(EmptyTypeDecl),
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -19,9 +20,9 @@ pub struct TupleTypeDecl {
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::type_item))]
+#[pest_ast(rule(Rule::element_type))]
 pub struct TupleTypeMember {
-    pub visibility: Visibility,
+    // pub visibility: Visibility,
     pub r#type: TypeItem,
 }
 
@@ -46,6 +47,13 @@ pub struct AliasTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub r#type: TypeItem,
+}
+
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::empty_type_decl))]
+pub struct EmptyTypeDecl {
+    pub visibility: Visibility,
+    pub ident: TypeIdent,
 }
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]

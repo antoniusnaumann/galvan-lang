@@ -1,4 +1,4 @@
-AST Ast::new(vec![])
+AST ast(alias_type(public(), "AliasType", plain("Int")))
 ---
 
-type AliasType = Int
+pub type AliasType = Int

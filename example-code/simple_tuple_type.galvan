@@ -1,4 +1,4 @@
-AST Ast::new(vec![])
+AST ast(tuple_type(public(), "SimpleTuple", vec![tuple_member(plain("Int")), tuple_member(plain("Int"))]))
 ---
 
-type SimpleTuple(Int, Int)
+pub type SimpleTuple(Int, Int)
