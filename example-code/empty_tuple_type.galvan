@@ -1,4 +1,5 @@
-AST ast(tuple_type(inherited(), "EmptyTuple", vec![]))
----
+/*# AST
+ast(tuple_type(inherited(), "EmptyTuple", vec![]))
+*/
 
 type EmptyTuple()

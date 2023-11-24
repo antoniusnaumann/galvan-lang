@@ -1,4 +1,5 @@
-AST ast(struct_type(inherited(), "EmptyStruct", vec![]))
----
+/*# AST
+ast(struct_type(inherited(), "EmptyStruct", vec![]))
+*/
 
 type EmptyStruct {}

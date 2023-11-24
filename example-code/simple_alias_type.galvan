@@ -1,4 +1,5 @@
-AST ast(alias_type(public(), "AliasType", plain("Int")))
----
+/*# AST
+ast(alias_type(public(), "AliasType", plain("Int")))
+*/
 
 pub type AliasType = Int

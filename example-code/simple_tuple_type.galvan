@@ -1,4 +1,5 @@
-AST ast(tuple_type(public(), "SimpleTuple", vec![tuple_member(plain("Int")), tuple_member(plain("Int"))]))
----
+/*# AST
+ast(tuple_type(public(), "SimpleTuple", vec![tuple_member(plain("Int")), tuple_member(plain("Int"))]))
+*/
 
 pub type SimpleTuple(Int, Int)

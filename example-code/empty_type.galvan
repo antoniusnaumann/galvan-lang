@@ -1,4 +1,5 @@
-AST ast(empty_type(inherited(), "EmptyMarker"))
----
+/*# AST
+ast(empty_type(inherited(), "EmptyMarker"))
+*/
 
 type EmptyMarker

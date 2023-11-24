@@ -1,5 +1,6 @@
-AST ast(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain("String"))]));
----
+/*# AST
+ast(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain("String"))]));
+*/
 
 pub type SimpleStruct {
     member: String

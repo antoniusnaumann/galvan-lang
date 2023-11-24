@@ -40,17 +40,8 @@ fn generate_test(path: PathBuf, macro_input: &MacroInput) -> TokenStream {
 
     let Ok(test_file) = std::fs::read_to_string(&path) else { panic!("Test file not found!") };
 
-    let split: Vec<_> = test_file.split("---").take(2).map(|s| s.trim()).collect();
-    let (frontmatter, code) = (split[0], split[1]);
-    let expected_struct = frontmatter
-        .lines()
-        .filter_map(|line| line.strip_prefix(tag))
-        .collect::<Vec<_>>()
-        .first()
-        .unwrap_or_else(|| panic!("Tag {tag} not found in frontmatter!"))
-        .trim()
-        .parse::<TokenStream>()
-        .unwrap_or_else(|e| panic!("Code in frontmatter is not valid Rust code! Error: {e}\nCode: {code}"));
+    let expected_struct = expected_result(&test_file, tag).unwrap_or_else(|e| panic!("{}", e));
+    let code = test_file;
 
     let test_name = format_ident!("{prefix}_{name}");
     quote!{
@@ -62,4 +53,29 @@ fn generate_test(path: PathBuf, macro_input: &MacroInput) -> TokenStream {
             assert_eq!(expected_struct, actual_struct);
         }
     }
+}
+
+fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStream, &'static str> {
+    let prefix = "/*#";
+    let mut lines = vec![];
+    let mut iter = test_file.lines();
+
+    loop {
+        match iter.next() {
+            Some(line) if line.strip_prefix(prefix).is_some_and(|s| s.trim().starts_with(tag)) => break,
+            Some(_) => continue,
+            None => return Err("Tag not found in test file!"),
+        }
+    }
+
+    loop {
+        match iter.next() {
+            Some(line) if line.starts_with("*/") => break,
+            Some(line) => lines.push(line),
+            None => return Err("Tag not closed in test file!"),
+        }
+    }
+
+    let code = lines.join("\n");
+    code.parse::<TokenStream>().map_err(|_| "Code in frontmatter is not valid Rust code!")
 }
