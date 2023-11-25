@@ -50,6 +50,10 @@ mod test_utils {
         TypeElement::plain(TypeIdent::new(ident))
     }
 
+    pub fn optional(ty: TypeElement) -> TypeElement {
+        TypeElement::optional(ty.try_into().unwrap())
+    }
+
     pub fn array(elements: TypeElement) -> TypeElement {
         TypeElement::array(elements)
     }

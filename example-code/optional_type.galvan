@@ -1,0 +1,9 @@
+/*# AST
+ast(alias_type(inherited(), "OptionalInt", optional(plain("Int"))))
+*/
+
+/*# TRANSPILE
+"pub(crate) type OptionalInt = Option<Int>;"
+*/
+
+type OptionalInt = Int?

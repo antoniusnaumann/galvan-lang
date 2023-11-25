@@ -108,18 +108,61 @@ pub struct TupleTypeItem {
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::optional_type))]
 pub struct OptionalTypeItem {
-    pub some: OptionalElement,
+    some: OptionalElement,
+}
+
+impl OptionalTypeItem {
+    pub fn new(some: OptionalElement) -> Self {
+        Self { some }
+    }
+
+    /// Lifts the inner type of the optional to a type element
+    pub fn element(self) -> TypeElement {
+        self.some.into()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::opt_element_type))]
+/// A subset of TypeElement that can be used as the inner type of an optional
 pub enum OptionalElement {
     Array(Box<ArrayTypeItem>),
     Dictionary(Box<DictionaryTypeItem>),
     OrderedDictionary(Box<OrderedDictionaryTypeItem>),
     Set(Box<SetTypeItem>),
     Tuple(Box<TupleTypeItem>),
-    Plain(Box<BasicTypeItem>),
+    Plain(BasicTypeItem),
+}
+
+impl TryFrom<TypeElement> for OptionalElement {
+    // TODO: Better error type
+    type Error = &'static str;
+
+    fn try_from(value: TypeElement) -> Result<Self, Self::Error> {
+        Ok(match value {
+            TypeElement::Array(array) => Self::Array(array),
+            TypeElement::Dictionary(dict) => Self::Dictionary(dict),
+            TypeElement::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
+            TypeElement::Set(set) => Self::Set(set),
+            TypeElement::Tuple(tuple) => Self::Tuple(tuple),
+            TypeElement::Plain(basic) => Self::Plain(basic),
+            TypeElement::Optional(_) => Err("Cannot nest optional types!")?,
+            TypeElement::Result(_) => Err("Cannot nest result types!")?,
+        })
+    }
+}
+
+impl From<OptionalElement> for TypeElement {
+    fn from(value: OptionalElement) -> Self {
+        match value {
+            OptionalElement::Array(array) => Self::Array(array),
+            OptionalElement::Dictionary(dict) => Self::Dictionary(dict),
+            OptionalElement::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
+            OptionalElement::Set(set) => Self::Set(set),
+            OptionalElement::Tuple(tuple) => Self::Tuple(tuple),
+            OptionalElement::Plain(basic) => Self::Plain(basic),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -215,4 +258,16 @@ mod test {
 
     test_dictionary_type!("{Int: Float}", test_dict_type, dict_type, Dictionary, DictionaryTypeItem);
     test_dictionary_type!("[Int: Float]", test_ordered_dict_type, ordered_dict_type, OrderedDictionary, OrderedDictionaryTypeItem);
+
+    #[test]
+    fn test_optional_type() {
+        let parsed: OptionalTypeItem = partial_ast("Int?", Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Plain(some) = parsed.element() else { panic!("Expected plain type as some type") };
+        assert_eq!(some.ident, TypeIdent::new("Int"), "Testing some");
+
+        let parsed: TypeElement = partial_ast("Int?", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Optional(container) = parsed else { panic!("Wrong type") };
+        let TypeElement::Plain(some) = container.element() else { panic!("Expected plain type as some type") };
+        assert_eq!(some.ident, TypeIdent::new("Int"), "Testing some for lifted TypeItem");
+    }
 }
