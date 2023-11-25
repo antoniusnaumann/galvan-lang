@@ -1,4 +1,4 @@
-use super::*;
+use galvan_pest::Rule;
 
 #[derive(Clone, Default, Debug)]
 pub struct Modifiers {

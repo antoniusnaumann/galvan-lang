@@ -2,7 +2,7 @@ use galvan_transpiler::transpile_source;
 use std::env;
 use walkdir::WalkDir;
 
-use galvan_ast::Source;
+use galvan_ast::{IntoAst, Source};
 
 #[allow(clippy::redundant_closure)]
 fn main() {
@@ -14,7 +14,7 @@ fn main() {
         .map(|e| e.into_path())
         .filter(|p| p.extension() == Some("galvan".as_ref()))
         .map(|p| Source::read(p))
-        .map(|s| (parse_source(&s), s))
+        .map(|s| (s.clone().try_into_ast(), s))
         .collect::<Vec<_>>();
 
     // TODO: Aggregate and print errors
@@ -24,7 +24,7 @@ fn main() {
         println!("----- Source: {:?} -----", source.origin());
         match parsed {
             Ok(p) => println!("{}", transpile_source(p)),
-            Err(e) => println!("Error: {}", e.with_source(source)),
+            Err(e) => println!("Error: {}", e),
         }
     }
 }

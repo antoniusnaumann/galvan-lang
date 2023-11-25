@@ -1,6 +1,7 @@
 use derive_more::From;
+use galvan_pest::Rule;
 
-use super::*;
+use super::string;
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::string_literal))]

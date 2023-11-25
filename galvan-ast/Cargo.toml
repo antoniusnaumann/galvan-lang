@@ -13,6 +13,7 @@ from-pest = "0.3.2"
 derive_more = { version = "0.99.17", features = [] }
 
 galvan-pest = { path = "../galvan-pest" }
+thiserror = "1.0.50"
 
 [dev-dependencies]
 galvan-test-macro = { path = "../galvan-test-macro" }

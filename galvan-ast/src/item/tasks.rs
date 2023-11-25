@@ -1,5 +1,6 @@
-use crate::literal::StringLiteral;
-use super::*;
+use galvan_pest::Rule;
+
+use super::{Ident, StringLiteral};
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::main))]

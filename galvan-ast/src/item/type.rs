@@ -1,6 +1,7 @@
 use derive_more::From;
+use galvan_pest::Rule;
 
-use super::*;
+use super::{Ident, TypeIdent, Visibility};
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::type_decl))]

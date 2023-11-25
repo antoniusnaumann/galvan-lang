@@ -2,24 +2,17 @@
 extern crate pest_ast;
 
 use derive_more::From;
-use from_pest::{ConversionError, FromPest, Void};
+use from_pest::FromPest;
 
 use galvan_pest::*;
 pub use galvan_pest::{Source};
 
-mod r#fn;
-mod ident;
-mod tasks;
-mod r#type;
-mod modifier;
-mod literal;
+mod item;
 
-pub use ident::*;
-pub use r#fn::*;
-pub use r#type::*;
-pub use tasks::*;
-pub use modifier::*;
-pub use literal::*;
+pub use item::*;
+
+mod result;
+pub use result::*;
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::source))]
@@ -37,28 +30,11 @@ impl Ast {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::toplevel))]
-pub enum RootItem {
-    // Fn(FnDecl),
-    Type(TypeDecl),
-    Main(MainDecl),
-    Test(TestDecl),
-    CustomTask(TaskDecl),
-}
-
 impl From<RootItem> for Ast {
     fn from(item: RootItem) -> Self {
         Ast::new(vec![item])
     }
 }
-
-fn string(span: BorrowedSpan<'_>) -> String {
-    span.as_str().to_owned()
-}
-
-pub type AstError = ConversionError<Void>;
-pub type AstResult = Result<Ast, AstError>;
 
 pub trait IntoAst {
     fn try_into_ast(self) -> AstResult;
@@ -70,6 +46,13 @@ struct _EOI;
 
 impl IntoAst for ParserNodes<'_> {
     fn try_into_ast(mut self) -> AstResult {
-        Ast::from_pest(&mut self)
+        Ok(Ast::from_pest(&mut self)?)
+    }
+}
+
+impl IntoAst for Source {
+    fn try_into_ast(self) -> AstResult {
+        let parsed = parse_source(&self)?;
+        parsed.try_into_ast()
     }
 }
