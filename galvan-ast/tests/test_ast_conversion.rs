@@ -31,7 +31,7 @@ mod test_utils {
         })
     }
 
-    pub fn alias_type(visibility: Visibility, ident: &str, ty: TypeItem) -> TypeDecl {
+    pub fn alias_type(visibility: Visibility, ident: &str, ty: TypeElement) -> TypeDecl {
         TypeDecl::Alias(AliasTypeDecl {
             visibility,
             ident: TypeIdent::new(ident),
@@ -46,22 +46,22 @@ mod test_utils {
         })
     }
 
-    pub fn plain(ident: &str) -> TypeItem {
-        TypeItem::plain(TypeIdent::new(ident))
+    pub fn plain(ident: &str) -> TypeElement {
+        TypeElement::plain(TypeIdent::new(ident))
     }
 
-    pub fn array(elements: TypeItem) -> TypeItem {
-        TypeItem::array(elements)
+    pub fn array(elements: TypeElement) -> TypeElement {
+        TypeElement::array(elements)
     }
 
-    pub fn struct_member(ident: &str, ty: TypeItem) -> StructTypeMember {
+    pub fn struct_member(ident: &str, ty: TypeElement) -> StructTypeMember {
         StructTypeMember {
             ident: Ident::new(ident),
             r#type: ty,
         }
     }
 
-    pub fn tuple_member(ty: TypeItem) -> TupleTypeMember {
+    pub fn tuple_member(ty: TypeElement) -> TupleTypeMember {
         TupleTypeMember {
             r#type: ty,
         }

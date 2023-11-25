@@ -68,7 +68,7 @@ macro_rules! punct {
 use galvan_ast::*;
 pub(crate) use {transpile, impl_transpile_match, impl_transpile};
 
-punct!(", ", TypeItem, TupleTypeMember);
+punct!(", ", TypeElement, TupleTypeMember);
 punct!(",\n", StructTypeMember);
 punct!("\n\n", RootItem);
 // punct!(";\n", Statement);

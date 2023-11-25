@@ -1,9 +1,7 @@
 use derive_more::From;
-use from_pest::{ConversionError, FromPest};
-use from_pest::pest::iterators::Pairs;
 use galvan_pest::Rule;
 
-use super::{Ident, TypeIdent, Visibility};
+use super::{Ident, TypeIdent, TypeElement, Visibility};
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::type_decl))]
@@ -23,10 +21,10 @@ pub struct TupleTypeDecl {
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::tuple_element))]
+#[pest_ast(rule(Rule::tuple_field))]
 pub struct TupleTypeMember {
     // pub visibility: Visibility,
-    pub r#type: TypeItem,
+    pub r#type: TypeElement,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -41,7 +39,7 @@ pub struct StructTypeDecl {
 pub struct StructTypeMember {
     // pub visibility: Visibility,
     pub ident: Ident,
-    pub r#type: TypeItem,
+    pub r#type: TypeElement,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -49,7 +47,7 @@ pub struct StructTypeMember {
 pub struct AliasTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
-    pub r#type: TypeItem,
+    pub r#type: TypeElement,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -59,126 +57,6 @@ pub struct EmptyTypeDecl {
     pub ident: TypeIdent,
 }
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::type_item))]
-pub enum TypeItem {
-    // Collection Types
-    Array(Box<ArrayTypeItem>),
-    Dictionary(Box<DictionaryTypeItem>),
-    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
-    Set(Box<SetTypeItem>),
-    Tuple(Box<TupleTypeItem>),
-
-    // Error handling monads
-    Optional(Box<OptionalTypeItem>),
-    Result(Box<ResultTypeItem>),
-
-    // Primitive type
-    Plain(BasicTypeItem),
-}
-
-impl From<TypeIdent> for TypeItem {
-    fn from(value: TypeIdent) -> Self {
-        Self::Plain(BasicTypeItem { ident: value })
-    }
-}
-
-impl TypeItem {
-    pub fn plain(ident: TypeIdent) -> Self {
-        Self::Plain(BasicTypeItem { ident })
-    }
-
-    pub fn array(elements: TypeItem) -> Self {
-        Self::Array(Box::new(ArrayTypeItem { elements }))
-    }
-
-    pub fn dict(key: TypeItem, value: TypeItem) -> Self {
-        Self::Dictionary(Box::new(DictionaryTypeItem { key, value }))
-    }
-
-    pub fn ordered_dict(key: TypeItem, value: TypeItem) -> Self {
-        Self::OrderedDictionary(Box::new(OrderedDictionaryTypeItem { key, value }))
-    }
-
-    pub fn set(elements: TypeItem) -> Self {
-        Self::Set(Box::new(SetTypeItem { elements }))
-    }
-
-    pub fn tuple(elements: Vec<TypeItem>) -> Self {
-        Self::Tuple(Box::new(TupleTypeItem { elements }))
-    }
-
-    pub fn optional(some: TypeItem) -> Self {
-        Self::Optional(Box::new(OptionalTypeItem { some }))
-    }
-
-    pub fn result(success: TypeItem) -> Self {
-        Self::Result(Box::new(ResultTypeItem {
-            success,
-            error: None,
-        }))
-    }
-
-    pub fn result_with_typed_error(success: TypeItem, error: TypeItem) -> Self {
-        Self::Result(Box::new(ResultTypeItem {
-            success,
-            error: Some(error),
-        }))
-    }
-}
-
-// TODO: Add a marker trait to constrain this to only type decls
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::array_type))]
-pub struct ArrayTypeItem {
-    pub elements: TypeItem,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::dict_type))]
-pub struct DictionaryTypeItem {
-    pub key: TypeItem,
-    pub value: TypeItem,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::ordered_dict_type))]
-pub struct OrderedDictionaryTypeItem {
-    pub key: TypeItem,
-    pub value: TypeItem,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::set_type))]
-pub struct SetTypeItem {
-    pub elements: TypeItem,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::tuple_type))]
-pub struct TupleTypeItem {
-    pub elements: Vec<TypeItem>,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::optional_type))]
-pub struct OptionalTypeItem {
-    pub some: TypeItem,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::result_type))]
-pub struct ResultTypeItem {
-    pub success: TypeItem,
-    pub error: Option<TypeItem>,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::basic_type))]
-pub struct BasicTypeItem {
-    pub ident: TypeIdent,
-    // TODO: Handle generics
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReceiverType {}
@@ -186,42 +64,3 @@ pub struct ReceiverType {}
 pub struct ReturnType {}
 #[derive(Debug, PartialEq, Eq,)]
 pub struct ParamType {}
-
-#[cfg(test)]
-mod test {
-    use from_pest::FromPest;
-    use from_pest::pest::Parser;
-    use galvan_pest::Rule;
-    use crate::{ArrayTypeItem, TypeIdent, TypeItem};
-
-    fn partial_ast<'p, T>(src: &'p str, rule: Rule) -> T
-    where
-        T: FromPest<'p, Rule = Rule>,
-    {
-        let pairs = galvan_pest::GalvanParser::parse(rule, src).unwrap();
-        let Ok(parsed) = T::from_pest(&mut pairs.clone()) else { panic!("Error during AST conversion! \n{:#?}", pairs) };
-        parsed
-    }
-
-    #[test]
-    fn test_plain_type() {
-        let parsed: TypeItem = partial_ast("Int", Rule::type_item);
-        let TypeItem::Plain(basic) = parsed else { panic!("Expected plain type") };
-        assert_eq!(basic.ident, TypeIdent::new("Int"));
-    }
-
-    #[test]
-    fn test_array_type() {
-        let parsed: TypeItem = partial_ast("[Int]", Rule::type_item);
-        let TypeItem::Array(array) = parsed else { panic!("Expected array type") };
-        let TypeItem::Plain(elements) = array.elements else { panic!("Expected plain type") };
-        assert_eq!(elements.ident, TypeIdent::new("Int"));
-    }
-
-    #[test]
-    fn test_array_type_inner() {
-        let parsed: ArrayTypeItem = partial_ast("[Int]", Rule::array_type);
-        let TypeItem::Plain(elements) = parsed.elements else { panic!("Expected plain type") };
-        assert_eq!(elements.ident, TypeIdent::new("Int"));
-    }
-}

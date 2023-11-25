@@ -40,7 +40,10 @@ struct_type_decl = { type_decl_prelude ~ brace_open ~ struct_fields ~ brace_clos
 struct_fields = _{ (struct_field ~ ((comma | newline+) ~ struct_field)*)? }
 struct_field = { typed_param }
 alias_type_decl = { type_decl_prelude ~ assign_ ~ type_item }
-tuple_type_decl = { type_decl_prelude ~ tuple_type_ }
+tuple_type_decl = { type_decl_prelude ~ paren_open ~ tuple_fields ~ paren_close }
+tuple_fields = _{ (tuple_field ~ (comma ~ tuple_field)*)? }
+tuple_field = { type_item }
+tuple_element = { element_type }
 empty_type_decl = { type_decl_prelude }
 
 param_list = { (paren_open ~ (typed_param ~ (comma ~ typed_param)*)? ~ paren_close)? }
@@ -158,6 +161,7 @@ key_type = _{ type_item }
 value_type = _{ type_item }
 element_type = _{ type_item }
 opt_element_type = { allowed_in_optional }
+tuple_elements = _{ element_type ~ (comma ~ element_type)* }
 
 type_ident = @{ (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
 basic_type = { type_ident }
@@ -165,14 +169,11 @@ array_type = { bracket_open ~ element_type ~ bracket_close }
 set_type = { brace_open ~ element_type ~ brace_close }
 dict_type = { brace_open ~ key_type ~ colon ~ value_type ~ brace_close }
 ordered_dict_type = { bracket_open ~ key_type ~ colon ~ value_type ~ bracket_close }
-tuple_type = { tuple_type_ }
+tuple_type = { paren_open ~ tuple_elements ~ paren_close }
 ref_type = ${ dollar ~ element_type }
 borrowed_type = ${ ampersand ~ element_type }
 result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
 optional_type = ${ opt_element_type ~ question_mark }
-
-tuple_type_ = _{ paren_open ~ (tuple_element ~ (comma ~ tuple_element)*)? ~ paren_close }
-tuple_element = { element_type }
 
 // # Basics
 WHITESPACE = _{ whitespace }
