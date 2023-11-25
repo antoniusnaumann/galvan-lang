@@ -154,9 +154,9 @@ allowed_in_optional = _{ basic_type | array_type | dict_type | ordered_dict_type
 error_variant = { allowed_in_error_variant }
 success_variant = { allowed_in_success_variant }
 
-key_type = { type_item }
-value_type = { type_item }
-element_type = { type_item }
+key_type = _{ type_item }
+value_type = _{ type_item }
+element_type = _{ type_item }
 opt_element_type = { allowed_in_optional }
 
 type_ident = @{ (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
@@ -171,7 +171,8 @@ borrowed_type = ${ ampersand ~ element_type }
 result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
 optional_type = ${ opt_element_type ~ question_mark }
 
-tuple_type_ = _{ paren_open ~ (element_type ~ (comma ~ element_type)*)? ~ paren_close }
+tuple_type_ = _{ paren_open ~ (tuple_element ~ (comma ~ tuple_element)*)? ~ paren_close }
+tuple_element = { element_type }
 
 // # Basics
 WHITESPACE = _{ whitespace }

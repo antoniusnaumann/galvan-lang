@@ -1,4 +1,6 @@
 use derive_more::From;
+use from_pest::{ConversionError, FromPest};
+use from_pest::pest::iterators::Pairs;
 use galvan_pest::Rule;
 
 use super::{Ident, TypeIdent, Visibility};
@@ -21,7 +23,7 @@ pub struct TupleTypeDecl {
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::element_type))]
+#[pest_ast(rule(Rule::tuple_element))]
 pub struct TupleTypeMember {
     // pub visibility: Visibility,
     pub r#type: TypeItem,
@@ -184,3 +186,42 @@ pub struct ReceiverType {}
 pub struct ReturnType {}
 #[derive(Debug, PartialEq, Eq,)]
 pub struct ParamType {}
+
+#[cfg(test)]
+mod test {
+    use from_pest::FromPest;
+    use from_pest::pest::Parser;
+    use galvan_pest::Rule;
+    use crate::{ArrayTypeItem, TypeIdent, TypeItem};
+
+    fn partial_ast<'p, T>(src: &'p str, rule: Rule) -> T
+    where
+        T: FromPest<'p, Rule = Rule>,
+    {
+        let pairs = galvan_pest::GalvanParser::parse(rule, src).unwrap();
+        let Ok(parsed) = T::from_pest(&mut pairs.clone()) else { panic!("Error during AST conversion! \n{:#?}", pairs) };
+        parsed
+    }
+
+    #[test]
+    fn test_plain_type() {
+        let parsed: TypeItem = partial_ast("Int", Rule::type_item);
+        let TypeItem::Plain(basic) = parsed else { panic!("Expected plain type") };
+        assert_eq!(basic.ident, TypeIdent::new("Int"));
+    }
+
+    #[test]
+    fn test_array_type() {
+        let parsed: TypeItem = partial_ast("[Int]", Rule::type_item);
+        let TypeItem::Array(array) = parsed else { panic!("Expected array type") };
+        let TypeItem::Plain(elements) = array.elements else { panic!("Expected plain type") };
+        assert_eq!(elements.ident, TypeIdent::new("Int"));
+    }
+
+    #[test]
+    fn test_array_type_inner() {
+        let parsed: ArrayTypeItem = partial_ast("[Int]", Rule::array_type);
+        let TypeItem::Plain(elements) = parsed.elements else { panic!("Expected plain type") };
+        assert_eq!(elements.ident, TypeIdent::new("Int"));
+    }
+}
