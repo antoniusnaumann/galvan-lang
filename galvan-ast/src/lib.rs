@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate pest_derive;
-#[macro_use]
 extern crate pest_ast;
 
 use derive_more::From;
