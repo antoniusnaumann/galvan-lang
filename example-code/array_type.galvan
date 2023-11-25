@@ -1,0 +1,9 @@
+/*# AST
+ast(alias_type(inherited(), "IntArray", array(plain("Int"))))
+*/
+
+/*#
+pub(crate) type IntArray = Vec<Int>;
+*/
+
+type IntArray = [Int]

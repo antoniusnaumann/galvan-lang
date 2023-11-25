@@ -1,5 +1,7 @@
-pub fn transpile_source(ast: Ast) -> String {
-    ast.transpile()
+
+pub fn transpile_source(source: Source) -> Result<String, AstError>{
+    let ast = source.try_into_ast()?;
+    Ok(ast.transpile())
 }
 
 mod transpile_item {
@@ -22,8 +24,34 @@ trait Punctuated {
 }
 
 macro_rules! transpile {
-    ($string:expr, $($items:expr),*) => {
+    ($string:expr, $($items:expr),*$(,)?) => {
         format!($string, $(($items).transpile()),*)
+    };
+}
+
+macro_rules! impl_transpile {
+    ($ty:ty, $string:expr, $($field:ident),*$(,)?) => {
+        impl crate::Transpile for $ty {
+            fn transpile(self) -> String {
+                crate::transpile!($string, $(self.$field),*)
+            }
+        }
+    };
+}
+
+macro_rules! impl_transpile_match {
+    ($ty:ty, $($case:pat_param => ($($args:expr),+)),+$(,)?) => {
+        impl crate::Transpile for $ty {
+            #[deny(bindings_with_variant_name)]
+            #[deny(unreachable_patterns)]
+            #[deny(non_snake_case)]
+            fn transpile(self) -> String {
+                use $ty::*;
+                match self {
+                    $($case => crate::transpile!($($args),+),)+
+                }
+            }
+        }
     };
 }
 
@@ -38,7 +66,7 @@ macro_rules! punct {
 }
 
 use galvan_ast::*;
-pub(crate) use transpile;
+pub(crate) use {transpile, impl_transpile_match, impl_transpile};
 
 punct!(", ", TypeItem, TupleTypeMember);
 punct!(",\n", StructTypeMember);

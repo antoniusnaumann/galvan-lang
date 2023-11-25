@@ -2,4 +2,8 @@
 ast(empty_type(inherited(), "EmptyMarker"))
 */
 
+/*# TRANSPILE
+"pub(crate) struct EmptyMarker;"
+*/
+
 type EmptyMarker

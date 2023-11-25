@@ -6,3 +6,9 @@ use super::string;
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::string_literal))]
 pub struct StringLiteral(#[pest_ast(outer(with(string)))] String);
+
+impl From<StringLiteral> for String {
+    fn from(string: StringLiteral) -> Self {
+        string.0
+    }
+}

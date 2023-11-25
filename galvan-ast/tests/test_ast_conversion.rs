@@ -11,6 +11,10 @@ mod test_utils {
         Ast::new(vec![item.into()])
     }
 
+    pub fn items(items: Vec<RootItem>) -> Ast {
+        Ast::new(items)
+    }
+
     pub fn struct_type(visibility: Visibility, ident: &str, members: Vec<StructTypeMember>) -> TypeDecl {
         TypeDecl::Struct(StructTypeDecl {
             visibility,
@@ -43,7 +47,11 @@ mod test_utils {
     }
 
     pub fn plain(ident: &str) -> TypeItem {
-        TypeItem::Plain(BasicTypeItem { ident: TypeIdent::new(ident) })
+        TypeItem::plain(TypeIdent::new(ident))
+    }
+
+    pub fn array(elements: TypeItem) -> TypeItem {
+        TypeItem::array(elements)
     }
 
     pub fn struct_member(ident: &str, ty: TypeItem) -> StructTypeMember {
@@ -67,12 +75,11 @@ mod test_utils {
         Visibility::public()
     }
 }
+
 use test_utils::*;
 
-generate_code_tests! { test_ast_conversion, AST,
-    {
-        let source = Source::from_string(code);
-        let parsed = parse_source(&source).unwrap();
-        parsed.clone().try_into_ast().unwrap_or_else(|e| panic!("Error: {e}\nParsed:\n{:#?}", parsed))
-    }
-}
+generate_code_tests!(test_ast_conversion, AST, {
+    let source = Source::from_string(code);
+    let parsed = parse_source(&source).unwrap();
+    parsed.clone().try_into_ast().unwrap_or_else(|e| panic!("Error: {e}\nParsed:\n{:#?}", parsed))
+});

@@ -1,18 +1,13 @@
-use crate::{Transpile, Ast, RootItem, transpile};
+use crate::{Transpile, Ast, RootItem, transpile, impl_transpile_match};
 impl Transpile for Ast {
     fn transpile(self) -> String {
         self.toplevel.transpile()
     }
 }
 
-impl Transpile for RootItem {
-    fn transpile(self) -> String {
-        match self {
-            // RootItem::Fn(f) => todo!(),
-            RootItem::Type(t) => transpile!("{}", t),
-            RootItem::Main(m) => transpile!("{}", m),
-            RootItem::Test(t) => todo!(),
-            RootItem::CustomTask(t) => todo!(),
-        }
-    }
+impl_transpile_match! { RootItem,
+    Type(t) => ("{}", t),
+    Main(m) => ("{}", m),
+    Test(t) => ("{}", t),
+    // CustomTask(t) => ("{}", t),
 }

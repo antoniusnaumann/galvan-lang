@@ -10,5 +10,5 @@ pub enum RootItem {
     Type(TypeDecl),
     Main(MainDecl),
     Test(TestDecl),
-    CustomTask(TaskDecl),
+    // CustomTask(TaskDecl),
 }

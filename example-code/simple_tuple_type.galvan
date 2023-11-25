@@ -2,4 +2,8 @@
 ast(tuple_type(public(), "SimpleTuple", vec![tuple_member(plain("Int")), tuple_member(plain("Int"))]))
 */
 
+/*# TRANSPILE
+"pub struct SimpleTuple(Int, Int);"
+*/
+
 pub type SimpleTuple(Int, Int)

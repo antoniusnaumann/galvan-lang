@@ -2,6 +2,12 @@
 ast(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain("String"))]));
 */
 
+/*# TRANSPILE
+"pub struct SimpleStruct {
+    member: String
+}"
+*/
+
 pub type SimpleStruct {
     member: String
 }

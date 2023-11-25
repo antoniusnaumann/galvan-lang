@@ -2,4 +2,8 @@
 ast(tuple_type(inherited(), "EmptyTuple", vec![]))
 */
 
+/*# TRANSPILE
+"pub(crate) struct EmptyTuple();"
+*/
+
 type EmptyTuple()

@@ -2,4 +2,8 @@
 ast(struct_type(inherited(), "EmptyStruct", vec![]))
 */
 
+/*# TRANSPILE
+"pub(crate) struct EmptyStruct { }"
+*/
+
 type EmptyStruct {}
