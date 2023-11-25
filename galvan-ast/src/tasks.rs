@@ -4,21 +4,22 @@ use super::*;
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::main))]
 pub struct MainDecl {
-    // TODO: body
+    pub body: Body,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::test))]
 pub struct TestDecl {
-    name: Option<StringLiteral>,
+    pub name: Option<StringLiteral>,
+    pub body: Body,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::task))]
 pub struct TaskDecl {
-    ident: Ident,
+    pub ident: Ident,
     // name: Option<String>,
-    body: Body,
+    pub body: Body,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

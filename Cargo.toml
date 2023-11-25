@@ -9,6 +9,6 @@ members = [
   "galvan-ast",
   "galvan-core",
   "galvan-pest",
-  # "galvan-transpiler",
+  "galvan-transpiler",
   "galvan-test-macro",
 ]

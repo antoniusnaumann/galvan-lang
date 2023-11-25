@@ -5,9 +5,9 @@ extern crate pest_ast;
 
 use derive_more::From;
 use from_pest::{ConversionError, FromPest, Void};
-use from_pest::pest::iterators::Pairs;
 
 use galvan_pest::*;
+pub use galvan_pest::{Source};
 
 mod r#fn;
 mod ident;

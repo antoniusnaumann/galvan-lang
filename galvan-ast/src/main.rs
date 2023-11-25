@@ -1,6 +1,4 @@
-use std::error::Error;
-use from_pest::FromPest;
-use galvan_ast::{AstResult, IntoAst, RootItem};
+use galvan_ast::IntoAst;
 use galvan_pest::exec::parse_current_dir;
 
 fn main() {

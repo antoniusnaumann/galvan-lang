@@ -8,3 +8,5 @@ version.workspace = true
 
 [dependencies]
 walkdir = "2.4.0"
+
+galvan-ast = { path = "../galvan-ast" }

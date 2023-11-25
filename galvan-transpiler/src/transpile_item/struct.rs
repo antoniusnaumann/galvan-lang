@@ -1,4 +1,4 @@
-use galvan_parser::{StructTypeMember, TupleTypeMember, TypeDecl, TypeDecl};
+use crate::{StructTypeMember, TupleTypeMember, TypeDecl};
 
 use crate::{transpile, Transpile};
 
@@ -9,17 +9,13 @@ impl Transpile for TypeDecl {
 }
 
 fn transpile_type_decl(decl: TypeDecl) -> String {
-    let TypeDecl {
-        visibility,
-        ident,
-        def,
-    } = decl;
-    match def {
-        TypeDecl::TupleType(def) => transpile!("{} struct {}({});", visibility, ident, def.members),
-        TypeDecl::StructType(def) => {
-            transpile!("{} struct {} {{ {} }}", visibility, ident, def.members)
+    match decl {
+        TypeDecl::Tuple(def) => transpile!("{} struct {}({});", def.visibility, def.ident, def.members),
+        TypeDecl::Struct(def) => {
+            transpile!("{} struct {} {{ {} }}", def.visibility, def.ident, def.members)
         }
-        TypeDecl::AliasType(def) => transpile!("{} type {} = {};", visibility, ident, def.r#type),
+        TypeDecl::Alias(def) => transpile!("{} type {} = {};", def.visibility, def.ident, def.r#type),
+        TypeDecl::Empty(def) => transpile!("{} struct {};", def.visibility, def.ident),
     }
 }
 
@@ -30,8 +26,8 @@ impl Transpile for TupleTypeMember {
 }
 
 fn transpile_tuple_type_member(member: TupleTypeMember) -> String {
-    let TupleTypeMember { visibility, r#type } = member;
-    transpile!("{} {}", visibility, r#type)
+    let TupleTypeMember { r#type } = member;
+    transpile!("{}", r#type)
 }
 
 impl Transpile for StructTypeMember {
@@ -42,9 +38,8 @@ impl Transpile for StructTypeMember {
 
 fn transpile_struct_type_member(member: StructTypeMember) -> String {
     let StructTypeMember {
-        visibility,
         ident,
         r#type,
     } = member;
-    transpile!("{} {}: {}", visibility, ident, r#type)
+    transpile!("{}: {}", ident, r#type)
 }

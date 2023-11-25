@@ -1,6 +1,4 @@
-use galvan_parser::TypeItem;
-
-use crate::{transpile, Transpile};
+use crate::{Transpile, transpile, TypeItem};
 
 impl Transpile for TypeItem {
     fn transpile(self) -> String {
