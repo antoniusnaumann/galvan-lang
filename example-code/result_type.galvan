@@ -1,0 +1,9 @@
+/*# AST
+ast(alias_type(inherited(), "ExplicitError", result(success(plain("Int")), error(plain("MyError")))))
+*/
+
+/*# TRANSPILE
+"pub(crate) type ExplicitError = Result<Int, MyError>;"
+*/
+
+type ExplicitError = Int!MyError

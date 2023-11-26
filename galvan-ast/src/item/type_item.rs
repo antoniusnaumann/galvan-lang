@@ -57,17 +57,10 @@ impl TypeElement {
         Self::Optional(Box::new( OptionalTypeItem { some }))
     }
 
-    pub fn result(success: TypeElement) -> Self {
+    pub fn result(success: SuccessVariant, error: Option<ErrorVariant>) -> Self {
         Self::Result(Box::new(ResultTypeItem {
             success,
-            error: None,
-        }))
-    }
-
-    pub fn result_with_typed_error(success: TypeElement, error: TypeElement) -> Self {
-        Self::Result(Box::new(ResultTypeItem {
-            success,
-            error: Some(error),
+            error,
         }))
     }
 }
@@ -134,24 +127,6 @@ pub enum OptionalElement {
     Plain(BasicTypeItem),
 }
 
-impl TryFrom<TypeElement> for OptionalElement {
-    // TODO: Better error type
-    type Error = &'static str;
-
-    fn try_from(value: TypeElement) -> Result<Self, Self::Error> {
-        Ok(match value {
-            TypeElement::Array(array) => Self::Array(array),
-            TypeElement::Dictionary(dict) => Self::Dictionary(dict),
-            TypeElement::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
-            TypeElement::Set(set) => Self::Set(set),
-            TypeElement::Tuple(tuple) => Self::Tuple(tuple),
-            TypeElement::Plain(basic) => Self::Plain(basic),
-            TypeElement::Optional(_) => Err("Cannot nest optional types!")?,
-            TypeElement::Result(_) => Err("Cannot nest result types!")?,
-        })
-    }
-}
-
 impl From<OptionalElement> for TypeElement {
     fn from(value: OptionalElement) -> Self {
         match value {
@@ -165,11 +140,100 @@ impl From<OptionalElement> for TypeElement {
     }
 }
 
+impl TryFrom<TypeElement> for OptionalElement {
+    type Error = TypeElement;
+
+    fn try_from(value: TypeElement) -> Result<Self, Self::Error> {
+        match value {
+            TypeElement::Array(array) => Ok(Self::Array(array)),
+            TypeElement::Dictionary(dict) => Ok(Self::Dictionary(dict)),
+            TypeElement::OrderedDictionary(ordered_dict) => Ok(Self::OrderedDictionary(ordered_dict)),
+            TypeElement::Set(set) => Ok(Self::Set(set)),
+            TypeElement::Tuple(tuple) => Ok(Self::Tuple(tuple)),
+            TypeElement::Plain(basic) => Ok(Self::Plain(basic)),
+            TypeElement::Optional(_) => Err(value),
+            TypeElement::Result(_) => Err(value),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::result_type))]
 pub struct ResultTypeItem {
+    success: SuccessVariant,
+    error: Option<ErrorVariant>,
+}
+
+pub struct LiftedResultTypeItem {
     pub success: TypeElement,
     pub error: Option<TypeElement>,
+}
+
+impl ResultTypeItem {
+    pub fn new(success: SuccessVariant, error: Option<ErrorVariant>) -> Self {
+        Self { success, error }
+    }
+}
+
+impl From<ResultTypeItem> for LiftedResultTypeItem {
+    /// Lifts the success and error variant to a TypeElement
+    fn from(value: ResultTypeItem) -> Self {
+        let ResultTypeItem { success, error } = value;
+        let success = TypeElement::from(success);
+        let error = error.map(TypeElement::from);
+        Self { success, error }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
+#[pest_ast(rule(Rule::success_variant))]
+pub enum SuccessVariant {
+    Array(Box<ArrayTypeItem>),
+    Dictionary(Box<DictionaryTypeItem>),
+    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
+    Set(Box<SetTypeItem>),
+    Tuple(Box<TupleTypeItem>),
+    Plain(BasicTypeItem),
+    Optional(Box<OptionalTypeItem>),
+}
+
+impl From<SuccessVariant> for TypeElement {
+    fn from(value: SuccessVariant) -> Self {
+        match value {
+            SuccessVariant::Array(array) => Self::Array(array),
+            SuccessVariant::Dictionary(dict) => Self::Dictionary(dict),
+            SuccessVariant::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
+            SuccessVariant::Set(set) => Self::Set(set),
+            SuccessVariant::Tuple(tuple) => Self::Tuple(tuple),
+            SuccessVariant::Plain(basic) => Self::Plain(basic),
+            SuccessVariant::Optional(optional) => Self::Optional(optional),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
+#[pest_ast(rule(Rule::error_variant))]
+pub enum ErrorVariant {
+    Array(Box<ArrayTypeItem>),
+    Dictionary(Box<DictionaryTypeItem>),
+    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
+    Set(Box<SetTypeItem>),
+    Tuple(Box<TupleTypeItem>),
+    Plain(BasicTypeItem),
+}
+
+impl From<ErrorVariant> for TypeElement {
+    fn from(value: ErrorVariant) -> Self {
+        match value {
+            ErrorVariant::Array(array) => Self::Array(array),
+            ErrorVariant::Dictionary(dict) => Self::Dictionary(dict),
+            ErrorVariant::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
+            ErrorVariant::Set(set) => Self::Set(set),
+            ErrorVariant::Tuple(tuple) => Self::Tuple(tuple),
+            ErrorVariant::Plain(basic) => Self::Plain(basic),
+        }
+    }
+
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

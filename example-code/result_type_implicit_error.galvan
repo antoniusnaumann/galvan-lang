@@ -1,0 +1,9 @@
+/*# AST
+ast(alias_type(inherited(), "ImplicitError", result(success(plain("Int")), None)))
+*/
+
+/*# TRANSPILE
+"pub(crate) type ImplicitError = anyhow::Result<Int>;"
+*/
+
+type ImplicitError = Int!
