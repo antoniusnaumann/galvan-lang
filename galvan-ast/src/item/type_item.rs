@@ -248,7 +248,8 @@ mod test {
     use from_pest::FromPest;
     use from_pest::pest::Parser;
     use galvan_pest::Rule;
-    use crate::*;
+
+    use super::*;
 
     fn partial_ast<'p, T>(src: &'p str, rule: Rule) -> Result<T, String>
         where

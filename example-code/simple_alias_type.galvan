@@ -1,5 +1,5 @@
 /*# AST
-ast(alias_type(public(), "AliasType", plain("Int")))
+single(alias_type(public(), "AliasType", plain("Int")))
 */
 
 /*# TRANSPILE

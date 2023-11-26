@@ -6,13 +6,22 @@ use galvan_pest::*;
 mod test_utils {
     use super::*;
     use galvan_ast::RootItem;
+    use galvan_ast::pest_adapter::*;
 
-    pub fn ast(item: impl Into<RootItem>) -> Ast {
-        Ast::new(vec![item.into()])
+    pub fn empty() -> PestAst {
+        PestAst::new(vec![])
     }
 
-    pub fn items(items: Vec<RootItem>) -> Ast {
-        Ast::new(items)
+    pub fn single(item: impl Into<RootItem>) -> PestAst {
+        PestAst::new(vec![item.into()])
+    }
+
+    pub fn multi(items: Vec<RootItem>) -> PestAst {
+        PestAst::new(items)
+    }
+
+    pub fn items(items: Vec<RootItem>) -> PestAst {
+        PestAst::new(items)
     }
 
     pub fn struct_type(visibility: Visibility, ident: &str, members: Vec<StructTypeMember>) -> TypeDecl {
@@ -111,6 +120,7 @@ mod test_utils {
 }
 
 use test_utils::*;
+use galvan_ast::pest_adapter::*;
 
 generate_code_tests!(test_ast_conversion, AST, {
     let source = Source::from_string(code);

@@ -1,5 +1,5 @@
 /*# AST
-ast(alias_type(inherited(), "ExplicitError", result(success(plain("Int")), error(plain("MyError")))))
+single(alias_type(inherited(), "ExplicitError", result(success(plain("Int")), error(plain("MyError")))))
 */
 
 /*# TRANSPILE

@@ -1,5 +1,6 @@
 use galvan_ast::*;
-use crate::{impl_transpile, impl_transpile_fn, impl_transpile_variants, Transpile, transpile, TypeElement};
+use crate::{Transpile, TypeElement};
+use crate::macros::{transpile, impl_transpile, impl_transpile_fn, impl_transpile_variants};
 
 impl_transpile!(ArrayTypeItem, "std::collections::Vec<{}>", elements);
 impl_transpile!(DictionaryTypeItem, "std::collections::HashMap<{}, {}>", key, value);

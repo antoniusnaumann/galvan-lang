@@ -1,5 +1,6 @@
 use galvan_ast::{TestDecl};
-use crate::{Transpile, MainDecl, impl_transpile};
+use crate::{Transpile, MainDecl};
+use crate::macros::impl_transpile;
 
 impl_transpile!(MainDecl, "fn main() {{ {} }}", body);
 

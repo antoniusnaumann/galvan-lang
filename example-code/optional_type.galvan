@@ -1,5 +1,5 @@
 /*# AST
-ast(alias_type(inherited(), "OptionalInt", optional(plain("Int"))))
+single(alias_type(inherited(), "OptionalInt", optional(plain("Int"))))
 */
 
 /*# TRANSPILE

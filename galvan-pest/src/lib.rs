@@ -1,10 +1,7 @@
-extern crate core;
-
-
 #[cfg(feature = "exec")]
 pub mod exec;
-mod source;
-pub use source::*;
+
+use galvan_files::Source;
 
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;

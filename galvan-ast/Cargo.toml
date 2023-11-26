@@ -11,9 +11,10 @@ pest-ast = "0.3.4"
 pest_derive = "2.7.5"
 from-pest = "0.3.2"
 derive_more = { version = "0.99.17", features = [] }
+thiserror = "1.0.50"
 
 galvan-pest = { path = "../galvan-pest" }
-thiserror = "1.0.50"
+galvan-files = { path = "../galvan-files" }
 
 [dev-dependencies]
 galvan-test-macro = { path = "../galvan-test-macro" }

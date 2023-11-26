@@ -5,7 +5,9 @@ use galvan_pest::ParserError;
 
 use crate::Ast;
 
-pub type AstResult = Result<Ast, AstError>;
+pub type Result<T> = std::result::Result<T, AstError>;
+
+pub type AstResult = Result<Ast>;
 
 #[derive(Debug, Error, From)]
 pub enum AstError {

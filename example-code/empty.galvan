@@ -1,5 +1,5 @@
 /*# AST
-Ast::new(vec![])
+empty()
 */
 
 /*# TRANSPILE

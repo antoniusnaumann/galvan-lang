@@ -1,5 +1,5 @@
 /*# AST
-ast(empty_type(inherited(), "EmptyMarker"))
+single(empty_type(inherited(), "EmptyMarker"))
 */
 
 /*# TRANSPILE

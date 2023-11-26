@@ -1,5 +1,5 @@
 /*# AST
-ast(alias_type(inherited(), "IntArray", array(plain("Int"))))
+single(alias_type(inherited(), "IntArray", array(plain("Int"))))
 */
 
 /*# TRANSPILE

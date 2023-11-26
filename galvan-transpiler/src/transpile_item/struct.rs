@@ -1,4 +1,5 @@
-use crate::{impl_transpile, impl_transpile_match, StructTypeMember, TupleTypeMember, TypeDecl};
+use crate::{StructTypeMember, TupleTypeMember, TypeDecl};
+use crate::macros::{impl_transpile, impl_transpile_match};
 
 
 impl_transpile_match! { TypeDecl,

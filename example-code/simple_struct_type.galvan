@@ -1,5 +1,5 @@
 /*# AST
-ast(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain("String"))]));
+single(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain("String"))]));
 */
 
 /*# TRANSPILE
