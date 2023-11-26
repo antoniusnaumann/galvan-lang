@@ -1,4 +1,4 @@
-source = { SOI ~ (space* ~ toplevel ~ space*)* ~ EOI }
+source = { SOI ~ space* ~ (space* ~ toplevel ~ space*)* ~ EOI }
 toplevel = { 
 	main
 	| build

@@ -14,16 +14,16 @@ fn main() {
         .map(|e| e.into_path())
         .filter(|p| p.extension() == Some("galvan".as_ref()))
         .map(|p| Source::read(p))
-        .map(|s| (s.clone().try_into_ast(), s))
+        .map(|s| (transpile_source(s.clone()), s))
         .collect::<Vec<_>>();
 
     // TODO: Aggregate and print errors
 
-    for (parsed, source) in src {
+    for (transpiled, source) in src {
         println!();
         println!("----- Source: {:?} -----", source.origin());
-        match parsed {
-            Ok(p) => println!("{}", transpile_source(p)),
+        match transpiled {
+            Ok(s) => println!("{}", s),
             Err(e) => println!("Error: {}", e),
         }
     }
