@@ -36,7 +36,7 @@ visibility = { pub_keyword? }
 
 type_decl = { struct_type_decl | alias_type_decl | tuple_type_decl | empty_type_decl }
 type_decl_prelude = _{ visibility ~ type_keyword ~ type_ident }
-struct_type_decl = { type_decl_prelude ~ brace_open ~ struct_fields ~ brace_close }
+struct_type_decl = { type_decl_prelude ~ brace_open ~ struct_fields ~ comma? ~ brace_close }
 struct_fields = _{ (struct_field ~ ((comma | newline+) ~ struct_field)*)? }
 struct_field = { typed_param }
 alias_type_decl = { type_decl_prelude ~ assign_ ~ type_item }

@@ -8,6 +8,7 @@ version.workspace = true
 
 [dependencies]
 regex = "1.10.2"
+itertools = { version = "0.12.0", optional = true }
 
 galvan-files = { path = "../galvan-files" }
 galvan-ast = { path = "../galvan-ast" }
@@ -16,7 +17,7 @@ galvan-ast = { path = "../galvan-ast" }
 galvan-test-macro = { path = "../galvan-test-macro" }
 
 [features]
-exec = ["galvan-files/exec"]
+exec = ["galvan-files/exec", "dep:itertools"]
 
 [[bin]]
 name = "galvan-transpile"

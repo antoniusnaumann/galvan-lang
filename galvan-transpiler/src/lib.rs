@@ -3,6 +3,26 @@ extern crate core;
 use galvan_ast::*;
 use galvan_files::Source;
 
+/// Name of the generated rust module that exports all public items from all galvan files in this crate
+#[macro_export]
+macro_rules! galvan_module {
+    () => {
+        "galvan_module.rs"
+    };
+}
+
+#[macro_export]
+macro_rules! include {
+    () => {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/",
+            galvan_transpiler::galvan_module!()
+        ));
+        // use galvan_module::*;
+    };
+}
+
 #[cfg(feature = "exec")]
 pub mod exec;
 
@@ -13,26 +33,34 @@ fn transpile_source(source: Source) -> Result<String, TranspileError> {
     Ok(ast.transpile())
 }
 
-pub struct RustSource {
+#[derive(Debug)]
+pub struct Transpilation {
     pub source: Source,
     pub transpiled: Result<String, TranspileError>,
 }
 
-impl RustSource {
-    fn errors(&self) -> TranspileErrors {
-        TranspileErrors {
-            source: self.source.clone(),
-            errors: self
-                .transpiled
-                .as_ref()
-                .err()
-                .map(core::slice::from_ref)
-                .unwrap_or_default(),
-        }
-    }
+pub struct SuccessfulTranspilation {
+    pub source: Source,
+    pub transpiled: String,
+}
 
-    fn has_errors(&self) -> bool {
-        self.transpiled.is_err()
+pub struct FailedTranspilation {
+    pub source: Source,
+    pub errors: TranspileError,
+}
+
+impl From<Transpilation> for Result<SuccessfulTranspilation, FailedTranspilation> {
+    fn from(value: Transpilation) -> Self {
+        match value.transpiled {
+            Ok(transpiled) => Ok(SuccessfulTranspilation {
+                source: value.source,
+                transpiled,
+            }),
+            Err(errors) => Err(FailedTranspilation {
+                source: value.source,
+                errors,
+            }),
+        }
     }
 }
 
@@ -47,8 +75,8 @@ impl TranspileErrors<'_> {
     }
 }
 
-pub fn transpile(source: Source) -> RustSource {
-    RustSource {
+pub fn transpile(source: Source) -> Transpilation {
+    Transpilation {
         source: source.clone(),
         transpiled: transpile_source(source),
     }

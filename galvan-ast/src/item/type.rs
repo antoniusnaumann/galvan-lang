@@ -1,7 +1,7 @@
 use derive_more::From;
 use galvan_pest::Rule;
 
-use super::{Ident, TypeIdent, TypeElement, Visibility};
+use super::{Ident, TypeElement, TypeIdent, Visibility};
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::type_decl))]
@@ -57,10 +57,9 @@ pub struct EmptyTypeDecl {
     pub ident: TypeIdent,
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReceiverType {}
-#[derive(Debug, PartialEq, Eq,)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReturnType {}
-#[derive(Debug, PartialEq, Eq,)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ParamType {}
