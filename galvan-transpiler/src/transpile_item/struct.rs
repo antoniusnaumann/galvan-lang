@@ -1,6 +1,5 @@
-use crate::{StructTypeMember, TupleTypeMember, TypeDecl};
 use crate::macros::{impl_transpile, impl_transpile_match};
-
+use crate::{StructTypeMember, TupleTypeMember, TypeDecl};
 
 impl_transpile_match! { TypeDecl,
     Tuple(def) => ("{} struct {}({});", def.visibility, def.ident, def.members),
@@ -10,4 +9,6 @@ impl_transpile_match! { TypeDecl,
 }
 
 impl_transpile!(TupleTypeMember, "{}", r#type);
-impl_transpile!(StructTypeMember, "{}: {}", ident, r#type);
+
+// TODO: Probably generate getter/setter methods instead and never allow direct access to fields
+impl_transpile!(StructTypeMember, "pub(crate) {}: {}", ident, r#type);
