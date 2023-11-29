@@ -1,5 +1,6 @@
 [package]
 name = "galvan-pest"
+description = "Parser for the Galvan language using pest-grammar"
 authors.workspace = true
 edition.workspace = true
 version.workspace = true

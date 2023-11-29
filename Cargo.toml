@@ -13,6 +13,8 @@ galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev01" }
 
 [package]
 name = "galvan"
+description = "A higher-level programming language that transpiles to Rust"
+
 authors.workspace = true
 edition.workspace = true
 version.workspace = true

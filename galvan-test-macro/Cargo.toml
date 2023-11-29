@@ -1,5 +1,7 @@
 [package]
 name = "galvan-test-macro"
+description = "Test macros for the Galvan programming language"
+
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
