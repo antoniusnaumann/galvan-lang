@@ -2,6 +2,7 @@
 authors = ["Antonius Naumann"]
 edition = "2021"
 version = "0.0.0-dev01"
+license = "MIT"
 
 [workspace.dependencies]
 galvan-ast = { path = "galvan-ast", version = "0.0.0-dev01" }
@@ -15,6 +16,7 @@ name = "galvan"
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev01" }

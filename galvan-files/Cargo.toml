@@ -5,6 +5,7 @@ description = "Locates galvan files in a directory, checks naming conventions an
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

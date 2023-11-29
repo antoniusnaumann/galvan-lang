@@ -3,6 +3,7 @@ name = "galvan-test-macro"
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [lib]
 proc-macro = true
