@@ -3,6 +3,20 @@ authors = ["Antonius Naumann"]
 edition = "2021"
 version = "0.0.0"
 
+[package]
+name = "galvan"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0" }
+
+[features]
+build = ["galvan-transpiler/exec"]
+
+[lib]
+
 [workspace]
 resolver = "2"
 members = [

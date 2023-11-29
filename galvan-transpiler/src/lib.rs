@@ -11,18 +11,6 @@ macro_rules! galvan_module {
     };
 }
 
-#[macro_export]
-macro_rules! include {
-    () => {
-        include!(concat!(
-            env!("OUT_DIR"),
-            "/",
-            galvan_transpiler::galvan_module!()
-        ));
-        // use galvan_module::*;
-    };
-}
-
 #[cfg(feature = "exec")]
 pub mod exec;
 

@@ -66,16 +66,3 @@ pub mod __private {
         msgs
     }
 }
-
-#[macro_export]
-macro_rules! setup {
-    () => {
-        let warnings = galvan_transpiler::exec::__private::__setup_galvan();
-
-        if !warnings.is_empty() {
-            // println!("cargo:warning={}", warnings.join("\n"));
-            panic!("Galvan Transpiler Error:\n{}", warnings.join("\n"));
-        }
-        // TODO: How to build a rerun rule for this?
-    };
-}
