@@ -1,7 +1,14 @@
 [workspace.package]
 authors = ["Antonius Naumann"]
 edition = "2021"
-version = "0.0.0"
+version = "0.0.0-dev01"
+
+[workspace.dependencies]
+galvan-ast = { path = "galvan-ast", version = "0.0.0-dev01" }
+galvan-core = { path = "galvan-core", version = "0.0.0-dev01" }
+galvan-files = { path = "galvan-files", version = "0.0.0-dev01" }
+galvan-pest = { path = "galvan-pest", version = "0.0.0-dev01" }
+galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev01" }
 
 [package]
 name = "galvan"
@@ -10,7 +17,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0" }
+galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev01" }
 
 [features]
 build = ["galvan-transpiler/exec"]

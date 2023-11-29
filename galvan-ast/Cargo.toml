@@ -13,11 +13,11 @@ from-pest = "0.3.2"
 derive_more = { version = "0.99.17", features = [] }
 thiserror = "1.0.50"
 
-galvan-pest = { path = "../galvan-pest" }
-galvan-files = { path = "../galvan-files" }
+galvan-pest.workspace = true
+galvan-files.workspace = true
 
 [dev-dependencies]
-galvan-test-macro = { path = "../galvan-test-macro" }
+galvan-test-macro.workspace = true
 
 [features]
 exec = ["galvan-pest/exec"]
