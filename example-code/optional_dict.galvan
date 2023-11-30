@@ -1,0 +1,19 @@
+/*# AST
+single(
+    struct_type(inherited(), "Foo", vec![
+        struct_member("bar",
+            optional(dict(plain("String"), plain("String")))
+        )]
+    )
+)
+*/
+
+/*# TRANSPILE
+"pub(crate) struct Foo {
+    pub(crate) bar: Option<HashMap<String, String>>,
+}"
+*/
+
+type Foo {
+    bar: {String: String}?
+}

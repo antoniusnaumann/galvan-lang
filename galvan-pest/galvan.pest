@@ -165,11 +165,11 @@ tuple_elements = _{ element_type ~ (comma ~ element_type)* }
 
 type_ident = @{ (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
 basic_type = { type_ident }
-array_type = { bracket_open ~ element_type ~ bracket_close }
-set_type = { brace_open ~ element_type ~ brace_close }
-dict_type = { brace_open ~ key_type ~ colon ~ value_type ~ brace_close }
-ordered_dict_type = { bracket_open ~ key_type ~ colon ~ value_type ~ bracket_close }
-tuple_type = { paren_open ~ tuple_elements ~ paren_close }
+array_type = !{ bracket_open ~ element_type ~ bracket_close }
+set_type = !{ brace_open ~ element_type ~ brace_close }
+dict_type = !{ brace_open ~ key_type ~ colon ~ value_type ~ brace_close }
+ordered_dict_type = !{ bracket_open ~ key_type ~ colon ~ value_type ~ bracket_close }
+tuple_type = !{ paren_open ~ tuple_elements ~ paren_close }
 ref_type = ${ dollar ~ element_type }
 borrowed_type = ${ ampersand ~ element_type }
 result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }

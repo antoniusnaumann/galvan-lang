@@ -54,14 +54,11 @@ impl TypeElement {
     }
 
     pub fn optional(some: OptionalElement) -> Self {
-        Self::Optional(Box::new( OptionalTypeItem { some }))
+        Self::Optional(Box::new(OptionalTypeItem { some }))
     }
 
     pub fn result(success: SuccessVariant, error: Option<ErrorVariant>) -> Self {
-        Self::Result(Box::new(ResultTypeItem {
-            success,
-            error,
-        }))
+        Self::Result(Box::new(ResultTypeItem { success, error }))
     }
 }
 
@@ -132,7 +129,9 @@ impl From<OptionalElement> for TypeElement {
         match value {
             OptionalElement::Array(array) => Self::Array(array),
             OptionalElement::Dictionary(dict) => Self::Dictionary(dict),
-            OptionalElement::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
+            OptionalElement::OrderedDictionary(ordered_dict) => {
+                Self::OrderedDictionary(ordered_dict)
+            }
             OptionalElement::Set(set) => Self::Set(set),
             OptionalElement::Tuple(tuple) => Self::Tuple(tuple),
             OptionalElement::Plain(basic) => Self::Plain(basic),
@@ -147,7 +146,9 @@ impl TryFrom<TypeElement> for OptionalElement {
         match value {
             TypeElement::Array(array) => Ok(Self::Array(array)),
             TypeElement::Dictionary(dict) => Ok(Self::Dictionary(dict)),
-            TypeElement::OrderedDictionary(ordered_dict) => Ok(Self::OrderedDictionary(ordered_dict)),
+            TypeElement::OrderedDictionary(ordered_dict) => {
+                Ok(Self::OrderedDictionary(ordered_dict))
+            }
             TypeElement::Set(set) => Ok(Self::Set(set)),
             TypeElement::Tuple(tuple) => Ok(Self::Tuple(tuple)),
             TypeElement::Plain(basic) => Ok(Self::Plain(basic)),
@@ -164,7 +165,7 @@ pub struct ResultTypeItem {
     error: Option<ErrorVariant>,
 }
 
-pub struct LiftedResultTypeItem {
+pub struct DowncastResultTypeItem {
     pub success: TypeElement,
     pub error: Option<TypeElement>,
 }
@@ -175,7 +176,7 @@ impl ResultTypeItem {
     }
 }
 
-impl From<ResultTypeItem> for LiftedResultTypeItem {
+impl From<ResultTypeItem> for DowncastResultTypeItem {
     /// Lifts the success and error variant to a TypeElement
     fn from(value: ResultTypeItem) -> Self {
         let ResultTypeItem { success, error } = value;
@@ -202,7 +203,9 @@ impl From<SuccessVariant> for TypeElement {
         match value {
             SuccessVariant::Array(array) => Self::Array(array),
             SuccessVariant::Dictionary(dict) => Self::Dictionary(dict),
-            SuccessVariant::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
+            SuccessVariant::OrderedDictionary(ordered_dict) => {
+                Self::OrderedDictionary(ordered_dict)
+            }
             SuccessVariant::Set(set) => Self::Set(set),
             SuccessVariant::Tuple(tuple) => Self::Tuple(tuple),
             SuccessVariant::Plain(basic) => Self::Plain(basic),
@@ -233,7 +236,6 @@ impl From<ErrorVariant> for TypeElement {
             ErrorVariant::Plain(basic) => Self::Plain(basic),
         }
     }
-
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -245,24 +247,29 @@ pub struct BasicTypeItem {
 
 #[cfg(test)]
 mod test {
-    use from_pest::FromPest;
+    use crate::item::string;
     use from_pest::pest::Parser;
+    use from_pest::FromPest;
     use galvan_pest::Rule;
 
     use super::*;
 
     fn partial_ast<'p, T>(src: &'p str, rule: Rule) -> Result<T, String>
-        where
-            T: FromPest<'p, Rule = Rule>,
+    where
+        T: FromPest<'p, Rule = Rule>,
     {
         let pairs = galvan_pest::GalvanParser::parse(rule, src).unwrap();
-        T::from_pest(&mut pairs.clone()).map_err(|_| format!("Error when converting into ast!\n\n{pairs:#?}"))
+        T::from_pest(&mut pairs.clone())
+            .map_err(|_| format!("Error when converting into ast!\n\n{pairs:#?}"))
     }
 
     #[test]
     fn test_plain_type() {
-        let parsed: TypeElement = partial_ast("Int", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
-        let TypeElement::Plain(basic) = parsed else { panic!("Expected plain type") };
+        let parsed: TypeElement =
+            partial_ast("Int", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Plain(basic) = parsed else {
+            panic!("Expected plain type")
+        };
         assert_eq!(basic.ident, TypeIdent::new("Int"));
     }
 
@@ -270,13 +277,26 @@ mod test {
         ($lit:literal, $name:ident, $rule:ident, $variant:ident, $inner:ident) => {
             #[test]
             fn $name() {
-                let parsed: $inner = partial_ast($lit, Rule::$rule).unwrap_or_else(|e| panic!("{}", e));
-                let TypeElement::Plain(elements) = parsed.elements else { panic!("Expected plain type as element type") };
-                assert_eq!(elements.ident, TypeIdent::new("Int"), "Tested {} type", stringify!($inner));
+                let parsed: $inner =
+                    partial_ast($lit, Rule::$rule).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::Plain(elements) = parsed.elements else {
+                    panic!("Expected plain type as element type")
+                };
+                assert_eq!(
+                    elements.ident,
+                    TypeIdent::new("Int"),
+                    "Tested {} type",
+                    stringify!($inner)
+                );
 
-                let parsed: TypeElement = partial_ast($lit, Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
-                let TypeElement::$variant(container) = parsed else { panic!("Wrong type") };
-                let TypeElement::Plain(elements) = container.elements else { panic!("Expected plain type") };
+                let parsed: TypeElement =
+                    partial_ast($lit, Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::$variant(container) = parsed else {
+                    panic!("Wrong type")
+                };
+                let TypeElement::Plain(elements) = container.elements else {
+                    panic!("Expected plain type")
+                };
                 assert_eq!(elements.ident, TypeIdent::new("Int"), "Tested TypeItem");
             }
         };
@@ -287,52 +307,235 @@ mod test {
 
     #[test]
     fn test_tuple_type() {
-        let parsed: TupleTypeItem = partial_ast("(Int, Float)", Rule::tuple_type).unwrap_or_else(|e| panic!("{}", e));
-        let TypeElement::Plain(ref elements) = parsed.elements[0] else { panic!("Expected plain type as first element!") };
-        assert_eq!(elements.ident, TypeIdent::new("Int"), "Testing first element");
-        let TypeElement::Plain(ref elements) = parsed.elements[1] else { panic!("Expected plain type as second element!") };
-        assert_eq!(elements.ident, TypeIdent::new("Float"), "Testing second element");
+        let parsed: TupleTypeItem =
+            partial_ast("(Int, Float)", Rule::tuple_type).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Plain(ref elements) = parsed.elements[0] else {
+            panic!("Expected plain type as first element!")
+        };
+        assert_eq!(
+            elements.ident,
+            TypeIdent::new("Int"),
+            "Testing first element"
+        );
+        let TypeElement::Plain(ref elements) = parsed.elements[1] else {
+            panic!("Expected plain type as second element!")
+        };
+        assert_eq!(
+            elements.ident,
+            TypeIdent::new("Float"),
+            "Testing second element"
+        );
 
-        let parsed: TypeElement = partial_ast("(Int, String)", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
-        let TypeElement::Tuple(container) = parsed else { panic!("Wrong type") };
-        let TypeElement::Plain(ref elements) = container.elements[0] else { panic!("Expected plain type as first element!") };
-        assert_eq!(elements.ident, TypeIdent::new("Int"), "Testing first element for lifted TypeItem");
-        let TypeElement::Plain(ref elements) = container.elements[1] else { panic!("Expected plain type as second element!") };
-        assert_eq!(elements.ident, TypeIdent::new("String"), "Testing second element for lifted TypeItem");
+        let parsed: TypeElement =
+            partial_ast("(Int, String)", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Tuple(container) = parsed else {
+            panic!("Wrong type")
+        };
+        let TypeElement::Plain(ref elements) = container.elements[0] else {
+            panic!("Expected plain type as first element!")
+        };
+        assert_eq!(
+            elements.ident,
+            TypeIdent::new("Int"),
+            "Testing first element for downcast TypeItem"
+        );
+        let TypeElement::Plain(ref elements) = container.elements[1] else {
+            panic!("Expected plain type as second element!")
+        };
+        assert_eq!(
+            elements.ident,
+            TypeIdent::new("String"),
+            "Testing second element for downcast TypeItem"
+        );
     }
 
     macro_rules! test_dictionary_type {
         ($lit:literal, $name:ident, $rule:ident, $variant:ident, $inner:ident) => {
             #[test]
             fn $name() {
-                let parsed: $inner = partial_ast($lit, Rule::$rule).unwrap_or_else(|e| panic!("{}", e));
-                let TypeElement::Plain(key) = parsed.key else { panic!("Expected plain type as key type") };
+                let parsed: $inner =
+                    partial_ast($lit, Rule::$rule).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::Plain(key) = parsed.key else {
+                    panic!("Expected plain type as key type")
+                };
                 assert_eq!(key.ident, TypeIdent::new("Int"), "Testing key");
-                let TypeElement::Plain(value) = parsed.value else { panic!("Expected plain type as value type") };
+                let TypeElement::Plain(value) = parsed.value else {
+                    panic!("Expected plain type as value type")
+                };
                 assert_eq!(value.ident, TypeIdent::new("Float"), "Testing value");
 
-                let parsed: TypeElement = partial_ast($lit, Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
-                let TypeElement::$variant(container) = parsed else { panic!("Wrong type") };
-                let TypeElement::Plain(key) = container.key else { panic!("Expected plain type as key type") };
-                assert_eq!(key.ident, TypeIdent::new("Int"), "Testing key for lifted TypeItem");
-                let TypeElement::Plain(value) = container.value else { panic!("Expected plain type as value type") };
-                assert_eq!(value.ident, TypeIdent::new("Float"), "Testing value for lifted TypeItem");
+                let parsed: TypeElement =
+                    partial_ast($lit, Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::$variant(container) = parsed else {
+                    panic!("Wrong type")
+                };
+                let TypeElement::Plain(key) = container.key else {
+                    panic!("Expected plain type as key type")
+                };
+                assert_eq!(
+                    key.ident,
+                    TypeIdent::new("Int"),
+                    "Testing key for downcast TypeItem"
+                );
+                let TypeElement::Plain(value) = container.value else {
+                    panic!("Expected plain type as value type")
+                };
+                assert_eq!(
+                    value.ident,
+                    TypeIdent::new("Float"),
+                    "Testing value for downcast TypeItem"
+                );
             }
         };
     }
 
-    test_dictionary_type!("{Int: Float}", test_dict_type, dict_type, Dictionary, DictionaryTypeItem);
-    test_dictionary_type!("[Int: Float]", test_ordered_dict_type, ordered_dict_type, OrderedDictionary, OrderedDictionaryTypeItem);
+    test_dictionary_type!(
+        "{Int: Float}",
+        test_dict_type,
+        dict_type,
+        Dictionary,
+        DictionaryTypeItem
+    );
+    test_dictionary_type!(
+        "[Int: Float]",
+        test_ordered_dict_type,
+        ordered_dict_type,
+        OrderedDictionary,
+        OrderedDictionaryTypeItem
+    );
 
     #[test]
     fn test_optional_type() {
-        let parsed: OptionalTypeItem = partial_ast("Int?", Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
-        let TypeElement::Plain(some) = parsed.element() else { panic!("Expected plain type as some type") };
+        let parsed: OptionalTypeItem =
+            partial_ast("Int?", Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Plain(some) = parsed.element() else {
+            panic!("Expected plain type as some type")
+        };
         assert_eq!(some.ident, TypeIdent::new("Int"), "Testing some");
 
-        let parsed: TypeElement = partial_ast("Int?", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
-        let TypeElement::Optional(container) = parsed else { panic!("Wrong type") };
-        let TypeElement::Plain(some) = container.element() else { panic!("Expected plain type as some type") };
-        assert_eq!(some.ident, TypeIdent::new("Int"), "Testing some for lifted TypeItem");
+        let parsed: TypeElement =
+            partial_ast("Int?", Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+        let TypeElement::Optional(container) = parsed else {
+            panic!("Wrong type")
+        };
+        let TypeElement::Plain(some) = container.element() else {
+            panic!("Expected plain type as some type")
+        };
+        assert_eq!(
+            some.ident,
+            TypeIdent::new("Int"),
+            "Testing some for downcast TypeItem"
+        );
     }
+
+    macro_rules! test_optional_dictionary_type {
+        ($lit:literal, $name:ident, $rule:ident, $variant:ident, $inner:ident) => {
+            #[test]
+            fn $name() {
+                let parsed: OptionalTypeItem =
+                    partial_ast($lit, Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::$variant(container) = parsed.element() else {
+                    panic!("Expected {} type as some type", stringify!($variant))
+                };
+
+                let TypeElement::Plain(key) = container.key else {
+                    panic!("Expected plain type as key type")
+                };
+                assert_eq!(key.ident, TypeIdent::new("Int"), "Testing key");
+                let TypeElement::Plain(value) = container.value else {
+                    panic!("Expected plain type as value type")
+                };
+                assert_eq!(value.ident, TypeIdent::new("Float"), "Testing value");
+
+                let parsed: TypeElement =
+                    partial_ast($lit, Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::Optional(container) = parsed else {
+                    panic!("Wrong type")
+                };
+                let TypeElement::$variant(container) = container.element() else {
+                    panic!("Expected {} type as some type", stringify!($variant))
+                };
+                let TypeElement::Plain(key) = container.key else {
+                    panic!("Expected plain type as key type")
+                };
+                assert_eq!(
+                    key.ident,
+                    TypeIdent::new("Int"),
+                    "Testing key for downcast TypeItem"
+                );
+                let TypeElement::Plain(value) = container.value else {
+                    panic!("Expected plain type as value type")
+                };
+                assert_eq!(
+                    value.ident,
+                    TypeIdent::new("Float"),
+                    "Testing value for downcast TypeItem"
+                );
+            }
+        };
+    }
+
+    test_optional_dictionary_type!(
+        "{Int: Float}?",
+        test_optional_dict_type,
+        optional_dict_type,
+        Dictionary,
+        DictionaryTypeItem
+    );
+    test_optional_dictionary_type!(
+        "[Int: Float]?",
+        test_optional_ordered_dict_type,
+        optional_ordered_dict_type,
+        OrderedDictionary,
+        OrderedDictionaryTypeItem
+    );
+
+    macro_rules! optional_collection_type {
+        ($lit:literal, $name:ident, $rule:ident, $variant:ident, $inner:ident) => {
+            #[test]
+            fn $name() {
+                let parsed: OptionalTypeItem =
+                    partial_ast($lit, Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::$variant(container) = parsed.element() else {
+                    panic!("Expected {} type as some type", stringify!($variant))
+                };
+                let TypeElement::Plain(elements) = container.elements else {
+                    panic!("Expected plain type as element type")
+                };
+                assert_eq!(elements.ident, TypeIdent::new("Int"), "Testing elements");
+
+                let parsed: TypeElement =
+                    partial_ast($lit, Rule::type_item).unwrap_or_else(|e| panic!("{}", e));
+                let TypeElement::Optional(container) = parsed else {
+                    panic!("Wrong type")
+                };
+                let TypeElement::$variant(container) = container.element() else {
+                    panic!("Expected {} type as some type", stringify!($variant))
+                };
+                let TypeElement::Plain(elements) = container.elements else {
+                    panic!("Expected plain type as element type")
+                };
+                assert_eq!(
+                    elements.ident,
+                    TypeIdent::new("Int"),
+                    "Testing elements for downcast TypeItem"
+                );
+            }
+        };
+    }
+
+    optional_collection_type!(
+        "[Int]?",
+        test_optional_array_type,
+        optional_array_type,
+        Array,
+        ArrayTypeItem
+    );
+    optional_collection_type!(
+        "{Int}?",
+        test_optional_set_type,
+        optional_set_type,
+        Set,
+        SetTypeItem
+    );
 }
