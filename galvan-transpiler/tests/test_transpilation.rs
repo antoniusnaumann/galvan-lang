@@ -24,11 +24,12 @@ mod test_utils {
     }
 }
 
-use galvan_ast::Source;
-use galvan_transpiler::transpile_source;
+use galvan_files::Source;
+use galvan_transpiler::transpile;
 use test_utils::*;
 
 generate_code_tests!(test_transpilation, TRANSPILE, trim_all {
     let source = Source::from_string(code);
-    transpile_source(source).unwrap()
+    let transpilation = transpile(source);
+    transpilation.transpiled.unwrap()
 });

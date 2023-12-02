@@ -4,7 +4,7 @@ single(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain(
 
 /*# TRANSPILE
 "pub struct SimpleStruct {
-    member: String
+    pub(crate) member: String
 }"
 */
 

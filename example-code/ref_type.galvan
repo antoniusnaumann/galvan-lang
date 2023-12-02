@@ -1,0 +1,14 @@
+/*# AST
+single(struct_type(inherited(), "WithRef", vec![struct_member("ref_member", ref_type(plain("String")))]));
+*/
+
+/*# TRANSPILE
+"pub(crate) struct WithRef {
+    pub(crate) ref_member: std::sync::Arc<std::sync::Mutex<String>>
+}"
+*/
+
+
+type WithRef {
+	ref_member: $String
+}

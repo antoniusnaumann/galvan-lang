@@ -10,7 +10,7 @@ single(
 
 /*# TRANSPILE
 "pub(crate) struct Foo {
-    pub(crate) bar: Option<HashMap<String, String>>,
+    pub(crate) bar: Option<std::collections::HashMap<String, String>>
 }"
 */
 

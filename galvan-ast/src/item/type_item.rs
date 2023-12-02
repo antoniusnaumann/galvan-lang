@@ -1,26 +1,48 @@
-use derive_more::From;
-
 use galvan_pest::Rule;
+use typeunion::type_union;
 
 use crate::TypeIdent;
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
+type Array = Box<ArrayTypeItem>;
+type Dictionary = Box<DictionaryTypeItem>;
+type OrderedDictionary = Box<OrderedDictionaryTypeItem>;
+type Set = Box<SetTypeItem>;
+type Tuple = Box<TupleTypeItem>;
+type Optional = Box<OptionalTypeItem>;
+type Result = Box<ResultTypeItem>;
+type Ref = Box<RefTypeItem>;
+type Plain = BasicTypeItem;
+
+#[type_union]
+#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::type_item))]
-pub enum TypeElement {
-    // Collection Types
-    Array(Box<ArrayTypeItem>),
-    Dictionary(Box<DictionaryTypeItem>),
-    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
-    Set(Box<SetTypeItem>),
-    Tuple(Box<TupleTypeItem>),
+pub type TypeElement =
+    Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Ref + Plain;
 
-    // Error handling monads
-    Optional(Box<OptionalTypeItem>),
-    Result(Box<ResultTypeItem>),
+#[type_union(super = TypeElement)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::opt_element_type))]
+/// A subset of TypeElement that can be used as the inner type of an optional
+pub type OptionalElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Ref + Plain;
 
-    // Primitive type
-    Plain(BasicTypeItem),
-}
+#[type_union(super = TypeElement)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::success_variant))]
+/// A subset of TypeElement that can be used as the success variant of a result type
+pub type SuccessVariant =
+    Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Ref + Plain;
+
+#[type_union(super = TypeElement)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::error_variant))]
+/// A subset of TypeElement that can be used as the error variant of a result type
+pub type ErrorVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
+
+#[type_union(super = TypeElement)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::ref_element))]
+/// A subset of TypeElement that can be contained in a stored reference
+pub type RefElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
 
 impl From<TypeIdent> for TypeElement {
     fn from(value: TypeIdent) -> Self {
@@ -106,43 +128,16 @@ impl OptionalTypeItem {
         Self { some }
     }
 
-    /// Lifts the inner type of the optional to a type element
+    /// Lowers the inner type of the optional to a type element
     pub fn element(self) -> TypeElement {
         self.some.into()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::opt_element_type))]
-/// A subset of TypeElement that can be used as the inner type of an optional
-pub enum OptionalElement {
-    Array(Box<ArrayTypeItem>),
-    Dictionary(Box<DictionaryTypeItem>),
-    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
-    Set(Box<SetTypeItem>),
-    Tuple(Box<TupleTypeItem>),
-    Plain(BasicTypeItem),
-}
-
-impl From<OptionalElement> for TypeElement {
-    fn from(value: OptionalElement) -> Self {
-        match value {
-            OptionalElement::Array(array) => Self::Array(array),
-            OptionalElement::Dictionary(dict) => Self::Dictionary(dict),
-            OptionalElement::OrderedDictionary(ordered_dict) => {
-                Self::OrderedDictionary(ordered_dict)
-            }
-            OptionalElement::Set(set) => Self::Set(set),
-            OptionalElement::Tuple(tuple) => Self::Tuple(tuple),
-            OptionalElement::Plain(basic) => Self::Plain(basic),
-        }
     }
 }
 
 impl TryFrom<TypeElement> for OptionalElement {
     type Error = TypeElement;
 
-    fn try_from(value: TypeElement) -> Result<Self, Self::Error> {
+    fn try_from(value: TypeElement) -> std::result::Result<Self, Self::Error> {
         match value {
             TypeElement::Array(array) => Ok(Self::Array(array)),
             TypeElement::Dictionary(dict) => Ok(Self::Dictionary(dict)),
@@ -154,6 +149,7 @@ impl TryFrom<TypeElement> for OptionalElement {
             TypeElement::Plain(basic) => Ok(Self::Plain(basic)),
             TypeElement::Optional(_) => Err(value),
             TypeElement::Result(_) => Err(value),
+            TypeElement::Ref(refed) => Ok(Self::Ref(refed)),
         }
     }
 }
@@ -177,7 +173,7 @@ impl ResultTypeItem {
 }
 
 impl From<ResultTypeItem> for DowncastResultTypeItem {
-    /// Lifts the success and error variant to a TypeElement
+    /// Lowers the success and error variant to a TypeElement
     fn from(value: ResultTypeItem) -> Self {
         let ResultTypeItem { success, error } = value;
         let success = TypeElement::from(success);
@@ -186,55 +182,16 @@ impl From<ResultTypeItem> for DowncastResultTypeItem {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::success_variant))]
-pub enum SuccessVariant {
-    Array(Box<ArrayTypeItem>),
-    Dictionary(Box<DictionaryTypeItem>),
-    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
-    Set(Box<SetTypeItem>),
-    Tuple(Box<TupleTypeItem>),
-    Plain(BasicTypeItem),
-    Optional(Box<OptionalTypeItem>),
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::ref_type))]
+pub struct RefTypeItem {
+    pub element: RefElement,
 }
 
-impl From<SuccessVariant> for TypeElement {
-    fn from(value: SuccessVariant) -> Self {
-        match value {
-            SuccessVariant::Array(array) => Self::Array(array),
-            SuccessVariant::Dictionary(dict) => Self::Dictionary(dict),
-            SuccessVariant::OrderedDictionary(ordered_dict) => {
-                Self::OrderedDictionary(ordered_dict)
-            }
-            SuccessVariant::Set(set) => Self::Set(set),
-            SuccessVariant::Tuple(tuple) => Self::Tuple(tuple),
-            SuccessVariant::Plain(basic) => Self::Plain(basic),
-            SuccessVariant::Optional(optional) => Self::Optional(optional),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::error_variant))]
-pub enum ErrorVariant {
-    Array(Box<ArrayTypeItem>),
-    Dictionary(Box<DictionaryTypeItem>),
-    OrderedDictionary(Box<OrderedDictionaryTypeItem>),
-    Set(Box<SetTypeItem>),
-    Tuple(Box<TupleTypeItem>),
-    Plain(BasicTypeItem),
-}
-
-impl From<ErrorVariant> for TypeElement {
-    fn from(value: ErrorVariant) -> Self {
-        match value {
-            ErrorVariant::Array(array) => Self::Array(array),
-            ErrorVariant::Dictionary(dict) => Self::Dictionary(dict),
-            ErrorVariant::OrderedDictionary(ordered_dict) => Self::OrderedDictionary(ordered_dict),
-            ErrorVariant::Set(set) => Self::Set(set),
-            ErrorVariant::Tuple(tuple) => Self::Tuple(tuple),
-            ErrorVariant::Plain(basic) => Self::Plain(basic),
-        }
+impl RefTypeItem {
+    /// Lowers the inner type of the optional to a type element
+    pub fn element(self) -> TypeElement {
+        self.element.into()
     }
 }
 
@@ -247,14 +204,13 @@ pub struct BasicTypeItem {
 
 #[cfg(test)]
 mod test {
-    use crate::item::string;
     use from_pest::pest::Parser;
     use from_pest::FromPest;
     use galvan_pest::Rule;
 
     use super::*;
 
-    fn partial_ast<'p, T>(src: &'p str, rule: Rule) -> Result<T, String>
+    fn partial_ast<'p, T>(src: &'p str, rule: Rule) -> std::result::Result<T, String>
     where
         T: FromPest<'p, Rule = Rule>,
     {

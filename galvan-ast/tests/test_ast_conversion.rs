@@ -21,10 +21,6 @@ mod test_utils {
         PestAst::new(items)
     }
 
-    pub fn items(items: Vec<RootItem>) -> PestAst {
-        PestAst::new(items)
-    }
-
     pub fn struct_type(
         visibility: Visibility,
         ident: &str,
@@ -68,6 +64,22 @@ mod test_utils {
         TypeElement::plain(TypeIdent::new(ident))
     }
 
+    pub fn ref_type(ty: TypeElement) -> TypeElement {
+        let element = match ty {
+            TypeElement::Array(elem) => RefElement::Array(elem),
+            TypeElement::Dictionary(elem) => RefElement::Dictionary(elem),
+            TypeElement::OrderedDictionary(elem) => RefElement::OrderedDictionary(elem),
+            TypeElement::Set(elem) => RefElement::Set(elem),
+            TypeElement::Tuple(elem) => RefElement::Tuple(elem),
+            TypeElement::Optional(_) => panic!("Ref to optional is not allowed"),
+            TypeElement::Result(_) => panic!("Ref to result is not allowed"),
+            TypeElement::Ref(_) => panic!("Ref to ref is not allowed"),
+            TypeElement::Plain(elem) => RefElement::Plain(elem),
+        };
+
+        TypeElement::Ref(Box::from(RefTypeItem { element }))
+    }
+
     pub fn optional(ty: TypeElement) -> TypeElement {
         TypeElement::optional(ty.try_into().unwrap())
     }
@@ -86,6 +98,7 @@ mod test_utils {
             TypeElement::Tuple(elements) => SuccessVariant::Tuple(elements),
             TypeElement::Optional(element) => SuccessVariant::Optional(element),
             TypeElement::Result(_) => panic!("Result type cannot be a success variant"),
+            TypeElement::Ref(element) => SuccessVariant::Ref(element),
         }
     }
 
@@ -99,6 +112,7 @@ mod test_utils {
             TypeElement::Tuple(elements) => ErrorVariant::Tuple(elements),
             TypeElement::Optional(_) => panic!("Optional type cannot be an error variant"),
             TypeElement::Result(_) => panic!("Result type cannot be an error variant"),
+            TypeElement::Ref(_) => panic!("Stored reference cannot be an error variant"),
         })
     }
 

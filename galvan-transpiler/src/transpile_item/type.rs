@@ -2,6 +2,8 @@ use crate::macros::{impl_transpile, impl_transpile_fn, impl_transpile_variants, 
 use crate::{Transpile, TypeElement};
 use galvan_ast::*;
 
+// TODO: Re-export used types from galvan library to avoid referencing the used crates directly
+
 impl_transpile!(ArrayTypeItem, "std::collections::Vec<{}>", elements);
 impl_transpile!(
     DictionaryTypeItem,
@@ -13,6 +15,7 @@ impl_transpile!(OrderedDictionaryTypeItem, "TODO {} {}", key, value);
 impl_transpile!(SetTypeItem, "std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
 impl_transpile_fn!(OptionalTypeItem, "Option<{}>", element);
+impl_transpile_fn!(RefTypeItem, "std::sync::Arc<std::sync::Mutex<{}>>", element);
 impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
@@ -28,6 +31,7 @@ impl Transpile for ResultTypeItem {
 
 impl_transpile_variants! { TypeElement;
     Plain
+    Ref
     Array
     Dictionary
     OrderedDictionary
