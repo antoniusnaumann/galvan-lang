@@ -145,6 +145,7 @@ mod test_utils {
 }
 
 use galvan_ast::pest_adapter::*;
+#[allow(unused_imports)]
 use test_utils::*;
 
 generate_code_tests!(test_ast_conversion, AST, {

@@ -24,7 +24,9 @@ mod test_utils {
     }
 }
 
+#[allow(unused_imports)]
 use galvan_files::Source;
+#[allow(unused_imports)]
 use galvan_transpiler::transpile;
 use test_utils::*;
 
