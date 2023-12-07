@@ -23,10 +23,10 @@ test = {
 function = {
     annotation* ~ func_modifiers ~ function_keyword ~ ident ~ param_list ~ return_type? ~ brace_open ~ body ~ brace_close
 }
-return_type = { colon ~ type_item }
+return_type = { arrow ~ type_item }
 
 annotation = ${ "@" ~ ident ~ annotation_params?}
-annotation_params = { paren_open ~ (ident ~ (comma ~ ident)*)? ~ paren_close }
+annotation_params = !{ paren_open ~ (ident ~ (comma ~ ident)*)? ~ paren_close }
 annotation_arg = { ident | type_ident | string_literal } // TODO: Add number literals here
 
 func_modifiers = {
@@ -99,11 +99,19 @@ comma = _{ "," ~ space* }
 dot = _{ "." }
 semicolon = _{ ";" }
 
+// # Arrows
+arrow = _{ "->" }
+double_arrow = _{ "=>" }
+
 // # Errors
 exclamation_mark = _{ "!" }
 question_mark = _{ "?" }
 
 // # Operators
+spread = _{".."}
+inclusive_range = _{ "..=" }
+exclusive_range = _{ "..<" }
+
 assignment_operator = @{ assign | plus_assign | minus_assign | multiply_assign | divide_assign | rem_assign }
 assign = @{ assign_ }
 assign_ = _{ "=" }
@@ -116,6 +124,7 @@ rem_assign = @{ "%=" }
 
 // ## Arithmetic
 plus = @{ "+" }
+concat = @{ "++" }
 minus = @{ "-" }
 multiply = @{ "*" }
 pow = @{ "**" }
