@@ -1,0 +1,9 @@
+/*# AST
+single(function(inherited(), "empty", params(vec![]), None, body()))
+*/
+
+/*# TRANSPILE
+"pub(crate) fn empty() { }"
+*/
+
+fn empty() {}

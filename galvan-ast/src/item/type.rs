@@ -56,10 +56,3 @@ pub struct EmptyTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
 }
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ReceiverType {}
-#[derive(Debug, PartialEq, Eq)]
-pub struct ReturnType {}
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParamType {}

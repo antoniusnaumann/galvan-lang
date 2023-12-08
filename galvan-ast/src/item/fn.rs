@@ -1,36 +1,36 @@
+use galvan_pest::Rule;
+
 use super::*;
 
-#[derive(Debug, /* FromPest */)]
-// #[pest_ast(rule(Rule::function))]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::function))]
 pub struct FnDecl {
     pub signature: FnSignature,
     pub block: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::fn_signature))]
 pub struct FnSignature {
-    pub asyncness: Async,
-    pub constness: Const,
+    // pub asyncness: Async,
+    // pub constness: Const,
     pub visibility: Visibility,
-    pub receiver: Option<ReceiverType>,
     pub identifier: Ident,
     pub parameters: ParamList,
-    pub return_type: Option<ReturnType>,
+    pub return_type: Option<TypeElement>,
 }
 
 impl FnSignature {
     pub fn new(
         mods: Modifiers,
-        receiver: Option<ReceiverType>,
         ident: Ident,
         parameters: ParamList,
-        return_type: Option<ReturnType>,
+        return_type: Option<TypeElement>,
     ) -> Self {
         FnSignature {
-            asyncness: mods.asyncness,
-            constness: mods.constness,
+            // asyncness: mods.asyncness,
+            // constness: mods.constness,
             visibility: mods.visibility,
-            receiver,
             identifier: ident,
             parameters,
             return_type,
@@ -38,21 +38,25 @@ impl FnSignature {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::param_list))]
 pub struct ParamList {
     pub params: Vec<Param>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::param))]
 pub struct Param {
     pub identifier: Ident,
-    pub param_type: ParamType,
+    pub param_type: TypeElement,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::body))]
 pub struct Block {
     pub statements: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::statement))]
 pub struct Statement {}

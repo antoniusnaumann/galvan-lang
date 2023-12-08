@@ -1,8 +1,6 @@
 use galvan_test_macro::generate_code_tests;
 
 use galvan_ast::*;
-use galvan_files::*;
-use galvan_pest::*;
 
 mod test_utils {
     use super::*;
@@ -142,9 +140,47 @@ mod test_utils {
     pub fn public() -> Visibility {
         Visibility::public()
     }
+
+    pub fn function(
+        visibility: Visibility,
+        name: &str,
+        parameters: ParamList,
+        return_type: Option<TypeElement>,
+        block: Block,
+    ) -> FnDecl {
+        FnDecl {
+            signature: FnSignature {
+                visibility,
+                identifier: Ident::new(name),
+                parameters,
+                return_type,
+            },
+            block,
+        }
+    }
+
+    pub fn params(params: Vec<(&'static str, TypeElement)>) -> ParamList {
+        ParamList {
+            params: params
+                .into_iter()
+                .map(|(name, ty)| Param {
+                    identifier: Ident::new(name),
+                    param_type: ty,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn body() -> Block {
+        Block { statements: vec![] }
+    }
 }
 
 use galvan_ast::pest_adapter::*;
+#[allow(unused_imports)]
+use galvan_files::Source;
+#[allow(unused_imports)]
+use galvan_pest::parse_source;
 #[allow(unused_imports)]
 use test_utils::*;
 

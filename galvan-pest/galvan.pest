@@ -21,18 +21,23 @@ test = {
 }
 
 function = {
-    annotation* ~ func_modifiers ~ function_keyword ~ ident ~ param_list ~ return_type? ~ brace_open ~ body ~ brace_close
+    annotation* ~ fn_signature ~ brace_open ~ body ~ brace_close
 }
-return_type = { arrow ~ type_item }
+
+fn_signature = {
+    func_modifiers ~ function_keyword ~ ident ~ param_list ~ return_type?
+}// TODO: Add support for context arguments, varargs, default args, named args and trailing lambdas
+return_type = _{ arrow ~ type_item }
 
 annotation = ${ "@" ~ ident ~ annotation_params?}
 annotation_params = !{ paren_open ~ (ident ~ (comma ~ ident)*)? ~ paren_close }
 annotation_arg = { ident | type_ident | string_literal } // TODO: Add number literals here
 
-func_modifiers = {
-    async_keyword
-    | const_keyword
-    | visibility
+func_modifiers = _{
+    // async_keyword
+    // | const_keyword
+    // |
+    visibility
 }
 
 visibility = { pub_keyword? }
@@ -41,7 +46,7 @@ type_decl = { struct_type_decl | alias_type_decl | tuple_type_decl | empty_type_
 type_decl_prelude = _{ visibility ~ type_keyword ~ type_ident }
 struct_type_decl = { type_decl_prelude ~ brace_open ~ struct_fields ~ comma? ~ brace_close }
 struct_fields = _{ (struct_field ~ ((comma | newline+) ~ struct_field)*)? }
-struct_field = { typed_param }
+struct_field = { param_base }
 alias_type_decl = { type_decl_prelude ~ assign_ ~ type_item }
 tuple_type_decl = { type_decl_prelude ~ paren_open ~ tuple_fields ~ paren_close }
 tuple_fields = _{ (tuple_field ~ (comma ~ tuple_field)*)? }
@@ -49,9 +54,10 @@ tuple_field = { type_item }
 tuple_element = { element_type }
 empty_type_decl = { type_decl_prelude }
 
-param_list = { (paren_open ~ (typed_param ~ (comma ~ typed_param)*)? ~ paren_close)? }
+param_list = { (paren_open ~ (param ~ (comma ~ param)*)? ~ paren_close)? }
 // TODO: Allow patterns here instead of just identifiers
-typed_param = _{ ident ~ colon ~ type_item }
+param = { param_base }
+param_base = _{ ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
