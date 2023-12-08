@@ -1,0 +1,12 @@
+[package]
+name = "galvan-resolver"
+description = "Type and function name resolver for the Galvan language"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+galvan-ast.workspace = true

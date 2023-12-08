@@ -12,6 +12,17 @@ pub enum TypeDecl {
     Empty(EmptyTypeDecl),
 }
 
+impl TypeDecl {
+    pub fn ident(&self) -> &TypeIdent {
+        match self {
+            TypeDecl::Tuple(t) => &t.ident,
+            TypeDecl::Struct(s) => &s.ident,
+            TypeDecl::Alias(a) => &a.ident,
+            TypeDecl::Empty(e) => &e.ident,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::tuple_type_decl))]
 pub struct TupleTypeDecl {

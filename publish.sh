@@ -14,6 +14,10 @@ cd galvan-ast
 cargo publish
 cd ..
 
+cd galvan-resolver
+cargo publish
+cd ..
+
 cd galvan-transpiler
 cargo publish
 cd ..

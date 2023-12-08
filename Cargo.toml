@@ -35,6 +35,7 @@ members = [
   # "galvan-core",
   "galvan-files",
   "galvan-pest",
+  "galvan-resolver",
   "galvan-transpiler",
   "galvan-test-macro",
 ]
