@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use galvan_ast::{Ast, FnDecl, MainDecl, RootItem, TypeDecl};
+use galvan_ast::{Ast, FnDecl, Ident, MainDecl, RootItem, TypeDecl, TypeIdent};
 
 pub struct LookupContext<'a> {
     /// Types are resolved by their name
@@ -61,4 +61,34 @@ impl<'a> TryFrom<&'a [Ast]> for LookupContext<'a> {
             main,
         })
     }
+}
+
+impl LookupContext<'_> {
+    pub fn resolve_type(&self, name: &TypeIdent) -> Option<&TypeDecl> {
+        self.types.get(name.as_str()).copied()
+    }
+
+    pub fn resolve_function(
+        &self,
+        receiver: Option<&TypeIdent>,
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&FnDecl> {
+        let func_id = function_id(receiver, name, labels);
+        self.functions.get(&func_id).copied()
+    }
+}
+
+fn function_id(receiver: Option<&TypeIdent>, fn_ident: &Ident, labels: &[&str]) -> String {
+    let mut id = String::new();
+    if let Some(receiver) = receiver {
+        id.push_str(receiver.as_str());
+        id.push_str("::");
+    }
+    id.push_str(fn_ident.as_str());
+    if !labels.is_empty() {
+        id.push(':');
+        id.push_str(&labels.join(":"));
+    }
+    id
 }

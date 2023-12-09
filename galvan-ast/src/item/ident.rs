@@ -11,6 +11,10 @@ impl Ident {
     pub fn new(name: impl Into<String>) -> Ident {
         Ident(name.into())
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Debug, Display, PartialEq, Eq, From, FromPest)]
@@ -20,5 +24,9 @@ pub struct TypeIdent(#[pest_ast(outer(with(string)))] String);
 impl TypeIdent {
     pub fn new(name: impl Into<String>) -> TypeIdent {
         TypeIdent(name.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
