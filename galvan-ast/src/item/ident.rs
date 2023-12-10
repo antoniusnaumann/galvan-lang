@@ -30,3 +30,9 @@ impl TypeIdent {
         &self.0
     }
 }
+
+impl AsRef<str> for TypeIdent {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}

@@ -1,16 +1,17 @@
 use std::collections::HashMap;
+use std::iter::once;
 
 use galvan_ast::{Ast, FnDecl, Ident, MainDecl, RootItem, TypeDecl, TypeIdent};
 
 pub struct LookupContext<'a> {
     /// Types are resolved by their name
-    pub types: HashMap<String, &'a TypeDecl>,
+    pub types: HashMap<TypeId, &'a TypeDecl>,
     /// Functions are resolved by their name and - if present - named arguments and their receiver type
     ///
     /// `fn foo(a: i32, b: i32) -> i32` is identified as `foo`
     /// `fn foo(bar a: i32, b: i32) -> i32` is identified as `foo:bar`
     /// `fn foo(self: i32, b: i32) -> i32` is identified as `i32::foo`
-    pub functions: HashMap<String, &'a FnDecl>,
+    pub functions: HashMap<FunctionId, &'a FnDecl>,
     // TODO: Nested contexts for resolving names from imported modules
     // pub imports: HashMap<String, LookupContext<'a>>,
     pub main: Option<&'a MainDecl>,
@@ -38,11 +39,12 @@ impl<'a> TryFrom<&'a [Ast]> for LookupContext<'a> {
             for top in &ast.toplevel {
                 match top {
                     RootItem::Type(type_decl) => {
-                        types.insert(type_decl.ident().to_string(), type_decl);
+                        types.insert(type_decl.ident().into(), type_decl);
                     }
                     RootItem::Fn(fn_decl) => {
                         // TODO: Add named arguments and receiver type
-                        functions.insert(fn_decl.signature.identifier.to_string(), fn_decl);
+                        let func_id = FunctionId::new(None, &fn_decl.signature.identifier, &[]);
+                        functions.insert(func_id, fn_decl);
                     }
                     RootItem::Test(_) => {}
                     RootItem::Main(m) => {
@@ -65,7 +67,7 @@ impl<'a> TryFrom<&'a [Ast]> for LookupContext<'a> {
 
 impl LookupContext<'_> {
     pub fn resolve_type(&self, name: &TypeIdent) -> Option<&TypeDecl> {
-        self.types.get(name.as_str()).copied()
+        self.types.get(name.into()).copied()
     }
 
     pub fn resolve_function(
@@ -74,21 +76,39 @@ impl LookupContext<'_> {
         name: &Ident,
         labels: &[&str],
     ) -> Option<&FnDecl> {
-        let func_id = function_id(receiver, name, labels);
+        let func_id = FunctionId::new(receiver, name, labels);
         self.functions.get(&func_id).copied()
     }
 }
 
-fn function_id(receiver: Option<&TypeIdent>, fn_ident: &Ident, labels: &[&str]) -> String {
-    let mut id = String::new();
-    if let Some(receiver) = receiver {
-        id.push_str(receiver.as_str());
-        id.push_str("::");
+#[derive(Debug, Hash, PartialEq, Eq)]
+struct TypeId(Box<str>);
+
+impl<S> From<S> for TypeId
+where
+    S: AsRef<str>,
+{
+    fn from(ident: S) -> Self {
+        Self(ident.as_ref().into())
     }
-    id.push_str(fn_ident.as_str());
-    if !labels.is_empty() {
-        id.push(':');
-        id.push_str(&labels.join(":"));
+}
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+struct FunctionId(Box<str>);
+
+impl FunctionId {
+    fn new(receiver: Option<&TypeIdent>, fn_ident: &Ident, labels: &[&str]) -> Self {
+        let mut id = String::new();
+        if let Some(receiver) = receiver {
+            id.push_str(receiver.as_str());
+            id.push_str("::");
+        }
+        id.push_str(fn_ident.as_str());
+        if !labels.is_empty() {
+            id.push(':');
+            id.push_str(&labels.join(":"));
+        }
+
+        Self(id.into())
     }
-    id
 }
