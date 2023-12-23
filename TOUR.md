@@ -1,0 +1,340 @@
+### A Tour of Galvan
+#### Introduction to Galvan
+
+Galvan is a modern programming language that transpiles to Rust. It provides a concise syntax while leveraging the full power of Rust's ecosystem. 
+
+#### Basic Syntax and String Formatting
+```galvan
+main {
+    let name = "Galvan"
+    print("Welcome to {name}, the modern language!")
+}
+```
+Note that Galvan strings always support inline format arguments.
+
+#### Functions
+Like in Rust, functions are defined with the `fn` keyword and return the value of the last expression:
+```galvan
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+```
+
+Very short functions can also be defined with = and have their return type inferred:
+```galvan
+fn add(a: Int, b: Int) = a + b
+```
+Those functions are not allowed to have newlines in their body.
+
+#### Types 
+Types in Galvan are defined with the `type` keyword.
+```galvan
+/// A struct definition
+pub type Person {
+    name: String
+    age: Int
+}
+
+/// A type alias
+pub type Human = Person
+
+/// A tuple type
+pub type Couple = (Person, Person)
+
+/// An enum type
+pub type Theme {
+    Plain
+    // Like in Rust, enum variants can have associated values, either named or unnamed
+    Monochrome(Color)
+    Dark { background: Color, foreground: Color }
+    Light { background: Color, foreground: Color }
+}
+```
+
+#### Member Functions
+All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
+```galvan
+pub type Dog {
+    name: String
+}
+
+fn bark(self: Dog) {
+    print("{self.name} barks")
+}
+```
+
+#### Collections
+
+Galvan features intuitive syntax for collections:
+```galvan
+pub type IntArray = [Int]
+pub type StringSet = {String}
+pub type MyDict = {String: Int}
+pub type OrderedDict = [String: Int]
+```
+
+Ordered types use `[]`, unordered types use `{}`.
+
+#### Optionals and Result Types
+Galvan provides concise syntax for optionals and result types:
+
+```galvan
+type OptionalInt = Int?
+type FileOrErr = File!
+type FileOrIoErr = File!IoError
+```
+The error variant is specified after the `!` symbol. If it is not given, a flexible error type is used.
+
+```galvan
+fn open_file(path: String) -> File! {
+    let file = File::open(path)!
+    let contents = file.read_to_string()?.find("foo")?.uppercase()
+}
+```
+The `!` operator unwraps the result and early returns if the result is an error. This is identical to the `?` operator in Rust.
+The `?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not None.
+
+#### Union Types
+Galvan supports union types everywhere where a type identifier is expected:
+```galvan
+fn print_value(value: Int | String) {
+    print("Value: {value}")
+}
+```
+
+#### Pass-by-Value and Pass-by-Reference
+By default, arguments are passed by value. If the argument needs to be mutated, the `&` operator can be used to pass it by reference:
+```galvan
+fn add_one(value: &Int) {
+    value += 1
+}
+```
+
+Galvan's `&T` would be equivalent to Rust's `&mut T`. Galvan does not have immutable references, as all values are copy-on-write.
+```galvan
+// No copy is happening here as the value is not mutated
+// Arguments are passed by value by default
+fn bark_at(self: Dog, other: Dog) {
+    print("{self.name} barks at {other.name}")
+}
+```
+
+```galvan
+// A copy is happening here as the value is mutated
+fn shout_at(self: Dog, other: Dog) {
+    // Redeclaring is neccessary as value parameters cannot be mutated
+    let other = other
+    // Copy is happening here
+    other.name = other.name.uppercase()
+    print("{self.name} shouts at {other.name}")
+}
+```
+
+```galvan
+fn grow(self: &Dog) {
+    // This mutates the original value as it is passed by reference
+    self.age += 1
+}
+```
+
+#### Stored References
+References that are allowed to be stored in structs have to be declared as heap references, this is done by prefixing them with `$`:
+```galvan
+pub type Person {
+    name: String
+    age: Int
+    // This is a heap reference
+    dog: $Dog
+}
+```
+Heap references use atomic reference counting to be auto-freed when no longer needed and are always mutable.
+
+#### Control Flow
+##### Loops
+Like in Rust, loops can yield a value:
+```galvan
+mut i = 0
+let j = loop {
+    if i == n {
+        return i
+    }
+    i += 1
+}
+```
+
+For loops are also supported:
+```galvan
+for 0..<n {
+    print(it)
+}
+```
+The loop variable is available via the `it` keyword, but can also be named explicitly using closure parameter syntax:
+```galvan
+for 0..<n |i| {
+    print(i)
+}
+```
+
+Note that ranges are declared using `..<` (exclusive upper bound) or `..=` (inclusive upper bound).
+
+##### If-Else
+```galvan
+if condition {
+    print("Condition is true")
+} else if other_condition {
+    print("Other condition is true")
+} else {
+    print("No condition is true")
+}
+```
+
+#### Try
+You can use try to unwrap a result or optional:
+```galvan
+try potential_error {
+    print("Optional was {it}")
+} else {
+    print("Error occured: {it}")
+}
+```
+The unwrapped variant is available via the it keyword, like in closures. You can also name it using closure parameter syntax to declare them explicitly:
+```galvan
+try potential_error |value| {
+    print("Optional was {value}")
+} else |error| {
+    print("Error occured: {error}")
+}
+```
+
+#### Return and Throw
+Return values are implicit, however you can use the `return` keyword to return early:
+```galvan 
+fn fib(n: Int) -> Int {
+    if n <= 1 {
+        return n
+    }
+    fib(n - 1) + fib(n - 2)
+}
+```
+
+Returning an error early is done using the `throw` keyword:
+```galvan
+fn checked_divide(a: Float, b: Float) -> Float! {
+    if b == 0 {
+        throw "Division by zero"
+    }
+    a / b
+}
+```
+
+#### Generics
+In Galvan, type identifiers are always starting with an upper case letter. Using a lower case letter instead introduces a type parameter:
+```galvan
+type Container {
+    value: t
+}
+
+fn get_value(self: Container<t>) -> t {
+    self.value
+}
+```
+
+Bounds can be specified using the `where` keyword:
+```galvan
+fn concat_hash(self: t, other: t) -> t where t: Hash {
+    self.hash() ++ other.hash()
+}
+```
+
+#### Operators
+Arithmetic operators: 
+- '+': Addition
+- '-': Subtraction
+- '*': Multiplication
+- '/': Division
+- '%': Remainder
+- '^': Exponentiation
+
+Logical operators:
+- 'and', '&&': Logical and
+- 'or', '||': Logical or
+- 'not', '!': Logical not
+
+Binary operators are prefixed with b:
+- 'b|': Bitwise or
+- 'b&': Bitwise and
+- 'b^': Bitwise xor
+- 'b<<': Bitwise left shift
+- 'b>>': Bitwise right shift
+- 'b~': Bitwise not
+
+Comparison operators:
+- '==': Equality
+- '!=', '≠': Inequality
+- '<': Less than
+- '<=', '≤': Less than or equal
+- '>' Greater than
+- '>=', '≥':: Greater than or equal
+- '===': Pointer equality, only works for heap references
+- '!==': Pointer inequality, only works for heap references
+
+Collection operators:
+- '++': Concatenation
+- '--': Removal
+- '[]': Indexing
+- '[:]': Slicing
+- 'in': Membership
+
+#### Unicode and Custom Operators
+Galvan supports Unicode and custom operators:
+
+```galvan
+@infix("⨁")
+fn custom_add(lhs: n, rhs: n) = lhs + rhs
+
+@prefix("√")
+fn sqrt(n: Float) = n.sqrt()
+
+main {
+    let sum = 5 ⨁ 10
+    let value = √16.0
+}
+```
+
+This section defines custom infix `⨁` and prefix `√` operators. 
+Note that no whitespace is allowed between a prefix operator and the operands.
+Infix operators have to be surrounded by whitespace.
+
+#### Closures
+Closures are defined using the parameter list syntax:
+```galvan
+let add = |a, b| a + b
+```
+
+Closure types use the arrow syntax:
+```galvan
+fn map(self: [t], f: t -> u) -> [u] {
+    let mut result = []
+    for self {
+        result.push(f(it))
+    }
+    result
+}
+```
+
+Functions with trailing closures are allowed to omit the parameter list and the () around the parameter list:
+```galvan
+iter
+    .map { it * 2 }
+    // Trailing closures with only one parameter can use the it keyword instead of naming it explicitly
+    .filter { it % 2 == 0 }
+    .reduce start |acc, e| { acc + e }
+```
+
+Trailing closures can also use numbered parameters instead of giving a parameter list
+```galvan
+iter
+    .map { #0 * 2 }
+    .filter { #0 % 2 == 0 }
+    .reduce start { #0 + #1 }
+```

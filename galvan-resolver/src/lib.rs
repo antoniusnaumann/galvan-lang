@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter::once;
 
 use galvan_ast::{Ast, FnDecl, Ident, MainDecl, RootItem, TypeDecl, TypeIdent};
 
@@ -67,7 +66,7 @@ impl<'a> TryFrom<&'a [Ast]> for LookupContext<'a> {
 
 impl LookupContext<'_> {
     pub fn resolve_type(&self, name: &TypeIdent) -> Option<&TypeDecl> {
-        self.types.get(name.into()).copied()
+        self.types.get(&name.into()).copied()
     }
 
     pub fn resolve_function(
