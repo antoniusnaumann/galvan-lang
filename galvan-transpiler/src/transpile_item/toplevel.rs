@@ -1,8 +1,8 @@
-use crate::{Transpile, Ast, RootItem};
 use crate::macros::impl_transpile_variants;
+use crate::{Ast, LookupContext, RootItem, Transpile};
 impl Transpile for Ast {
-    fn transpile(self) -> String {
-        self.toplevel.transpile()
+    fn transpile(&self, lookup: &LookupContext) -> String {
+        self.toplevel.transpile(lookup)
     }
 }
 

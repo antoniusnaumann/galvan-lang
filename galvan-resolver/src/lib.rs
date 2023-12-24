@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use thiserror::Error;
+
 use galvan_ast::{Ast, FnDecl, Ident, MainDecl, RootItem, TypeDecl, TypeIdent};
 
 pub struct LookupContext<'a> {
@@ -18,18 +20,22 @@ pub struct LookupContext<'a> {
 
 // TODO: derive thiserror and add proper error handling #[derive(Error)]
 // TODO: Include spans in errors
+#[derive(Debug, Error)]
 pub enum LookupError {
+    #[error("Type not found")]
     TypeNotFound,
+    #[error("Function not found")]
     FunctionNotFound,
+    #[error("Duplicate main function")]
     DuplicateMain,
+    #[error("Duplicate type")]
     DuplicateType,
+    #[error("Duplicate function")]
     DuplicateFunction,
 }
 
-impl<'a> TryFrom<&'a [Ast]> for LookupContext<'a> {
-    type Error = LookupError;
-
-    fn try_from(asts: &'a [Ast]) -> Result<Self, Self::Error> {
+impl<'a> LookupContext<'a> {
+    pub fn new(asts: &'a [Ast]) -> Result<Self, LookupError> {
         let mut types = HashMap::new();
         let mut functions = HashMap::new();
         let mut main = None;
@@ -81,7 +87,7 @@ impl LookupContext<'_> {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
-struct TypeId(Box<str>);
+pub struct TypeId(Box<str>);
 
 impl<S> From<S> for TypeId
 where

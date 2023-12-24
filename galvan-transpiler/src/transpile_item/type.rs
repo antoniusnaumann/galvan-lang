@@ -1,5 +1,5 @@
 use crate::macros::{impl_transpile, impl_transpile_fn, impl_transpile_variants, transpile};
-use crate::{Transpile, TypeElement};
+use crate::{LookupContext, Transpile, TypeElement};
 use galvan_ast::*;
 
 // TODO: Re-export used types from galvan library to avoid referencing the used crates directly
@@ -19,12 +19,13 @@ impl_transpile_fn!(RefTypeItem, "std::sync::Arc<std::sync::Mutex<{}>>", element)
 impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
-    fn transpile(self) -> String {
-        let DowncastResultTypeItem { success, error } = self.into();
+    fn transpile(&self, lookup: &LookupContext) -> String {
+        // let DowncastResultTypeItem { success, error } = self.clone()).into();
+        let ResultTypeItem { success, error } = self;
         if let Some(error) = error {
-            transpile!("Result<{}, {}>", success, error)
+            transpile!(lookup, "Result<{}, {}>", success, error)
         } else {
-            transpile!("anyhow::Result<{}>", success)
+            transpile!(lookup, "anyhow::Result<{}>", success)
         }
     }
 }

@@ -1,7 +1,11 @@
-extern crate core;
-
+use core::slice;
 use galvan_ast::*;
 use galvan_files::Source;
+
+use thiserror::Error;
+
+pub(crate) use galvan_resolver::LookupContext;
+use galvan_resolver::LookupError;
 
 /// Name of the generated rust module that exports all public items from all galvan files in this crate
 #[macro_export]
@@ -14,11 +18,18 @@ macro_rules! galvan_module {
 #[cfg(feature = "exec")]
 pub mod exec;
 
-// TODO: This should get its own error type
-pub type TranspileError = AstError;
+#[derive(Debug, Error)]
+pub enum TranspileError {
+    #[error(transparent)]
+    Ast(#[from] AstError),
+    #[error(transparent)]
+    Lookup(#[from] LookupError),
+}
+
 fn transpile_source(source: Source) -> Result<String, TranspileError> {
     let ast = source.try_into_ast()?;
-    Ok(ast.transpile())
+    let lookup = LookupContext::new(slice::from_ref(&ast))?;
+    Ok(ast.transpile(&lookup))
 }
 
 #[derive(Debug)]
@@ -81,7 +92,7 @@ mod transpile_item {
 }
 
 trait Transpile {
-    fn transpile(self) -> String;
+    fn transpile(&self, lookup: &LookupContext) -> String;
 }
 
 trait Punctuated {
@@ -90,16 +101,16 @@ trait Punctuated {
 
 mod macros {
     macro_rules! transpile {
-        ($string:expr, $($items:expr),*$(,)?) => {
-            format!($string, $(($items).transpile()),*)
+        ($lookup:ident, $string:expr, $($items:expr),*$(,)?) => {
+            format!($string, $(($items).transpile($lookup)),*)
         };
     }
 
     macro_rules! impl_transpile {
         ($ty:ty, $string:expr, $($field:ident),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(self) -> String {
-                    crate::macros::transpile!($string, $(self.$field),*)
+                fn transpile(&self, lookup: &crate::LookupContext) -> String {
+                    crate::macros::transpile!(lookup, $string, $(self.$field),*)
                 }
             }
         };
@@ -108,8 +119,8 @@ mod macros {
     macro_rules! impl_transpile_fn {
         ($ty:ty, $string:expr, $($fun:ident),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(self) -> String {
-                    crate::macros::transpile!($string, $(self.$fun()),*)
+                fn transpile(&self, lookup: &crate::LookupContext) -> String {
+                    crate::macros::transpile!(lookup, $string, $(self.$fun()),*)
                 }
             }
         };
@@ -121,10 +132,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(self) -> String {
+                fn transpile(&self, lookup: &crate::LookupContext) -> String {
                     use $ty::*;
                     match self {
-                        $($case => crate::macros::transpile!($($args),+),)+
+                        $($case => crate::macros::transpile!(lookup, $($args),+),)+
                     }
                 }
             }
@@ -137,10 +148,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(self) -> String {
+                fn transpile(&self, lookup: &crate::LookupContext) -> String {
                     use $ty::*;
                     match self {
-                        $($case(inner) => inner.transpile(),)+
+                        $($case(inner) => inner.transpile(lookup),)+
                     }
                 }
             }
@@ -173,10 +184,10 @@ impl<T> Transpile for Vec<T>
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(self) -> String {
+    fn transpile(&self, lookup: &LookupContext) -> String {
         let punct = T::punctuation();
         self.into_iter()
-            .map(|e| e.transpile())
+            .map(|e| e.transpile(lookup))
             .reduce(|acc, e| format!("{acc}{punct}{e}"))
             .unwrap_or_else(String::new)
     }

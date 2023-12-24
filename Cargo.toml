@@ -10,6 +10,9 @@ galvan-ast = { path = "galvan-ast", version = "0.0.0-dev02" }
 galvan-files = { path = "galvan-files", version = "0.0.0-dev02" }
 galvan-pest = { path = "galvan-pest", version = "0.0.0-dev02" }
 galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev02" }
+galvan-resolver = { path = "galvan-resolver", version = "0.0.0-dev02" }
+
+thiserror = "1.0.51"
 
 [package]
 name = "galvan"
