@@ -248,42 +248,42 @@ fn concat_hash(self: t, other: t) -> t where t: Hash {
 
 #### Operators
 Arithmetic operators: 
-- '+': Addition
-- '-': Subtraction
-- '*': Multiplication
-- '/': Division
-- '%': Remainder
-- '^': Exponentiation
+- `+`: Addition
+- `-`: Subtraction
+- `*`: Multiplication
+- `/`: Division
+- `%`: Remainder
+- `^`: Exponentiation
 
 Logical operators:
-- 'and', '&&': Logical and
-- 'or', '||': Logical or
-- 'not', '!': Logical not
+- `and`, `&&`: Logical and
+- `or`, `||`: Logical or
+- `not`, `!`: Logical not
 
-Binary operators are prefixed with b:
-- 'b|': Bitwise or
-- 'b&': Bitwise and
-- 'b^': Bitwise xor
-- 'b<<': Bitwise left shift
-- 'b>>': Bitwise right shift
-- 'b~': Bitwise not
+Bitwise operators are prefixed with b:
+- `b|`: Bitwise or
+- `b&`: Bitwise and
+- `b^`: Bitwise xor
+- `b<<`: Bitwise left shift
+- `b>>`: Bitwise right shift
+- `b~`: Bitwise not
 
 Comparison operators:
-- '==': Equality
-- '!=', '≠': Inequality
-- '<': Less than
-- '<=', '≤': Less than or equal
-- '>' Greater than
-- '>=', '≥':: Greater than or equal
-- '===': Pointer equality, only works for heap references
-- '!==': Pointer inequality, only works for heap references
+- `==`: Equality
+- `!=`, `≠`: Inequality
+- `<`: Less than
+- `<=`, `≤`: Less than or equal
+- `>` Greater than
+- `>=`, `≥`:: Greater than or equal
+- `===`: Pointer equality, only works for heap references
+- `!==`: Pointer inequality, only works for heap references
 
 Collection operators:
-- '++': Concatenation
-- '--': Removal
-- '[]': Indexing
-- '[:]': Slicing
-- 'in': Membership
+- `++`: Concatenation
+- `--`: Removal
+- `[]`: Indexing
+- `[:]`: Slicing
+- `in`: Membership
 
 #### Unicode and Custom Operators
 Galvan supports Unicode and custom operators:
@@ -314,7 +314,7 @@ let add = |a, b| a + b
 Closure types use the arrow syntax:
 ```galvan
 fn map(self: [t], f: t -> u) -> [u] {
-    let mut result = []
+    mut result = []
     for self {
         result.push(f(it))
     }
@@ -328,6 +328,7 @@ iter
     .map { it * 2 }
     // Trailing closures with only one parameter can use the it keyword instead of naming it explicitly
     .filter { it % 2 == 0 }
+    // The parameter list before the trailing closure can be omitted
     .reduce start |acc, e| { acc + e }
 ```
 
