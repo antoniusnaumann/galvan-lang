@@ -1,3 +1,5 @@
+use from_pest::pest::iterators::Pair;
+use from_pest::{pest, ConversionError, FromPest};
 use galvan_pest::Rule;
 use typeunion::type_union;
 
@@ -23,20 +25,19 @@ pub type TypeElement =
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::opt_element_type))]
 /// A subset of TypeElement that can be used as the inner type of an optional
-pub type OptionalElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Ref + Plain;
+type OptionalElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Ref + Plain;
 
 #[type_union(super = TypeElement)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::success_variant))]
 /// A subset of TypeElement that can be used as the success variant of a result type
-pub type SuccessVariant =
-    Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Ref + Plain;
+type SuccessVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Ref + Plain;
 
 #[type_union(super = TypeElement)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::error_variant))]
 /// A subset of TypeElement that can be used as the error variant of a result type
-pub type ErrorVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
+type ErrorVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
 
 #[type_union(super = TypeElement)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -75,11 +76,11 @@ impl TypeElement {
         Self::Tuple(Box::new(TupleTypeItem { elements }))
     }
 
-    pub fn optional(some: OptionalElement) -> Self {
+    pub fn optional(some: TypeElement) -> Self {
         Self::Optional(Box::new(OptionalTypeItem { some }))
     }
 
-    pub fn result(success: SuccessVariant, error: Option<ErrorVariant>) -> Self {
+    pub fn result(success: TypeElement, error: Option<TypeElement>) -> Self {
         Self::Result(Box::new(ResultTypeItem { success, error }))
     }
 }
@@ -117,14 +118,30 @@ pub struct TupleTypeItem {
     pub elements: Vec<TypeElement>,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::optional_type))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct OptionalTypeItem {
-    some: OptionalElement,
+    some: TypeElement,
+}
+
+impl FromPest<'_> for OptionalTypeItem {
+    type Rule = Rule;
+    type FatalError = from_pest::Void;
+
+    fn from_pest(
+        pairs: &mut pest::iterators::Pairs<'_, Self::Rule>,
+    ) -> std::result::Result<Self, ConversionError<Self::FatalError>> {
+        match pairs.next() {
+            Some(pair) if pair.as_rule() == Self::Rule::optional_type => {
+                let some = OptionalElement::from_pest(&mut pair.into_inner())?.into();
+                Ok(Self { some })
+            }
+            Some(_) | None => Err(ConversionError::NoMatch),
+        }
+    }
 }
 
 impl OptionalTypeItem {
-    pub fn new(some: OptionalElement) -> Self {
+    pub fn new(some: TypeElement) -> Self {
         Self { some }
     }
 
@@ -134,51 +151,34 @@ impl OptionalTypeItem {
     }
 }
 
-impl TryFrom<TypeElement> for OptionalElement {
-    type Error = TypeElement;
-
-    fn try_from(value: TypeElement) -> std::result::Result<Self, Self::Error> {
-        match value {
-            TypeElement::Array(array) => Ok(Self::Array(array)),
-            TypeElement::Dictionary(dict) => Ok(Self::Dictionary(dict)),
-            TypeElement::OrderedDictionary(ordered_dict) => {
-                Ok(Self::OrderedDictionary(ordered_dict))
-            }
-            TypeElement::Set(set) => Ok(Self::Set(set)),
-            TypeElement::Tuple(tuple) => Ok(Self::Tuple(tuple)),
-            TypeElement::Plain(basic) => Ok(Self::Plain(basic)),
-            TypeElement::Optional(_) => Err(value),
-            TypeElement::Result(_) => Err(value),
-            TypeElement::Ref(refed) => Ok(Self::Ref(refed)),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::result_type))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ResultTypeItem {
-    success: SuccessVariant,
-    error: Option<ErrorVariant>,
+    success: TypeElement,
+    error: Option<TypeElement>,
 }
 
-pub struct DowncastResultTypeItem {
-    pub success: TypeElement,
-    pub error: Option<TypeElement>,
-}
+impl FromPest<'_> for ResultTypeItem {
+    type Rule = Rule;
+    type FatalError = from_pest::Void;
 
-impl ResultTypeItem {
-    pub fn new(success: SuccessVariant, error: Option<ErrorVariant>) -> Self {
-        Self { success, error }
-    }
-}
+    fn from_pest(
+        pairs: &mut pest::iterators::Pairs<'_, Self::Rule>,
+    ) -> std::result::Result<Self, ConversionError<Self::FatalError>> {
+        let next = match pairs.next() {
+            Some(pair) if pair.as_rule() == Rule::result_type => pair,
+            Some(_) | None => return Err(ConversionError::NoMatch),
+        };
 
-impl From<ResultTypeItem> for DowncastResultTypeItem {
-    /// Lowers the success and error variant to a TypeElement
-    fn from(value: ResultTypeItem) -> Self {
-        let ResultTypeItem { success, error } = value;
-        let success = TypeElement::from(success);
-        let error = error.map(TypeElement::from);
-        Self { success, error }
+        let mut inner = next.into_inner();
+        let success = SuccessVariant::from_pest(&mut inner)?.into();
+        let error = match inner.peek() {
+            Some(pair) if pair.as_rule() == Rule::error_variant => {
+                Some(ErrorVariant::from_pest(&mut inner)?.into())
+            }
+            Some(_) | None => None,
+        };
+
+        Ok(Self { success, error })
     }
 }
 

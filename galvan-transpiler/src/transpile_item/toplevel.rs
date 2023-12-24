@@ -6,4 +6,4 @@ impl Transpile for Ast {
     }
 }
 
-impl_transpile_variants!(RootItem; Type, Main, Test);
+impl_transpile_variants!(RootItem; Type, Fn, Main, Test);

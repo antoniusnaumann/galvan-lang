@@ -82,36 +82,8 @@ mod test_utils {
         TypeElement::optional(ty.try_into().unwrap())
     }
 
-    pub fn result(success: SuccessVariant, error: Option<ErrorVariant>) -> TypeElement {
+    pub fn result(success: TypeElement, error: Option<TypeElement>) -> TypeElement {
         TypeElement::result(success, error)
-    }
-
-    pub fn success(ty: TypeElement) -> SuccessVariant {
-        match ty {
-            TypeElement::Plain(ident) => SuccessVariant::Plain(ident),
-            TypeElement::Array(elements) => SuccessVariant::Array(elements),
-            TypeElement::Dictionary(dict) => SuccessVariant::Dictionary(dict),
-            TypeElement::OrderedDictionary(dict) => SuccessVariant::OrderedDictionary(dict),
-            TypeElement::Set(elements) => SuccessVariant::Set(elements),
-            TypeElement::Tuple(elements) => SuccessVariant::Tuple(elements),
-            TypeElement::Optional(element) => SuccessVariant::Optional(element),
-            TypeElement::Result(_) => panic!("Result type cannot be a success variant"),
-            TypeElement::Ref(element) => SuccessVariant::Ref(element),
-        }
-    }
-
-    pub fn error(ty: TypeElement) -> Option<ErrorVariant> {
-        Some(match ty {
-            TypeElement::Plain(ident) => ErrorVariant::Plain(ident),
-            TypeElement::Array(elements) => ErrorVariant::Array(elements),
-            TypeElement::Dictionary(dict) => ErrorVariant::Dictionary(dict),
-            TypeElement::OrderedDictionary(dict) => ErrorVariant::OrderedDictionary(dict),
-            TypeElement::Set(elements) => ErrorVariant::Set(elements),
-            TypeElement::Tuple(elements) => ErrorVariant::Tuple(elements),
-            TypeElement::Optional(_) => panic!("Optional type cannot be an error variant"),
-            TypeElement::Result(_) => panic!("Result type cannot be an error variant"),
-            TypeElement::Ref(_) => panic!("Stored reference cannot be an error variant"),
-        })
     }
 
     pub fn array(elements: TypeElement) -> TypeElement {
