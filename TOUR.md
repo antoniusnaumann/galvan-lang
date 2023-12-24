@@ -103,14 +103,20 @@ fn print_value(value: Int | String) {
 ```
 
 #### Pass-by-Value and Pass-by-Reference
-By default, arguments are passed by value. If the argument needs to be mutated, the `&` operator can be used to pass it by reference:
+By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference:
+For consistency, the `let` keyword is allowed as well but redundant as parameters are passed by value by default.
 ```galvan
-fn add_one(value: &Int) {
+fn add_one(mut value: Int) {
     value += 1
 }
+
+// Using `let` is not necessary here but allowed
+fn incremented(let value : Int) -> Int {
+    value + 1
+} 
 ```
 
-Galvan's `&T` would be equivalent to Rust's `&mut T`. Galvan does not have immutable references, as all values are copy-on-write.
+Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan does not have immutable references, as all values are copy-on-write.
 ```galvan
 // No copy is happening here as the value is not mutated
 // Arguments are passed by value by default
@@ -131,23 +137,36 @@ fn shout_at(self: Dog, other: Dog) {
 ```
 
 ```galvan
-fn grow(self: &Dog) {
+fn grow(mut self: Dog) {
     // This mutates the original value as it is passed by reference
     self.age += 1
 }
 ```
 
 #### Stored References
-References that are allowed to be stored in structs have to be declared as heap references, this is done by prefixing them with `$`:
+References that are allowed to be stored in structs have to be declared as heap references, this is done by prefixing the declaration with `ref`:
 ```galvan
 pub type Person {
     name: String
     age: Int
     // This is a heap reference
-    dog: $Dog
+    ref dog: Dog
+}
+
+main {
+    ref dog = Dog { name: "Bello", age: 5 }
+    // The `dog` field now points to the same entity as the `dog` variable 
+    let person = Person { name: "Jochen, age: 67, ref dog }
+    dog.age += 1
+    
+    print(person.dog.age) // 6
+    print(dog.age) // 6
 }
 ```
 Heap references use atomic reference counting to be auto-freed when no longer needed and are always mutable.
+In contrast to `let` and `mut` values, `ref` values. They follow reference semantics, meaning that they point to the same object. For this reason, they are always mutable.
+
+
 
 #### Control Flow
 ##### Loops
