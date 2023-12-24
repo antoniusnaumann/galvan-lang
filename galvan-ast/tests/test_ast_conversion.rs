@@ -62,19 +62,7 @@ mod test_utils {
         TypeElement::plain(TypeIdent::new(ident))
     }
 
-    pub fn ref_type(ty: TypeElement) -> TypeElement {
-        let element = match ty {
-            TypeElement::Array(elem) => RefElement::Array(elem),
-            TypeElement::Dictionary(elem) => RefElement::Dictionary(elem),
-            TypeElement::OrderedDictionary(elem) => RefElement::OrderedDictionary(elem),
-            TypeElement::Set(elem) => RefElement::Set(elem),
-            TypeElement::Tuple(elem) => RefElement::Tuple(elem),
-            TypeElement::Optional(_) => panic!("Ref to optional is not allowed"),
-            TypeElement::Result(_) => panic!("Ref to result is not allowed"),
-            TypeElement::Ref(_) => panic!("Ref to ref is not allowed"),
-            TypeElement::Plain(elem) => RefElement::Plain(elem),
-        };
-
+    pub fn ref_type(element: TypeElement) -> TypeElement {
         TypeElement::Ref(Box::from(RefTypeItem { element }))
     }
 

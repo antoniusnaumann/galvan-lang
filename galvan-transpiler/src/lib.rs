@@ -83,6 +83,7 @@ pub fn transpile(source: Source) -> Transpilation {
 
 mod transpile_item {
     mod body;
+    mod fn_decl;
     mod ident;
     mod r#struct;
     mod task;
@@ -175,7 +176,7 @@ mod macros {
 }
 use macros::punct;
 
-punct!(", ", TypeElement, TupleTypeMember);
+punct!(", ", TypeElement, TupleTypeMember, Param);
 punct!(",\n", StructTypeMember);
 punct!("\n\n", RootItem);
 // punct!(";\n", Statement);

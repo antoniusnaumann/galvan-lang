@@ -1,14 +1,12 @@
-use crate::{Body, LookupContext, Transpile};
+use crate::{Block, LookupContext, Transpile};
 
-impl Transpile for Body {
+impl Transpile for Block {
     fn transpile(&self, lookup: &LookupContext) -> String {
         transpile_body(self, lookup)
     }
 }
 
-fn transpile_body(body: &Body, lookup: &LookupContext) -> String {
-    String::new()
+fn transpile_body(body: &Block, lookup: &LookupContext) -> String {
     // TODO: Transpile statements
-    // let Body { statements } = body;
-    // transpile!("{}", statements)
+    "{ }".to_string()
 }

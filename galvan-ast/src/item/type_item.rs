@@ -120,7 +120,7 @@ pub struct TupleTypeItem {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct OptionalTypeItem {
-    some: TypeElement,
+    pub some: TypeElement,
 }
 
 impl FromPest<'_> for OptionalTypeItem {
@@ -146,15 +146,15 @@ impl OptionalTypeItem {
     }
 
     /// Lowers the inner type of the optional to a type element
-    pub fn element(self) -> TypeElement {
-        self.some.into()
+    pub fn element(&self) -> &TypeElement {
+        &self.some
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ResultTypeItem {
-    success: TypeElement,
-    error: Option<TypeElement>,
+    pub success: TypeElement,
+    pub error: Option<TypeElement>,
 }
 
 impl FromPest<'_> for ResultTypeItem {
@@ -182,16 +182,32 @@ impl FromPest<'_> for ResultTypeItem {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::ref_type))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RefTypeItem {
-    pub element: RefElement,
+    pub element: TypeElement,
+}
+
+impl FromPest<'_> for RefTypeItem {
+    type Rule = Rule;
+    type FatalError = from_pest::Void;
+
+    fn from_pest(
+        pairs: &mut pest::iterators::Pairs<'_, Self::Rule>,
+    ) -> std::result::Result<Self, ConversionError<Self::FatalError>> {
+        match pairs.next() {
+            Some(pair) if pair.as_rule() == Rule::ref_type => {
+                let element = RefElement::from_pest(&mut pair.into_inner())?.into();
+                Ok(Self { element })
+            }
+            Some(_) | None => Err(ConversionError::NoMatch),
+        }
+    }
 }
 
 impl RefTypeItem {
     /// Lowers the inner type of the optional to a type element
-    pub fn element(self) -> TypeElement {
-        self.element.into()
+    pub fn element(&self) -> &TypeElement {
+        &self.element
     }
 }
 
@@ -390,7 +406,7 @@ mod test {
             fn $name() {
                 let parsed: OptionalTypeItem =
                     partial_ast($lit, Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
-                let TypeElement::$variant(container) = parsed.element() else {
+                let TypeElement::$variant(container) = parsed.some else {
                     panic!("Expected {} type as some type", stringify!($variant))
                 };
 
@@ -408,7 +424,7 @@ mod test {
                 let TypeElement::Optional(container) = parsed else {
                     panic!("Wrong type")
                 };
-                let TypeElement::$variant(container) = container.element() else {
+                let TypeElement::$variant(container) = container.some else {
                     panic!("Expected {} type as some type", stringify!($variant))
                 };
                 let TypeElement::Plain(key) = container.key else {
@@ -452,7 +468,7 @@ mod test {
             fn $name() {
                 let parsed: OptionalTypeItem =
                     partial_ast($lit, Rule::optional_type).unwrap_or_else(|e| panic!("{}", e));
-                let TypeElement::$variant(container) = parsed.element() else {
+                let TypeElement::$variant(container) = parsed.some else {
                     panic!("Expected {} type as some type", stringify!($variant))
                 };
                 let TypeElement::Plain(elements) = container.elements else {
@@ -465,7 +481,7 @@ mod test {
                 let TypeElement::Optional(container) = parsed else {
                     panic!("Wrong type")
                 };
-                let TypeElement::$variant(container) = container.element() else {
+                let TypeElement::$variant(container) = container.some else {
                     panic!("Expected {} type as some type", stringify!($variant))
                 };
                 let TypeElement::Plain(elements) = container.elements else {

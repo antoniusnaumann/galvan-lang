@@ -6,7 +6,7 @@ impl_transpile!(MainDecl, "fn main() {{ {} }}", body);
 
 impl Transpile for TestDecl {
     fn transpile(&self, lookup: &LookupContext) -> String {
-        let name: String = self.name.map_or("test".into(), |name| name.into());
+        let name: &str = self.name.as_ref().map_or("test", |name| name.as_str());
         // TODO: Collect all test functions into a single test module
         format!(
             "#[test]\nfn {}() {{ {} }}",

@@ -20,7 +20,6 @@ impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
     fn transpile(&self, lookup: &LookupContext) -> String {
-        // let DowncastResultTypeItem { success, error } = self.clone()).into();
         let ResultTypeItem { success, error } = self;
         if let Some(error) = error {
             transpile!(lookup, "Result<{}, {}>", success, error)
