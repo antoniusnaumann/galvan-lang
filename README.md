@@ -1,3 +1,10 @@
+# Galvan
+A high-level companion language for Rust.
+
+> [!IMPORTANT]
+> This is a work in progress and under development. It currently is in a state of a hobby project and most features described here are not yet implemented.
+> I am working on this project in my free time - if you like the ideas presented here, and want to help, feel free to contact me or start a discussion here on GitHub.
+
 ### A Tour of Galvan
 #### Introduction to Galvan
 
@@ -174,11 +181,13 @@ Like in Rust, loops can yield a value:
 ```galvan
 mut i = 0
 let j = loop {
-    if i == n {
+    if i == 15 {
         return i
     }
     i += 1
 }
+print(j) // 15
+print(i) // 15
 ```
 
 For loops are also supported:
