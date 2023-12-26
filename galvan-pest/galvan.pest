@@ -57,7 +57,7 @@ empty_type_decl = { type_decl_prelude }
 param_list = { (paren_open ~ (param ~ (comma ~ param)*)? ~ paren_close)? }
 // TODO: Allow patterns here instead of just identifiers
 param = { param_base }
-param_base = _{ ident ~ colon ~ type_item }
+param_base = _{ declaration_modifier ~ ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
@@ -69,10 +69,12 @@ expression = { "TODO: Expression" }
 
 assignment = { ident ~ assignment_operator ~ expression }
 
-declaration = { ref_declaration | val_declaration }
-ref_declaration = { ref_keyword ~ ident ~ (colon ~ type_item)? }
-val_declaration = { val_keyword ~ ident ~ (colon ~ type_item)? }
+declaration = { ref_declaration | let_declaration | mut_declaration }
+ref_declaration = { ref_keyword ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
+let_declaration = { let_keyword ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
+mut_declaration = { mut_keyword ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
 
+declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
 ident = @{ used_ident | unused_ident | discard }
 used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
@@ -87,7 +89,7 @@ keyword = _{
     | function_keyword
     | type_keyword
     | ref_keyword
-    | val_keyword
+    | let_keyword
 }
 
 
@@ -147,21 +149,18 @@ type_keyword = _{ "type" }
 
 // ## Declaration
 ref_keyword = @{ "ref" }
-val_keyword = @{ "val" }
+let_keyword = @{ "let" }
+mut_keyword = @{ "mut" }
 
 // ## Function Modifiers
 async_keyword = @{ "async" }
 const_keyword = @{ "const" }
 pub_keyword = @{ "pub" }
 
-// ### Shorthands
-ampersand = _{ "&" }
-dollar = _{ "$" }
-
 at_sign = @{ "@" }
 
 // # Type Definitions
-type_item = { ref_type | result_type | optional_type | allowed_in_error_variant }
+type_item = { result_type | optional_type | allowed_in_error_variant }
 // Add some additional restrictions on optional / result type nesting
 // - Result types can't be nested -> Flatten result instead
 // - Optional types can't be nested -> Flatten optional instead
@@ -169,8 +168,8 @@ type_item = { ref_type | result_type | optional_type | allowed_in_error_variant 
 // - Result errors can't contain optional types -> If there is no error, the operation should have been successful
 // - Result errors can't contain result types -> The error itself should not fail
 allowed_in_error_variant = _{ basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
-allowed_in_success_variant = _{ optional_type | ref_type | basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
-allowed_in_optional = _{ basic_type | ref_type| array_type | dict_type | ordered_dict_type | set_type | tuple_type }
+allowed_in_success_variant = _{ optional_type | basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
+allowed_in_optional = _{ basic_type | array_type | dict_type | ordered_dict_type | set_type | tuple_type }
 
 error_variant = { allowed_in_error_variant }
 success_variant = { allowed_in_success_variant }
@@ -189,14 +188,14 @@ set_type = !{ brace_open ~ element_type ~ brace_close }
 dict_type = !{ brace_open ~ key_type ~ colon ~ value_type ~ brace_close }
 ordered_dict_type = !{ bracket_open ~ key_type ~ colon ~ value_type ~ bracket_close }
 tuple_type = !{ paren_open ~ tuple_elements ~ paren_close }
-ref_type = ${ dollar ~ ref_element }
-borrowed_type = ${ ampersand ~ element_type }
 result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
 optional_type = ${ opt_element_type ~ question_mark }
 
 // # Basics
 WHITESPACE = _{ whitespace }
 COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!"\n" ~ ANY)* ~ "\n") }
+
+inherited = { "" }
 
 // ## Whitespace
 newline = _{ NEWLINE }

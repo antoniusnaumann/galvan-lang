@@ -12,26 +12,25 @@ type Set = Box<SetTypeItem>;
 type Tuple = Box<TupleTypeItem>;
 type Optional = Box<OptionalTypeItem>;
 type Result = Box<ResultTypeItem>;
-type Ref = Box<RefTypeItem>;
 type Plain = BasicTypeItem;
 
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::type_item))]
 pub type TypeElement =
-    Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Ref + Plain;
+    Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Plain;
 
 #[type_union(super = TypeElement)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::opt_element_type))]
 /// A subset of TypeElement that can be used as the inner type of an optional
-type OptionalElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Ref + Plain;
+type OptionalElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
 
 #[type_union(super = TypeElement)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::success_variant))]
 /// A subset of TypeElement that can be used as the success variant of a result type
-type SuccessVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Ref + Plain;
+type SuccessVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Plain;
 
 #[type_union(super = TypeElement)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -179,35 +178,6 @@ impl FromPest<'_> for ResultTypeItem {
         };
 
         Ok(Self { success, error })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct RefTypeItem {
-    pub element: TypeElement,
-}
-
-impl FromPest<'_> for RefTypeItem {
-    type Rule = Rule;
-    type FatalError = from_pest::Void;
-
-    fn from_pest(
-        pairs: &mut pest::iterators::Pairs<'_, Self::Rule>,
-    ) -> std::result::Result<Self, ConversionError<Self::FatalError>> {
-        match pairs.next() {
-            Some(pair) if pair.as_rule() == Rule::ref_type => {
-                let element = RefElement::from_pest(&mut pair.into_inner())?.into();
-                Ok(Self { element })
-            }
-            Some(_) | None => Err(ConversionError::NoMatch),
-        }
-    }
-}
-
-impl RefTypeItem {
-    /// Lowers the inner type of the optional to a type element
-    pub fn element(&self) -> &TypeElement {
-        &self.element
     }
 }
 

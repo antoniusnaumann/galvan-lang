@@ -15,7 +15,6 @@ impl_transpile!(OrderedDictionaryTypeItem, "TODO {} {}", key, value);
 impl_transpile!(SetTypeItem, "std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
 impl_transpile_fn!(OptionalTypeItem, "Option<{}>", element);
-impl_transpile_fn!(RefTypeItem, "std::sync::Arc<std::sync::Mutex<{}>>", element);
 impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
@@ -31,7 +30,6 @@ impl Transpile for ResultTypeItem {
 
 impl_transpile_variants! { TypeElement;
     Plain
-    Ref
     Array
     Dictionary
     OrderedDictionary
