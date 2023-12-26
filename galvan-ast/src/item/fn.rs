@@ -1,3 +1,5 @@
+use from_pest::pest::iterators::Pairs;
+use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
 
 use super::*;
@@ -47,8 +49,43 @@ pub struct ParamList {
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::param))]
 pub struct Param {
+    pub decl_modifier: DeclModifier,
     pub identifier: Ident,
     pub param_type: TypeElement,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DeclModifier {
+    Let,
+    Mut,
+    Ref,
+    Inherited,
+}
+
+impl FromPest<'_> for DeclModifier {
+    type Rule = Rule;
+    type FatalError = Void;
+
+    fn from_pest(pairs: &mut Pairs<Self::Rule>) -> Result<Self, ConversionError<Self::FatalError>> {
+        let no_match = || Err(ConversionError::NoMatch);
+
+        let pair = pairs.next().unwrap();
+        if pair.as_rule() != Rule::declaration_modifier {
+            return no_match();
+        }
+
+        let Some(pair) = pair.into_inner().next() else {
+            return no_match();
+        };
+
+        match pair.as_rule() {
+            Rule::let_keyword => Ok(DeclModifier::Let),
+            Rule::mut_keyword => Ok(DeclModifier::Mut),
+            Rule::ref_keyword => Ok(DeclModifier::Ref),
+            Rule::inherited => Ok(DeclModifier::Inherited),
+            _ => no_match(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

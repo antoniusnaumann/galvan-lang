@@ -1,5 +1,5 @@
 /*# AST
-single(struct_type(inherited(), "WithRef", vec![struct_member("ref_member", ref_type(plain("String")))]));
+single(struct_type(inherited(), "WithRef", vec![ref_struct_member("ref_member", plain("String"))]));
 */
 
 /*# TRANSPILE
@@ -10,5 +10,5 @@ single(struct_type(inherited(), "WithRef", vec![struct_member("ref_member", ref_
 
 
 type WithRef {
-	ref_member: $String
+	ref ref_member: String
 }

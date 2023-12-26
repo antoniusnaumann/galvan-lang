@@ -5,8 +5,8 @@ single(
         "add",
         params(
             vec![
-                ("a", plain("Int")),
-                ("b", plain("Int"))
+                (DeclModifier::Inherited, "a", plain("Int")),
+                (DeclModifier::Inherited, "b", plain("Int"))
             ]),
         Some(plain("Int")),
         body()

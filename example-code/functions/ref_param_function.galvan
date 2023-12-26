@@ -1,0 +1,20 @@
+/*# AST
+single(
+    function(
+        public(),
+        "bark",
+        params(
+            vec![
+                (DeclModifier::Ref, "dog", plain("Dog")),
+            ]),
+        None,
+        body()
+    )
+)
+*/
+
+/*# TRANSPILE
+"pub fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { }"
+*/
+
+pub fn bark(ref dog: Dog) { }

@@ -62,10 +62,6 @@ mod test_utils {
         TypeElement::plain(TypeIdent::new(ident))
     }
 
-    pub fn ref_type(element: TypeElement) -> TypeElement {
-        TypeElement::Ref(Box::from(RefTypeItem { element }))
-    }
-
     pub fn optional(ty: TypeElement) -> TypeElement {
         TypeElement::optional(ty.try_into().unwrap())
     }
@@ -84,6 +80,15 @@ mod test_utils {
 
     pub fn struct_member(ident: &str, ty: TypeElement) -> StructTypeMember {
         StructTypeMember {
+            decl_modifier: DeclModifier::Inherited,
+            ident: Ident::new(ident),
+            r#type: ty,
+        }
+    }
+
+    pub fn ref_struct_member(ident: &str, ty: TypeElement) -> StructTypeMember {
+        StructTypeMember {
+            decl_modifier: DeclModifier::Ref,
             ident: Ident::new(ident),
             r#type: ty,
         }
@@ -119,11 +124,12 @@ mod test_utils {
         }
     }
 
-    pub fn params(params: Vec<(&'static str, TypeElement)>) -> ParamList {
+    pub fn params(params: Vec<(DeclModifier, &'static str, TypeElement)>) -> ParamList {
         ParamList {
             params: params
                 .into_iter()
-                .map(|(name, ty)| Param {
+                .map(|(decl_modifier, name, ty)| Param {
+                    decl_modifier,
                     identifier: Ident::new(name),
                     param_type: ty,
                 })
