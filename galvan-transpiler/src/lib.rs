@@ -1,4 +1,3 @@
-use core::slice;
 use galvan_ast::*;
 use galvan_files::Source;
 
@@ -6,6 +5,8 @@ use thiserror::Error;
 
 pub(crate) use galvan_resolver::LookupContext;
 use galvan_resolver::LookupError;
+
+// TODO: Maybe use something like https://crates.io/crates/ruast to generate the Rust code in a more reliable way
 
 /// Name of the generated rust module that exports all public items from all galvan files in this crate
 #[macro_export]

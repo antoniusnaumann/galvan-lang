@@ -14,7 +14,7 @@ impl Transpile for TypeIdent {
             todo!("Handle type resolving errors")
         };
         // TODO: Handle module path here and use fully qualified name
-        let name = decl.ident();
+        let name = decl.extern_name();
         format!("{name}")
     }
 }
