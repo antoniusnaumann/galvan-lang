@@ -10,7 +10,11 @@ impl Transpile for Ident {
 
 impl Transpile for TypeIdent {
     fn transpile(&self, lookup: &LookupContext) -> String {
-        // TODO: Use lookup to insert fully qualified name
-        format!("{self}")
+        let Some(decl) = lookup.types.get(&self.into()) else {
+            todo!("Handle type resolving errors")
+        };
+        // TODO: Handle module path here and use fully qualified name
+        let name = decl.ident();
+        format!("{name}")
     }
 }

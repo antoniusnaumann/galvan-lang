@@ -1,7 +1,8 @@
 /*# AST
-single(
+multi(vec![
+    empty_type(inherited(), "Dog").into(),
     function(
-        public(),
+        inherited(),
         "bark",
         params(
             vec![
@@ -9,12 +10,16 @@ single(
             ]),
         None,
         body()
-    )
-)
+    ).into()
+])
 */
 
 /*# TRANSPILE
-"pub fn bark(dog: &mut Dog) { }"
+"
+pub(crate) struct Dog;
+pub(crate) fn bark(dog: &mut Dog) { }
+"
 */
+type Dog
 
-pub fn bark(mut dog: Dog) { }
+fn bark(mut dog: Dog) { }

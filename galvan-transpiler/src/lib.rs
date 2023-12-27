@@ -28,8 +28,20 @@ pub enum TranspileError {
 
 fn transpile_source(source: Source) -> Result<String, TranspileError> {
     let ast = source.try_into_ast()?;
-    let lookup = LookupContext::new(slice::from_ref(&ast))?;
-    Ok(ast.transpile(&lookup))
+    // TODO: Declare extern types in standard library instead of hardcoding them here
+    let predefined = Source::from_string(
+        "
+        pub type Int
+        pub type Float 
+        pub type String
+        ",
+    )
+    .try_into_ast()
+    .expect("Failed to parse predefined types");
+    let asts = [ast, predefined];
+    let lookup = LookupContext::new(&asts)?;
+
+    Ok(asts[0].transpile(&lookup))
 }
 
 #[derive(Debug)]

@@ -99,7 +99,7 @@ where
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
-struct FunctionId(Box<str>);
+pub struct FunctionId(Box<str>);
 
 impl FunctionId {
     fn new(receiver: Option<&TypeIdent>, fn_ident: &Ident, labels: &[&str]) -> Self {

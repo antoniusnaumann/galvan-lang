@@ -1,7 +1,8 @@
 /*# AST
-single(
+multi(vec![
+    empty_type(inherited(), "Dog").into(),
     function(
-        public(),
+        inherited(),
         "bark",
         params(
             vec![
@@ -9,12 +10,16 @@ single(
             ]),
         None,
         body()
-    )
-)
+    ).into()
+])
 */
 
 /*# TRANSPILE
-"pub fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { }"
+"
+pub(crate) struct Dog;
+pub(crate) fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { }
+"
 */
+type Dog
 
-pub fn bark(ref dog: Dog) { }
+fn bark(ref dog: Dog) { }

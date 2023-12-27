@@ -1,9 +1,9 @@
 /*# AST
-single(alias_type(inherited(), "ExplicitError", result(plain("Int"), Some(plain("MyError")))))
+single(alias_type(inherited(), "ExplicitError", result(plain("Int"), Some(plain("String")))))
 */
 
 /*# TRANSPILE
-"pub(crate) type ExplicitError = Result<Int, MyError>;"
+"pub(crate) type ExplicitError = Result<Int, String>;"
 */
 
-type ExplicitError = Int!MyError
+type ExplicitError = Int!String
