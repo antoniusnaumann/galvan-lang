@@ -61,20 +61,25 @@ param_base = _{ declaration_modifier ~ ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
-body = { ((newline)* ~ statement ~ (newline)+)* }
+body = { ((newline)* ~ statement ~ (newline)+)* ~ statement? }
 
 statement = { declaration | assignment | expression }
 
-expression = { "TODO: Expression" }
-
 assignment = { ident ~ assignment_operator ~ expression }
 
-declaration = { ref_declaration | let_declaration | mut_declaration }
-ref_declaration = { ref_keyword ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
-let_declaration = { let_keyword ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
-mut_declaration = { mut_keyword ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
-
+declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
+
+expression = {
+    function_call
+    | string_literal
+    | raw_string_literal
+    | number_literal
+    | ident
+}
+
+function_call = { ident ~ paren_open ~ function_call_params ~ paren_close }
+function_call_params = { (expression ~ (comma ~ expression)*)? }
 
 ident = @{ used_ident | unused_ident | discard }
 used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
@@ -152,6 +157,9 @@ ref_keyword = @{ "ref" }
 let_keyword = @{ "let" }
 mut_keyword = @{ "mut" }
 
+true_keyword = @{ "true" }
+false_keyword = @{ "false" }
+
 // ## Function Modifiers
 async_keyword = @{ "async" }
 const_keyword = @{ "const" }
@@ -205,3 +213,5 @@ space = _{ whitespace | newline }
 // ## Literals
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 raw_string_literal = @{ "#\"" ~ (!"\"#" ~ ANY)* ~ "\"#" }
+number_literal = @{ ("0" | ASCII_NONZERO_DIGIT ~ (ASCII_DIGIT)*) ~ (dot ~ (ASCII_DIGIT)+)?  }
+boolean_literal = @{ true_keyword | false_keyword }
