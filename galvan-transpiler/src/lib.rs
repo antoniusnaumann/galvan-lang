@@ -1,3 +1,5 @@
+use convert_case::{Case, Casing};
+use derive_more::{Deref, Display, From};
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
 use std::collections::HashMap;
@@ -19,6 +21,7 @@ macro_rules! galvan_module {
 
 #[cfg(feature = "exec")]
 pub mod exec;
+mod sanitize;
 
 #[derive(Debug, Error)]
 pub enum TranspileError {
@@ -68,24 +71,28 @@ fn transpile_segmented(
     segmented: &SegmentedAsts,
     lookup: &LookupContext,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
-    let mut type_files: HashMap<TypeIdent, TypeFileContent> = HashMap::new();
-    let modules = type_files
-        .keys()
-        .map(|id| id.as_str())
-        .map(|id| format!("mod {};\npub use {}::*\n", id, id))
-        .collect::<Vec<_>>()
-        .join("\n");
+    #[derive(Hash, PartialEq, Eq, Deref, From, Display)]
+    struct ModuleName(Box<str>);
+    fn module_name(ident: &TypeIdent) -> ModuleName {
+        ident.as_str().to_case(Case::Snake).into_boxed_str().into()
+    }
+
+    let mut type_files: HashMap<ModuleName, TypeFileContent> = HashMap::new();
 
     for ty in &segmented.types {
-        type_files
-            .insert(
-                ty.item.ident().clone(),
-                TypeFileContent {
-                    ty,
-                    fns: Vec::new(),
-                },
-            )
-            .ok_or_else(|| LookupError::DuplicateType(ty.item.ident().clone()))?;
+        if let Some(duplicate) = type_files.insert(
+            module_name(ty.ident()),
+            TypeFileContent {
+                ty,
+                fns: Vec::new(),
+            },
+        ) {
+            panic!(
+                "File collision for types: {} and {}",
+                ty.item.ident(),
+                duplicate.ty.ident()
+            );
+        }
     }
 
     let mut toplevel_functions = Vec::new();
@@ -94,7 +101,7 @@ fn transpile_segmented(
             let TypeElement::Plain(ty) = &receiver.param_type else {
                 todo!("Allow extending complex types")
             };
-            let content = type_files.get_mut(&ty.ident).expect(
+            let content = type_files.get_mut(&module_name(&ty.ident)).expect(
                 "TODO: Handle error for member functions that refer to types that are not declared",
             );
             content.fns.push(&func.item);
@@ -103,18 +110,27 @@ fn transpile_segmented(
         }
     }
 
+    let type_files = type_files;
     let toplevel_functions = toplevel_functions
         .iter()
         .map(|func| func.transpile(lookup))
         .collect::<Vec<_>>()
         .join("\n\n");
+
+    let modules = type_files
+        .keys()
+        .map(|id| sanitize_name(id))
+        .map(|mod_name| format!("mod {mod_name};\npub use {mod_name}::*;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let lib = TranspileOutput {
         file_name: galvan_module!().into(),
         content: [modules, toplevel_functions].join("\n\n").into(),
     };
 
     let type_files = type_files.iter().map(|(k, v)| TranspileOutput {
-        file_name: format!("{}.rs", k.as_str()).into(),
+        file_name: format!("{k}.rs").into(),
         content: iter::once(v.ty.transpile(lookup))
             .chain(v.fns.iter().map(|item| item.transpile(lookup)))
             .collect::<Vec<_>>()
@@ -122,43 +138,12 @@ fn transpile_segmented(
             .into(),
     });
 
-    Ok(iter::once(lib).chain(type_files).collect())
+    Ok(type_files.chain(iter::once(lib)).collect())
 }
 
 pub struct TranspileOutput {
     pub file_name: Box<str>,
     pub content: Box<str>,
-}
-
-#[derive(Debug)]
-pub struct Transpilation {
-    pub sources: Vec<Source>,
-    pub transpiled: Result<String, TranspileError>,
-}
-
-pub struct SuccessfulTranspilation {
-    pub sources: Vec<Source>,
-    pub transpiled: String,
-}
-
-pub struct FailedTranspilation {
-    pub sources: Vec<Source>,
-    pub errors: TranspileError,
-}
-
-impl From<Transpilation> for Result<SuccessfulTranspilation, FailedTranspilation> {
-    fn from(value: Transpilation) -> Self {
-        match value.transpiled {
-            Ok(transpiled) => Ok(SuccessfulTranspilation {
-                sources: value.sources,
-                transpiled,
-            }),
-            Err(errors) => Err(FailedTranspilation {
-                sources: value.sources,
-                errors,
-            }),
-        }
-    }
 }
 
 pub struct TranspileErrors<'t> {
@@ -269,6 +254,7 @@ mod macros {
         transpile,
     };
 }
+use crate::sanitize::sanitize_name;
 use macros::punct;
 
 punct!(", ", TypeElement, TupleTypeMember, Param);

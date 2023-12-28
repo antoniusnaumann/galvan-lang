@@ -1,7 +1,6 @@
 use std::env;
 
 use galvan_transpiler::exec::transpile_dir;
-use galvan_transpiler::Transpilation;
 
 #[allow(clippy::redundant_closure)]
 fn main() {

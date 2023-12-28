@@ -188,7 +188,7 @@ element_type = _{ type_item }
 opt_element_type = { allowed_in_optional }
 tuple_elements = _{ element_type ~ (comma ~ element_type)* }
 
-type_ident = @{ (ASCII_ALPHA_UPPER | "_") ~ (ASCII_ALPHANUMERIC | "_")*}
+type_ident = @{ "_"? ~ (ASCII_ALPHA_UPPER) ~ (ASCII_ALPHANUMERIC)*}
 basic_type = { type_ident }
 array_type = !{ bracket_open ~ element_type ~ bracket_close }
 set_type = !{ brace_open ~ element_type ~ brace_close }

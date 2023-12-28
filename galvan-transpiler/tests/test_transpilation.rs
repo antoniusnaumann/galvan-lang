@@ -1,6 +1,7 @@
 use galvan_test_macro::generate_code_tests;
 
 mod test_utils {
+    use galvan_transpiler::TranspileOutput;
     use regex::Regex;
 
     pub trait MinimalWhitespace {
@@ -22,16 +23,28 @@ mod test_utils {
             self.as_str().trim_all()
         }
     }
+
+    pub fn merge_outputs(outputs: Vec<TranspileOutput>) -> String {
+        outputs
+            .into_iter()
+            .map(|output| output.content)
+            .collect::<Vec<_>>()
+            .join("\n\n")
+            .lines()
+            .filter(|line| !line.starts_with("pub use") && !line.starts_with("mod"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 #[allow(unused_imports)]
 use galvan_files::Source;
 #[allow(unused_imports)]
-use galvan_transpiler::transpile;
+use galvan_transpiler::{galvan_module, transpile};
 use test_utils::*;
 
 generate_code_tests!(test_transpilation, TRANSPILE, trim_all {
     let source = Source::from_string(code);
-    let transpilation = transpile(source);
-    transpilation.transpiled.unwrap()
+    let transpilation = transpile(vec![source]).unwrap();
+    merge_outputs(transpilation)
 });
