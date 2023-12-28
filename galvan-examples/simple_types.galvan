@@ -22,3 +22,9 @@ type Alias = Struct
  * A tuple type
  */
 type Tuple(TypeA, TypeB)
+
+
+pub type TypeA
+pub type TypeB
+pub type TypeC
+pub type TypeD

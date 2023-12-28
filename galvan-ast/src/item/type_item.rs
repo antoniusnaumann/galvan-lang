@@ -1,4 +1,3 @@
-use from_pest::pest::iterators::Pair;
 use from_pest::{pest, ConversionError, FromPest};
 use galvan_pest::Rule;
 use typeunion::type_union;

@@ -63,7 +63,7 @@ task = { ident ~ brace_open ~ body ~ brace_close }
 
 body = { ((newline)* ~ statement ~ (newline)+)* ~ statement? }
 
-statement = { declaration | assignment | expression }
+statement = { assignment | declaration | expression }
 
 assignment = { ident ~ assignment_operator ~ expression }
 
@@ -73,13 +73,12 @@ declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 expression = {
     function_call
     | string_literal
-    | raw_string_literal
     | number_literal
     | ident
 }
 
 function_call = { ident ~ paren_open ~ function_call_params ~ paren_close }
-function_call_params = { (expression ~ (comma ~ expression)*)? }
+function_call_params = _{ (expression ~ (comma ~ expression)*)? }
 
 ident = @{ used_ident | unused_ident | discard }
 used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
@@ -211,7 +210,10 @@ whitespace = _{ " " | "\t" }
 space = _{ whitespace | newline }
 
 // ## Literals
-string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-raw_string_literal = @{ "#\"" ~ (!"\"#" ~ ANY)* ~ "\"#" }
+string_literal = @{ string_quote ~ (!string_quote ~ ANY)* ~ string_quote | raw_string_literal }
+raw_string_literal = _{ raw_string_quote ~ (!raw_string_quote ~ ANY)* ~ raw_string_quote }
+string_quote = _{ "\"" }
+raw_string_quote = _{ "#\"" }
+
 number_literal = @{ ("0" | ASCII_NONZERO_DIGIT ~ (ASCII_DIGIT)*) ~ (dot ~ (ASCII_DIGIT)+)?  }
 boolean_literal = @{ true_keyword | false_keyword }

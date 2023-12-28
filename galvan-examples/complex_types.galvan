@@ -16,7 +16,8 @@ pub type SomeObject {
  	a_field: Int
     ref a_heap_reference: SomeOtherObject
 }
-
+// Types can be empty
+pub type SomeOtherObject
 
 type TupleAlias = (String, String)
 type TupleType(String, String)
@@ -34,3 +35,6 @@ type OptionalFileOrIOError = File?!IOError
 // ? is disallowed in the Error variant
 // --> Alternative to ? in error variant: If there is no error, the operation should have suceeded.
 //		Probably it was meant to make the Success type optional instead.
+
+type File
+type IOError

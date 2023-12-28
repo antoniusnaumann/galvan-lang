@@ -95,9 +95,9 @@ pub fn transpile(source: Source) -> Transpilation {
 }
 
 mod transpile_item {
-    mod body;
     mod fn_decl;
     mod ident;
+    mod statement;
     mod r#struct;
     mod task;
     mod toplevel;
@@ -192,7 +192,7 @@ use macros::punct;
 punct!(", ", TypeElement, TupleTypeMember, Param);
 punct!(",\n", StructTypeMember);
 punct!("\n\n", RootItem);
-// punct!(";\n", Statement);
+punct!(";\n", Statement);
 
 impl<T> Transpile for Vec<T>
 where

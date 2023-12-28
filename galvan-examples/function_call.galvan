@@ -1,0 +1,4 @@
+fn greet(name: String) {
+    let greetings = "Hello, {name}!"
+    print(greetings)
+}

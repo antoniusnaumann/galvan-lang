@@ -87,13 +87,3 @@ impl FromPest<'_> for DeclModifier {
         }
     }
 }
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::body))]
-pub struct Block {
-    pub statements: Vec<Statement>,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::statement))]
-pub struct Statement {}
