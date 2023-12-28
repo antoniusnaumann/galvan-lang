@@ -31,7 +31,7 @@ impl Transpile for Param {
     fn transpile(&self, lookup: &LookupContext) -> String {
         match self.decl_modifier {
             DeclModifier::Let | DeclModifier::Inherited => {
-                transpile!(lookup, "{}: {}", self.identifier, self.param_type)
+                transpile!(lookup, "{}: &{}", self.identifier, self.param_type)
             }
             DeclModifier::Mut => {
                 transpile!(lookup, "{}: &mut {}", self.identifier, self.param_type)

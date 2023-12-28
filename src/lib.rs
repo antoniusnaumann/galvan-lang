@@ -18,7 +18,7 @@ macro_rules! setup {
 
         if !errors.is_empty() {
             // println!("cargo:warning={}", warnings.join("\n"));
-            panic!("Galvan Transpiler Error:\n{}", errors.join("\n"));
+            panic!("Galvan Transpiler Error:\n{}", errors);
         }
         // TODO: How to build a rerun rule for this?
     };

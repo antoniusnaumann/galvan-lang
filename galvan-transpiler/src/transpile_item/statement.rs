@@ -50,20 +50,21 @@ impl_transpile!(Assignment, "{} = {}", identifier, expression);
 
 impl_transpile_variants!(Expression; StringLiteral, NumberLiteral, FunctionCall, Ident);
 impl Transpile for StringLiteral {
-    fn transpile(&self, _lookup: &crate::LookupContext) -> String {
+    fn transpile(&self, _lookup: &LookupContext) -> String {
         // TODO: Implement more sophisticated formatting (extract {} and put them as separate arguments)
         format!("format!({})", self.as_str())
     }
 }
 
 impl Transpile for FunctionCall {
-    fn transpile(&self, lookup: &crate::LookupContext) -> String {
-        // TODO: Resolve function and check argument types
+    fn transpile(&self, lookup: &LookupContext) -> String {
+        // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
         let identifier = self.identifier.transpile(lookup);
         let arguments = self
             .arguments
             .iter()
-            .map(|arg| arg.transpile(lookup))
+            // TODO: Check if reference or mut reference is needed (or no reference at all for copy types)
+            .map(|arg| format!("&{}", arg.transpile(lookup)))
             .collect::<Vec<_>>()
             .join(", ");
         format!("{}({})", identifier, arguments)
