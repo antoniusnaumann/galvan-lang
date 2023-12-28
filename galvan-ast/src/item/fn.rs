@@ -1,6 +1,7 @@
 use from_pest::pest::iterators::Pairs;
 use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
+use galvan_pest::Rule::whitespace;
 
 use super::*;
 
@@ -29,6 +30,7 @@ impl FnSignature {
         parameters: ParamList,
         return_type: Option<TypeElement>,
     ) -> Self {
+        // TODO: Verify that only first parameter is named self (or no self exists)
         FnSignature {
             // asyncness: mods.asyncness,
             // constness: mods.constness,
@@ -37,6 +39,13 @@ impl FnSignature {
             parameters,
             return_type,
         }
+    }
+
+    pub fn receiver(&self) -> Option<&Param> {
+        self.parameters
+            .params
+            .first()
+            .filter(|param| param.identifier.as_str() == "self")
     }
 }
 

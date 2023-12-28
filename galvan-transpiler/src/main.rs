@@ -6,14 +6,11 @@ use galvan_transpiler::Transpilation;
 #[allow(clippy::redundant_closure)]
 fn main() {
     let current_dir = env::current_dir().unwrap();
-    let src = transpile_dir(current_dir);
+    let transpiled = transpile_dir(current_dir).unwrap();
 
-    for Transpilation { transpiled, source } in src {
+    for output in transpiled {
         println!();
-        println!("----- Source: {:?} -----", source.origin());
-        match transpiled {
-            Ok(s) => println!("{}", s),
-            Err(e) => println!("Error: {}", e),
-        }
+        println!("----- Output: {:?} -----", output.file_name);
+        println!("{}", output.content);
     }
 }

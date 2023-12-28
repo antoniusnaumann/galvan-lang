@@ -3,8 +3,8 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use thiserror::Error;
 use crate::GalvanFileExtension;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum FileError {
@@ -40,7 +40,11 @@ pub type SourceResult = Result<Source, FileError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
-    File { path: Arc<Path>, content: Arc<str>, canonical_name: Arc<str> },
+    File {
+        path: Arc<Path>,
+        content: Arc<str>,
+        canonical_name: Arc<str>,
+    },
     Str(Arc<str>),
 }
 
@@ -51,20 +55,30 @@ impl Source {
 
     pub fn read(path: impl AsRef<Path>) -> SourceResult {
         let path = path.as_ref();
-        if !path.has_galvan_extension() { Err(FileError::missing_extension(path))? }
-        let stem = path.file_stem().ok_or_else(|| FileError::missing_extension(path))?;
+        if !path.has_galvan_extension() {
+            Err(FileError::missing_extension(path))?
+        }
+        let stem = path
+            .file_stem()
+            .ok_or_else(|| FileError::missing_extension(path))?;
 
-        let stem = stem.to_str().ok_or_else(|| FileError::utf8(stem.to_string_lossy()))?;
-        if !stem.chars().all(|c| c.is_ascii_lowercase() || c == '_') { Err(FileError::naming(stem))? }
-        let canonical_name = stem
-            .replace(".", "_")
-            .into();
+        let stem = stem
+            .to_str()
+            .ok_or_else(|| FileError::utf8(stem.to_string_lossy()))?;
+        if !stem.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+            Err(FileError::naming(stem))?
+        }
+        let canonical_name = stem.replace(".", "_").into();
         let content = fs::read_to_string(path)
             .map_err(|e| FileError::io(path, e))?
             .into();
         let path = path.into();
 
-        Ok(Self::File { path, content, canonical_name })
+        Ok(Self::File {
+            path,
+            content,
+            canonical_name,
+        })
     }
 
     pub fn content(&self) -> &str {
@@ -83,14 +97,22 @@ impl Source {
 
     pub fn canonical_name(&self) -> Option<&str> {
         match self {
-            Self::File { path: _, content: _, canonical_name } => Some(canonical_name),
+            Self::File {
+                path: _,
+                content: _,
+                canonical_name,
+            } => Some(canonical_name),
             Self::Str(_) => None,
         }
     }
 
     pub fn rust_name(&self) -> Option<String> {
         match self {
-            Self::File { path: _, content: _, canonical_name } => Some(format!("{}.rs", canonical_name)),
+            Self::File {
+                path: _,
+                content: _,
+                canonical_name,
+            } => Some(format!("{}.rs", canonical_name)),
             Self::Str(_) => None,
         }
     }

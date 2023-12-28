@@ -1,6 +1,7 @@
 use galvan_ast::*;
-use galvan_files::Source;
-
+use galvan_files::{FileError, Source};
+use std::collections::HashMap;
+use std::iter;
 use thiserror::Error;
 
 pub(crate) use galvan_resolver::LookupContext;
@@ -25,10 +26,20 @@ pub enum TranspileError {
     Ast(#[from] AstError),
     #[error(transparent)]
     Lookup(#[from] LookupError),
+    #[error(transparent)]
+    File(#[from] FileError),
 }
 
-fn transpile_source(source: Source) -> Result<String, TranspileError> {
-    let ast = source.try_into_ast()?;
+fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
+    let asts = sources
+        .into_iter()
+        .map(|s| s.try_into_ast())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    transpile_asts(asts)
+}
+
+fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
     // TODO: Declare extern types in standard library instead of hardcoding them here
     let predefined = Source::from_string(
         "
@@ -38,26 +49,100 @@ fn transpile_source(source: Source) -> Result<String, TranspileError> {
         ",
     )
     .try_into_ast()
-    .expect("Failed to parse predefined types");
-    let asts = [ast, predefined];
-    let lookup = LookupContext::new(&asts)?;
+    .expect("Failed to parse predefined types")
+    .segmented()
+    .expect("Predefined not to have conflicting declarations");
 
-    Ok(asts[0].transpile(&lookup))
+    let segmented = asts.segmented()?;
+    let lookup = LookupContext::new().with(&predefined)?.with(&segmented)?;
+
+    transpile_segmented(&segmented, &lookup)
+}
+
+struct TypeFileContent<'a> {
+    pub ty: &'a TypeDecl,
+    pub fns: Vec<&'a FnDecl>,
+}
+
+fn transpile_segmented(
+    segmented: &SegmentedAsts,
+    lookup: &LookupContext,
+) -> Result<Vec<TranspileOutput>, TranspileError> {
+    let mut type_files: HashMap<TypeIdent, TypeFileContent> = HashMap::new();
+    let modules = type_files
+        .keys()
+        .map(|id| id.as_str())
+        .map(|id| format!("mod {};\npub use {}::*\n", id, id))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for ty in &segmented.types {
+        type_files
+            .insert(
+                ty.item.ident().clone(),
+                TypeFileContent {
+                    ty,
+                    fns: Vec::new(),
+                },
+            )
+            .ok_or_else(|| LookupError::DuplicateType(ty.item.ident().clone()))?;
+    }
+
+    let mut toplevel_functions = Vec::new();
+    for func in &segmented.functions {
+        if let Some(receiver) = func.signature.receiver() {
+            let TypeElement::Plain(ty) = &receiver.param_type else {
+                todo!("Allow extending complex types")
+            };
+            let content = type_files.get_mut(&ty.ident).expect(
+                "TODO: Handle error for member functions that refer to types that are not declared",
+            );
+            content.fns.push(&func.item);
+        } else {
+            toplevel_functions.push(func);
+        }
+    }
+
+    let toplevel_functions = toplevel_functions
+        .iter()
+        .map(|func| func.transpile(lookup))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let lib = TranspileOutput {
+        file_name: galvan_module!().into(),
+        content: [modules, toplevel_functions].join("\n\n").into(),
+    };
+
+    let type_files = type_files.iter().map(|(k, v)| TranspileOutput {
+        file_name: format!("{}.rs", k.as_str()).into(),
+        content: iter::once(v.ty.transpile(lookup))
+            .chain(v.fns.iter().map(|item| item.transpile(lookup)))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+            .into(),
+    });
+
+    Ok(iter::once(lib).chain(type_files).collect())
+}
+
+pub struct TranspileOutput {
+    pub file_name: Box<str>,
+    pub content: Box<str>,
 }
 
 #[derive(Debug)]
 pub struct Transpilation {
-    pub source: Source,
+    pub sources: Vec<Source>,
     pub transpiled: Result<String, TranspileError>,
 }
 
 pub struct SuccessfulTranspilation {
-    pub source: Source,
+    pub sources: Vec<Source>,
     pub transpiled: String,
 }
 
 pub struct FailedTranspilation {
-    pub source: Source,
+    pub sources: Vec<Source>,
     pub errors: TranspileError,
 }
 
@@ -65,11 +150,11 @@ impl From<Transpilation> for Result<SuccessfulTranspilation, FailedTranspilation
     fn from(value: Transpilation) -> Self {
         match value.transpiled {
             Ok(transpiled) => Ok(SuccessfulTranspilation {
-                source: value.source,
+                sources: value.sources,
                 transpiled,
             }),
             Err(errors) => Err(FailedTranspilation {
-                source: value.source,
+                sources: value.sources,
                 errors,
             }),
         }
@@ -87,11 +172,8 @@ impl TranspileErrors<'_> {
     }
 }
 
-pub fn transpile(source: Source) -> Transpilation {
-    Transpilation {
-        source: source.clone(),
-        transpiled: transpile_source(source),
-    }
+pub fn transpile(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile_sources(sources)
 }
 
 mod transpile_item {

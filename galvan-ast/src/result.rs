@@ -1,7 +1,7 @@
 use derive_more::From;
-use thiserror::Error;
 use from_pest::{ConversionError, Void};
 use galvan_pest::ParserError;
+use thiserror::Error;
 
 use crate::Ast;
 
@@ -15,4 +15,6 @@ pub enum AstError {
     ConversionError(ConversionError<Void>),
     #[error("Error when parsing code: {0}")]
     ParseError(ParserError),
+    #[error("Duplicate main function")]
+    DuplicateMain,
 }

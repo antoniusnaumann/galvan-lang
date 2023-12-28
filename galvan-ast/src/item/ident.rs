@@ -17,7 +17,7 @@ impl Ident {
     }
 }
 
-#[derive(Debug, Display, PartialEq, Eq, From, FromPest)]
+#[derive(Clone, Debug, Display, PartialEq, Eq, Hash, From, FromPest)]
 #[pest_ast(rule(Rule::type_ident))]
 pub struct TypeIdent(#[pest_ast(outer(with(string)))] String);
 

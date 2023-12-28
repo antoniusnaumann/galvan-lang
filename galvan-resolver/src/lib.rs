@@ -2,20 +2,21 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use galvan_ast::{Ast, FnDecl, Ident, MainDecl, RootItem, TypeDecl, TypeIdent};
+use galvan_ast::{FnDecl, Ident, MainDecl, SegmentedAsts, ToplevelItem, TypeDecl, TypeIdent};
 
+#[derive(Debug, Default)]
 pub struct LookupContext<'a> {
     /// Types are resolved by their name
-    pub types: HashMap<TypeId, &'a TypeDecl>,
+    pub types: HashMap<TypeId, &'a ToplevelItem<TypeDecl>>,
     /// Functions are resolved by their name and - if present - named arguments and their receiver type
     ///
     /// `fn foo(a: i32, b: i32) -> i32` is identified as `foo`
     /// `fn foo(bar a: i32, b: i32) -> i32` is identified as `foo:bar`
     /// `fn foo(self: i32, b: i32) -> i32` is identified as `i32::foo`
-    pub functions: HashMap<FunctionId, &'a FnDecl>,
+    pub functions: HashMap<FunctionId, &'a ToplevelItem<FnDecl>>,
     // TODO: Nested contexts for resolving names from imported modules
     // pub imports: HashMap<String, LookupContext<'a>>,
-    pub main: Option<&'a MainDecl>,
+    pub main: Option<&'a ToplevelItem<MainDecl>>,
 }
 
 // TODO: derive thiserror and add proper error handling #[derive(Error)]
@@ -26,52 +27,45 @@ pub enum LookupError {
     TypeNotFound,
     #[error("Function not found")]
     FunctionNotFound,
-    #[error("Duplicate main function")]
-    DuplicateMain,
     #[error("Duplicate type")]
-    DuplicateType,
+    DuplicateType(TypeIdent),
     #[error("Duplicate function")]
     DuplicateFunction,
 }
 
 impl<'a> LookupContext<'a> {
-    pub fn new(asts: &'a [Ast]) -> Result<Self, LookupError> {
-        let mut types = HashMap::new();
-        let mut functions = HashMap::new();
-        let mut main = None;
-
-        for ast in asts {
-            for top in &ast.toplevel {
-                match top {
-                    RootItem::Type(type_decl) => {
-                        types.insert(type_decl.ident().into(), type_decl);
-                    }
-                    RootItem::Fn(fn_decl) => {
-                        // TODO: Add named arguments and receiver type
-                        let func_id = FunctionId::new(None, &fn_decl.signature.identifier, &[]);
-                        functions.insert(func_id, fn_decl);
-                    }
-                    RootItem::Test(_) => {}
-                    RootItem::Main(m) => {
-                        if main.is_some() {
-                            return Err(LookupError::DuplicateMain);
-                        }
-                        main = Some(m);
-                    }
-                }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn add_from(&mut self, asts: &'a SegmentedAsts) -> Result<(), LookupError> {
+        for func in &asts.functions {
+            let func_id = FunctionId::new(None, &func.signature.identifier, &[]);
+            if self.functions.insert(func_id, func).is_some() {
+                return Err(LookupError::DuplicateFunction);
             }
         }
 
-        Ok(LookupContext {
-            types,
-            functions,
-            main,
-        })
+        for type_decl in &asts.types {
+            if self
+                .types
+                .insert(type_decl.ident().into(), type_decl)
+                .is_some()
+            {
+                return Err(LookupError::DuplicateType(type_decl.ident().clone()));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn with(mut self, asts: &'a SegmentedAsts) -> Result<Self, LookupError> {
+        self.add_from(asts)?;
+        Ok(self)
     }
 }
 
 impl LookupContext<'_> {
-    pub fn resolve_type(&self, name: &TypeIdent) -> Option<&TypeDecl> {
+    pub fn resolve_type(&self, name: &TypeIdent) -> Option<&ToplevelItem<TypeDecl>> {
         self.types.get(&name.into()).copied()
     }
 
@@ -80,7 +74,7 @@ impl LookupContext<'_> {
         receiver: Option<&TypeIdent>,
         name: &Ident,
         labels: &[&str],
-    ) -> Option<&FnDecl> {
+    ) -> Option<&ToplevelItem<FnDecl>> {
         let func_id = FunctionId::new(receiver, name, labels);
         self.functions.get(&func_id).copied()
     }
@@ -88,6 +82,12 @@ impl LookupContext<'_> {
 
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub struct TypeId(Box<str>);
+
+impl TypeId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl<S> From<S> for TypeId
 where
