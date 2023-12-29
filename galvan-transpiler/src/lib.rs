@@ -15,7 +15,10 @@ use galvan_resolver::LookupError;
 #[macro_export]
 macro_rules! galvan_module {
     () => {
-        "galvan_module.rs"
+        "galvan_module"
+    };
+    ($ext:literal) => {
+        concat!("galvan_module.", $ext)
     };
 }
 
@@ -116,26 +119,35 @@ fn transpile_segmented(
         .map(|func| func.transpile(lookup))
         .collect::<Vec<_>>()
         .join("\n\n");
+    let toplevel_functions = toplevel_functions.trim();
 
     let modules = type_files
         .keys()
         .map(|id| sanitize_name(id))
-        .map(|mod_name| format!("mod {mod_name};\npub use {mod_name}::*;"))
+        .map(|mod_name| format!("mod {mod_name};\npub use self::{mod_name}::*;"))
         .collect::<Vec<_>>()
         .join("\n");
+    let modules = modules.trim();
 
     let lib = TranspileOutput {
-        file_name: galvan_module!().into(),
-        content: [modules, toplevel_functions].join("\n\n").into(),
+        file_name: galvan_module!("rs").into(),
+        content: format!(
+            "\npub(crate) mod {} {{\nuse crate::*;\n{}\n}}",
+            galvan_module!(),
+            [modules, toplevel_functions].join("\n\n")
+        )
+        .into(),
     };
 
     let type_files = type_files.iter().map(|(k, v)| TranspileOutput {
         file_name: format!("{k}.rs").into(),
         content: [
-            v.ty.transpile(lookup),
-            transpile_member_functions(v.ty.ident(), &v.fns, lookup),
+            "use crate::*;",
+            &v.ty.transpile(lookup),
+            &transpile_member_functions(v.ty.ident(), &v.fns, lookup),
         ]
         .join("\n\n")
+        .trim()
         .into(),
     });
 

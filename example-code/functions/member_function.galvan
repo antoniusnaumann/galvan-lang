@@ -1,0 +1,27 @@
+/*# AST
+multi(vec![
+    empty_type(inherited(), "Dog").into(),
+    function(
+        inherited(),
+        "woof",
+        params(
+            vec![
+                (DeclModifier::Inherited, "self", plain("Dog")),
+            ]),
+        None,
+        body()
+    ).into()
+])
+*/
+
+/*# TRANSPILE
+"
+pub(crate) struct Dog;
+impl Dog {
+pub(crate) fn woof(&self) { }
+}
+"
+*/
+type Dog
+
+fn woof(self: Dog) { }

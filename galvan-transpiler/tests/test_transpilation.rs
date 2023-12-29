@@ -2,6 +2,7 @@ use galvan_test_macro::generate_code_tests;
 
 mod test_utils {
     use galvan_transpiler::TranspileOutput;
+    use itertools::Itertools;
     use regex::Regex;
 
     pub trait MinimalWhitespace {
@@ -31,7 +32,14 @@ mod test_utils {
             .collect::<Vec<_>>()
             .join("\n\n")
             .lines()
-            .filter(|line| !line.starts_with("pub use") && !line.starts_with("mod"))
+            .filter(|line| {
+                !line.starts_with("pub use")
+                    && !line.starts_with("use")
+                    && !line.starts_with("mod")
+                    && !line.starts_with("pub(crate) mod")
+                    && !line.starts_with("pub mod")
+            })
+            .dropping_back(1)
             .collect::<Vec<_>>()
             .join("\n")
     }

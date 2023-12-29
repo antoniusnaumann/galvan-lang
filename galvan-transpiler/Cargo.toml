@@ -24,6 +24,7 @@ galvan-resolver.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true
+itertools = "0.12.0"
 
 [features]
 exec = ["galvan-files/exec", "dep:itertools"]

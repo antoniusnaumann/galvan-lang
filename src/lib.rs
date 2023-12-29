@@ -6,8 +6,8 @@ pub use galvan_transpiler::exec::__private;
 #[macro_export]
 macro_rules! include {
     () => {
-        include!(concat!(env!("OUT_DIR"), "/", galvan::galvan_module!()));
-        // use galvan_module::*;
+        include!(concat!(env!("OUT_DIR"), "/", galvan::galvan_module!("rs")));
+        use galvan_module::*;
     };
 }
 

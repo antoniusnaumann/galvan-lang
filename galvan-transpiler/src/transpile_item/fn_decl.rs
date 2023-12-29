@@ -1,6 +1,6 @@
 use crate::macros::{impl_transpile, transpile};
 use crate::{FnDecl, FnSignature, LookupContext, Param, ParamList, Transpile};
-use galvan_ast::{DeclModifier, Ident, TypeElement, TypeIdent};
+use galvan_ast::DeclModifier;
 
 impl_transpile!(FnDecl, "{} {}", signature, block);
 
@@ -29,14 +29,28 @@ impl_transpile!(ParamList, "({})", params);
 
 impl Transpile for Param {
     fn transpile(&self, lookup: &LookupContext) -> String {
+        let is_self = self.identifier.as_str() == "self";
+
         match self.decl_modifier {
             DeclModifier::Let | DeclModifier::Inherited => {
-                transpile!(lookup, "{}: &{}", self.identifier, self.param_type)
+                if is_self {
+                    "&self".into()
+                } else {
+                    transpile!(lookup, "{}: &{}", self.identifier, self.param_type)
+                }
             }
             DeclModifier::Mut => {
-                transpile!(lookup, "{}: &mut {}", self.identifier, self.param_type)
+                if is_self {
+                    "&mut self".into()
+                } else {
+                    transpile!(lookup, "{}: &mut {}", self.identifier, self.param_type)
+                }
             }
             DeclModifier::Ref => {
+                if is_self {
+                    panic!("Functions with ref-receivers should be handled elsewhere!")
+                }
+
                 transpile!(
                     lookup,
                     "{}: std::sync::Arc<std::sync::Mutex<{}>>",
