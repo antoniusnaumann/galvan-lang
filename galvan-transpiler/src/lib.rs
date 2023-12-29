@@ -131,14 +131,28 @@ fn transpile_segmented(
 
     let type_files = type_files.iter().map(|(k, v)| TranspileOutput {
         file_name: format!("{k}.rs").into(),
-        content: iter::once(v.ty.transpile(lookup))
-            .chain(v.fns.iter().map(|item| item.transpile(lookup)))
-            .collect::<Vec<_>>()
-            .join("\n\n")
-            .into(),
+        content: [
+            v.ty.transpile(lookup),
+            transpile_member_functions(v.ty.ident(), &v.fns, lookup),
+        ]
+        .join("\n\n")
+        .into(),
     });
 
     Ok(type_files.chain(iter::once(lib)).collect())
+}
+
+fn transpile_member_functions(ty: &TypeIdent, fns: &[&FnDecl], lookup: &LookupContext) -> String {
+    if fns.is_empty() {
+        return "".into();
+    }
+
+    let transpiled_fns = fns
+        .iter()
+        .map(|f| f.transpile(lookup))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    transpile!(lookup, "impl {} {{\n{transpiled_fns}\n}}", ty)
 }
 
 pub struct TranspileOutput {
@@ -237,6 +251,11 @@ mod macros {
                     $string
                 }
             })+
+            $(impl Punctuated for &$ty {
+                fn punctuation() -> &'static str {
+                    $string
+                }
+            })+
         };
     }
 
@@ -245,12 +264,13 @@ mod macros {
         transpile,
     };
 }
+use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
 use macros::punct;
 
 punct!(", ", TypeElement, TupleTypeMember, Param);
 punct!(",\n", StructTypeMember);
-punct!("\n\n", RootItem);
+punct!("\n\n", RootItem, FnDecl);
 punct!(";\n", Statement);
 
 impl<T> Transpile for Vec<T>
@@ -258,8 +278,17 @@ where
     T: Transpile + Punctuated,
 {
     fn transpile(&self, lookup: &LookupContext) -> String {
+        self.as_slice().transpile(lookup)
+    }
+}
+
+impl<T> Transpile for [T]
+where
+    T: Transpile + Punctuated,
+{
+    fn transpile(&self, lookup: &LookupContext) -> String {
         let punct = T::punctuation();
-        self.into_iter()
+        self.iter()
             .map(|e| e.transpile(lookup))
             .reduce(|acc, e| format!("{acc}{punct}{e}"))
             .unwrap_or_else(String::new)

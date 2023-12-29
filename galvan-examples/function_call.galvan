@@ -2,3 +2,14 @@ fn greet(name: String) {
     let greetings = "Hello, {name}!"
     print(greetings)
 }
+
+type Dog {
+    name: String,
+    age: Int,
+}
+
+// Member functions are also declared top-level but their first parameter is called "self"
+/// Call this as `dog.woof()`
+fn woof(self: Dog) {
+    print("Woof!")
+}
