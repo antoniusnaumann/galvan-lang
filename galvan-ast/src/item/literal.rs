@@ -31,6 +31,9 @@ impl AsRef<str> for StringLiteral {
 pub struct NumberLiteral(#[pest_ast(outer(with(string)))] String);
 
 impl NumberLiteral {
+    pub fn new(value: &str) -> Self {
+        Self(value.into())
+    }
     pub fn as_str(&self) -> &str {
         &self.0
     }

@@ -137,8 +137,28 @@ mod test_utils {
         }
     }
 
-    pub fn body() -> Block {
+    pub fn empty_body() -> Block {
         Block { statements: vec![] }
+    }
+
+    pub fn body(statements: Vec<Statement>) -> Block {
+        Block { statements }
+    }
+
+    pub fn number(value: &str) -> Expression {
+        NumberLiteral::new(value).into()
+    }
+
+    pub fn variable(ident: &str) -> Expression {
+        Ident::new(ident).into()
+    }
+
+    pub fn function_call(ident: &str, arguments: Vec<Expression>) -> Expression {
+        FunctionCall {
+            identifier: Ident::new(ident),
+            arguments,
+        }
+        .into()
     }
 }
 

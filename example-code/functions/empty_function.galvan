@@ -1,5 +1,5 @@
 /*# AST
-single(function(inherited(), "empty", params(vec![]), None, body()))
+single(function(inherited(), "empty", params(vec![]), None, empty_body()))
 */
 
 /*# TRANSPILE

@@ -9,7 +9,7 @@ multi(vec![
                 (DeclModifier::Ref, "dog", plain("Dog")),
             ]),
         None,
-        body()
+        empty_body()
     ).into()
 ])
 */

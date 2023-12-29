@@ -2,8 +2,8 @@ use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::{Block, Transpile};
 
 use galvan_ast::{
-    Assignment, DeclModifier, Declaration, Expression, FunctionCall, NumberLiteral, Statement,
-    StringLiteral,
+    Assignment, DeclModifier, Declaration, Expression, FunctionCall, MemberFunctionCall,
+    NumberLiteral, Statement, StringLiteral,
 };
 use galvan_resolver::LookupContext;
 
@@ -54,17 +54,36 @@ impl Transpile for StringLiteral {
 
 impl Transpile for FunctionCall {
     fn transpile(&self, lookup: &LookupContext) -> String {
+        let arguments = transpile_arguments(&self.arguments, lookup);
+
         // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
-        let identifier = self.identifier.transpile(lookup);
-        let arguments = self
-            .arguments
-            .iter()
-            // TODO: Check if reference or mut reference is needed (or no reference at all for copy types)
-            .map(|arg| format!("&{}", arg.transpile(lookup)))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let identifier = if self.identifier.as_str() == "println" {
+            "println!".into()
+        } else if self.identifier.as_str() == "print" {
+            "print!".into()
+        } else {
+            self.identifier.transpile(lookup)
+        };
+
         format!("{}({})", identifier, arguments)
     }
+}
+
+impl Transpile for MemberFunctionCall {
+    fn transpile(&self, lookup: &LookupContext) -> String {
+        let arguments = transpile_arguments(&self.arguments, lookup);
+        let receiver = self.receiver.transpile(lookup);
+        let ident = self.identifier.transpile(lookup);
+
+        format!("{}.{}({})", receiver, ident, arguments,)
+    }
+}
+
+fn transpile_arguments(args: &[Expression], lookup: &LookupContext) -> String {
+    args.iter()
+        .map(|arg| arg.transpile(lookup))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl Transpile for NumberLiteral {

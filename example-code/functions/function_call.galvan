@@ -1,0 +1,39 @@
+/*# AST
+multi(vec![
+    function(
+        public(),
+        "multiply",
+        params(
+            vec![
+                (DeclModifier::Inherited, "a", plain("Int")),
+                (DeclModifier::Inherited, "b", plain("Int"))
+            ]),
+        Some(plain("Int")),
+        empty_body(),
+    ).into(),
+    function(
+        public(),
+        "double",
+        params(vec![(DeclModifier::Inherited, "a", plain("Int"))]),
+        Some(plain("Int")),
+        body(vec![
+            function_call("multiply", vec![variable("a"), number("2")]).into()
+        ])
+    ).into(),
+])
+*/
+
+/*# TRANSPILE
+"
+pub fn multiply(a: &Int, b: &Int) -> Int { }
+pub fn double(a: &Int) -> Int { multiply(a, 2) }
+"
+*/
+
+pub fn multiply(a: Int, b : Int) -> Int {
+    // a * b
+}
+
+pub fn double(a: Int) -> Int {
+    multiply(a, 2)
+}

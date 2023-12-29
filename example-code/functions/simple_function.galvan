@@ -9,7 +9,7 @@ single(
                 (DeclModifier::Inherited, "b", plain("Int"))
             ]),
         Some(plain("Int")),
-        body()
+        empty_body()
     )
 )
 */

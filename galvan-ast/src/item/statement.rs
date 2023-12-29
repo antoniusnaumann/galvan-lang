@@ -34,3 +34,11 @@ pub struct FunctionCall {
     pub identifier: Ident,
     pub arguments: Vec<Expression>,
 }
+
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::member_function_call))]
+pub struct MemberFunctionCall {
+    pub receiver: Ident,
+    pub identifier: Ident,
+    pub arguments: Vec<Expression>,
+}
