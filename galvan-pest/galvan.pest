@@ -124,14 +124,14 @@ spread = _{".."}
 inclusive_range = _{ "..=" }
 exclusive_range = _{ "..<" }
 
-assignment_operator = @{ assign | plus_assign | minus_assign | multiply_assign | divide_assign | rem_assign }
+assignment_operator = { assign | add_assign | sub_assign | mul_assign | pow_assign | div_assign | rem_assign }
 assign = @{ assign_ }
 assign_ = _{ "=" }
-plus_assign = @{ "+=" }
-minus_assign = @{ "-=" }
-multiply_assign = @{ "*=" }
-pow_assign = @{ "**=" }
-divide_assign = @{ "/=" }
+add_assign = @{ "+=" }
+sub_assign = @{ "-=" }
+mul_assign = @{ "*=" }
+pow_assign = @{ "^=" }
+div_assign = @{ "/=" }
 rem_assign = @{ "%=" }
 
 // ## Arithmetic
@@ -139,7 +139,7 @@ plus = @{ "+" }
 concat = @{ "++" }
 minus = @{ "-" }
 multiply = @{ "*" }
-pow = @{ "**" }
+pow = @{ "^" }
 divide = @{ "/" }
 rem = @{ "%" }
 

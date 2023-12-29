@@ -10,7 +10,8 @@ pub fn parse_current_dir() -> Vec<(ParseResult<'static>, Source)> {
 
 pub fn parse_dir(path: impl AsRef<Path>) -> Vec<(ParseResult<'static>, Source)> {
     read_sources(path)
-        .map(Result::unwrap)
+        .unwrap()
+        .into_iter()
         .map(|s| (parse_source(Box::leak(Box::new(s.clone()))), s))
         .collect::<Vec<_>>()
     // TODO: Aggregate and print errors

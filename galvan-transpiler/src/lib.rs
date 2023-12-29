@@ -161,16 +161,7 @@ pub fn transpile(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Transpile
     transpile_sources(sources)
 }
 
-mod transpile_item {
-    mod fn_decl;
-    mod ident;
-    mod statement;
-    mod r#struct;
-    mod task;
-    mod toplevel;
-    mod r#type;
-    mod visibility;
-}
+mod transpile_item;
 
 trait Transpile {
     fn transpile(&self, lookup: &LookupContext) -> String;

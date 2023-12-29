@@ -44,10 +44,6 @@ impl Transpile for Declaration {
     }
 }
 
-// TODO: Check if variable is in scope
-// TODO: Handle cloning
-impl_transpile!(Assignment, "{} = {}", identifier, expression);
-
 impl_transpile_variants!(Expression; StringLiteral, NumberLiteral, FunctionCall, Ident);
 impl Transpile for StringLiteral {
     fn transpile(&self, _lookup: &LookupContext) -> String {

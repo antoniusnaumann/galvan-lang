@@ -15,13 +15,6 @@ pub struct Block {
 pub type Statement = Assignment + Expression + Declaration;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::assignment))]
-pub struct Assignment {
-    pub identifier: Ident,
-    pub expression: Expression,
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::declaration))]
 pub struct Declaration {
     pub decl_modifier: DeclModifier,

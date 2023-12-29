@@ -1,0 +1,9 @@
+mod assignment;
+mod fn_decl;
+mod ident;
+mod statement;
+mod r#struct;
+mod task;
+mod toplevel;
+mod r#type;
+mod visibility;

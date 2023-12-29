@@ -1,3 +1,4 @@
+mod assignment;
 mod r#fn;
 mod ident;
 mod literal;
@@ -8,6 +9,7 @@ mod toplevel;
 mod r#type;
 mod type_item;
 
+pub use assignment::*;
 pub use ident::*;
 pub use literal::*;
 pub use modifier::*;
