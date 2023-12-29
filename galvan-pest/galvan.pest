@@ -75,10 +75,16 @@ expression = {
     | string_literal
     | number_literal
     | ident
+    | member_function_call
+    | member_field_access
 }
 
-function_call = { ident ~ paren_open ~ function_call_params ~ paren_close }
+function_call = { function_call_base }
+function_call_base = _{ ident ~ paren_open ~ function_call_params ~ paren_close }
 function_call_params = _{ (expression ~ (comma ~ expression)*)? }
+
+member_function_call = { ident ~ dot ~ function_call_base }
+member_field_access = { ident ~ dot ~ ident }
 
 ident = @{ used_ident | unused_ident | discard }
 used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
