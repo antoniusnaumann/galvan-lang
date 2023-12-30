@@ -38,6 +38,7 @@ mod test_utils {
                     && !line.starts_with("mod")
                     && !line.starts_with("pub(crate) mod")
                     && !line.starts_with("pub mod")
+                    && !line.starts_with("#![")
             })
             .dropping_back(1)
             .collect::<Vec<_>>()

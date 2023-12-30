@@ -9,6 +9,8 @@ use thiserror::Error;
 pub(crate) use galvan_resolver::LookupContext;
 use galvan_resolver::LookupError;
 
+static SUPPRESS_WARNINGS: &str = "#![allow(unused_imports)]\n#![allow(dead_code)]";
+
 // TODO: Maybe use something like https://crates.io/crates/ruast to generate the Rust code in a more reliable way
 
 /// Name of the generated rust module that exports all public items from all galvan files in this crate
@@ -50,7 +52,7 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     let predefined = Source::from_string(
         "
         pub type Int
-        pub type Float 
+        pub type Float
         pub type String
         ",
     )
@@ -132,8 +134,9 @@ fn transpile_segmented(
     let lib = TranspileOutput {
         file_name: galvan_module!("rs").into(),
         content: format!(
-            "\npub(crate) mod {} {{\nuse crate::*;\n{}\n}}",
+            "pub(crate) mod {} {{{}\nuse crate::*;\n{}\n}}",
             galvan_module!(),
+            SUPPRESS_WARNINGS,
             [modules, toplevel_functions].join("\n\n")
         )
         .into(),
