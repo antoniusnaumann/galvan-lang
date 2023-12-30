@@ -3,7 +3,7 @@ single(alias_type(inherited(), "IntArray", array(plain("Int"))))
 */
 
 /*# TRANSPILE
-"pub(crate) type IntArray = std::collections::Vec<Int>;"
+"pub(crate) type IntArray = std::collections::Vec<i64>;"
 */
 
 type IntArray = [Int]

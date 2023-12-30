@@ -1,7 +1,7 @@
+use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::{StructTypeMember, Transpile, TupleTypeMember, TypeDecl};
 use galvan_ast::DeclModifier;
-use galvan_resolver::LookupContext;
 
 impl_transpile_match! { TypeDecl,
     Tuple(def) => ("{} struct {}({});", def.visibility, def.ident, def.members),
@@ -13,7 +13,7 @@ impl_transpile_match! { TypeDecl,
 impl_transpile!(TupleTypeMember, "{}", r#type);
 
 impl Transpile for StructTypeMember {
-    fn transpile(&self, lookup: &LookupContext) -> String {
+    fn transpile(&self, ctx: &Context) -> String {
         match self.decl_modifier {
             DeclModifier::Let => {
                 todo!("Decide if let should be allowed on struct fields (and what it should mean")
@@ -23,14 +23,14 @@ impl Transpile for StructTypeMember {
             }
             DeclModifier::Ref => {
                 transpile!(
-                    lookup,
+                    ctx,
                     "pub(crate) {}: std::sync::Arc<std::sync::Mutex<{}>>",
                     self.ident,
                     self.r#type
                 )
             }
             DeclModifier::Inherited => {
-                transpile!(lookup, "pub(crate) {}: {}", self.ident, self.r#type)
+                transpile!(ctx, "pub(crate) {}: {}", self.ident, self.r#type)
             }
         }
     }

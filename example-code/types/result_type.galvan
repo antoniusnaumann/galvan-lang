@@ -3,7 +3,7 @@ single(alias_type(inherited(), "ExplicitError", result(plain("Int"), Some(plain(
 */
 
 /*# TRANSPILE
-"pub(crate) type ExplicitError = Result<Int, String>;"
+"pub(crate) type ExplicitError = Result<i64, String>;"
 */
 
 type ExplicitError = Int!String

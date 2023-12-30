@@ -1,14 +1,15 @@
+use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
-use crate::{FnDecl, FnSignature, LookupContext, Param, ParamList, Transpile};
+use crate::{FnDecl, FnSignature, Param, ParamList, Transpile};
 use galvan_ast::DeclModifier;
 
 impl_transpile!(FnDecl, "{} {}", signature, block);
 
 impl Transpile for FnSignature {
-    fn transpile(&self, lookup: &LookupContext) -> String {
-        let visibility = self.visibility.transpile(lookup);
-        let identifier = self.identifier.transpile(lookup);
-        let parameters = self.parameters.transpile(lookup);
+    fn transpile(&self, ctx: &Context) -> String {
+        let visibility = self.visibility.transpile(ctx);
+        let identifier = self.identifier.transpile(ctx);
+        let parameters = self.parameters.transpile(ctx);
         format!(
             "{} fn {}{}{}",
             visibility,
@@ -17,7 +18,7 @@ impl Transpile for FnSignature {
             self.return_type
                 .as_ref()
                 .map_or("".into(), |return_type| transpile!(
-                    lookup,
+                    ctx,
                     " -> {}",
                     return_type
                 ))
@@ -28,7 +29,7 @@ impl Transpile for FnSignature {
 impl_transpile!(ParamList, "({})", params);
 
 impl Transpile for Param {
-    fn transpile(&self, lookup: &LookupContext) -> String {
+    fn transpile(&self, ctx: &Context) -> String {
         let is_self = self.identifier.as_str() == "self";
 
         match self.decl_modifier {
@@ -36,14 +37,14 @@ impl Transpile for Param {
                 if is_self {
                     "&self".into()
                 } else {
-                    transpile!(lookup, "{}: &{}", self.identifier, self.param_type)
+                    transpile!(ctx, "{}: &{}", self.identifier, self.param_type)
                 }
             }
             DeclModifier::Mut => {
                 if is_self {
                     "&mut self".into()
                 } else {
-                    transpile!(lookup, "{}: &mut {}", self.identifier, self.param_type)
+                    transpile!(ctx, "{}: &mut {}", self.identifier, self.param_type)
                 }
             }
             DeclModifier::Ref => {
@@ -52,7 +53,7 @@ impl Transpile for Param {
                 }
 
                 transpile!(
-                    lookup,
+                    ctx,
                     "{}: std::sync::Arc<std::sync::Mutex<{}>>",
                     self.identifier,
                     self.param_type

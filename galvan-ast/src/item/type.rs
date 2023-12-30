@@ -21,13 +21,6 @@ impl TypeDecl {
             TypeDecl::Empty(e) => &e.ident,
         }
     }
-
-    pub fn extern_name(&self) -> &str {
-        // TODO: Decide how to make Galvan aware of Rust types
-        // TODO:    - Use a @extern("some_name") annotation (how to differentiate between "do not create this type but use the Rust type" and "create this type and customize the Rust name"?)
-        // TODO:    - Use a specialized syntax for extern types
-        self.ident().as_str()
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

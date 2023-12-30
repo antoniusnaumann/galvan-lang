@@ -3,7 +3,7 @@ single(alias_type(public(), "AliasType", plain("Int")))
 */
 
 /*# TRANSPILE
-"pub type AliasType = Int;"
+"pub type AliasType = i64;"
 */
 
 pub type AliasType = Int

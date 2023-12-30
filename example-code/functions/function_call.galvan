@@ -25,8 +25,8 @@ multi(vec![
 
 /*# TRANSPILE
 "
-pub fn multiply(a: &Int, b: &Int) -> Int { }
-pub fn double(a: &Int) -> Int { multiply(a, 2) }
+pub fn multiply(a: &i64, b: &i64) -> i64 { }
+pub fn double(a: &i64) -> i64 { multiply(a, 2) }
 "
 */
 

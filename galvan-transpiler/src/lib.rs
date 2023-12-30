@@ -24,8 +24,12 @@ macro_rules! galvan_module {
     };
 }
 
+mod builtins;
 #[cfg(feature = "exec")]
 pub mod exec;
+
+mod context;
+mod mapping;
 mod sanitize;
 
 #[derive(Debug, Error)]
@@ -48,21 +52,10 @@ fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Trans
 }
 
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
-    // TODO: Declare extern types in standard library instead of hardcoding them here
-    let predefined = Source::from_string(
-        "
-        pub type Int
-        pub type Float
-        pub type String
-        ",
-    )
-    .try_into_ast()
-    .expect("Failed to parse predefined types")
-    .segmented()
-    .expect("Predefined not to have conflicting declarations");
-
     let segmented = asts.segmented()?;
-    let lookup = LookupContext::new().with(&predefined)?.with(&segmented)?;
+    let builtins = builtins();
+    let predefined = predefined_from(&builtins);
+    let lookup = Context::new(builtins).with(&predefined)?.with(&segmented)?;
 
     transpile_segmented(&segmented, &lookup)
 }
@@ -74,7 +67,7 @@ struct TypeFileContent<'a> {
 
 fn transpile_segmented(
     segmented: &SegmentedAsts,
-    lookup: &LookupContext,
+    ctx: &Context,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
     #[derive(Hash, PartialEq, Eq, Deref, From, Display)]
     struct ModuleName(Box<str>);
@@ -118,7 +111,7 @@ fn transpile_segmented(
     let type_files = type_files;
     let toplevel_functions = toplevel_functions
         .iter()
-        .map(|func| func.transpile(lookup))
+        .map(|func| func.transpile(ctx))
         .collect::<Vec<_>>()
         .join("\n\n");
     let toplevel_functions = toplevel_functions.trim();
@@ -146,8 +139,8 @@ fn transpile_segmented(
         file_name: format!("{k}.rs").into(),
         content: [
             "use crate::*;",
-            &v.ty.transpile(lookup),
-            &transpile_member_functions(v.ty.ident(), &v.fns, lookup),
+            &v.ty.transpile(ctx),
+            &transpile_member_functions(v.ty.ident(), &v.fns, ctx),
         ]
         .join("\n\n")
         .trim()
@@ -157,17 +150,17 @@ fn transpile_segmented(
     Ok(type_files.chain(iter::once(lib)).collect())
 }
 
-fn transpile_member_functions(ty: &TypeIdent, fns: &[&FnDecl], lookup: &LookupContext) -> String {
+fn transpile_member_functions(ty: &TypeIdent, fns: &[&FnDecl], ctx: &Context) -> String {
     if fns.is_empty() {
         return "".into();
     }
 
     let transpiled_fns = fns
         .iter()
-        .map(|f| f.transpile(lookup))
+        .map(|f| f.transpile(ctx))
         .collect::<Vec<_>>()
         .join("\n\n");
-    transpile!(lookup, "impl {} {{\n{transpiled_fns}\n}}", ty)
+    transpile!(ctx, "impl {} {{\n{transpiled_fns}\n}}", ty)
 }
 
 pub struct TranspileOutput {
@@ -193,7 +186,7 @@ pub fn transpile(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Transpile
 mod transpile_item;
 
 trait Transpile {
-    fn transpile(&self, lookup: &LookupContext) -> String;
+    fn transpile(&self, ctx: &Context) -> String;
 }
 
 trait Punctuated {
@@ -202,16 +195,16 @@ trait Punctuated {
 
 mod macros {
     macro_rules! transpile {
-        ($lookup:ident, $string:expr, $($items:expr),*$(,)?) => {
-            format!($string, $(($items).transpile($lookup)),*)
+        ($ctx:ident, $string:expr, $($items:expr),*$(,)?) => {
+            format!($string, $(($items).transpile($ctx)),*)
         };
     }
 
     macro_rules! impl_transpile {
         ($ty:ty, $string:expr, $($field:ident),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(&self, lookup: &crate::LookupContext) -> String {
-                    crate::macros::transpile!(lookup, $string, $(self.$field),*)
+                fn transpile(&self, ctx: &crate::Context) -> String {
+                    crate::macros::transpile!(ctx, $string, $(self.$field),*)
                 }
             }
         };
@@ -220,8 +213,8 @@ mod macros {
     macro_rules! impl_transpile_fn {
         ($ty:ty, $string:expr, $($fun:ident),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(&self, lookup: &crate::LookupContext) -> String {
-                    crate::macros::transpile!(lookup, $string, $(self.$fun()),*)
+                fn transpile(&self, ctx: &crate::Context) -> String {
+                    crate::macros::transpile!(ctx, $string, $(self.$fun()),*)
                 }
             }
         };
@@ -233,10 +226,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(&self, lookup: &crate::LookupContext) -> String {
+                fn transpile(&self, ctx: &crate::Context) -> String {
                     use $ty::*;
                     match self {
-                        $($case => crate::macros::transpile!(lookup, $($args),+),)+
+                        $($case => crate::macros::transpile!(ctx, $($args),+),)+
                     }
                 }
             }
@@ -249,10 +242,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(&self, lookup: &crate::LookupContext) -> String {
+                fn transpile(&self, ctx: &crate::Context) -> String {
                     use $ty::*;
                     match self {
-                        $($case(inner) => inner.transpile(lookup),)+
+                        $($case(inner) => inner.transpile(ctx),)+
                     }
                 }
             }
@@ -279,7 +272,10 @@ mod macros {
         transpile,
     };
 }
+use crate::builtins::builtins;
+use crate::context::{predefined_from, Context};
 use crate::macros::transpile;
+use crate::mapping::Mapping;
 use crate::sanitize::sanitize_name;
 use macros::punct;
 
@@ -292,8 +288,8 @@ impl<T> Transpile for Vec<T>
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, lookup: &LookupContext) -> String {
-        self.as_slice().transpile(lookup)
+    fn transpile(&self, ctx: &Context) -> String {
+        self.as_slice().transpile(ctx)
     }
 }
 
@@ -301,10 +297,10 @@ impl<T> Transpile for [T]
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, lookup: &LookupContext) -> String {
+    fn transpile(&self, ctx: &Context) -> String {
         let punct = T::punctuation();
         self.iter()
-            .map(|e| e.transpile(lookup))
+            .map(|e| e.transpile(ctx))
             .reduce(|acc, e| format!("{acc}{punct}{e}"))
             .unwrap_or_else(String::new)
     }

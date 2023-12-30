@@ -1,5 +1,6 @@
+use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_fn, impl_transpile_variants, transpile};
-use crate::{LookupContext, Transpile, TypeElement};
+use crate::{Transpile, TypeElement};
 use galvan_ast::*;
 
 // TODO: Re-export used types from galvan library to avoid referencing the used crates directly
@@ -18,12 +19,12 @@ impl_transpile_fn!(OptionalTypeItem, "Option<{}>", element);
 impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
-    fn transpile(&self, lookup: &LookupContext) -> String {
+    fn transpile(&self, ctx: &Context) -> String {
         let ResultTypeItem { success, error } = self;
         if let Some(error) = error {
-            transpile!(lookup, "Result<{}, {}>", success, error)
+            transpile!(ctx, "Result<{}, {}>", success, error)
         } else {
-            transpile!(lookup, "anyhow::Result<{}>", success)
+            transpile!(ctx, "anyhow::Result<{}>", success)
         }
     }
 }

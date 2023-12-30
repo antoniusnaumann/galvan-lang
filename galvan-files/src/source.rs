@@ -46,6 +46,8 @@ pub enum Source {
         canonical_name: Arc<str>,
     },
     Str(Arc<str>),
+    Missing,
+    Builtin,
 }
 
 impl Source {
@@ -85,6 +87,8 @@ impl Source {
         match self {
             Self::File { content, .. } => content.as_ref(),
             Self::Str(content) => content.as_ref(),
+            Self::Missing => "",
+            Self::Builtin => "",
         }
     }
 
@@ -92,6 +96,8 @@ impl Source {
         match self {
             Self::File { path, .. } => Some(path),
             Self::Str(_) => None,
+            Self::Missing => None,
+            Self::Builtin => None,
         }
     }
 
@@ -103,17 +109,8 @@ impl Source {
                 canonical_name,
             } => Some(canonical_name),
             Self::Str(_) => None,
-        }
-    }
-
-    pub fn rust_name(&self) -> Option<String> {
-        match self {
-            Self::File {
-                path: _,
-                content: _,
-                canonical_name,
-            } => Some(format!("{}.rs", canonical_name)),
-            Self::Str(_) => None,
+            Self::Missing => None,
+            Self::Builtin => Some("galvan_std"),
         }
     }
 }

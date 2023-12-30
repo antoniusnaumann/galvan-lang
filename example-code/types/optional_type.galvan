@@ -3,7 +3,7 @@ single(alias_type(inherited(), "OptionalInt", optional(plain("Int"))))
 */
 
 /*# TRANSPILE
-"pub(crate) type OptionalInt = Option<Int>;"
+"pub(crate) type OptionalInt = Option<i64>;"
 */
 
 type OptionalInt = Int?
