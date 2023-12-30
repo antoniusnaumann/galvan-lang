@@ -7,7 +7,7 @@ use galvan_ast::{FnDecl, Ident, MainDecl, SegmentedAsts, ToplevelItem, TypeDecl,
 #[derive(Debug, Default)]
 pub struct LookupContext<'a> {
     /// Types are resolved by their name
-    pub types: HashMap<TypeId, &'a ToplevelItem<TypeDecl>>,
+    pub types: HashMap<TypeIdent, &'a ToplevelItem<TypeDecl>>,
     /// Functions are resolved by their name and - if present - named arguments and their receiver type
     ///
     /// `fn foo(a: i32, b: i32) -> i32` is identified as `foo`
@@ -48,7 +48,7 @@ impl<'a> LookupContext<'a> {
         for type_decl in &asts.types {
             if self
                 .types
-                .insert(type_decl.ident().into(), type_decl)
+                .insert(type_decl.ident().clone(), type_decl)
                 .is_some()
             {
                 return Err(LookupError::DuplicateType(type_decl.ident().clone()));
@@ -66,7 +66,7 @@ impl<'a> LookupContext<'a> {
 
 impl LookupContext<'_> {
     pub fn resolve_type(&self, name: &TypeIdent) -> Option<&ToplevelItem<TypeDecl>> {
-        self.types.get(&name.into()).copied()
+        self.types.get(&name).copied()
     }
 
     pub fn resolve_function(
@@ -77,24 +77,6 @@ impl LookupContext<'_> {
     ) -> Option<&ToplevelItem<FnDecl>> {
         let func_id = FunctionId::new(receiver, name, labels);
         self.functions.get(&func_id).copied()
-    }
-}
-
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct TypeId(Box<str>);
-
-impl TypeId {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl<S> From<S> for TypeId
-where
-    S: AsRef<str>,
-{
-    fn from(ident: S) -> Self {
-        Self(ident.as_ref().into())
     }
 }
 

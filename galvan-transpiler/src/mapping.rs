@@ -2,7 +2,6 @@ use galvan_ast::TypeIdent;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-// TODO: Make this part of the AST as TypeDecl::Extern
 #[derive(Debug, Default)]
 pub(crate) struct Mapping {
     pub(crate) types: HashMap<TypeIdent, RustType>,
@@ -11,7 +10,7 @@ pub(crate) struct Mapping {
 impl Mapping {
     pub(crate) fn get_owned(&self, type_id: &TypeIdent) -> Cow<str> {
         self.types
-            .get(&type_id)
+            .get(type_id)
             .map(RustType::owned)
             .map(Cow::Borrowed)
             .unwrap_or_else(|| type_id.as_str().to_owned().into())
@@ -19,7 +18,7 @@ impl Mapping {
 
     pub(crate) fn get_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
         self.types
-            .get(&type_id)
+            .get(type_id)
             .map(RustType::borrowed)
             .map(Cow::Borrowed)
             .unwrap_or_else(|| format!("&{}", type_id.as_str()).into())
@@ -27,7 +26,7 @@ impl Mapping {
 
     pub(crate) fn get_mut_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
         self.types
-            .get(&type_id)
+            .get(type_id)
             .map(RustType::mut_borrowed)
             .map(Cow::Borrowed)
             .unwrap_or_else(|| format!("&mut {}", type_id.as_str()).into())

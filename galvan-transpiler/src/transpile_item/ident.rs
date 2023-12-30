@@ -11,7 +11,7 @@ impl Transpile for Ident {
 
 impl Transpile for TypeIdent {
     fn transpile(&self, ctx: &Context) -> String {
-        let Some(decl) = ctx.lookup.types.get(&self.into()) else {
+        let Some(decl) = ctx.lookup.types.get(&self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };
         // TODO: Handle module path here and use fully qualified name
