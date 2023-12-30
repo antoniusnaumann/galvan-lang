@@ -1,16 +1,22 @@
 use from_pest::pest::iterators::Pairs;
 use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
+use typeunion::type_union;
 
 use super::*;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::assignment))]
 pub struct Assignment {
-    pub identifier: Ident,
+    pub target: AssignmentTarget,
     pub operator: AssignmentOperator,
     pub expression: Expression,
 }
+
+#[type_union]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::assignment_target))]
+pub type AssignmentTarget = Ident + MemberFieldAccess;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum AssignmentOperator {

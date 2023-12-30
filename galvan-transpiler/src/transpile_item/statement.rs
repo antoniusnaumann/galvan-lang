@@ -2,7 +2,7 @@ use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::{Block, Transpile};
 
 use galvan_ast::{
-    Assignment, DeclModifier, Declaration, Expression, FunctionCall, MemberFunctionCall,
+    DeclModifier, Declaration, Expression, FunctionCall, MemberFieldAccess, MemberFunctionCall,
     NumberLiteral, Statement, StringLiteral,
 };
 use galvan_resolver::LookupContext;
@@ -78,6 +78,8 @@ impl Transpile for MemberFunctionCall {
         format!("{}.{}({})", receiver, ident, arguments,)
     }
 }
+
+impl_transpile!(MemberFieldAccess, "{}.{}", receiver, identifier);
 
 fn transpile_arguments(args: &[Expression], lookup: &LookupContext) -> String {
     args.iter()

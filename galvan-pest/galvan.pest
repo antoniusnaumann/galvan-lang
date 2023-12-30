@@ -65,7 +65,8 @@ body = { ((newline)* ~ statement ~ (newline)+)* ~ statement? }
 
 statement = { assignment | declaration | expression }
 
-assignment = { ident ~ assignment_operator ~ expression }
+assignment = { assignment_target ~ assignment_operator ~ expression }
+assignment_target = { member_field_access | ident }
 
 declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
@@ -74,9 +75,9 @@ expression = {
     function_call
     | string_literal
     | number_literal
-    | ident
     | member_function_call
     | member_field_access
+    | ident
 }
 
 function_call = { function_call_base }

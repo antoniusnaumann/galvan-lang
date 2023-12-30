@@ -42,3 +42,10 @@ pub struct MemberFunctionCall {
     pub identifier: Ident,
     pub arguments: Vec<Expression>,
 }
+
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::member_field_access))]
+pub struct MemberFieldAccess {
+    pub receiver: Ident,
+    pub identifier: Ident,
+}
