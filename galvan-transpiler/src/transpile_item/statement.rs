@@ -33,13 +33,22 @@ impl Transpile for Declaration {
             DeclModifier::Inherited => unreachable!(),
         };
 
-        let expression = self
-            .expression
+        // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
+        // TODO: Clone inner type from ref types to non-ref types
+        self.expression
             .as_ref()
-            .map(|expr| transpile!(ctx, " = {}", expr))
-            .unwrap_or("".into());
+            .map(|expr| transpile_assignment_expression(ctx, keyword, expr))
+            .map(|expr| format!("{keyword} {identifier}{ty} = {expr}"))
+            .unwrap_or_else(|| format!("{keyword} {identifier}{ty}"))
+    }
+}
 
-        format!("{keyword} {identifier}{ty}{expression}")
+fn transpile_assignment_expression(ctx: &Context, keyword: &str, expr: &Expression) -> String {
+    match expr {
+        Expression::Ident(ident) => {
+            transpile!(ctx, "{}.clone()", ident)
+        }
+        expr => expr.transpile(ctx),
     }
 }
 
