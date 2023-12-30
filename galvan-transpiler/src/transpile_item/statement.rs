@@ -57,15 +57,14 @@ impl Transpile for FunctionCall {
         let arguments = transpile_arguments(&self.arguments, lookup);
 
         // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
-        let identifier = if self.identifier.as_str() == "println" {
-            "println!".into()
+        if self.identifier.as_str() == "println" {
+            format!("println!(\"{{}}\", {})", arguments)
         } else if self.identifier.as_str() == "print" {
-            "print!".into()
+            format!("print!(\"{{}}\", {})", arguments)
         } else {
-            self.identifier.transpile(lookup)
-        };
-
-        format!("{}({})", identifier, arguments)
+            let ident = self.identifier.transpile(lookup);
+            format!("{}({})", ident, arguments)
+        }
     }
 }
 
