@@ -13,7 +13,7 @@ impl Mapping {
             .get(type_id)
             .map(RustType::owned)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| type_id.as_str().to_owned().into())
+            .unwrap_or_else(|| type_id.to_string().into())
     }
 
     pub(crate) fn get_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
@@ -21,7 +21,7 @@ impl Mapping {
             .get(type_id)
             .map(RustType::borrowed)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| format!("&{}", type_id.as_str()).into())
+            .unwrap_or_else(|| type_id.to_string().into())
     }
 
     pub(crate) fn get_mut_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
@@ -29,7 +29,7 @@ impl Mapping {
             .get(type_id)
             .map(RustType::mut_borrowed)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| format!("&mut {}", type_id.as_str()).into())
+            .unwrap_or_else(|| type_id.to_string().into())
     }
 
     pub(crate) fn is_copy(&self, type_id: &TypeIdent) -> bool {

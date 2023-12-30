@@ -305,3 +305,15 @@ where
             .unwrap_or_else(String::new)
     }
 }
+
+impl Transpile for &str {
+    fn transpile(&self, ctx: &Context) -> String {
+        self.to_string()
+    }
+}
+
+impl Transpile for String {
+    fn transpile(&self, ctx: &Context) -> String {
+        self.to_owned()
+    }
+}
