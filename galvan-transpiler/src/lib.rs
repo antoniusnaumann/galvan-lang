@@ -124,13 +124,19 @@ fn transpile_segmented(
         .join("\n");
     let modules = modules.trim();
 
+    let main = segmented
+        .main
+        .as_ref()
+        .map(|main| transpile!(ctx, "fn __main__() {{\n{}\n}}", main.body))
+        .unwrap_or_default();
+
     let lib = TranspileOutput {
         file_name: galvan_module!("rs").into(),
         content: format!(
-            "pub(crate) mod {} {{{}\nuse crate::*;\n{}\n}}",
+            "pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
             galvan_module!(),
             SUPPRESS_WARNINGS,
-            [modules, toplevel_functions].join("\n\n")
+            [modules, toplevel_functions, &main].join("\n\n")
         )
         .into(),
     };
