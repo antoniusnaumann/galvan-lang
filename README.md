@@ -41,20 +41,32 @@ pub type Person {
     name: String
     age: Int
 }
+// TODO: Maybe use '(' for struct definitions instead. This would allow adding parent fields to enums later
+// This would look like this instead:
+pub type Person(name: String, age: Int)
 
 /// A type alias
 pub type Human = Person
 
 /// A tuple type
-pub type Couple = (Person, Person)
+pub type Couple(Person, Person)
 
 /// An enum type
 pub type Theme {
     Plain
-    // Like in Rust, enum variants can have associated values, either named or unnamed
+    /// Like in Rust, enum variants can have associated values, either named or unnamed
     Monochrome(Color)
-    Dark { background: Color, foreground: Color }
-    Light { background: Color, foreground: Color }
+    /// Unlike in Rust, '(' is also used for enum variants with named fields
+    Dark(background: Color, foreground: Color)
+    Light(background: Color, foreground: Color)
+}
+
+// TODO: It is not decided if this feature will be implemented
+// Enums can have parent fields that are accessible to all enum variants
+pub type Node(span: Span, ref source: Source) {
+    Fn(FnDecl)
+    Type(TypeDecl)
+    Main(MainDecl)
 }
 ```
 
@@ -95,11 +107,14 @@ The error variant is specified after the `!` symbol. If it is not given, a flexi
 ```galvan
 fn open_file(path: String) -> File! {
     let file = File::open(path)!
-    let contents = file.read_to_string()?.find("foo")?.uppercase()
+    let contents = file.read_to_string()?.find("foo")?.uppercase() ?? ""
+    
+    contents
 }
 ```
-The `!` operator unwraps the result and early returns if the result is an error. This is identical to the `?` operator in Rust.
-The `?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not None.
+`!` operator unwraps the result and early returns if the result is an error. This is identical to the `?` operator in Rust.
+`?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not none.
+`??` is the null-coalescing operator, you can use it to provide a default if the left-hand side expression is none
 
 #### Union Types
 Galvan supports union types everywhere where a type identifier is expected:
@@ -161,9 +176,10 @@ pub type Person {
 }
 
 main {
-    ref dog = Dog { name: "Bello", age: 5 }
+    // Note that constructors use '(' with named arguments
+    ref dog = Dog(name: "Bello", age: 5)
     // The `dog` field now points to the same entity as the `dog` variable 
-    let person = Person { name: "Jochen, age: 67, ref dog }
+    let person = Person(name: "Jochen, age: 67, dog: ref dog)
     dog.age += 1
     
     print(person.dog.age) // 6

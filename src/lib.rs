@@ -21,7 +21,7 @@ macro_rules! setup {
         let errors = ::galvan::__private::__setup_galvan();
 
         if !errors.is_empty() {
-            // println!("cargo:warning={}", warnings.join("\n"));
+            // println!("cargo:warning={}", errors);
             panic!("Galvan Transpiler Error:\n{}", errors);
         }
         // TODO: How to build a rerun rule for this?
