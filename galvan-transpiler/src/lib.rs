@@ -285,7 +285,14 @@ use crate::mapping::Mapping;
 use crate::sanitize::sanitize_name;
 use macros::punct;
 
-punct!(", ", TypeElement, TupleTypeMember, Param, FunctionCallArg);
+punct!(
+    ", ",
+    TypeElement,
+    TupleTypeMember,
+    Param,
+    FunctionCallArg,
+    ConstructorCallArg
+);
 punct!(",\n", StructTypeMember);
 punct!("\n\n", RootItem, FnDecl);
 punct!(";\n", Statement);
@@ -309,6 +316,15 @@ where
             .map(|e| e.transpile(ctx))
             .reduce(|acc, e| format!("{acc}{punct}{e}"))
             .unwrap_or_else(String::new)
+    }
+}
+
+impl<T> Transpile for Option<Vec<T>>
+where
+    T: Transpile + Punctuated,
+{
+    fn transpile(&self, ctx: &Context) -> String {
+        self.as_ref().map_or_else(String::new, |v| v.transpile(ctx))
     }
 }
 

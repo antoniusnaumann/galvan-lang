@@ -1,10 +1,7 @@
 use crate::context::Context;
-use crate::macros::{impl_transpile, impl_transpile_match, impl_transpile_variants, transpile};
+use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::{Block, Transpile};
-use galvan_ast::{
-    DeclModifier, Declaration, Expression, FunctionCall, FunctionCallArg, IdentArg,
-    MemberFieldAccess, MemberFunctionCall, NumberLiteral, Statement, StringLiteral,
-};
+use galvan_ast::{DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral};
 
 impl_transpile!(Block, "{{\n{}\n}}", statements);
 impl_transpile_variants!(Statement; Assignment, Expression, Declaration);
@@ -59,55 +56,6 @@ impl Transpile for StringLiteral {
         format!("format!({})", self.as_str())
     }
 }
-
-impl Transpile for FunctionCall {
-    fn transpile(&self, ctx: &Context) -> String {
-        let arguments = self.arguments.transpile(ctx);
-
-        // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
-        if self.identifier.as_str() == "println" {
-            format!("println!(\"{{}}\", {})", arguments)
-        } else if self.identifier.as_str() == "print" {
-            format!("print!(\"{{}}\", {})", arguments)
-        } else {
-            let ident = self.identifier.transpile(ctx);
-            format!("{}({})", ident, arguments)
-        }
-    }
-}
-
-impl_transpile_match! { FunctionCallArg,
-   Ident(arg) => ("{}", arg),
-   Expr(expr) => ("&({})", expr),
-}
-
-impl Transpile for IdentArg {
-    fn transpile(&self, ctx: &Context) -> String {
-        match self.modifier {
-            DeclModifier::Let => {
-                panic!("Let modifier is not allowed for function call arguments")
-            }
-            DeclModifier::Inherited => {
-                transpile!(ctx, "&{}", self.ident)
-            }
-            DeclModifier::Mut => {
-                transpile!(ctx, "&mut {}", self.ident)
-            }
-            DeclModifier::Ref => {
-                transpile!(ctx, "::std::sync::Arc::clone(&{})", self.ident)
-            }
-        }
-    }
-}
-
-impl_transpile!(
-    MemberFunctionCall,
-    "{}.{}({})",
-    receiver,
-    identifier,
-    arguments
-);
-impl_transpile!(MemberFieldAccess, "{}.{}", receiver, identifier);
 
 impl Transpile for NumberLiteral {
     fn transpile(&self, _: &Context) -> String {

@@ -72,22 +72,32 @@ declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ 
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
 expression = {
+    non_ident_arg_expression
+    | member_field_access
+    | ident
+}
+// A quick hack to avoid parsing errors in the ident_arg rule
+non_ident_arg_expression = _{
     function_call
+    | constructor_call
     | string_literal
     | number_literal
     | member_function_call
-    | member_field_access
-    | ident
 }
 
 function_call = { function_call_base }
 function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
 function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
-function_call_arg = { ident_arg | expression }
-ident_arg = { declaration_modifier ~ ident }
+function_call_arg = { (&(non_ident_arg_expression) ~ expression) | ident_arg }
+ident_arg = { declaration_modifier ~ ident ~ (dot ~ ident)* }
 
+// TODO: At least allow ident chaining here
 member_function_call = { ident ~ dot ~ function_call_base }
 member_field_access = { ident ~ dot ~ ident }
+
+constructor_call = { type_ident ~ paren_open ~ constructor_call_args ~ paren_close }
+constructor_call_args = _{ (constructor_call_arg ~ (comma ~ constructor_call_arg)*)? }
+constructor_call_arg = { ident ~ colon ~ expression }
 
 ident = @{ used_ident | unused_ident | discard }
 used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
@@ -209,7 +219,8 @@ optional_type = ${ opt_element_type ~ question_mark }
 
 // # Basics
 WHITESPACE = _{ whitespace }
-COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!"\n" ~ ANY)* ~ "\n") }
+COMMENT = _{("/*" ~ (!"*/" ~ ANY)* ~ "*/") | single_line_comment }
+single_line_comment = _{ ("//" ~ (!newline ~ ANY)*) }
 
 inherited = { "" }
 

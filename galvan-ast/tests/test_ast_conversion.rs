@@ -161,10 +161,10 @@ mod test_utils {
         .into()
     }
 
-    pub fn ident_arg(modifier: DeclModifier, ident: &str) -> FunctionCallArg {
+    pub fn ident_arg(modifier: DeclModifier, idents: &[&str]) -> FunctionCallArg {
         FunctionCallArg::Ident(IdentArg {
             modifier,
-            ident: Ident::new(ident),
+            dotted: idents.iter().map(|&ident| Ident::new(ident)).collect(),
         })
     }
 }

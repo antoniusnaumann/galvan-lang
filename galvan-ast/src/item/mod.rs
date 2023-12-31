@@ -1,5 +1,6 @@
 mod assignment;
 mod r#fn;
+mod function_call;
 mod ident;
 mod literal;
 mod modifier;
@@ -10,6 +11,7 @@ mod r#type;
 mod type_item;
 
 pub use assignment::*;
+pub use function_call::*;
 pub use ident::*;
 pub use literal::*;
 pub use modifier::*;
