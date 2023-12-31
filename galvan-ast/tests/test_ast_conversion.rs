@@ -153,12 +153,19 @@ mod test_utils {
         Ident::new(ident).into()
     }
 
-    pub fn function_call(ident: &str, arguments: Vec<Expression>) -> Expression {
+    pub fn function_call(ident: &str, arguments: Vec<FunctionCallArg>) -> Expression {
         FunctionCall {
             identifier: Ident::new(ident),
             arguments,
         }
         .into()
+    }
+
+    pub fn ident_arg(modifier: DeclModifier, ident: &str) -> FunctionCallArg {
+        FunctionCallArg::Ident(IdentArg {
+            modifier,
+            ident: Ident::new(ident),
+        })
     }
 }
 

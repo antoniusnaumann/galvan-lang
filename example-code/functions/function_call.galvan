@@ -17,16 +17,20 @@ multi(vec![
         params(vec![(DeclModifier::Inherited, "a", plain("Int"))]),
         Some(plain("Int")),
         body(vec![
-            function_call("multiply", vec![variable("a"), number("2")]).into()
+            function_call("multiply", vec![
+                ident_arg(DeclModifier::Inherited, "a"),
+                number("2").into(),
+            ]).into()
         ])
     ).into(),
 ])
 */
 
 /*# TRANSPILE
+// TODO: Remove the reference &a for copy types by type checking function signatures
 "
 pub fn multiply(a: i64, b: i64) -> i64 { }
-pub fn double(a: i64) -> i64 { multiply(a, 2) }
+pub fn double(a: i64) -> i64 { multiply(&a, 2) }
 "
 */
 

@@ -1,6 +1,6 @@
 use super::*;
+use derive_more::From;
 use galvan_pest::Rule;
-
 use typeunion::type_union;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -32,7 +32,21 @@ pub type Expression = StringLiteral + NumberLiteral + FunctionCall + Ident;
 #[pest_ast(rule(Rule::function_call))]
 pub struct FunctionCall {
     pub identifier: Ident,
-    pub arguments: Vec<Expression>,
+    pub arguments: Vec<FunctionCallArg>,
+}
+
+#[derive(Debug, PartialEq, Eq, From, FromPest)]
+#[pest_ast(rule(Rule::function_call_arg))]
+pub enum FunctionCallArg {
+    Ident(IdentArg),
+    Expr(Expression),
+}
+
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::ident_arg))]
+pub struct IdentArg {
+    pub modifier: DeclModifier,
+    pub ident: Ident,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -40,7 +54,7 @@ pub struct FunctionCall {
 pub struct MemberFunctionCall {
     pub receiver: Ident,
     pub identifier: Ident,
-    pub arguments: Vec<Expression>,
+    pub arguments: Vec<FunctionCallArg>,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

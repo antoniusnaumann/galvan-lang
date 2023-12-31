@@ -81,8 +81,10 @@ expression = {
 }
 
 function_call = { function_call_base }
-function_call_base = _{ ident ~ paren_open ~ function_call_params ~ paren_close }
-function_call_params = _{ (expression ~ (comma ~ expression)*)? }
+function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
+function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
+function_call_arg = { ident_arg | expression }
+ident_arg = { declaration_modifier ~ ident }
 
 member_function_call = { ident ~ dot ~ function_call_base }
 member_field_access = { ident ~ dot ~ ident }

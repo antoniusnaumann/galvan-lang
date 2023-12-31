@@ -33,7 +33,7 @@ macro_rules! main {
     () => {
         ::galvan::include!();
         fn main() {
-            galvan_module::__main();
+            galvan_module::__main__();
         }
     };
 }

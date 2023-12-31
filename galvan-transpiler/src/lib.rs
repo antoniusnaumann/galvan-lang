@@ -127,7 +127,7 @@ fn transpile_segmented(
     let main = segmented
         .main
         .as_ref()
-        .map(|main| transpile!(ctx, "fn __main__() {{\n{}\n}}", main.body))
+        .map(|main| transpile!(ctx, "pub(crate) fn __main__() {{\n{}\n}}", main.body))
         .unwrap_or_default();
 
     let lib = TranspileOutput {
@@ -285,7 +285,7 @@ use crate::mapping::Mapping;
 use crate::sanitize::sanitize_name;
 use macros::punct;
 
-punct!(", ", TypeElement, TupleTypeMember, Param);
+punct!(", ", TypeElement, TupleTypeMember, Param, FunctionCallArg);
 punct!(",\n", StructTypeMember);
 punct!("\n\n", RootItem, FnDecl);
 punct!(";\n", Statement);

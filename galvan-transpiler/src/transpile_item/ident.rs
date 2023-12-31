@@ -20,6 +20,7 @@ impl Transpile for TypeIdent {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Ownership {
     Owned,
     MutOwned,
