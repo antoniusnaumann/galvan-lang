@@ -1,16 +1,16 @@
 [workspace.package]
 authors = ["Antonius Naumann"]
 edition = "2021"
-version = "0.0.0-dev03"
+version = "0.0.0-dev04"
 license = "MIT"
 
 [workspace.dependencies]
-galvan-ast = { path = "galvan-ast", version = "0.0.0-dev03" }
-# galvan-core = { path = "galvan-core", version = "0.0.0-dev03" }
-galvan-files = { path = "galvan-files", version = "0.0.0-dev03" }
-galvan-pest = { path = "galvan-pest", version = "0.0.0-dev03" }
-galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev03" }
-galvan-resolver = { path = "galvan-resolver", version = "0.0.0-dev03" }
+galvan-ast = { path = "galvan-ast", version = "0.0.0-dev04" }
+# galvan-core = { path = "galvan-core", version = "0.0.0-dev04" }
+galvan-files = { path = "galvan-files", version = "0.0.0-dev04" }
+galvan-pest = { path = "galvan-pest", version = "0.0.0-dev04" }
+galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev04" }
+galvan-resolver = { path = "galvan-resolver", version = "0.0.0-dev04" }
 
 thiserror = "1.0.51"
 
@@ -24,7 +24,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
-galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev03" }
+galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev04" }
 
 [features]
 build = ["galvan-transpiler/exec"]
