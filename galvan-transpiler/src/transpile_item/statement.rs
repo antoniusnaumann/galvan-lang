@@ -1,7 +1,9 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::{Block, Transpile};
-use galvan_ast::{DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral};
+use galvan_ast::{
+    ConstructorCall, DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral,
+};
 
 impl_transpile!(Block, "{{\n{}\n}}", statements);
 impl_transpile_variants!(Statement; Assignment, Expression, Declaration);
@@ -49,7 +51,16 @@ fn transpile_assignment_expression(ctx: &Context, keyword: &str, expr: &Expressi
     }
 }
 
-impl_transpile_variants!(Expression; StringLiteral, NumberLiteral, FunctionCall, Ident);
+impl_transpile_variants! { Expression;
+    FunctionCall,
+    ConstructorCall,
+    MemberFunctionCall,
+    MemberFieldAccess,
+    StringLiteral,
+    NumberLiteral,
+    Ident
+}
+
 impl Transpile for StringLiteral {
     fn transpile(&self, _: &Context) -> String {
         // TODO: Implement more sophisticated formatting (extract {} and put them as separate arguments)

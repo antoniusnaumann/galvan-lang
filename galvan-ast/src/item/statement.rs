@@ -26,4 +26,10 @@ pub struct Declaration {
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::expression))]
-pub type Expression = StringLiteral + NumberLiteral + FunctionCall + Ident;
+pub type Expression = FunctionCall
+    + ConstructorCall
+    + MemberFunctionCall
+    + MemberFieldAccess
+    + StringLiteral
+    + NumberLiteral
+    + Ident;

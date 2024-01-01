@@ -2,8 +2,8 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    ConstructorCall, ConstructorCallArg, DeclModifier, FunctionCall, FunctionCallArg, Ident,
-    IdentArg, MemberFieldAccess, MemberFunctionCall,
+    ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg,
+    Ident, MemberFieldAccess, MemberFunctionCall,
 };
 
 impl Transpile for FunctionCall {
@@ -22,40 +22,30 @@ impl Transpile for FunctionCall {
     }
 }
 
-impl_transpile_match! { FunctionCallArg,
-   Ident(arg) => ("{}", arg),
-   Expr(expr) => ("&({})", expr),
-}
-
-impl Transpile for IdentArg {
+impl Transpile for FunctionCallArg {
     fn transpile(&self, ctx: &Context) -> String {
-        match self.modifier {
-            DeclModifier::Let => {
-                panic!("Let modifier is not allowed for function call arguments")
+        use DeclModifier as Mod;
+        use Expression as Exp;
+        let Self {
+            modifier,
+            expression,
+        } = self;
+        match (modifier, expression) {
+            (Mod::Let, _) => {
+                todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
-            DeclModifier::Inherited => {
-                transpile!(ctx, "&{}", ident_chain(ctx, &self.dotted))
+            (Mod::Inherited, expression) => {
+                transpile!(ctx, "&({})", expression)
             }
-            DeclModifier::Mut => {
-                transpile!(ctx, "&mut {}", ident_chain(ctx, &self.dotted))
+            (Mod::Mut, expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+                transpile!(ctx, "&mut {}", expr)
             }
-            DeclModifier::Ref => {
-                transpile!(
-                    ctx,
-                    "::std::sync::Arc::clone(&{})",
-                    ident_chain(ctx, &self.dotted)
-                )
+            (Mod::Ref, expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+                transpile!(ctx, "::std::sync::Arc::clone(&{})", expr)
             }
+            _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),
         }
     }
-}
-
-fn ident_chain(ctx: &Context, idents: &[Ident]) -> String {
-    idents
-        .iter()
-        .map(|ident| ident.transpile(ctx))
-        .collect::<Vec<_>>()
-        .join(".")
 }
 
 impl_transpile!(

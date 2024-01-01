@@ -72,26 +72,21 @@ declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ 
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
 expression = {
-    non_ident_arg_expression
-    | member_field_access
-    | ident
-}
-// A quick hack to avoid parsing errors in the ident_arg rule
-non_ident_arg_expression = _{
     function_call
     | constructor_call
+    | member_function_call
+    | member_field_access
     | string_literal
     | number_literal
-    | member_function_call
+    | ident
 }
 
 function_call = { function_call_base }
 function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
 function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
-function_call_arg = { (&(non_ident_arg_expression) ~ expression) | ident_arg }
-ident_arg = { declaration_modifier ~ ident ~ (dot ~ ident)* }
+function_call_arg = { declaration_modifier ~ expression }
 
-// TODO: At least allow ident chaining here
+// TODO: Allow all kinds of expressions in front of . here
 member_function_call = { ident ~ dot ~ function_call_base }
 member_field_access = { ident ~ dot ~ ident }
 

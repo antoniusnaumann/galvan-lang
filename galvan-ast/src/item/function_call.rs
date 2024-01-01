@@ -11,16 +11,9 @@ pub struct FunctionCall {
 
 #[derive(Debug, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::function_call_arg))]
-pub enum FunctionCallArg {
-    Ident(IdentArg),
-    Expr(Expression),
-}
-
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::ident_arg))]
-pub struct IdentArg {
+pub struct FunctionCallArg {
     pub modifier: DeclModifier,
-    pub dotted: Vec<Ident>,
+    pub expression: Expression,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

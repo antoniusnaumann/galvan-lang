@@ -36,13 +36,15 @@ Those functions are not allowed to have newlines in their body.
 #### Types 
 Types in Galvan are defined with the `type` keyword.
 ```galvan
+// TODO: Also use '(' here?
 /// A struct definition
-pub type Person {
-    name: String
-    age: Int
+pub type Color {
+    r: Int
+    g: Int
+    b: Int
 }
-// TODO: Maybe use '(' for struct definitions instead. This would allow adding parent fields to enums later
-// This would look like this instead:
+
+// Structs can also use the named tuple syntax
 pub type Person(name: String, age: Int)
 
 /// A type alias
@@ -52,7 +54,8 @@ pub type Human = Person
 pub type Couple(Person, Person)
 
 /// An enum type
-pub type Theme {
+/// Enums can have general fields that are accessible to all enum variants
+pub type Theme(name: String) {
     Plain
     /// Like in Rust, enum variants can have associated values, either named or unnamed
     Monochrome(Color)
@@ -60,22 +63,12 @@ pub type Theme {
     Dark(background: Color, foreground: Color)
     Light(background: Color, foreground: Color)
 }
-
-// TODO: It is not decided if this feature will be implemented
-// Enums can have parent fields that are accessible to all enum variants
-pub type Node(span: Span, ref source: Source) {
-    Fn(FnDecl)
-    Type(TypeDecl)
-    Main(MainDecl)
-}
 ```
 
 #### Member Functions
 All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
 ```galvan
-pub type Dog {
-    name: String
-}
+pub type Dog (name: String)
 
 fn bark(self: Dog) {
     print("{self.name} barks")
