@@ -5,12 +5,25 @@ A high-level companion language for Rust.
 > This is a work in progress and under development. It currently is in a state of a hobby project and most features described here are not yet implemented.
 > I am working on this project in my free time - if you like the ideas presented here, and want to help, feel free to contact me or start a discussion here on GitHub.
 
-### A Tour of Galvan
-#### Introduction to Galvan
+## Motiviation
+### What Galvan is not
+Galvan is not intended as a replacement for Rust. It is a companion language that transpiles to Rust.
+That means, Galvan's abstractions are not always zero-cost, instead Galvan tries to pick a sane default choice for most use cases.
+
+Galvan is not intended for low-level programming - so you should not build a parser, compiler or audio compression library with it.
+Instead, Galvan is intended to be used for high-level applications, like CLI tools, web servers and so on. The ultimate goal is full Rust interoperability, so you can write your application in Galvan and rely on the full Rust ecosystem.
+
+### Why Galvan?
+Rust is a great language, but it is not always the best choice for every task. Rust's syntax can be quite verbose and its type system and borrow checker - while extremely powerful - can be a burden for high-level applications and overwhelming for beginners.
+For low-level libraries and so-called "systems programming", Rust hits the sweet spot between helpful abstractions and being in control of implementation details. For application-level programming however, being provided with sensible choices for common use cases is important.
+This is where Galvan comes in: It provides a concise syntax and simplified way of writing Rust - without worrying about lifetimes, ownership and so on.
+
+## A Tour of Galvan
+### Introduction to Galvan
 
 Galvan is a modern programming language that transpiles to Rust. It provides a concise syntax while leveraging the full power of Rust's ecosystem. 
 
-#### Basic Syntax and String Formatting
+### Basic Syntax and String Formatting
 ```galvan
 main {
     let name = "Galvan"
@@ -19,8 +32,10 @@ main {
 ```
 Note that Galvan strings always support inline format arguments.
 
-#### Functions
+### Functions
 Like in Rust, functions are defined with the `fn` keyword and return the value of the last expression:
+> [!WARNING]
+> Arithmetic expressions are not implemented yet
 ```galvan
 fn add(a: Int, b: Int) -> Int {
     a + b
@@ -28,12 +43,14 @@ fn add(a: Int, b: Int) -> Int {
 ```
 
 Very short functions can also be defined with = and have their return type inferred:
+> [!WARNING]
+> Defining functions with '=' is not implemented yet
 ```galvan
 fn add(a: Int, b: Int) = a + b
 ```
 Those functions are not allowed to have newlines in their body.
 
-#### Types 
+### Types 
 Types in Galvan are defined with the `type` keyword.
 ```galvan
 // TODO: Also use '(' here?
@@ -52,7 +69,12 @@ pub type Human = Person
 
 /// A tuple type
 pub type Couple(Person, Person)
+```
 
+Enums can have associated values, either for all variants or for specific variants. Enums are also declared using the `type` keyword:
+> [!WARNING]
+> Enums are not implemented yet
+```galvan
 /// An enum type
 /// Enums can have general fields that are accessible to all enum variants
 pub type Theme(name: String) {
@@ -65,7 +87,7 @@ pub type Theme(name: String) {
 }
 ```
 
-#### Member Functions
+### Member Functions
 All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
 ```galvan
 pub type Dog (name: String)
@@ -75,7 +97,7 @@ fn bark(self: Dog) {
 }
 ```
 
-#### Collections
+### Collections
 
 Galvan features intuitive syntax for collections:
 ```galvan
@@ -87,7 +109,7 @@ pub type OrderedDict = [String: Int]
 
 Ordered types use `[]`, unordered types use `{}`.
 
-#### Optionals and Result Types
+### Optionals and Result Types
 Galvan provides concise syntax for optionals and result types:
 
 ```galvan
@@ -97,6 +119,8 @@ type FileOrIoErr = File!IoError
 ```
 The error variant is specified after the `!` symbol. If it is not given, a flexible error type is used.
 
+> [!WARNING]
+> `!`, `?` and `??` are not implemented yet
 ```galvan
 fn open_file(path: String) -> File! {
     let file = File::open(path)!
@@ -109,15 +133,17 @@ fn open_file(path: String) -> File! {
 `?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not none.
 `??` is the null-coalescing operator, you can use it to provide a default if the left-hand side expression is none
 
-#### Union Types
+### Union Types
 Galvan supports union types everywhere where a type identifier is expected:
+> [!WARNING]
+> Union types are not implemented yet
 ```galvan
 fn print_value(value: Int | String) {
     print("Value: {value}")
 }
 ```
 
-#### Pass-by-Value and Pass-by-Reference
+### Pass-by-Value and Pass-by-Reference
 By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference:
 For consistency, the `let` keyword is allowed as well but redundant as parameters are passed by value by default.
 ```galvan
@@ -158,8 +184,8 @@ fn grow(mut self: Dog) {
 }
 ```
 
-#### Stored References
-References that are allowed to be stored in structs have to be declared as heap references, this is done by prefixing the declaration with `ref`:
+### Stored References
+References that are allowed to be stored in structs have to be declared as heap references. This is done by prefixing the declaration with `ref`:
 ```galvan
 pub type Person {
     name: String
@@ -184,9 +210,11 @@ In contrast to `let` and `mut` values, `ref` values. They follow reference seman
 
 
 
-#### Control Flow
-##### Loops
+### Control Flow
+#### Loops
 Like in Rust, loops can yield a value:
+> [!WARNING]
+> Loops are not implemented yet
 ```galvan
 mut i = 0
 let j = loop {
@@ -200,6 +228,8 @@ print(i) // 15
 ```
 
 For loops are also supported:
+> [!WARNING]
+> For loops are not implemented yet
 ```galvan
 for 0..<n {
     print(it)
@@ -214,7 +244,9 @@ for 0..<n |i| {
 
 Note that ranges are declared using `..<` (exclusive upper bound) or `..=` (inclusive upper bound).
 
-##### If-Else
+#### If-Else
+> [!WARNING]
+> If-else is not implemented yet
 ```galvan
 if condition {
     print("Condition is true")
@@ -227,6 +259,8 @@ if condition {
 
 #### Try
 You can use try to unwrap a result or optional:
+> [!WARNING]
+> Try is not implemented yet
 ```galvan
 try potential_error {
     print("Optional was {it}")
@@ -245,6 +279,8 @@ try potential_error |value| {
 
 #### Return and Throw
 Return values are implicit, however you can use the `return` keyword to return early:
+> [!WARNING]
+> Return keyword is not implemented yet
 ```galvan 
 fn fib(n: Int) -> Int {
     if n <= 1 {
@@ -255,6 +291,8 @@ fn fib(n: Int) -> Int {
 ```
 
 Returning an error early is done using the `throw` keyword:
+> [!WARNING]
+> Throw keyword is not implemented yet
 ```galvan
 fn checked_divide(a: Float, b: Float) -> Float! {
     if b == 0 {
@@ -264,8 +302,10 @@ fn checked_divide(a: Float, b: Float) -> Float! {
 }
 ```
 
-#### Generics
+### Generics
 In Galvan, type identifiers are always starting with an upper case letter. Using a lower case letter instead introduces a type parameter:
+> [!WARNING]
+> Generics are not implemented yet
 ```galvan
 type Container {
     value: t
@@ -283,7 +323,10 @@ fn concat_hash(self: t, other: t) -> t where t: Hash {
 }
 ```
 
-#### Operators
+### Operators
+#### Builtin Operators
+> [!WARNING]
+> Not all operators are implemented yet
 Arithmetic operators: 
 - `+`: Addition
 - `-`: Subtraction
@@ -324,7 +367,8 @@ Collection operators:
 
 #### Unicode and Custom Operators
 Galvan supports Unicode and custom operators:
-
+> [!WARNING]
+> Custom operators are not implemented yet
 ```galvan
 @infix("⨁")
 fn custom_add(lhs: n, rhs: n) = lhs + rhs
@@ -342,7 +386,9 @@ This section defines custom infix `⨁` and prefix `√` operators.
 Note that no whitespace is allowed between a prefix operator and the operands.
 Infix operators have to be surrounded by whitespace.
 
-#### Closures
+### Closures
+> [!WARNING]
+> Closures are not implemented yet
 Closures are defined using the parameter list syntax:
 ```galvan
 let add = |a, b| a + b
@@ -359,7 +405,10 @@ fn map(self: [t], f: t -> u) -> [u] {
 }
 ```
 
+#### Trailing Closures
 Functions with trailing closures are allowed to omit the parameter list and the () around the parameter list:
+> [!WARNING]
+> Trailing closures are not implemented yet
 ```galvan
 iter
     .map { it * 2 }
