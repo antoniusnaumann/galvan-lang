@@ -72,6 +72,10 @@ declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ 
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
 expression = {
+    infix_expression | non_infix_expression
+}
+
+non_infix_expression = {
     function_call
     | constructor_call
     | member_function_call
@@ -79,6 +83,16 @@ expression = {
     | string_literal
     | number_literal
     | ident
+}
+
+infix_expression = { non_infix_expression ~ infix_operator ~ expression }
+infix_operator = { space ~ infix_operator_ ~ space }
+infix_operator_ = {
+    arithmetic_operator
+    | collection_operator
+    | comparison_operator
+    | logical_operator
+    | custom_infix_operator
 }
 
 function_call = { function_call_base }
@@ -126,14 +140,16 @@ dot = _{ "." }
 semicolon = _{ ";" }
 
 // # Arrows
-arrow = _{ "->" }
-double_arrow = _{ "=>" }
+arrow = _{ "->" | "→" }
+double_arrow = _{ "=>" | "⇒" }
 
 // # Errors
 exclamation_mark = _{ "!" }
 question_mark = _{ "?" }
 
 // # Operators
+custom_infix_operator = { "TODO::CUSTOM_INFIX_OPERATOR_RULE" }
+
 spread = _{".."}
 inclusive_range = _{ "..=" }
 exclusive_range = _{ "..<" }
@@ -149,13 +165,37 @@ div_assign = @{ "/=" }
 rem_assign = @{ "%=" }
 
 // ## Arithmetic
+arithmetic_operator = { plus | minus | multiply | divide | rem | pow }
 plus = @{ "+" }
-concat = @{ "++" }
 minus = @{ "-" }
 multiply = @{ "*" }
 pow = @{ "^" }
 divide = @{ "/" }
 rem = @{ "%" }
+
+// ## Comparison
+comparison_operator = { equal | identical | not_equal | greater | greater_equal | less | less_equal }
+equal = @{ "==" }
+not_equal = @{ "!=" | "≠"}
+identical = @{ "===" | "≡" }
+not_identical = @{ "!==" | "≢" }
+greater = @{ ">" }
+greater_equal = @{ ">=" | "≥"}
+less = @{ "<" }
+less_equal = @{ "<=" | "≤" }
+
+// ## Logical
+logical_operator = { and | or | xor | not }
+and = @{ "&&" | "and" }
+or = @{ "||" | "or" }
+xor = @{ "^^" | "xor" }
+not = @{ "!" | "not" }
+
+// ## Collection
+collection_operator = { concat | remove | in_operator }
+concat = @{ "++" }
+remove = @{ "--" }
+in_operator = @{ "in" | "∈" | "∊" }
 
 // # Keywords
 // ## Top-Level

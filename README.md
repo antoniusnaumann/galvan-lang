@@ -327,6 +327,9 @@ fn concat_hash(self: t, other: t) -> t where t: Hash {
 #### Builtin Operators
 > [!WARNING]
 > Not all operators are implemented yet
+
+Galvan offers a wide range of builtin operators. While all of them have an ASCII variant, Galvan also accepts a unicode symbol where it makes sense.
+
 Arithmetic operators: 
 - `+`: Addition
 - `-`: Subtraction
@@ -335,9 +338,14 @@ Arithmetic operators:
 - `%`: Remainder
 - `^`: Exponentiation
 
+> [!NOTE] 
+> Galvan does not offer unicode alternatives for logical operators
+> as `∧` and `∨` could be confused with `v` and `^` respectively.
+> If you want to use unicode operators, you can define them yourself.
 Logical operators:
 - `and`, `&&`: Logical and
 - `or`, `||`: Logical or
+- `xor`, `^^`: Logical xor
 - `not`, `!`: Logical not
 
 Bitwise operators are prefixed with b:
@@ -355,15 +363,15 @@ Comparison operators:
 - `<=`, `≤`: Less than or equal
 - `>` Greater than
 - `>=`, `≥`:: Greater than or equal
-- `===`: Pointer equality, only works for heap references
-- `!==`: Pointer inequality, only works for heap references
+- `===`, `≡`: Pointer equality, only works for heap references
+- `!==`, `≢`: Pointer inequality, only works for heap references
 
 Collection operators:
 - `++`: Concatenation
 - `--`: Removal
 - `[]`: Indexing
 - `[:]`: Slicing
-- `in`: Membership
+- `in`, `∈`, `∊`: Membership
 
 #### Unicode and Custom Operators
 Galvan supports Unicode and custom operators:
@@ -371,14 +379,15 @@ Galvan supports Unicode and custom operators:
 > Custom operators are not implemented yet
 ```rust
 @infix("⨁")
-fn custom_add(lhs: n, rhs: n) = lhs + rhs
+fn xor(lhs: n, rhs: n) = lhs ^^ rhs
 
 @prefix("√")
 fn sqrt(n: Float) = n.sqrt()
 
 main {
-    let sum = 5 ⨁ 10
-    let value = √16.0
+    let a_bool = true 
+    let other_bool = false
+    let value = if a_bool ⨁ other_bool { √16.0 } else { 3.0 }
 }
 ```
 
