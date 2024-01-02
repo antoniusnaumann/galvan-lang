@@ -18,8 +18,8 @@ multi(vec![
         Some(plain("Int")),
         body(vec![
             function_call("multiply", vec![
-                ident_arg(DeclModifier::Inherited, &["a"]),
-                number("2").into(),
+                (DeclModifier::Inherited, variable("a")),
+                (DeclModifier::Inherited, number("2")),
             ]).into()
         ])
     ).into(),
@@ -31,7 +31,7 @@ multi(vec![
 // TODO: Only insert & around expressions for non-copy types
 "
 pub fn multiply(a: i64, b: i64) -> i64 { }
-pub fn double(a: i64) -> i64 { multiply(&a, &(2)) }
+pub fn double(a: i64) -> i64 { multiply(&(a), &(2)) }
 "
 */
 

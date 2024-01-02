@@ -153,19 +153,26 @@ mod test_utils {
         Ident::new(ident).into()
     }
 
-    pub fn function_call(ident: &str, arguments: Vec<FunctionCallArg>) -> Expression {
-        FunctionCall {
+    pub fn member(receiver: &str, ident: &str) -> Expression {
+        MemberFieldAccess {
+            receiver: Ident::new(receiver),
             identifier: Ident::new(ident),
-            arguments,
         }
         .into()
     }
 
-    pub fn ident_arg(modifier: DeclModifier, idents: &[&str]) -> FunctionCallArg {
-        FunctionCallArg::Ident(IdentArg {
-            modifier,
-            dotted: idents.iter().map(|&ident| Ident::new(ident)).collect(),
-        })
+    pub fn function_call(ident: &str, arguments: Vec<(DeclModifier, Expression)>) -> Expression {
+        FunctionCall {
+            identifier: Ident::new(ident),
+            arguments: arguments
+                .into_iter()
+                .map(|(modifier, expression)| FunctionCallArg {
+                    modifier,
+                    expression,
+                })
+                .collect(),
+        }
+        .into()
     }
 }
 
