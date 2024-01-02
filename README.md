@@ -24,7 +24,7 @@ This is where Galvan comes in: It provides a concise syntax and simplified way o
 Galvan is a modern programming language that transpiles to Rust. It provides a concise syntax while leveraging the full power of Rust's ecosystem. 
 
 ### Basic Syntax and String Formatting
-```galvan
+```rust
 main {
     let name = "Galvan"
     print("Welcome to {name}, the modern language!")
@@ -36,7 +36,7 @@ Note that Galvan strings always support inline format arguments.
 Like in Rust, functions are defined with the `fn` keyword and return the value of the last expression:
 > [!WARNING]
 > Arithmetic expressions are not implemented yet
-```galvan
+```rust
 fn add(a: Int, b: Int) -> Int {
     a + b
 }
@@ -45,14 +45,14 @@ fn add(a: Int, b: Int) -> Int {
 Very short functions can also be defined with = and have their return type inferred:
 > [!WARNING]
 > Defining functions with '=' is not implemented yet
-```galvan
+```rust
 fn add(a: Int, b: Int) = a + b
 ```
 Those functions are not allowed to have newlines in their body.
 
 ### Types 
 Types in Galvan are defined with the `type` keyword.
-```galvan
+```rust
 // TODO: Also use '(' here?
 /// A struct definition
 pub type Color {
@@ -74,7 +74,7 @@ pub type Couple(Person, Person)
 Enums can have associated values, either for all variants or for specific variants. Enums are also declared using the `type` keyword:
 > [!WARNING]
 > Enums are not implemented yet
-```galvan
+```rust
 /// An enum type
 /// Enums can have general fields that are accessible to all enum variants
 pub type Theme(name: String) {
@@ -89,7 +89,7 @@ pub type Theme(name: String) {
 
 ### Member Functions
 All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
-```galvan
+```rust
 pub type Dog (name: String)
 
 fn bark(self: Dog) {
@@ -100,7 +100,7 @@ fn bark(self: Dog) {
 ### Collections
 
 Galvan features intuitive syntax for collections:
-```galvan
+```rust
 pub type IntArray = [Int]
 pub type StringSet = {String}
 pub type MyDict = {String: Int}
@@ -112,7 +112,7 @@ Ordered types use `[]`, unordered types use `{}`.
 ### Optionals and Result Types
 Galvan provides concise syntax for optionals and result types:
 
-```galvan
+```rust
 type OptionalInt = Int?
 type FileOrErr = File!
 type FileOrIoErr = File!IoError
@@ -121,7 +121,7 @@ The error variant is specified after the `!` symbol. If it is not given, a flexi
 
 > [!WARNING]
 > `!`, `?` and `??` are not implemented yet
-```galvan
+```rust
 fn open_file(path: String) -> File! {
     let file = File::open(path)!
     let contents = file.read_to_string()?.find("foo")?.uppercase() ?? ""
@@ -137,7 +137,7 @@ fn open_file(path: String) -> File! {
 Galvan supports union types everywhere where a type identifier is expected:
 > [!WARNING]
 > Union types are not implemented yet
-```galvan
+```rust
 fn print_value(value: Int | String) {
     print("Value: {value}")
 }
@@ -146,7 +146,7 @@ fn print_value(value: Int | String) {
 ### Pass-by-Value and Pass-by-Reference
 By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference:
 For consistency, the `let` keyword is allowed as well but redundant as parameters are passed by value by default.
-```galvan
+```rust
 fn add_one(mut value: Int) {
     value += 1
 }
@@ -158,7 +158,7 @@ fn incremented(let value : Int) -> Int {
 ```
 
 Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan does not have immutable references, as all values are copy-on-write.
-```galvan
+```rust
 // No copy is happening here as the value is not mutated
 // Arguments are passed by value by default
 fn bark_at(self: Dog, other: Dog) {
@@ -166,7 +166,7 @@ fn bark_at(self: Dog, other: Dog) {
 }
 ```
 
-```galvan
+```rust
 // A copy is happening here as the value is mutated
 fn shout_at(self: Dog, other: Dog) {
     // Redeclaring is neccessary as value parameters cannot be mutated
@@ -177,7 +177,7 @@ fn shout_at(self: Dog, other: Dog) {
 }
 ```
 
-```galvan
+```rust
 fn grow(mut self: Dog) {
     // This mutates the original value as it is passed by reference
     self.age += 1
@@ -186,7 +186,7 @@ fn grow(mut self: Dog) {
 
 ### Stored References
 References that are allowed to be stored in structs have to be declared as heap references. This is done by prefixing the declaration with `ref`:
-```galvan
+```rust
 pub type Person {
     name: String
     age: Int
@@ -215,7 +215,7 @@ In contrast to `let` and `mut` values, `ref` values. They follow reference seman
 Like in Rust, loops can yield a value:
 > [!WARNING]
 > Loops are not implemented yet
-```galvan
+```rust
 mut i = 0
 let j = loop {
     if i == 15 {
@@ -230,13 +230,13 @@ print(i) // 15
 For loops are also supported:
 > [!WARNING]
 > For loops are not implemented yet
-```galvan
+```rust
 for 0..<n {
     print(it)
 }
 ```
 The loop variable is available via the `it` keyword, but can also be named explicitly using closure parameter syntax:
-```galvan
+```rust
 for 0..<n |i| {
     print(i)
 }
@@ -247,7 +247,7 @@ Note that ranges are declared using `..<` (exclusive upper bound) or `..=` (incl
 #### If-Else
 > [!WARNING]
 > If-else is not implemented yet
-```galvan
+```rust
 if condition {
     print("Condition is true")
 } else if other_condition {
@@ -261,7 +261,7 @@ if condition {
 You can use try to unwrap a result or optional:
 > [!WARNING]
 > Try is not implemented yet
-```galvan
+```rust
 try potential_error {
     print("Optional was {it}")
 } else {
@@ -269,7 +269,7 @@ try potential_error {
 }
 ```
 The unwrapped variant is available via the it keyword, like in closures. You can also name it using closure parameter syntax to declare them explicitly:
-```galvan
+```rust
 try potential_error |value| {
     print("Optional was {value}")
 } else |error| {
@@ -281,7 +281,7 @@ try potential_error |value| {
 Return values are implicit, however you can use the `return` keyword to return early:
 > [!WARNING]
 > Return keyword is not implemented yet
-```galvan 
+```rust 
 fn fib(n: Int) -> Int {
     if n <= 1 {
         return n
@@ -293,7 +293,7 @@ fn fib(n: Int) -> Int {
 Returning an error early is done using the `throw` keyword:
 > [!WARNING]
 > Throw keyword is not implemented yet
-```galvan
+```rust
 fn checked_divide(a: Float, b: Float) -> Float! {
     if b == 0 {
         throw "Division by zero"
@@ -306,7 +306,7 @@ fn checked_divide(a: Float, b: Float) -> Float! {
 In Galvan, type identifiers are always starting with an upper case letter. Using a lower case letter instead introduces a type parameter:
 > [!WARNING]
 > Generics are not implemented yet
-```galvan
+```rust
 type Container {
     value: t
 }
@@ -317,7 +317,7 @@ fn get_value(self: Container<t>) -> t {
 ```
 
 Bounds can be specified using the `where` keyword:
-```galvan
+```rust
 fn concat_hash(self: t, other: t) -> t where t: Hash {
     self.hash() ++ other.hash()
 }
@@ -369,7 +369,7 @@ Collection operators:
 Galvan supports Unicode and custom operators:
 > [!WARNING]
 > Custom operators are not implemented yet
-```galvan
+```rust
 @infix("⨁")
 fn custom_add(lhs: n, rhs: n) = lhs + rhs
 
@@ -390,12 +390,12 @@ Infix operators have to be surrounded by whitespace.
 > [!WARNING]
 > Closures are not implemented yet
 Closures are defined using the parameter list syntax:
-```galvan
+```rust
 let add = |a, b| a + b
 ```
 
 Closure types use the arrow syntax:
-```galvan
+```rust
 fn map(self: [t], f: t -> u) -> [u] {
     mut result = []
     for self {
@@ -409,7 +409,7 @@ fn map(self: [t], f: t -> u) -> [u] {
 Functions with trailing closures are allowed to omit the parameter list and the () around the parameter list:
 > [!WARNING]
 > Trailing closures are not implemented yet
-```galvan
+```rust
 iter
     .map { it * 2 }
     // Trailing closures with only one parameter can use the it keyword instead of naming it explicitly
@@ -419,7 +419,7 @@ iter
 ```
 
 Trailing closures can also use numbered parameters instead of giving a parameter list
-```galvan
+```rust
 iter
     .map { #0 * 2 }
     .filter { #0 % 2 == 0 }
