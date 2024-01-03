@@ -71,13 +71,58 @@ assignment_target = { member_field_access | ident }
 declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
+// TODO: Add block expressions and parenthesized expressions
 expression = {
-    infix_expression | non_infix_expression_
+    logical_expression
+    | comparison_expression
+    | collection_expression
+    | arithmetic_expression
+    | function_call
+    | constructor_call
+    | member_function_call
+    | member_field_access
+    | string_literal
+    | number_literal
+    | ident
 }
 
-non_infix_expression = { non_infix_expression_ }
+allowed_in_logical = !{
+    comparison_expression
+    | collection_expression
+    | arithmetic_expression
+    | function_call
+    | constructor_call
+    | member_function_call
+    | member_field_access
+    | string_literal
+    | number_literal
+    | ident
+}
 
-non_infix_expression_ = _{
+allowed_in_comparison = !{
+    collection_expression
+    | arithmetic_expression
+    | function_call
+    | constructor_call
+    | member_function_call
+    | member_field_access
+    | string_literal
+    | number_literal
+    | ident
+}
+
+allowed_in_collection = !{
+    arithmetic_expression
+    | function_call
+    | constructor_call
+    | member_function_call
+    | member_field_access
+    | string_literal
+    | number_literal
+    | ident
+}
+
+allowed_in_arithmetic = !{
     function_call
     | constructor_call
     | member_function_call
@@ -87,9 +132,13 @@ non_infix_expression_ = _{
     | ident
 }
 
-infix_expression = { non_infix_expression ~ infix_operator ~ expression }
+logical_expression = ${ allowed_in_logical ~ (space+ ~ logical_infix_operator ~ space+ ~ allowed_in_logical)+ }
+comparison_expression = ${ allowed_in_comparison ~ space+ ~ comparison_operator ~ space+ ~ allowed_in_comparison }
+collection_expression = ${ allowed_in_collection ~ space+ ~ collection_operator ~ space+ ~ allowed_in_collection }
+arithmetic_expression = ${ allowed_in_arithmetic ~ (space+ ~ arithmetic_operator ~ space+ ~ allowed_in_arithmetic)+ }
+
 infix_operator = { space ~ infix_operator_ ~ space }
-infix_operator_ = {
+ infix_operator_ = {
     arithmetic_operator
     | collection_operator
     | comparison_operator

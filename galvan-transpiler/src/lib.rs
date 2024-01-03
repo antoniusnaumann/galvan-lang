@@ -339,3 +339,12 @@ impl Transpile for String {
         self.to_owned()
     }
 }
+
+impl<T> Transpile for Box<T>
+where
+    T: Transpile,
+{
+    fn transpile(&self, ctx: &Context) -> String {
+        self.as_ref().transpile(ctx)
+    }
+}

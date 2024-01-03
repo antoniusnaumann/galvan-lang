@@ -43,6 +43,7 @@ pub fn generate_code_tests(input: proc_macro::TokenStream) -> proc_macro::TokenS
         .into_iter()
         .map(|entry| entry.unwrap())
         .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('_'))
         .map(|entry| entry.path().to_path_buf())
         .map(|path| (module_hierarchy(&path), generate_test(path, &macro_input)))
         .collect::<Vec<(Vec<String>, TokenStream)>>();

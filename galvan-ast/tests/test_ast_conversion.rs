@@ -19,6 +19,12 @@ mod test_utils {
         PestAst::new(items)
     }
 
+    pub fn main(statements: Vec<Statement>) -> RootItem {
+        RootItem::Main(MainDecl {
+            body: Block { statements },
+        })
+    }
+
     pub fn struct_type(
         visibility: Visibility,
         ident: &str,
@@ -171,6 +177,21 @@ mod test_utils {
                     expression,
                 })
                 .collect(),
+        }
+        .into()
+    }
+
+    pub fn decl(
+        modifier: DeclModifier,
+        ident: &str,
+        ty: Option<TypeElement>,
+        expression: Expression,
+    ) -> Statement {
+        Declaration {
+            decl_modifier: modifier,
+            identifier: Ident::new(ident),
+            type_annotation: ty,
+            expression: Some(expression),
         }
         .into()
     }

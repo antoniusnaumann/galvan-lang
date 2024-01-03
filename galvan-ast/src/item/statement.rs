@@ -25,7 +25,61 @@ pub struct Declaration {
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::expression))]
-pub type Expression = FunctionCall
+pub type Expression = LogicalOperation
+    + ComparisonOperation
+    + CollectionOperation
+    + ArithmeticOperation
+    + FunctionCall
+    + ConstructorCall
+    + MemberFunctionCall
+    + MemberFieldAccess
+    + StringLiteral
+    + NumberLiteral
+    + Ident;
+
+#[type_union(super = Expression)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::allowed_in_logical))]
+pub(crate) type AllowedInLogical = ComparisonOperation
+    + CollectionOperation
+    + ArithmeticOperation
+    + FunctionCall
+    + ConstructorCall
+    + MemberFunctionCall
+    + MemberFieldAccess
+    + StringLiteral
+    + NumberLiteral
+    + Ident;
+
+#[type_union(super = Expression)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::allowed_in_comparison))]
+pub(crate) type AllowedInComparison = CollectionOperation
+    + ArithmeticOperation
+    + FunctionCall
+    + ConstructorCall
+    + MemberFunctionCall
+    + MemberFieldAccess
+    + StringLiteral
+    + NumberLiteral
+    + Ident;
+
+#[type_union(super = Expression)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::allowed_in_collection))]
+pub(crate) type AllowedInCollection = ArithmeticOperation
+    + FunctionCall
+    + ConstructorCall
+    + MemberFunctionCall
+    + MemberFieldAccess
+    + StringLiteral
+    + NumberLiteral
+    + Ident;
+
+#[type_union(super = Expression)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::allowed_in_arithmetic))]
+pub(crate) type AllowedInArithmetic = FunctionCall
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess
