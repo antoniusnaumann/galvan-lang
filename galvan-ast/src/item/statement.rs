@@ -1,5 +1,4 @@
 use super::*;
-use derive_more::From;
 use galvan_pest::Rule;
 use typeunion::type_union;
 

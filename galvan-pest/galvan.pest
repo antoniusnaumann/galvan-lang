@@ -72,10 +72,12 @@ declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ 
 declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
 expression = {
-    infix_expression | non_infix_expression
+    infix_expression | non_infix_expression_
 }
 
-non_infix_expression = {
+non_infix_expression = { non_infix_expression_ }
+
+non_infix_expression_ = _{
     function_call
     | constructor_call
     | member_function_call
@@ -91,7 +93,7 @@ infix_operator_ = {
     arithmetic_operator
     | collection_operator
     | comparison_operator
-    | logical_operator
+    | logical_infix_operator
     | custom_infix_operator
 }
 
@@ -165,16 +167,16 @@ div_assign = @{ "/=" }
 rem_assign = @{ "%=" }
 
 // ## Arithmetic
-arithmetic_operator = { plus | minus | multiply | divide | rem | pow }
+arithmetic_operator = { plus | minus | multiply | divide | remainder | power }
 plus = @{ "+" }
 minus = @{ "-" }
 multiply = @{ "*" }
-pow = @{ "^" }
+power = @{ "^" }
 divide = @{ "/" }
-rem = @{ "%" }
+remainder = @{ "%" }
 
 // ## Comparison
-comparison_operator = { equal | identical | not_equal | greater | greater_equal | less | less_equal }
+comparison_operator = { equal | not_equal | greater | greater_equal | less | less_equal | identical | not_identical }
 equal = @{ "==" }
 not_equal = @{ "!=" | "≠"}
 identical = @{ "===" | "≡" }
@@ -185,17 +187,17 @@ less = @{ "<" }
 less_equal = @{ "<=" | "≤" }
 
 // ## Logical
-logical_operator = { and | or | xor | not }
+logical_infix_operator = { and | or | xor }
 and = @{ "&&" | "and" }
 or = @{ "||" | "or" }
 xor = @{ "^^" | "xor" }
 not = @{ "!" | "not" }
 
 // ## Collection
-collection_operator = { concat | remove | in_operator }
+collection_operator = { concat | remove | contains }
 concat = @{ "++" }
 remove = @{ "--" }
-in_operator = @{ "in" | "∈" | "∊" }
+contains = @{ "in" | "∈" | "∊" }
 
 // # Keywords
 // ## Top-Level
