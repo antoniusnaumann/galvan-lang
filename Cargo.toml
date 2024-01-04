@@ -13,6 +13,7 @@ galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev04" }
 galvan-resolver = { path = "galvan-resolver", version = "0.0.0-dev04" }
 
 thiserror = "1.0.51"
+itertools = "0.12.0"
 
 [package]
 name = "galvan"

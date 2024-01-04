@@ -15,8 +15,8 @@ pest_derive = "2.7.5"
 from-pest = "0.3.2"
 derive_more = { version = "0.99.17", features = [] }
 typeunion = "0.1.0"
-itertools = "0.12.0"
 
+itertools.workspace = true
 thiserror.workspace = true
 
 galvan-pest.workspace = true
