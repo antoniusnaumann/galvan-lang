@@ -321,5 +321,7 @@ raw_string_literal = _{ raw_string_quote ~ (!raw_string_quote ~ ANY)* ~ raw_stri
 string_quote = _{ "\"" }
 raw_string_quote = _{ "#\"" }
 
-number_literal = @{ ("0" | ASCII_NONZERO_DIGIT ~ (ASCII_DIGIT)*) ~ (dot ~ (ASCII_DIGIT)+)?  }
+number_literal = @{ ("-" | "+" )? ~ ("0" | ASCII_NONZERO_DIGIT ~ (ASCII_DIGIT)*) ~ ((dot ~ (ASCII_DIGIT)+) ~ float_suffix | integer_suffix | float_suffix)?  }
+integer_suffix = _{ "_"? ~ ("u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "usize") }
+float_suffix = _{ "_"? ~ ("f32" | "f64") }
 boolean_literal = @{ true_keyword | false_keyword }
