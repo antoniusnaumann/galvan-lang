@@ -1,4 +1,7 @@
-use derive_more::From;
+use derive_more::{Display, From};
+use from_pest::pest::iterators::Pairs;
+use from_pest::ConversionError::NoMatch;
+use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
 
 use super::string;
@@ -36,5 +39,32 @@ impl NumberLiteral {
     }
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+#[derive(Clone, Copy, Display, Debug, PartialEq, Eq, From)]
+pub struct BooleanLiteral(pub bool);
+
+impl FromPest<'_> for BooleanLiteral {
+    type Rule = Rule;
+    type FatalError = Void;
+
+    fn from_pest(
+        pairs: &mut Pairs<'_, Self::Rule>,
+    ) -> Result<Self, ConversionError<Self::FatalError>> {
+        let Some(pair) = pairs.next() else {
+            return Err(NoMatch);
+        };
+
+        if pair.as_rule() != Rule::boolean_literal {
+            return Err(NoMatch);
+        }
+
+        let mut pairs = pair.into_inner();
+        match pairs.next() {
+            Some(b) if b.as_rule() == Rule::true_keyword => Ok(BooleanLiteral(true)),
+            Some(b) if b.as_rule() == Rule::false_keyword => Ok(BooleanLiteral(false)),
+            _ => unreachable!(),
+        }
     }
 }

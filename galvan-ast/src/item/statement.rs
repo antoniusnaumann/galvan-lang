@@ -33,6 +33,7 @@ pub type Expression = LogicalOperation
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess
+    + BooleanLiteral
     + StringLiteral
     + NumberLiteral
     + Ident;
@@ -47,6 +48,7 @@ pub(crate) type AllowedInLogical = ComparisonOperation
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess
+    + BooleanLiteral
     + StringLiteral
     + NumberLiteral
     + Ident;
@@ -60,6 +62,7 @@ pub(crate) type AllowedInComparison = CollectionOperation
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess
+    + BooleanLiteral
     + StringLiteral
     + NumberLiteral
     + Ident;
@@ -72,6 +75,7 @@ pub(crate) type AllowedInCollection = ArithmeticOperation
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess
+    + BooleanLiteral
     + StringLiteral
     + NumberLiteral
     + Ident;
@@ -83,6 +87,7 @@ pub(crate) type AllowedInArithmetic = FunctionCall
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess
+    + BooleanLiteral
     + StringLiteral
     + NumberLiteral
     + Ident;

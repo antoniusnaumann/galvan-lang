@@ -81,6 +81,7 @@ expression = {
     | constructor_call
     | member_function_call
     | member_field_access
+    | boolean_literal
     | string_literal
     | number_literal
     | ident
@@ -94,6 +95,7 @@ allowed_in_logical = !{
     | constructor_call
     | member_function_call
     | member_field_access
+    | boolean_literal
     | string_literal
     | number_literal
     | ident
@@ -106,6 +108,7 @@ allowed_in_comparison = !{
     | constructor_call
     | member_function_call
     | member_field_access
+    | boolean_literal
     | string_literal
     | number_literal
     | ident
@@ -117,6 +120,7 @@ allowed_in_collection = !{
     | constructor_call
     | member_function_call
     | member_field_access
+    | boolean_literal
     | string_literal
     | number_literal
     | ident
@@ -127,6 +131,7 @@ allowed_in_arithmetic = !{
     | constructor_call
     | member_function_call
     | member_field_access
+    | boolean_literal
     | string_literal
     | number_literal
     | ident
@@ -138,7 +143,7 @@ collection_expression = ${ allowed_in_collection ~ space+ ~ collection_operator 
 arithmetic_expression = ${ allowed_in_arithmetic ~ (space+ ~ arithmetic_operator ~ space+ ~ allowed_in_arithmetic)+ }
 
 infix_operator = { space ~ infix_operator_ ~ space }
- infix_operator_ = {
+infix_operator_ = {
     arithmetic_operator
     | collection_operator
     | comparison_operator
@@ -324,4 +329,4 @@ raw_string_quote = _{ "#\"" }
 number_literal = @{ ("-" | "+" )? ~ ("0" | ASCII_NONZERO_DIGIT ~ (ASCII_DIGIT)*) ~ ((dot ~ (ASCII_DIGIT)+) ~ float_suffix | integer_suffix | float_suffix)?  }
 integer_suffix = _{ "_"? ~ ("u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "usize") }
 float_suffix = _{ "_"? ~ ("f32" | "f64") }
-boolean_literal = @{ true_keyword | false_keyword }
+boolean_literal = ${ true_keyword | false_keyword }

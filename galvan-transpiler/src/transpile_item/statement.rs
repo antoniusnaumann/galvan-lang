@@ -1,7 +1,9 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::{Block, Transpile};
-use galvan_ast::{DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral};
+use galvan_ast::{
+    BooleanLiteral, DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral,
+};
 
 impl_transpile!(Block, "{{\n{}\n}}", statements);
 impl_transpile_variants!(Statement; Assignment, Expression, Declaration);
@@ -58,6 +60,7 @@ impl_transpile_variants! { Expression;
     ConstructorCall,
     MemberFunctionCall,
     MemberFieldAccess,
+    BooleanLiteral,
     StringLiteral,
     NumberLiteral,
     Ident
@@ -74,5 +77,11 @@ impl Transpile for NumberLiteral {
     fn transpile(&self, _: &Context) -> String {
         // TODO: Parse number and validate type
         format!("{}", self.as_str())
+    }
+}
+
+impl Transpile for BooleanLiteral {
+    fn transpile(&self, _: &Context) -> String {
+        format!("{self}")
     }
 }
