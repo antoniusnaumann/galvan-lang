@@ -21,9 +21,10 @@ This is where Galvan comes in: It provides a concise syntax and simplified way o
 ## A Tour of Galvan
 ### Introduction to Galvan
 
-Galvan is a modern programming language that transpiles to Rust. It provides a concise syntax while leveraging the full power of Rust's ecosystem. 
+Galvan is a modern programming language that transpiles to Rust. It provides a concise syntax while leveraging the full power of Rust's ecosystem.
 
 ### Basic Syntax and String Formatting
+In Galvan, `main` is not a function but an "entry point".
 ```rust
 main {
     let name = "Galvan"
@@ -53,7 +54,6 @@ Those functions are not allowed to have newlines in their body.
 ### Types 
 Types in Galvan are defined with the `type` keyword.
 ```rust
-// TODO: Also use '(' here?
 /// A struct definition
 pub type Color {
     r: Int
@@ -90,21 +90,26 @@ pub type Theme(name: String) {
 ### Member Functions
 All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
 ```rust
-pub type Dog (name: String)
+pub type Dog(name: String)
 
 fn bark(self: Dog) {
     print("{self.name} barks")
+}
+
+main {
+    let dog = Dog(name: "Bello")
+    dog.bark()
 }
 ```
 
 ### Collections
 
-Galvan features intuitive syntax for collections:
+Galvan features syntactic sugar for collection types:
 ```rust
-pub type IntArray = [Int]
-pub type StringSet = {String}
-pub type MyDict = {String: Int}
-pub type OrderedDict = [String: Int]
+pub type IntArray = [Int] // This is a Vec
+pub type StringSet = {String} // This is a HashSet
+pub type MyDict = {String: Int} // This is a HashMap
+pub type OrderedDict = [String: Int] // This is an IndexMap
 ```
 
 Ordered types use `[]`, unordered types use `{}`.
@@ -130,8 +135,10 @@ fn open_file(path: String) -> File! {
 }
 ```
 `!` operator unwraps the result and early returns if the result is an error. This is identical to the `?` operator in Rust.
+
 `?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not none.
-`??` is the null-coalescing operator, you can use it to provide a default if the left-hand side expression is none
+
+`??` is the null-coalescing operator, you can use it to provide a default if the left-hand side expression is none. The right-hand side of the null-coalescing operator cannot be a return or throw expression.
 
 ### Union Types
 Galvan supports union types everywhere where a type identifier is expected:
@@ -144,6 +151,7 @@ fn print_value(value: Int | String) {
 ```
 
 ### Pass-by-Value and Pass-by-Reference
+#### mutable vs. immutable function parameters
 By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference:
 For consistency, the `let` keyword is allowed as well but redundant as parameters are passed by value by default.
 ```rust
@@ -184,7 +192,7 @@ fn grow(mut self: Dog) {
 }
 ```
 
-### Stored References
+#### Stored References
 References that are allowed to be stored in structs have to be declared as heap references. This is done by prefixing the declaration with `ref`:
 ```rust
 pub type Person {
@@ -208,7 +216,28 @@ main {
 Heap references use atomic reference counting to be auto-freed when no longer needed and are always mutable.
 In contrast to `let` and `mut` values, `ref` values. They follow reference semantics, meaning that they point to the same object. For this reason, they are always mutable.
 
+#### Argument Modifiers
+When calling a function with `mut` or `ref` parameters, you have to annotate the argument respectively. This is not the case for the receiver of a member function.
 
+```rust
+fn make_uppercase(mut arg: String) { ... }
+
+fn store(ref arg: String) { ... }
+
+main {
+    ref my_string = "This is a heap ref"
+    
+    // Argument must be annotated as mutable
+    make_uppercase(mut my_string)
+    // Argument must be annotated as ref
+    store(ref my_string)
+}
+```
+By annotating the argument as `mut`, the caller acknowledges that the given argument might be mutated in-place when calling this function.
+Immutable variables or members of immutable struct instances (declared with `let`) cannot be passed as `mut`. 
+
+By annotating the argument as `ref`, the caller acknowledges that the function might store a mutable (heap) reference.
+Only variables and members declared as `ref` can be passed as `ref`
 
 ### Control Flow
 #### Loops
