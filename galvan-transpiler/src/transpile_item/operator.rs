@@ -56,14 +56,14 @@ impl Transpile for CollectionOperation {
                 // TODO: Check if underlying expression is already owned or copy
                 transpile!(
                     ctx,
-                    "[({}).clone(), ({}).clone()].concat()",
+                    "[({}).to_owned(), ({}).to_owned()].concat()",
                     self.left,
                     self.right
                 )
             }
             CollectionOperator::Remove => todo!("Implement remove operator"),
             CollectionOperator::Contains => {
-                transpile!(ctx, "({}).contains(&({}))", self.left, self.right)
+                transpile!(ctx, "({}).contains(&({}))", self.right, self.left)
             }
         }
     }

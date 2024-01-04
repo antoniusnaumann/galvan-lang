@@ -45,7 +45,7 @@ impl Transpile for Declaration {
 fn transpile_assignment_expression(ctx: &Context, keyword: &str, expr: &Expression) -> String {
     match expr {
         Expression::Ident(ident) => {
-            transpile!(ctx, "{}.clone()", ident)
+            transpile!(ctx, "{}.to_owned()", ident)
         }
         expr => expr.transpile(ctx),
     }
