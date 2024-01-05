@@ -3,11 +3,13 @@ use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::{StructTypeMember, Transpile, TupleTypeMember, TypeDecl};
 use galvan_ast::DeclModifier;
 
+static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
+
 impl_transpile_match! { TypeDecl,
-    Tuple(def) => ("{} struct {}({});", def.visibility, def.ident, def.members),
-    Struct(def) => ("{} struct {} {{\n{}\n}}", def.visibility, def.ident, def.members),
+    Tuple(def) => ("{DERIVE} {} struct {}({});", def.visibility, def.ident, def.members),
+    Struct(def) => ("{DERIVE} {} struct {} {{\n{}\n}}", def.visibility, def.ident, def.members),
     Alias(def) => ("{} type {} = {};", def.visibility, def.ident, def.r#type),
-    Empty(def) => ("{} struct {};", def.visibility, def.ident),
+    Empty(def) => ("{DERIVE} {} struct {};", def.visibility, def.ident),
 }
 
 impl_transpile!(TupleTypeMember, "{}", r#type);

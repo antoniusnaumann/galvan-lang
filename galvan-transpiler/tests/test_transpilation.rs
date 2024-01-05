@@ -33,12 +33,14 @@ mod test_utils {
             .join("\n\n")
             .lines()
             .filter(|line| {
+                let line = line.trim();
                 !line.starts_with("pub use")
                     && !line.starts_with("use")
                     && !line.starts_with("mod")
                     && !line.starts_with("pub(crate) mod")
                     && !line.starts_with("pub mod")
                     && !line.starts_with("#![")
+                    && !line.starts_with("extern crate galvan")
             })
             .dropping_back(1)
             .collect::<Vec<_>>()

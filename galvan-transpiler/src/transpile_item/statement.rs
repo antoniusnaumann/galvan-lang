@@ -36,16 +36,26 @@ impl Transpile for Declaration {
         // TODO: Clone inner type from ref types to non-ref types
         self.expression
             .as_ref()
-            .map(|expr| transpile_assignment_expression(ctx, keyword, expr))
+            .map(|expr| transpile_assignment_expression(ctx, expr))
+            .map(|expr| {
+                if self.decl_modifier == DeclModifier::Ref {
+                    format!("(&({expr})).__to_ref()")
+                } else {
+                    expr
+                }
+            })
             .map(|expr| format!("{keyword} {identifier}{ty} = {expr}"))
             .unwrap_or_else(|| format!("{keyword} {identifier}{ty}"))
     }
 }
 
-fn transpile_assignment_expression(ctx: &Context, keyword: &str, expr: &Expression) -> String {
+fn transpile_assignment_expression(ctx: &Context, expr: &Expression) -> String {
     match expr {
         Expression::Ident(ident) => {
             transpile!(ctx, "{}.to_owned()", ident)
+        }
+        Expression::MemberFieldAccess(access) => {
+            transpile!(ctx, "{}.to_owned()", access)
         }
         expr => expr.transpile(ctx),
     }

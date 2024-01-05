@@ -1,3 +1,5 @@
+pub mod std;
+
 pub use galvan_transpiler::galvan_module;
 
 #[cfg(feature = "build")]

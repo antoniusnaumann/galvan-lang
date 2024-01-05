@@ -3,7 +3,7 @@ single(struct_type(inherited(), "WithRef", vec![ref_struct_member("ref_member", 
 */
 
 /*# TRANSPILE
-"pub(crate) struct WithRef {
+"#[derive(Clone, Debug, PartialEq)] pub(crate) struct WithRef {
     pub(crate) ref_member: std::sync::Arc<std::sync::Mutex<String>>
 }"
 */

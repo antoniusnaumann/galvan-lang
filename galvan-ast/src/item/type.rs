@@ -45,6 +45,7 @@ pub struct StructTypeDecl {
     pub ident: TypeIdent,
     pub members: Vec<StructTypeMember>,
 }
+
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::struct_field))]
 pub struct StructTypeMember {

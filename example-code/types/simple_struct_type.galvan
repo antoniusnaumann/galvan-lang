@@ -3,7 +3,7 @@ single(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain(
 */
 
 /*# TRANSPILE
-"pub struct SimpleStruct {
+"#[derive(Clone, Debug, PartialEq)] pub struct SimpleStruct {
     pub(crate) member: String
 }"
 */

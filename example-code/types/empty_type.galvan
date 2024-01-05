@@ -3,7 +3,7 @@ single(empty_type(inherited(), "EmptyMarker"))
 */
 
 /*# TRANSPILE
-"pub(crate) struct EmptyMarker;"
+"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyMarker;"
 */
 
 type EmptyMarker

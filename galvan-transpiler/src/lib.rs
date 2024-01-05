@@ -133,7 +133,7 @@ fn transpile_segmented(
     let lib = TranspileOutput {
         file_name: galvan_module!("rs").into(),
         content: format!(
-            "pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
+            "extern crate galvan; pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
             galvan_module!(),
             SUPPRESS_WARNINGS,
             [modules, toplevel_functions, &main].join("\n\n")

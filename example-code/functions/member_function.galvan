@@ -16,6 +16,7 @@ multi(vec![
 
 /*# TRANSPILE
 "
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Dog;
 impl Dog {
 pub(crate) fn woof(&self) { }

@@ -3,7 +3,7 @@ single(struct_type(inherited(), "EmptyStruct", vec![]))
 */
 
 /*# TRANSPILE
-"pub(crate) struct EmptyStruct { }"
+"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyStruct { }"
 */
 
 type EmptyStruct {}

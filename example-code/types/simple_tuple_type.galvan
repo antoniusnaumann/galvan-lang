@@ -3,7 +3,7 @@ single(tuple_type(public(), "SimpleTuple", vec![tuple_member(plain("Int")), tupl
 */
 
 /*# TRANSPILE
-"pub struct SimpleTuple(i64, i64);"
+"#[derive(Clone, Debug, PartialEq)] pub struct SimpleTuple(i64, i64);"
 */
 
 pub type SimpleTuple(Int, Int)
