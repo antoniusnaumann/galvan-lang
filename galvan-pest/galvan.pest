@@ -73,6 +73,37 @@ declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
 
 // TODO: Add block expressions and parenthesized expressions
 expression = {
+    else_expression
+    | closure
+    | trailing_closure_call
+    | logical_expression
+    | comparison_expression
+    | collection_expression
+    | arithmetic_expression
+    | function_call
+    | constructor_call
+    | member_function_call
+    | member_field_access
+    | boolean_literal
+    | string_literal
+    | number_literal
+    | ident
+    | block_expression
+}
+
+allowed_before_else_expression = !{
+    trailing_closure_call
+    | logical_expression
+    | arithmetic_expression
+    | function_call
+    | constructor_call
+    | member_function_call
+    | member_field_access
+    | ident
+    | block_expression
+}
+
+allowed_in_trailing_closure_call = !{
     logical_expression
     | comparison_expression
     | collection_expression
@@ -85,6 +116,7 @@ expression = {
     | string_literal
     | number_literal
     | ident
+    | block_expression
 }
 
 allowed_in_logical = !{
@@ -99,6 +131,7 @@ allowed_in_logical = !{
     | string_literal
     | number_literal
     | ident
+    | block_expression
 }
 
 allowed_in_comparison = !{
@@ -112,6 +145,7 @@ allowed_in_comparison = !{
     | string_literal
     | number_literal
     | ident
+    | block_expression
 }
 
 allowed_in_collection = !{
@@ -124,6 +158,7 @@ allowed_in_collection = !{
     | string_literal
     | number_literal
     | ident
+    | block_expression
 }
 
 allowed_in_arithmetic = !{
@@ -135,8 +170,17 @@ allowed_in_arithmetic = !{
     | string_literal
     | number_literal
     | ident
+    | block_expression
 }
 
+closure = { "|" ~ closure_arguments ~ "|" ~ block_expression }
+closure_arguments = _{ (closure_argument ~ (comma ~ closure_argument)*)? ~ comma? }
+closure_argument = { ident ~ (colon ~ type_item)? }
+block_expression = { (brace_open ~ body ~ brace_close) }
+
+// TODO: Also allow block expression here as closure with implicit names ("it" or #0, #1, #2)
+trailing_closure_call = { ident ~ allowed_in_trailing_closure_call ~ (closure | newline) }
+else_expression = { allowed_before_else_expression ~ else_keyword ~ block_expression }
 logical_expression = ${ allowed_in_logical ~ (space+ ~ logical_infix_operator ~ space+ ~ allowed_in_logical)+ }
 comparison_expression = ${ allowed_in_comparison ~ space+ ~ comparison_operator ~ space+ ~ allowed_in_comparison }
 collection_expression = ${ allowed_in_collection ~ space+ ~ collection_operator ~ space+ ~ allowed_in_collection }
@@ -275,6 +319,8 @@ const_keyword = @{ "const" }
 pub_keyword = @{ "pub" }
 
 at_sign = @{ "@" }
+
+else_keyword = @{ "else" }
 
 // # Type Definitions
 type_item = { result_type | optional_type | allowed_in_error_variant }
