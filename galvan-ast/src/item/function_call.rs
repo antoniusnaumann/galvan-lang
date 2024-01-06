@@ -35,7 +35,6 @@ impl FromPest<'_> for FunctionCall {
                     Vec::<FunctionCallArg>::from_pest(&mut pairs)?
                 } else {
                     let arguments = Vec::<TrailingClosureCallArg>::from_pest(&mut pairs)?;
-                    let closure = Closure::from_pest(&mut pairs)?;
                     let mut arguments = arguments
                         .into_iter()
                         .map(|arg| FunctionCallArg {
@@ -43,10 +42,12 @@ impl FromPest<'_> for FunctionCall {
                             expression: arg.expression.into(),
                         })
                         .collect::<Vec<_>>();
-                    arguments.push(FunctionCallArg {
-                        modifier: DeclModifier::Inherited,
-                        expression: closure.into(),
-                    });
+                    if let Ok(closure) = Closure::from_pest(&mut pairs) {
+                        arguments.push(FunctionCallArg {
+                            modifier: DeclModifier::Inherited,
+                            expression: closure.into(),
+                        });
+                    }
                     arguments
                 };
 

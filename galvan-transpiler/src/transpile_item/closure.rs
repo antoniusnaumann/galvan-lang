@@ -4,7 +4,7 @@ use crate::Transpile;
 use galvan_ast::{Block, Closure, ClosureArgument, ElseExpression};
 
 impl_transpile!(Closure, "|{}| {}", arguments, block);
-impl_transpile!(Block, "{{ {} }}", body);
+impl_transpile!(Block, "{}", body);
 // TODO: Allow a second variant that takes an error as an argument
 impl_transpile!(ElseExpression, "({}).__or_else(|| {})", receiver, block);
 
