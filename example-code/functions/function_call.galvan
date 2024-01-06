@@ -5,8 +5,8 @@ multi(vec![
         "multiply",
         params(
             vec![
-                (DeclModifier::Inherited, "a", plain("Int")),
-                (DeclModifier::Inherited, "b", plain("Int"))
+                (None, "a", plain("Int")),
+                (None, "b", plain("Int"))
             ]),
         Some(plain("Int")),
         empty_body(),
@@ -14,12 +14,12 @@ multi(vec![
     function(
         public(),
         "double",
-        params(vec![(DeclModifier::Inherited, "a", plain("Int"))]),
+        params(vec![(None, "a", plain("Int"))]),
         Some(plain("Int")),
         body(vec![
             function_call("multiply", vec![
-                (DeclModifier::Inherited, variable("a")),
-                (DeclModifier::Inherited, number("2")),
+                (None, variable("a")),
+                (None, number("2")),
             ]).into()
         ])
     ).into(),

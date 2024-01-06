@@ -44,7 +44,7 @@ impl FromPest<'_> for FunctionCall {
                         .collect::<Vec<_>>();
                     if let Ok(closure) = Closure::from_pest(&mut pairs) {
                         arguments.push(FunctionCallArg {
-                            modifier: DeclModifier::Inherited,
+                            modifier: None,
                             expression: closure.into(),
                         });
                     }
@@ -64,14 +64,14 @@ impl FromPest<'_> for FunctionCall {
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::function_call_arg))]
 pub struct FunctionCallArg {
-    pub modifier: DeclModifier,
+    pub modifier: Option<DeclModifier>,
     pub expression: Expression,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::trailing_closure_call_arg))]
 struct TrailingClosureCallArg {
-    modifier: DeclModifier,
+    modifier: Option<DeclModifier>,
     expression: AllowedInTrailingClosureCall,
 }
 

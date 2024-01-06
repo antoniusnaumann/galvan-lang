@@ -57,7 +57,7 @@ empty_type_decl = { type_decl_prelude }
 param_list = { (paren_open ~ (param ~ (comma ~ param)*)? ~ paren_close)? }
 // TODO: Allow patterns here instead of just identifiers
 param = { param_base }
-param_base = _{ declaration_modifier ~ ident ~ colon ~ type_item }
+param_base = _{ declaration_modifier? ~ ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
@@ -69,7 +69,7 @@ assignment = { assignment_target ~ assignment_operator ~ expression }
 assignment_target = { member_field_access | ident }
 
 declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
-declaration_modifier = { ref_keyword | let_keyword | mut_keyword | inherited }
+declaration_modifier = ${ (ref_keyword | let_keyword | mut_keyword) ~ w }
 
 // TODO: Add block expressions and parenthesized expressions
 expression = {
@@ -96,7 +96,7 @@ allowed_before_else_expression = !{
     | constructor_call
     | member_function_call
     | member_field_access
-    | ident
+    | (ident ~ w)
 }
 
 allowed_in_trailing_closure_call = !{
@@ -181,7 +181,7 @@ trailing_closure_call = ${
         ~ whitespace* ~ trailing_closure?))
 }
 trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
-trailing_closure_call_arg = { declaration_modifier ~ allowed_in_trailing_closure_call }
+trailing_closure_call_arg = { (declaration_modifier)? ~ allowed_in_trailing_closure_call }
 else_expression = { allowed_before_else_expression ~ else_keyword ~ block }
 logical_expression = ${ allowed_in_logical ~ (space+ ~ logical_infix_operator ~ space+ ~ allowed_in_logical)+ }
 comparison_expression = ${ allowed_in_comparison ~ space+ ~ comparison_operator ~ space+ ~ allowed_in_comparison }
@@ -200,7 +200,7 @@ infix_operator_ = {
 function_call = { function_call_base }
 function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
 function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
-function_call_arg = { declaration_modifier ~ expression }
+function_call_arg = { (declaration_modifier)? ~ expression }
 
 // TODO: Allow all kinds of expressions in front of . here
 member_function_call = { ident ~ dot ~ function_call_base }
@@ -210,7 +210,7 @@ constructor_call = { type_ident ~ paren_open ~ constructor_call_args ~ paren_clo
 constructor_call_args = _{ (constructor_call_arg ~ (comma ~ constructor_call_arg)*)? }
 constructor_call_arg = { ident ~ colon ~ expression }
 
-ident = @{ !(keyword) ~ (used_ident | unused_ident | discard) }
+ident = @{ !(keyword ~ w) ~ (used_ident | unused_ident | discard) }
 used_ident = _{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
 unused_ident = _{ "_" ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")* }
 discard = _{ "_" }
@@ -378,6 +378,8 @@ inherited = { "" }
 // ## Whitespace
 newline = _{ NEWLINE }
 whitespace = _{ " " | "\t" }
+// convenience rule
+w = _{ whitespace }
 space = _{ whitespace | newline }
 
 // ## Literals

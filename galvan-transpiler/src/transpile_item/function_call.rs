@@ -33,19 +33,19 @@ impl Transpile for FunctionCallArg {
             expression,
         } = self;
         match (modifier, expression) {
-            (Mod::Let, _) => {
+            (Some(Mod::Let(_)), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
-            (Mod::Inherited, expr @ Exp::Ident(_)) => {
-                transpile!(ctx, "&(&{}).__borrow()", expression)
+            (None, expr @ Exp::Ident(_)) => {
+                transpile!(ctx, "&(&{}).__borrow()", expr)
             }
-            (Mod::Inherited, expression) => {
+            (None, expression) => {
                 transpile!(ctx, "&({})", expression)
             }
-            (Mod::Mut, expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+            (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
                 transpile!(ctx, "&mut {}", expr)
             }
-            (Mod::Ref, expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+            (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
                 transpile!(ctx, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),

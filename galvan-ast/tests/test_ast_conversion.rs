@@ -7,6 +7,10 @@ mod test_utils {
     use galvan_ast::pest_adapter::*;
     use galvan_ast::RootItem;
 
+    pub use galvan_ast::LetKeyword as Let;
+    pub use galvan_ast::MutKeyword as Mut;
+    pub use galvan_ast::RefKeyword as Ref;
+
     pub fn empty() -> PestAst {
         PestAst::new(vec![])
     }
@@ -86,7 +90,7 @@ mod test_utils {
 
     pub fn struct_member(ident: &str, ty: TypeElement) -> StructTypeMember {
         StructTypeMember {
-            decl_modifier: DeclModifier::Inherited,
+            decl_modifier: None,
             ident: Ident::new(ident),
             r#type: ty,
         }
@@ -94,7 +98,7 @@ mod test_utils {
 
     pub fn ref_struct_member(ident: &str, ty: TypeElement) -> StructTypeMember {
         StructTypeMember {
-            decl_modifier: DeclModifier::Ref,
+            decl_modifier: Some(Ref.into()),
             ident: Ident::new(ident),
             r#type: ty,
         }
@@ -130,7 +134,7 @@ mod test_utils {
         }
     }
 
-    pub fn params(params: Vec<(DeclModifier, &'static str, TypeElement)>) -> ParamList {
+    pub fn params(params: Vec<(Option<DeclModifier>, &'static str, TypeElement)>) -> ParamList {
         ParamList {
             params: params
                 .into_iter()
@@ -167,7 +171,10 @@ mod test_utils {
         .into()
     }
 
-    pub fn function_call(ident: &str, arguments: Vec<(DeclModifier, Expression)>) -> Expression {
+    pub fn function_call(
+        ident: &str,
+        arguments: Vec<(Option<DeclModifier>, Expression)>,
+    ) -> Expression {
         FunctionCall {
             identifier: Ident::new(ident),
             arguments: arguments

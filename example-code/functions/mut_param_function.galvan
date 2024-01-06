@@ -6,7 +6,7 @@ multi(vec![
         "bark",
         params(
             vec![
-                (DeclModifier::Mut, "dog", plain("Dog")),
+                (Some(Mut.into()), "dog", plain("Dog")),
             ]),
         None,
         empty_body()

@@ -6,7 +6,7 @@ multi(vec![
         "woof",
         params(
             vec![
-                (DeclModifier::Inherited, "self", plain("Dog")),
+                (None, "self", plain("Dog")),
             ]),
         None,
         empty_body()

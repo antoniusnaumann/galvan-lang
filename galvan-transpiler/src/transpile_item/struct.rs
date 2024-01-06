@@ -17,13 +17,13 @@ impl_transpile!(TupleTypeMember, "{}", r#type);
 impl Transpile for StructTypeMember {
     fn transpile(&self, ctx: &Context) -> String {
         match self.decl_modifier {
-            DeclModifier::Let => {
+            Some(DeclModifier::Let(_)) => {
                 todo!("Decide if let should be allowed on struct fields (and what it should mean")
             }
-            DeclModifier::Mut => {
+            Some(DeclModifier::Mut(_)) => {
                 todo!("Decide if mut should be allowed on struct fields (and what it should mean)")
             }
-            DeclModifier::Ref => {
+            Some(DeclModifier::Ref(_)) => {
                 transpile!(
                     ctx,
                     "pub(crate) {}: std::sync::Arc<std::sync::Mutex<{}>>",
@@ -31,7 +31,7 @@ impl Transpile for StructTypeMember {
                     self.r#type
                 )
             }
-            DeclModifier::Inherited => {
+            None => {
                 transpile!(ctx, "pub(crate) {}: {}", self.ident, self.r#type)
             }
         }

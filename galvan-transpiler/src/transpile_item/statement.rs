@@ -12,9 +12,8 @@ impl_transpile_variants!(Statement; Assignment, Expression, Declaration, Block);
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context) -> String {
         let keyword = match self.decl_modifier {
-            DeclModifier::Let | DeclModifier::Ref => "let",
-            DeclModifier::Mut => "let mut",
-            DeclModifier::Inherited => panic!("Inherited declaration modifier is not allowed here"),
+            DeclModifier::Let(_) | DeclModifier::Ref(_) => "let",
+            DeclModifier::Mut(_) => "let mut",
         };
 
         let identifier = self.identifier.transpile(ctx);
@@ -23,14 +22,15 @@ impl Transpile for Declaration {
             .as_ref()
             .map(|ty| transpile!(ctx, "{}", ty));
         let ty = match self.decl_modifier {
-            DeclModifier::Let | DeclModifier::Mut => ty.map_or("".into(), |ty| format!(": {ty}")),
-            DeclModifier::Ref => {
+            DeclModifier::Let(_) | DeclModifier::Mut(_) => {
+                ty.map_or("".into(), |ty| format!(": {ty}"))
+            }
+            DeclModifier::Ref(_) => {
                 format!(
                     ": std::sync::Arc<std::sync::Mutex<{}>>",
                     ty.unwrap_or("_".into()),
                 )
             }
-            DeclModifier::Inherited => unreachable!(),
         };
 
         // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
@@ -39,7 +39,7 @@ impl Transpile for Declaration {
             .as_ref()
             .map(|expr| transpile_assignment_expression(ctx, expr))
             .map(|expr| {
-                if self.decl_modifier == DeclModifier::Ref {
+                if matches!(self.decl_modifier, DeclModifier::Ref(_)) {
                     format!("(&({expr})).__to_ref()")
                 } else {
                     expr

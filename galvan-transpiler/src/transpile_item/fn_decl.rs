@@ -63,21 +63,21 @@ impl Transpile for Param {
         let is_self = self.identifier.as_str() == "self";
 
         match self.decl_modifier {
-            DeclModifier::Let | DeclModifier::Inherited => {
+            Some(DeclModifier::Let(_)) | None => {
                 if is_self {
                     "&self".into()
                 } else {
                     transpile_type!(self, ctx, Ownership::Borrowed, "&", "")
                 }
             }
-            DeclModifier::Mut => {
+            Some(DeclModifier::Mut(_)) => {
                 if is_self {
                     "&mut self".into()
                 } else {
                     transpile_type!(self, ctx, Ownership::MutBorrowed, "&mut")
                 }
             }
-            DeclModifier::Ref => {
+            Some(DeclModifier::Ref(_)) => {
                 if is_self {
                     panic!("Functions with ref-receivers should be handled elsewhere!")
                 }

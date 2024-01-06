@@ -50,7 +50,7 @@ pub struct StructTypeDecl {
 #[pest_ast(rule(Rule::struct_field))]
 pub struct StructTypeMember {
     // pub visibility: Visibility,
-    pub decl_modifier: DeclModifier,
+    pub decl_modifier: Option<DeclModifier>,
     pub ident: Ident,
     pub r#type: TypeElement,
 }
