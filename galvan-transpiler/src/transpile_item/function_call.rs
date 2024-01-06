@@ -37,7 +37,7 @@ impl Transpile for FunctionCallArg {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
             (None, expr @ Exp::Ident(_)) => {
-                transpile!(ctx, "&(&{}).__borrow()", expr)
+                transpile!(ctx, "(&{}).__borrow()", expr)
             }
             (None, expression) => {
                 transpile!(ctx, "&({})", expression)

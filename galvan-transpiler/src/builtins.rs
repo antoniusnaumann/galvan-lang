@@ -25,5 +25,6 @@ pub fn builtins() -> Mapping {
         ("Double" => "f64", copy),
 
         ("String" => "String", "str"),
+        ("Char" => "char"),
     )
 }

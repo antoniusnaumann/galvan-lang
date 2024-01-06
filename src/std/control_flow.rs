@@ -11,17 +11,6 @@ where
     }
 }
 
-#[inline(always)]
-pub fn r#for<I, T, F>(iter: I, mut body: F)
-where
-    I: IntoIterator,
-    F: FnMut(I::Item),
-{
-    for item in iter {
-        body(item)
-    }
-}
-
 pub trait __ToOption {
     type Inner;
 
