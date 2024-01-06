@@ -180,7 +180,7 @@ trailing_closure_call = ${
         ~ whitespace* ~ comma?
         ~ whitespace* ~ trailing_closure?))
 }
-trailing_closure = { ("|" ~ closure_arguments ~ "|")? ~ block }
+trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
 trailing_closure_call_arg = { declaration_modifier ~ allowed_in_trailing_closure_call }
 else_expression = { allowed_before_else_expression ~ else_keyword ~ block }
 logical_expression = ${ allowed_in_logical ~ (space+ ~ logical_infix_operator ~ space+ ~ allowed_in_logical)+ }

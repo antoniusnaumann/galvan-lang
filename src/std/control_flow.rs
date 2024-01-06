@@ -45,6 +45,15 @@ impl<T: ToOwned> __ToOption for Option<T> {
     }
 }
 
+impl<T: ToOwned> __ToOption for &Option<T> {
+    type Inner = T::Owned;
+
+    #[inline(always)]
+    fn __to_option(&self) -> Option<Self::Inner> {
+        self.as_ref().map(|x| x.to_owned())
+    }
+}
+
 impl<T: ToOwned, _E> __ToOption for Result<T, _E> {
     type Inner = T::Owned;
 
