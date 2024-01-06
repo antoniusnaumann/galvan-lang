@@ -15,6 +15,8 @@ impl Transpile for FunctionCall {
             format!("println!(\"{{}}\", {})", arguments)
         } else if self.identifier.as_str() == "print" {
             format!("print!(\"{{}}\", {})", arguments)
+        } else if self.identifier.as_str() == "debug" {
+            format!("println!(\"{{:?}}\", {})", arguments)
         } else {
             let ident = self.identifier.transpile(ctx);
             format!("{}({})", ident, arguments)
