@@ -166,7 +166,7 @@ allowed_in_arithmetic = !{
 
 closure = { "|" ~ closure_arguments? ~ "|" ~ block }
 closure_arguments = _{ (closure_argument ~ (comma ~ closure_argument)*)? ~ comma? }
-closure_argument = { ident ~ (colon ~ type_item)? }
+closure_argument = !{ ident ~ (colon ~ type_item)? }
 block = { (brace_open ~ body ~ brace_close) }
 
 // TODO: Also allow block expression here as closure with implicit names ("it" or #0, #1, #2)
