@@ -21,7 +21,7 @@ mod test_utils {
 
     pub fn main(statements: Vec<Statement>) -> RootItem {
         RootItem::Main(MainDecl {
-            body: Block { statements },
+            body: Body { statements },
         })
     }
 
@@ -117,7 +117,7 @@ mod test_utils {
         name: &str,
         parameters: ParamList,
         return_type: Option<TypeElement>,
-        block: Block,
+        block: Body,
     ) -> FnDecl {
         FnDecl {
             signature: FnSignature {
@@ -143,12 +143,12 @@ mod test_utils {
         }
     }
 
-    pub fn empty_body() -> Block {
-        Block { statements: vec![] }
+    pub fn empty_body() -> Body {
+        Body { statements: vec![] }
     }
 
-    pub fn body(statements: Vec<Statement>) -> Block {
-        Block { statements }
+    pub fn body(statements: Vec<Statement>) -> Body {
+        Body { statements }
     }
 
     pub fn number(value: &str) -> Expression {

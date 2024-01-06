@@ -9,7 +9,7 @@ use super::*;
 #[pest_ast(rule(Rule::function))]
 pub struct FnDecl {
     pub signature: FnSignature,
-    pub block: Block,
+    pub block: Body,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

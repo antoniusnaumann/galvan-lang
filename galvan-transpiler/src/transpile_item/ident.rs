@@ -1,11 +1,12 @@
 use crate::context::Context;
+use crate::sanitize::sanitize_name;
 use crate::{Ident, Transpile, TypeIdent};
 
 impl Transpile for Ident {
     fn transpile(&self, ctx: &Context) -> String {
         // TODO: Escape ident when name has collision with rust keyword
         // TODO: Use lookup to insert fully qualified name
-        format!("{self}")
+        sanitize_name(self.as_str()).into()
     }
 }
 

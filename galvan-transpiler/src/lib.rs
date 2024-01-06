@@ -291,7 +291,8 @@ punct!(
     TupleTypeMember,
     Param,
     FunctionCallArg,
-    ConstructorCallArg
+    ConstructorCallArg,
+    ClosureArgument
 );
 punct!(",\n", StructTypeMember);
 punct!("\n\n", RootItem, FnDecl);

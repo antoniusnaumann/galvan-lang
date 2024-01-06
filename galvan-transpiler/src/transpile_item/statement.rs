@@ -1,12 +1,13 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
-use crate::{Block, Transpile};
+use crate::{Body, Transpile};
 use galvan_ast::{
-    BooleanLiteral, DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral,
+    Block, BooleanLiteral, Closure, DeclModifier, Declaration, ElseExpression, Expression,
+    NumberLiteral, Statement, StringLiteral,
 };
 
-impl_transpile!(Block, "{{\n{}\n}}", statements);
-impl_transpile_variants!(Statement; Assignment, Expression, Declaration);
+impl_transpile!(Body, "{{\n{}\n}}", statements);
+impl_transpile_variants!(Statement; Assignment, Expression, Declaration, Block);
 
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context) -> String {
@@ -62,6 +63,8 @@ fn transpile_assignment_expression(ctx: &Context, expr: &Expression) -> String {
 }
 
 impl_transpile_variants! { Expression;
+    ElseExpression,
+    Closure,
     LogicalOperation,
     ComparisonOperation,
     CollectionOperation,

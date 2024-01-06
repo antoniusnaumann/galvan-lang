@@ -9,3 +9,4 @@ mod task;
 mod toplevel;
 mod r#type;
 mod visibility;
+mod closure;

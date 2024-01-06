@@ -3,7 +3,7 @@ use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::Transpile;
 use galvan_ast::{
     ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg,
-    Ident, MemberFieldAccess, MemberFunctionCall,
+    MemberFieldAccess, MemberFunctionCall,
 };
 
 impl Transpile for FunctionCall {

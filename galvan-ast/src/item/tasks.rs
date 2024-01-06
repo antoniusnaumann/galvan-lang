@@ -1,18 +1,18 @@
 use galvan_pest::Rule;
 
-use super::{Block, Ident, StringLiteral};
+use super::{Body, Ident, StringLiteral};
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::main))]
 pub struct MainDecl {
-    pub body: Block,
+    pub body: Body,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::test))]
 pub struct TestDecl {
     pub name: Option<StringLiteral>,
-    pub body: Block,
+    pub body: Body,
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
@@ -20,5 +20,5 @@ pub struct TestDecl {
 pub struct TaskDecl {
     pub ident: Ident,
     // name: Option<String>,
-    pub body: Block,
+    pub body: Body,
 }

@@ -1,17 +1,24 @@
 use super::*;
+use crate::item::closure::Closure;
 use galvan_pest::Rule;
 use typeunion::type_union;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::body))]
-pub struct Block {
+pub struct Body {
     pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::block))]
+pub struct Block {
+    pub body: Body,
 }
 
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::statement))]
-pub type Statement = Assignment + Expression + Declaration;
+pub type Statement = Assignment + Expression + Declaration + Block;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::declaration))]
@@ -25,7 +32,9 @@ pub struct Declaration {
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::expression))]
-pub type Expression = LogicalOperation
+pub type Expression = ElseExpression
+    + Closure
+    + LogicalOperation
     + ComparisonOperation
     + CollectionOperation
     + ArithmeticOperation
