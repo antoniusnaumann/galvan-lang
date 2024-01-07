@@ -2,8 +2,11 @@ use convert_case::{Case, Casing};
 use derive_more::{Deref, Display, From};
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
+use itertools::Itertools;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter;
+use std::ops::Deref;
 use thiserror::Error;
 
 pub(crate) use galvan_resolver::LookupContext;
@@ -116,6 +119,8 @@ fn transpile_segmented(
         .join("\n\n");
     let toplevel_functions = toplevel_functions.trim();
 
+    let tests = transpile_tests(&segmented, ctx);
+
     let modules = type_files
         .keys()
         .map(|id| sanitize_name(id))
@@ -136,7 +141,7 @@ fn transpile_segmented(
             "extern crate galvan; pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
             galvan_module!(),
             SUPPRESS_WARNINGS,
-            [modules, toplevel_functions, &main].join("\n\n")
+            [modules, toplevel_functions, &main, &tests].join("\n\n")
         )
         .into(),
     };
@@ -154,6 +159,53 @@ fn transpile_segmented(
     });
 
     Ok(type_files.chain(iter::once(lib)).collect())
+}
+
+fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context) -> String {
+    fn test_name<'a>(desc: &Option<StringLiteral>) -> Cow<'a, str> {
+        desc.as_ref().map_or("test".into(), |desc| {
+            let snake = desc.as_str().trim_matches('\"').to_case(Case::Snake);
+            if snake.ends_with(|c: char| c.is_ascii_digit()) {
+                format!("{}_", snake).into()
+            } else {
+                snake.into()
+            }
+        })
+    }
+
+    let mut by_name: HashMap<Cow<'_, str>, Vec<&TestDecl>> = HashMap::new();
+    for test in &segmented_asts.tests {
+        by_name
+            .entry(test_name(&test.item.name))
+            .or_default()
+            .push(&test.item);
+    }
+
+    let resolved_tests = by_name
+        .iter()
+        .flat_map(|(name, tests)| {
+            if tests.len() == 1 {
+                vec![(name.clone(), tests[0])]
+            } else {
+                tests
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &test)| (Cow::from(format!("{}_{}", name, i)), test))
+                    .collect_vec()
+            }
+        })
+        .collect_vec();
+
+    let test_mod = "#[cfg(test)]\nmod tests {\nuse crate::*;\n".to_owned()
+        + resolved_tests
+            .iter()
+            .map(|t| t.transpile(ctx))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+            .as_str()
+        + "\n}";
+
+    test_mod
 }
 
 fn transpile_member_functions(ty: &TypeIdent, fns: &[&FnDecl], ctx: &Context) -> String {

@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use galvan_ast::{FnDecl, Ident, MainDecl, SegmentedAsts, ToplevelItem, TypeDecl, TypeIdent};
+use galvan_ast::{
+    FnDecl, Ident, MainDecl, SegmentedAsts, TestDecl, ToplevelItem, TypeDecl, TypeIdent,
+};
 
 #[derive(Debug, Default)]
 pub struct LookupContext<'a> {
@@ -19,7 +21,6 @@ pub struct LookupContext<'a> {
     pub main: Option<&'a ToplevelItem<MainDecl>>,
 }
 
-// TODO: derive thiserror and add proper error handling #[derive(Error)]
 // TODO: Include spans in errors
 #[derive(Debug, Error)]
 pub enum LookupError {
