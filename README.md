@@ -33,6 +33,7 @@ main {
 ```
 Note that Galvan strings always support inline format arguments.
 
+
 ### Functions
 Like in Rust, functions are defined with the `fn` keyword and return the value of the last expression:
 > [!WARNING]
@@ -463,3 +464,31 @@ iter
     .filter { #0 % 2 == 0 }
     .reduce start { #0 + #1 }
 ```
+
+### Parentheses-Free Function Calls
+In a statement or as the right-hand side of an assignment, parentheses for function calls can be omitted:
+```rust
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+main {
+    let result = add 2, 3
+    print result // 5
+}
+```
+As this syntax is only allowed in assignments and statements, you cannot use it in i.e. function parameters. This avoids ambiguity.
+It is also not allowed to use this syntax for functions that take no arguments to avoid confusing it with a variable.
+
+### Testing
+Every obstacle to writing unit tests is a unit test that is not written. For this reason, Galvan provides a concise syntax to quickly write unit tests in any .galvan file:
+```galvan
+test {
+    assert 2 == 2
+}
+
+test "Ensure that addition works correctly" {
+    assert 2 + 2 == 4
+}
+```
+Like 'main', 'test' is not a function but an entry point. Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
