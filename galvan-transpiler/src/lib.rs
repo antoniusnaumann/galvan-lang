@@ -196,6 +196,10 @@ fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context) -> String {
         })
         .collect_vec();
 
+    if resolved_tests.is_empty() {
+        return "".into();
+    }
+
     let test_mod = "#[cfg(test)]\nmod tests {\nuse crate::*;\n".to_owned()
         + resolved_tests
             .iter()
