@@ -36,8 +36,6 @@ Note that Galvan strings always support inline format arguments.
 
 ### Functions
 Like in Rust, functions are defined with the `fn` keyword and return the value of the last expression:
-> [!WARNING]
-> Arithmetic expressions are not implemented yet
 ```rust
 fn add(a: Int, b: Int) -> Int {
     a + b
@@ -276,7 +274,7 @@ Note that ranges are declared using `..<` (exclusive upper bound) or `..=` (incl
 
 #### If-Else
 > [!WARNING]
-> If-else is not implemented yet
+> Nested if-else is not implemented yet
 ```rust
 if condition {
     print("Condition is true")
@@ -290,7 +288,7 @@ if condition {
 #### Try
 You can use try to unwrap a result or optional:
 > [!WARNING]
-> Try is not implemented yet
+> Implicit arguments via `it` are not implemented yet
 ```rust
 try potential_error {
     print("Optional was {it}")
@@ -306,6 +304,15 @@ try potential_error |value| {
     print("Error occured: {error}")
 }
 ```
+Like `if`, you can also use `try` without an else branch:
+```rust
+try potential_error |value| {
+    print("Optional was {value}")
+}
+
+let optional = try potential_error |successful| { successful }
+```
+This can be useful to pass the unwrapped value to a function, or to convert a Result to an Optional.
 
 #### Return and Throw
 Return values are implicit, however you can use the `return` keyword to return early:
@@ -355,9 +362,6 @@ fn concat_hash(self: t, other: t) -> t where t: Hash {
 
 ### Operators
 #### Builtin Operators
-> [!WARNING]
-> Not all operators are implemented yet
-
 Galvan offers a wide range of builtin operators. While all of them have an ASCII variant, Galvan also accepts a unicode symbol where it makes sense.
 
 Arithmetic operators: 
@@ -378,6 +382,8 @@ Logical operators:
 - `xor`, `^^`: Logical xor
 - `not`, `!`: Logical not
 
+> [!WARNING]
+> Bitwise operators are implemented yet
 Bitwise operators are prefixed with b:
 - `b|`: Bitwise or
 - `b&`: Bitwise and
@@ -426,8 +432,6 @@ Note that no whitespace is allowed between a prefix operator and the operands.
 Infix operators have to be surrounded by whitespace.
 
 ### Closures
-> [!WARNING]
-> Closures are not implemented yet
 Closures are defined using the parameter list syntax:
 ```rust
 let add = |a, b| a + b
@@ -446,8 +450,6 @@ fn map(self: [t], f: t -> u) -> [u] {
 
 #### Trailing Closures
 Functions with trailing closures are allowed to omit the parameter list and the () around the parameter list:
-> [!WARNING]
-> Trailing closures are not implemented yet
 ```rust
 iter
     .map { it * 2 }
