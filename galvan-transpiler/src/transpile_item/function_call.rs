@@ -2,24 +2,65 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg,
-    MemberFieldAccess, MemberFunctionCall,
+    ComparisonOperation, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
+    FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall,
 };
 
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context) -> String {
-        let arguments = self.arguments.transpile(ctx);
+        match self.identifier.as_str() {
+            "println" => format!("println!(\"{{}}\", {})", self.arguments.transpile(ctx)),
+            "print" => format!("print!(\"{{}}\", {})", self.arguments.transpile(ctx)),
+            "debug" => format!("println!(\"{{:?}}\", {})", self.arguments.transpile(ctx)),
+            "assert" => match self.arguments.first() {
+                Some(FunctionCallArg {
+                    modifier,
+                    expression: Expression::ComparisonOperation(comp),
+                }) => {
+                    if modifier.is_some() {
+                        todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
+                    }
 
-        // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
-        if self.identifier.as_str() == "println" {
-            format!("println!(\"{{}}\", {})", arguments)
-        } else if self.identifier.as_str() == "print" {
-            format!("print!(\"{{}}\", {})", arguments)
-        } else if self.identifier.as_str() == "debug" {
-            format!("println!(\"{{:?}}\", {})", arguments)
-        } else {
-            let ident = self.identifier.transpile(ctx);
-            format!("{}({})", ident, arguments)
+                    let ComparisonOperation {
+                        left,
+                        operator,
+                        right,
+                    } = comp;
+                    let args = if self.arguments.len() > 1 {
+                        &self.arguments[1..]
+                    } else {
+                        &[]
+                    };
+                    match operator {
+                        galvan_ast::ComparisonOperator::Equal => {
+                            transpile!(
+                                ctx,
+                                "assert_eq!({}, {}, {})",
+                                left,
+                                right,
+                                args.transpile(ctx)
+                            )
+                        }
+                        galvan_ast::ComparisonOperator::NotEqual => {
+                            transpile!(
+                                ctx,
+                                "assert_ne!({}, {}, {})",
+                                left,
+                                right,
+                                args.transpile(ctx)
+                            )
+                        }
+                        _ => format!("assert!({})", self.arguments.transpile(ctx)),
+                    }
+                }
+                Some(_) => format!("assert!({})", self.arguments.transpile(ctx)),
+                _ => todo!("TRANSPILER ERROR: assert expects a boolean argument"),
+            },
+            _ => {
+                // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
+                let ident = self.identifier.transpile(ctx);
+                format!("{}({})", ident, self.arguments.transpile(ctx))
+            }
         }
     }
 }
