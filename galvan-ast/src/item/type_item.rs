@@ -14,31 +14,31 @@ type Result = Box<ResultTypeItem>;
 type Plain = BasicTypeItem;
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::type_item))]
 pub type TypeElement =
     Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Plain;
 
 #[type_union(super = TypeElement)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::opt_element_type))]
 /// A subset of TypeElement that can be used as the inner type of an optional
 type OptionalElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
 
 #[type_union(super = TypeElement)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::success_variant))]
 /// A subset of TypeElement that can be used as the success variant of a result type
 type SuccessVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Plain;
 
 #[type_union(super = TypeElement)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::error_variant))]
 /// A subset of TypeElement that can be used as the error variant of a result type
 type ErrorVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
 
 #[type_union(super = TypeElement)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::ref_element))]
 /// A subset of TypeElement that can be contained in a stored reference
 pub type RefElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
@@ -84,39 +84,39 @@ impl TypeElement {
 }
 
 // TODO: Add a marker trait to constrain this to only type decls
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::array_type))]
 pub struct ArrayTypeItem {
     pub elements: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::dict_type))]
 pub struct DictionaryTypeItem {
     pub key: TypeElement,
     pub value: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::ordered_dict_type))]
 pub struct OrderedDictionaryTypeItem {
     pub key: TypeElement,
     pub value: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::set_type))]
 pub struct SetTypeItem {
     pub elements: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::tuple_type))]
 pub struct TupleTypeItem {
     pub elements: Vec<TypeElement>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OptionalTypeItem {
     pub some: TypeElement,
 }
@@ -149,7 +149,7 @@ impl OptionalTypeItem {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResultTypeItem {
     pub success: TypeElement,
     pub error: Option<TypeElement>,
@@ -180,7 +180,7 @@ impl FromPest<'_> for ResultTypeItem {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::basic_type))]
 pub struct BasicTypeItem {
     pub ident: TypeIdent,
