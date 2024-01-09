@@ -5,6 +5,9 @@ pub fn builtins() -> Mapping {
     mapping!(
         ("Bool" => "bool", copy),
 
+        // Hack to explicitly enable rusts inference for number literals
+        ("__Number" => "_", copy),
+
         ("I8" => "i8", copy),
         ("I16" => "i16", copy),
         ("I32" => "i32", copy),

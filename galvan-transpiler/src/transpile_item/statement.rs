@@ -59,10 +59,10 @@ impl Transpile for Declaration {
         scope.declare_variable(Variable {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier,
-            ty: inferred_type,
+            ty: inferred_type.clone(),
             ownership: match self.decl_modifier {
-                DeclModifier::Let(_) | DeclModifier::Mut(_) => match self.type_annotation {
-                    Some(TypeElement::Plain(ref plain)) if ctx.mapping.is_copy(&plain.ident) => {
+                DeclModifier::Let(_) | DeclModifier::Mut(_) => match inferred_type {
+                    Some(TypeElement::Plain(plain)) if ctx.mapping.is_copy(&plain.ident) => {
                         Ownership::Copy
                     }
                     _ => Ownership::Owned,
@@ -137,10 +137,12 @@ impl InferType for Expression {
                 }
                 .into(),
             ),
-            Expression::NumberLiteral(_) => {
-                // todo!("Add some way to only give partial type inference")
-                None
-            }
+            Expression::NumberLiteral(_) => Some(
+                BasicTypeItem {
+                    ident: TypeIdent::new("__Number"),
+                }
+                .into(),
+            ),
             Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
         }
     }
