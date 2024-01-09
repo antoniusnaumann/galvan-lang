@@ -77,11 +77,15 @@ impl Transpile for Param {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier.unwrap_or(DeclModifier::Let(LetKeyword)),
             ty: Some(self.param_type.clone()),
-            ownership: match self.param_type {
-                TypeElement::Plain(ref plain) if ctx.mapping.is_copy(&plain.ident) => {
-                    Ownership::Copy
-                }
-                _ => Ownership::Borrowed,
+            ownership: match self.decl_modifier {
+                Some(DeclModifier::Let(_)) | None => match self.param_type {
+                    TypeElement::Plain(ref plain) if ctx.mapping.is_copy(&plain.ident) => {
+                        Ownership::Copy
+                    }
+                    _ => Ownership::Borrowed,
+                },
+                Some(DeclModifier::Mut(_)) => Ownership::MutBorrowed,
+                Some(DeclModifier::Ref(_)) => Ownership::Ref,
             },
         });
 

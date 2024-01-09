@@ -53,7 +53,9 @@ pub struct Pub;
 pub enum Ownership {
     Owned,
     Borrowed,
+    MutBorrowed,
     Copy,
+    Ref,
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]

@@ -3,7 +3,7 @@ use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::Transpile;
 use galvan_ast::{
     ComparisonOperation, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
-    FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall,
+    FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall, Ownership,
 };
 use galvan_resolver::Scope;
 
@@ -86,8 +86,27 @@ impl Transpile for FunctionCallArg {
             (Some(Mod::Let(_)), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
-            (None, expr @ Exp::Ident(_)) => {
-                transpile!(ctx, scope, "(&{}).__borrow()", expr)
+            (None, Exp::Ident(ident)) => {
+                match scope
+                    .get_variable(ident)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "TODO: ERROR: undeclared variable {ident}, scope: {:#?}",
+                            scope
+                        )
+                    })
+                    .ownership
+                {
+                    Ownership::Owned => {
+                        transpile!(ctx, scope, "&{}", ident)
+                    }
+                    Ownership::Borrowed | Ownership::MutBorrowed | Ownership::Copy => {
+                        transpile!(ctx, scope, "{}", ident)
+                    }
+                    Ownership::Ref => {
+                        transpile!(ctx, scope, "{}.lock().unwrap()", ident)
+                    }
+                }
             }
             (None, expression) => {
                 transpile!(ctx, scope, "&({})", expression)

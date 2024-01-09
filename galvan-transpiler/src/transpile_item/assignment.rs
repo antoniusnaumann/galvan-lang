@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile_variants, transpile};
 use crate::Transpile;
-use galvan_ast::{Assignment, AssignmentOperator, AssignmentTarget};
+use galvan_ast::{Assignment, AssignmentOperator, AssignmentTarget, DeclModifier, Ownership};
 use galvan_resolver::Scope;
 
 impl_transpile_variants!(AssignmentTarget; Ident, MemberFieldAccess);
@@ -14,34 +14,41 @@ impl Transpile for Assignment {
             operator,
             expression: exp,
         } = self;
+
+        let prefix = match target {
+            AssignmentTarget::Ident(ident) => scope.get_variable(ident).map_or("", |var| match var
+                .ownership
+            {
+                Ownership::Owned => "",
+                Ownership::Borrowed => todo!("Error: Cannot assign to borrowed variable"),
+                Ownership::MutBorrowed => "*",
+                Ownership::Copy => "",
+                Ownership::Ref => todo!("Handle assignment to ref variable"),
+            }),
+            AssignmentTarget::MemberFieldAccess(_) => "",
+        };
+
         match operator {
             AssignmentOperator::Assign => {
-                transpile!(ctx, scope, "*({}.__mut()) = {}", target, exp)
+                transpile!(ctx, scope, "{prefix}{} = {}", target, exp)
             }
             AssignmentOperator::AddAssign => {
-                transpile!(ctx, scope, "*({}.__mut()) += {}", target, exp)
+                transpile!(ctx, scope, "{prefix}{} += {}", target, exp)
             }
             AssignmentOperator::SubAssign => {
-                transpile!(ctx, scope, "*({}.__mut()) -= {}", target, exp)
+                transpile!(ctx, scope, "{prefix}{} -= {}", target, exp)
             }
             AssignmentOperator::MulAssign => {
-                transpile!(ctx, scope, "*({}.__mut()) *= {}", target, exp)
+                transpile!(ctx, scope, "{prefix}{} *= {}", target, exp)
             }
             AssignmentOperator::DivAssign => {
-                transpile!(ctx, scope, "*({}.__mut()) /= {}", target, exp)
+                transpile!(ctx, scope, "{prefix}{} /= {}", target, exp)
             }
             AssignmentOperator::RemAssign => {
-                transpile!(ctx, scope, "*({}.__mut()) %= {}", target, exp)
+                transpile!(ctx, scope, "{prefix}{} %= {}", target, exp)
             }
             AssignmentOperator::PowAssign => {
-                transpile!(
-                    ctx,
-                    scope,
-                    "*({}.__mut()) = {}.pow({})",
-                    target,
-                    target,
-                    exp
-                )
+                transpile!(ctx, scope, "{prefix}{} = {}.pow({})", target, target, exp)
             }
         }
     }

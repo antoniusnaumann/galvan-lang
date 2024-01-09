@@ -34,3 +34,9 @@ pub struct Variable {
     pub ty: Option<TypeElement>,
     pub ownership: Ownership,
 }
+
+impl Variable {
+    pub fn is_mut(&self) -> bool {
+        matches!(self.modifier, DeclModifier::Mut(_))
+    }
+}

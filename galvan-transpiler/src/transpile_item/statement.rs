@@ -60,11 +60,14 @@ impl Transpile for Declaration {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier,
             ty: inferred_type,
-            ownership: match self.type_annotation {
-                Some(TypeElement::Plain(ref plain)) if ctx.mapping.is_copy(&plain.ident) => {
-                    Ownership::Copy
-                }
-                _ => Ownership::Owned,
+            ownership: match self.decl_modifier {
+                DeclModifier::Let(_) | DeclModifier::Mut(_) => match self.type_annotation {
+                    Some(TypeElement::Plain(ref plain)) if ctx.mapping.is_copy(&plain.ident) => {
+                        Ownership::Copy
+                    }
+                    _ => Ownership::Owned,
+                },
+                DeclModifier::Ref(_) => Ownership::Ref,
             },
         });
 
