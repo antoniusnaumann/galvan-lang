@@ -49,14 +49,15 @@ impl Visibility {
 #[pest_ast(rule(Rule::pub_keyword))]
 pub struct Pub;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq,)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ownership {
-    Val,
-    StoredRef,
-    BorrowedRef,
+    Owned,
+    Borrowed,
+    /// A mutable reference, only allowed for types declared as mutable
+    MutBorrowed,
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq,)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Async {
     Async,
     // This usually means sync
@@ -66,7 +67,7 @@ pub enum Async {
     Generic,
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq,)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Const {
     Const,
     // This usually means not const

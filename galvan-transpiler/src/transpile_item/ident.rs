@@ -1,9 +1,10 @@
 use crate::context::Context;
 use crate::sanitize::sanitize_name;
 use crate::{Ident, Transpile, TypeIdent};
+use galvan_resolver::Scope;
 
 impl Transpile for Ident {
-    fn transpile(&self, ctx: &Context) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         // TODO: Escape ident when name has collision with rust keyword
         // TODO: Use lookup to insert fully qualified name
         sanitize_name(self.as_str()).into()
@@ -11,7 +12,7 @@ impl Transpile for Ident {
 }
 
 impl Transpile for TypeIdent {
-    fn transpile(&self, ctx: &Context) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         let Some(decl) = ctx.lookup.types.get(self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };
@@ -30,11 +31,11 @@ pub enum Ownership {
 }
 
 pub trait TranspileType {
-    fn transpile_type(&self, ctx: &Context, ownership: Ownership) -> String;
+    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: Ownership) -> String;
 }
 
 impl TranspileType for TypeIdent {
-    fn transpile_type(&self, ctx: &Context, ownership: Ownership) -> String {
+    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: Ownership) -> String {
         let Some(decl) = ctx.lookup.types.get(self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };

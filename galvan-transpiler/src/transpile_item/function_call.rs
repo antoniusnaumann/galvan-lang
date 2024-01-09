@@ -5,13 +5,20 @@ use galvan_ast::{
     ComparisonOperation, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
     FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall,
 };
+use galvan_resolver::Scope;
 
 impl Transpile for FunctionCall {
-    fn transpile(&self, ctx: &Context) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         match self.identifier.as_str() {
-            "println" => format!("println!(\"{{}}\", {})", self.arguments.transpile(ctx)),
-            "print" => format!("print!(\"{{}}\", {})", self.arguments.transpile(ctx)),
-            "debug" => format!("println!(\"{{:?}}\", {})", self.arguments.transpile(ctx)),
+            "println" => format!(
+                "println!(\"{{}}\", {})",
+                self.arguments.transpile(ctx, scope)
+            ),
+            "print" => format!("print!(\"{{}}\", {})", self.arguments.transpile(ctx, scope)),
+            "debug" => format!(
+                "println!(\"{{:?}}\", {})",
+                self.arguments.transpile(ctx, scope)
+            ),
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
@@ -35,38 +42,40 @@ impl Transpile for FunctionCall {
                         galvan_ast::ComparisonOperator::Equal => {
                             transpile!(
                                 ctx,
+                                scope,
                                 "assert_eq!({}, {}, {})",
                                 left,
                                 right,
-                                args.transpile(ctx)
+                                args.transpile(ctx, scope)
                             )
                         }
                         galvan_ast::ComparisonOperator::NotEqual => {
                             transpile!(
                                 ctx,
+                                scope,
                                 "assert_ne!({}, {}, {})",
                                 left,
                                 right,
-                                args.transpile(ctx)
+                                args.transpile(ctx, scope)
                             )
                         }
-                        _ => format!("assert!({})", self.arguments.transpile(ctx)),
+                        _ => format!("assert!({})", self.arguments.transpile(ctx, scope)),
                     }
                 }
-                Some(_) => format!("assert!({})", self.arguments.transpile(ctx)),
+                Some(_) => format!("assert!({})", self.arguments.transpile(ctx, scope)),
                 _ => todo!("TRANSPILER ERROR: assert expects a boolean argument"),
             },
             _ => {
                 // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
-                let ident = self.identifier.transpile(ctx);
-                format!("{}({})", ident, self.arguments.transpile(ctx))
+                let ident = self.identifier.transpile(ctx, scope);
+                format!("{}({})", ident, self.arguments.transpile(ctx, scope))
             }
         }
     }
 }
 
 impl Transpile for FunctionCallArg {
-    fn transpile(&self, ctx: &Context) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         use DeclModifier as Mod;
         use Expression as Exp;
         let Self {
@@ -78,16 +87,16 @@ impl Transpile for FunctionCallArg {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
             (None, expr @ Exp::Ident(_)) => {
-                transpile!(ctx, "(&{}).__borrow()", expr)
+                transpile!(ctx, scope, "(&{}).__borrow()", expr)
             }
             (None, expression) => {
-                transpile!(ctx, "&({})", expression)
+                transpile!(ctx, scope, "&({})", expression)
             }
             (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
-                transpile!(ctx, "&mut {}", expr)
+                transpile!(ctx, scope, "&mut {}", expr)
             }
             (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
-                transpile!(ctx, "::std::sync::Arc::clone(&{})", expr)
+                transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),
         }

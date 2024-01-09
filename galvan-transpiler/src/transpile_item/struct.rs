@@ -2,6 +2,7 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::{StructTypeMember, Transpile, TupleTypeMember, TypeDecl};
 use galvan_ast::DeclModifier;
+use galvan_resolver::Scope;
 
 static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
 
@@ -15,7 +16,7 @@ impl_transpile_match! { TypeDecl,
 impl_transpile!(TupleTypeMember, "{}", r#type);
 
 impl Transpile for StructTypeMember {
-    fn transpile(&self, ctx: &Context) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         match self.decl_modifier {
             Some(DeclModifier::Let(_)) => {
                 todo!("Decide if let should be allowed on struct fields (and what it should mean")
@@ -26,13 +27,14 @@ impl Transpile for StructTypeMember {
             Some(DeclModifier::Ref(_)) => {
                 transpile!(
                     ctx,
+                    scope,
                     "pub(crate) {}: std::sync::Arc<std::sync::Mutex<{}>>",
                     self.ident,
                     self.r#type
                 )
             }
             None => {
-                transpile!(ctx, "pub(crate) {}: {}", self.ident, self.r#type)
+                transpile!(ctx, scope, "pub(crate) {}: {}", self.ident, self.r#type)
             }
         }
     }
