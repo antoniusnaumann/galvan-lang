@@ -1,10 +1,6 @@
-use derive_more::From;
-use from_pest::pest::iterators::Pairs;
-use from_pest::{ConversionError, FromPest, Void};
-use galvan_pest::Rule;
-use galvan_pest::Rule::whitespace;
-
 use super::*;
+use derive_more::From;
+use galvan_pest::Rule;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::function))]

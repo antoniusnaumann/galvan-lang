@@ -53,8 +53,7 @@ pub struct Pub;
 pub enum Ownership {
     Owned,
     Borrowed,
-    /// A mutable reference, only allowed for types declared as mutable
-    MutBorrowed,
+    Copy,
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]

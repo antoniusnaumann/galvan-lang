@@ -1,10 +1,11 @@
 use crate::context::Context;
-use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
+use crate::macros::{impl_transpile_variants, transpile};
 use crate::{Body, Transpile};
 use galvan_ast::{
-    BooleanLiteral, DeclModifier, Declaration, Expression, NumberLiteral, Statement, StringLiteral,
+    BasicTypeItem, BooleanLiteral, DeclModifier, Declaration, Expression, NumberLiteral, Ownership,
+    Statement, StringLiteral, TypeElement, TypeIdent,
 };
-use galvan_resolver::Scope;
+use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
 
 impl Transpile for Body {
@@ -32,8 +33,14 @@ impl Transpile for Declaration {
         };
 
         let identifier = self.identifier.transpile(ctx, scope);
-        let ty = self
-            .type_annotation
+
+        let inferred_type = self.type_annotation.clone().or_else(|| {
+            self.expression
+                .as_ref()
+                .and_then(|expr| expr.infer_type(scope))
+        });
+
+        let ty = inferred_type
             .as_ref()
             .map(|ty| transpile!(ctx, scope, "{}", ty));
         let ty = match self.decl_modifier {
@@ -47,6 +54,19 @@ impl Transpile for Declaration {
                 )
             }
         };
+
+        // TODO: Infer type here
+        scope.declare_variable(Variable {
+            ident: self.identifier.clone(),
+            modifier: self.decl_modifier,
+            ty: inferred_type,
+            ownership: match self.type_annotation {
+                Some(TypeElement::Plain(ref plain)) if ctx.mapping.is_copy(&plain.ident) => {
+                    Ownership::Copy
+                }
+                _ => Ownership::Owned,
+            },
+        });
 
         // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
         // TODO: Clone inner type from ref types to non-ref types
@@ -62,6 +82,64 @@ impl Transpile for Declaration {
             })
             .map(|expr| format!("{keyword} {identifier}{ty} = {expr}"))
             .unwrap_or_else(|| format!("{keyword} {identifier}{ty}"))
+    }
+}
+
+trait InferType {
+    fn infer_type(&self, scope: &mut Scope) -> Option<TypeElement>;
+}
+impl InferType for Expression {
+    fn infer_type(&self, scope: &mut Scope) -> Option<TypeElement> {
+        match self {
+            Expression::ElseExpression(_) => {
+                // todo!("Implement type inference for else expression")
+                None
+            }
+            Expression::Closure(_) => {
+                // todo!("Implement type inference for closure")
+                None
+            }
+            Expression::CollectionOperation(_) => {
+                // todo!("Implement type inference for collection operation")
+                None
+            }
+            Expression::ArithmeticOperation(_) => {
+                // todo!("Implement type inference for arithmetic operation")
+                None
+            }
+            Expression::FunctionCall(_) => {
+                // todo!("Implement type inference for function call")
+                None
+            }
+            Expression::ConstructorCall(constructor) => Some(constructor.identifier.clone().into()),
+            Expression::MemberFunctionCall(_) => {
+                // todo!("Implement type inference for member function call")
+                None
+            }
+            Expression::MemberFieldAccess(field) => {
+                // todo!("Implement type inference for member field access")
+                None
+            }
+            Expression::BooleanLiteral(_)
+            | Expression::LogicalOperation(_)
+            | Expression::ComparisonOperation(_) => Some(
+                BasicTypeItem {
+                    ident: TypeIdent::new("Bool"),
+                }
+                .into(),
+            ),
+            Expression::StringLiteral(_) => Some(
+                BasicTypeItem {
+                    ident: TypeIdent::new("String"),
+                }
+                .into(),
+            ),
+            Expression::NumberLiteral(_) => {
+                // todo!("Add some way to only give partial type inference")
+                None
+            }
+            Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+        }
     }
 }
 

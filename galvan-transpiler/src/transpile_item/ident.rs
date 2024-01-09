@@ -23,7 +23,7 @@ impl Transpile for TypeIdent {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Ownership {
+pub enum TypeOwnership {
     Owned,
     MutOwned,
     Borrowed,
@@ -31,20 +31,20 @@ pub enum Ownership {
 }
 
 pub trait TranspileType {
-    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: Ownership) -> String;
+    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: TypeOwnership) -> String;
 }
 
 impl TranspileType for TypeIdent {
-    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: Ownership) -> String {
+    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: TypeOwnership) -> String {
         let Some(decl) = ctx.lookup.types.get(self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };
         // TODO: Handle module path here and use fully qualified name
         let name = match ownership {
-            Ownership::Owned => ctx.mapping.get_owned(self),
-            Ownership::MutOwned => todo!("Transpile mutable owned types"), // ctx.mapping.get_mut_owned(&self),
-            Ownership::Borrowed => ctx.mapping.get_borrowed(self),
-            Ownership::MutBorrowed => ctx.mapping.get_mut_borrowed(self),
+            TypeOwnership::Owned => ctx.mapping.get_owned(self),
+            TypeOwnership::MutOwned => todo!("Transpile mutable owned types"), // ctx.mapping.get_mut_owned(&self),
+            TypeOwnership::Borrowed => ctx.mapping.get_borrowed(self),
+            TypeOwnership::MutBorrowed => ctx.mapping.get_mut_borrowed(self),
         };
         format!("{name}")
     }

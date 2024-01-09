@@ -3,7 +3,7 @@ use galvan_pest::Rule;
 
 use super::string;
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, From, FromPest)]
+#[derive(Clone, Debug, Display, PartialEq, Eq, From, FromPest, Hash)]
 #[pest_ast(rule(Rule::ident))]
 pub struct Ident(#[pest_ast(outer(with(string)))] String);
 
