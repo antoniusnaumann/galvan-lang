@@ -80,6 +80,7 @@ expression = {
     | comparison_expression
     | collection_expression
     | arithmetic_expression
+    | collection_literal
     | function_call
     | constructor_call
     | member_function_call
@@ -104,6 +105,7 @@ allowed_in_trailing_closure_call = !{
     | comparison_expression
     | collection_expression
     | arithmetic_expression
+    | collection_literal
     | function_call
     | constructor_call
     | member_function_call
@@ -118,6 +120,7 @@ allowed_in_logical = !{
     comparison_expression
     | collection_expression
     | arithmetic_expression
+    | collection_literal
     | function_call
     | constructor_call
     | member_function_call
@@ -131,6 +134,7 @@ allowed_in_logical = !{
 allowed_in_comparison = !{
     collection_expression
     | arithmetic_expression
+    | collection_literal
     | function_call
     | constructor_call
     | member_function_call
@@ -143,6 +147,7 @@ allowed_in_comparison = !{
 
 allowed_in_collection = !{
     arithmetic_expression
+    | collection_literal
     | function_call
     | constructor_call
     | member_function_call
@@ -154,7 +159,8 @@ allowed_in_collection = !{
 }
 
 allowed_in_arithmetic = !{
-    function_call
+    collection_literal
+    | function_call
     | constructor_call
     | member_function_call
     | member_field_access
@@ -187,6 +193,7 @@ logical_expression = ${ allowed_in_logical ~ (space+ ~ logical_infix_operator ~ 
 comparison_expression = ${ allowed_in_comparison ~ space+ ~ comparison_operator ~ space+ ~ allowed_in_comparison }
 collection_expression = ${ allowed_in_collection ~ space+ ~ collection_operator ~ space+ ~ allowed_in_collection }
 arithmetic_expression = ${ allowed_in_arithmetic ~ (space+ ~ arithmetic_operator ~ space+ ~ allowed_in_arithmetic)+ }
+
 
 infix_operator = { space ~ infix_operator_ ~ space }
 infix_operator_ = {
@@ -367,6 +374,17 @@ ordered_dict_type = !{ bracket_open ~ key_type ~ colon ~ value_type ~ bracket_cl
 tuple_type = !{ paren_open ~ tuple_elements ~ paren_close }
 result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
 optional_type = ${ opt_element_type ~ question_mark }
+
+// # Collection Literals
+collection_literal = { array_literal | set_literal | dict_literal | ordered_dict_literal }
+array_literal = { bracket_open ~ array_literal_elements ~ comma? ~ bracket_close }
+array_literal_elements = _{ (expression ~ (comma ~ expression)*)? }
+set_literal = { brace_open ~ set_literal_elements ~ comma? ~ brace_close }
+set_literal_elements = _{ (expression ~ (comma ~ expression)*)? }
+dict_literal = { brace_open ~ dict_literal_elements ~ comma? ~ brace_close }
+dict_literal_elements = _{ (dict_literal_element ~ (comma ~ dict_literal_element)*)? }
+dict_literal_element = { expression ~ colon ~ expression }
+ordered_dict_literal = { bracket_open ~ dict_literal_elements ~ comma? ~ bracket_close }
 
 // # Basics
 WHITESPACE = _{ whitespace }

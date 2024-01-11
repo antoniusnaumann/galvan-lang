@@ -38,6 +38,7 @@ pub type Expression = ElseExpression
     + ComparisonOperation
     + CollectionOperation
     + ArithmeticOperation
+    + CollectionLiteral
     + FunctionCall
     + ConstructorCall
     + MemberFunctionCall
@@ -53,6 +54,7 @@ pub type Expression = ElseExpression
 pub(crate) type AllowedInLogical = ComparisonOperation
     + CollectionOperation
     + ArithmeticOperation
+    + CollectionLiteral
     + FunctionCall
     + ConstructorCall
     + MemberFunctionCall
@@ -67,6 +69,7 @@ pub(crate) type AllowedInLogical = ComparisonOperation
 #[pest_ast(rule(Rule::allowed_in_comparison))]
 pub(crate) type AllowedInComparison = CollectionOperation
     + ArithmeticOperation
+    + CollectionLiteral
     + FunctionCall
     + ConstructorCall
     + MemberFunctionCall
@@ -80,6 +83,7 @@ pub(crate) type AllowedInComparison = CollectionOperation
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::allowed_in_collection))]
 pub(crate) type AllowedInCollection = ArithmeticOperation
+    + CollectionLiteral
     + FunctionCall
     + ConstructorCall
     + MemberFunctionCall
@@ -92,7 +96,8 @@ pub(crate) type AllowedInCollection = ArithmeticOperation
 #[type_union(super = Expression)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::allowed_in_arithmetic))]
-pub(crate) type AllowedInArithmetic = FunctionCall
+pub(crate) type AllowedInArithmetic = CollectionLiteral
+    + FunctionCall
     + ConstructorCall
     + MemberFunctionCall
     + MemberFieldAccess

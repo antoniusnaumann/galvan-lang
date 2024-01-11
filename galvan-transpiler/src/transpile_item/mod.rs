@@ -1,5 +1,6 @@
 mod assignment;
 mod closure;
+mod collection;
 mod fn_decl;
 mod function_call;
 mod ident;

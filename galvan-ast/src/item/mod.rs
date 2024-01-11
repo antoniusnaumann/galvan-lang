@@ -1,5 +1,6 @@
 mod assignment;
 mod closure;
+mod collection;
 mod r#fn;
 mod function_call;
 mod ident;
@@ -14,6 +15,7 @@ mod type_item;
 
 pub use assignment::*;
 pub use closure::*;
+pub use collection::*;
 pub use function_call::*;
 pub use ident::*;
 pub use literal::*;

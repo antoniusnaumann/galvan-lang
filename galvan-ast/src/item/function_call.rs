@@ -1,6 +1,7 @@
 use crate::{
-    ArithmeticOperation, BooleanLiteral, Closure, CollectionOperation, ComparisonOperation,
-    DeclModifier, Expression, Ident, LogicalOperation, NumberLiteral, StringLiteral, TypeIdent,
+    ArithmeticOperation, BooleanLiteral, Closure, CollectionLiteral, CollectionOperation,
+    ComparisonOperation, DeclModifier, Expression, Ident, LogicalOperation, NumberLiteral,
+    StringLiteral, TypeIdent,
 };
 use derive_more::From;
 use from_pest::pest::iterators::Pairs;
@@ -82,6 +83,7 @@ type AllowedInTrailingClosureCall = LogicalOperation
     + ComparisonOperation
     + CollectionOperation
     + ArithmeticOperation
+    + CollectionLiteral
     + FunctionCall
     + ConstructorCall
     + MemberFunctionCall

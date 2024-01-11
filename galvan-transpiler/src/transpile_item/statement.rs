@@ -144,6 +144,10 @@ impl InferType for Expression {
                 .into(),
             ),
             Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+            Expression::CollectionLiteral(_) => {
+                // todo!("Implement type inference for collection literal")
+                None
+            }
         }
     }
 }
@@ -167,6 +171,7 @@ impl_transpile_variants! { Expression;
     ComparisonOperation,
     CollectionOperation,
     ArithmeticOperation,
+    CollectionLiteral,
     FunctionCall,
     ConstructorCall,
     MemberFunctionCall,
