@@ -3,9 +3,10 @@ use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::Transpile;
 use galvan_ast::{
     ComparisonOperation, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
-    FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall, Ownership,
+    FunctionCall, FunctionCallArg, Ident, MemberFieldAccess, MemberFunctionCall, Ownership,
 };
 use galvan_resolver::Scope;
+use itertools::Itertools;
 
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -122,14 +123,38 @@ impl Transpile for FunctionCallArg {
     }
 }
 
-impl_transpile!(
-    MemberFunctionCall,
-    "{}.{}({})",
-    receiver,
-    identifier,
-    arguments
-);
-impl_transpile!(MemberFieldAccess, "{}.{}", receiver, identifier);
+impl Transpile for MemberFunctionCall {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let Self {
+            receiver,
+            identifier,
+            arguments,
+        } = self;
+
+        let receiver_chain = transpile_receiver_chain(ctx, scope, receiver);
+        transpile!(ctx, scope, "{receiver_chain}.{}({})", identifier, arguments)
+    }
+}
+
+impl Transpile for MemberFieldAccess {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let Self {
+            receiver,
+            identifier,
+        } = self;
+
+        let chain = transpile_receiver_chain(ctx, scope, receiver);
+        transpile!(ctx, scope, "{chain}.{}", identifier)
+    }
+}
+
+fn transpile_receiver_chain(ctx: &Context, scope: &mut Scope, receiver: &[Expression]) -> String {
+    receiver
+        .iter()
+        .map(|r| transpile!(ctx, scope, "{}", r))
+        .collect_vec()
+        .join(".")
+}
 
 impl_transpile!(ConstructorCall, "{} {{ {} }}", identifier, arguments,);
 impl_transpile!(ConstructorCallArg, "{}: {}", ident, expression);

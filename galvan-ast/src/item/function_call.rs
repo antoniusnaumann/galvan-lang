@@ -1,3 +1,4 @@
+use crate::item::AllowedInMemberCall;
 use crate::{
     ArithmeticOperation, BooleanLiteral, Closure, CollectionLiteral, CollectionOperation,
     ComparisonOperation, DeclModifier, Expression, Ident, LogicalOperation, NumberLiteral,
@@ -93,19 +94,83 @@ type AllowedInTrailingClosureCall = LogicalOperation
     + NumberLiteral
     + Ident;
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::member_function_call))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MemberFunctionCall {
-    pub receiver: Ident,
+    pub receiver: Vec<Expression>,
     pub identifier: Ident,
     pub arguments: Vec<FunctionCallArg>,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::member_field_access))]
+impl FromPest<'_> for MemberFunctionCall {
+    type Rule = Rule;
+    type FatalError = Void;
+
+    fn from_pest(
+        pairs: &mut Pairs<'_, Self::Rule>,
+    ) -> Result<Self, ConversionError<Self::FatalError>> {
+        let Some(pair) = pairs.next() else {
+            return Err(NoMatch);
+        };
+
+        if pair.as_rule() != Rule::member_function_call {
+            return Err(NoMatch);
+        }
+
+        let mut pairs = pair.into_inner();
+
+        let (receiver, identifier) = parse_member_chain(&mut pairs)?;
+        let arguments = Vec::<FunctionCallArg>::from_pest(&mut pairs)?;
+
+        Ok(Self {
+            receiver,
+            identifier,
+            arguments,
+        })
+    }
+}
+
+fn parse_member_chain(
+    pairs: &mut Pairs<'_, Rule>,
+) -> Result<(Vec<Expression>, Ident), ConversionError<Void>> {
+    let receiver = Vec::<AllowedInMemberCall>::from_pest(pairs)?
+        .into_iter()
+        .map(|expr| expr.into())
+        .collect::<Vec<_>>();
+    let identifier = Ident::from_pest(pairs)?;
+
+    Ok((receiver, identifier))
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct MemberFieldAccess {
-    pub receiver: Ident,
+    pub receiver: Vec<Expression>,
     pub identifier: Ident,
+}
+
+impl FromPest<'_> for MemberFieldAccess {
+    type Rule = Rule;
+    type FatalError = Void;
+
+    fn from_pest(
+        pairs: &mut Pairs<'_, Self::Rule>,
+    ) -> Result<Self, ConversionError<Self::FatalError>> {
+        let Some(pair) = pairs.next() else {
+            return Err(NoMatch);
+        };
+
+        if pair.as_rule() != Rule::member_field_access {
+            return Err(NoMatch);
+        }
+
+        let mut pairs = pair.into_inner();
+
+        let (receiver, identifier) = parse_member_chain(&mut pairs)?;
+
+        Ok(Self {
+            receiver,
+            identifier,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, FromPest)]

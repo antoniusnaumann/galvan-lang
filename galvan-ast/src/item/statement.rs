@@ -105,3 +105,15 @@ pub(crate) type AllowedInArithmetic = CollectionLiteral
     + StringLiteral
     + NumberLiteral
     + Ident;
+
+#[type_union(super = Expression)]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::allowed_in_member_call))]
+pub(crate) type AllowedInMemberCall = Closure
+    + CollectionLiteral
+    + FunctionCall
+    + ConstructorCall
+    + BooleanLiteral
+    + StringLiteral
+    + NumberLiteral
+    + Ident;

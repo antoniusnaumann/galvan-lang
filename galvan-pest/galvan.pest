@@ -170,6 +170,20 @@ allowed_in_arithmetic = !{
     | ident
 }
 
+allowed_in_member_call = !{
+    closure
+    // | trailing_closure_call
+    | collection_literal
+    | function_call
+    | constructor_call
+    | boolean_literal
+    | string_literal
+    | number_literal
+    | ident
+}
+
+
+
 closure = { "|" ~ closure_arguments? ~ "|" ~ block }
 closure_arguments = _{ (closure_argument ~ (comma ~ closure_argument)*)? ~ comma? }
 closure_argument = !{ ident ~ (colon ~ type_item)? }
@@ -210,8 +224,8 @@ function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
 function_call_arg = { (declaration_modifier)? ~ expression }
 
 // TODO: Allow all kinds of expressions in front of . here
-member_function_call = { ident ~ dot ~ function_call_base }
-member_field_access = { ident ~ dot ~ ident }
+member_function_call = { (allowed_in_member_call ~ space* ~ dot)+ ~ function_call_base }
+member_field_access = { (allowed_in_member_call ~ space* ~ dot)+ ~ ident }
 
 constructor_call = { type_ident ~ paren_open ~ constructor_call_args ~ paren_close }
 constructor_call_args = _{ (constructor_call_arg ~ (comma ~ constructor_call_arg)*)? }
