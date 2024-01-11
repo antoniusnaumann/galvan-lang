@@ -6,15 +6,15 @@ use galvan_resolver::Scope;
 
 // TODO: Re-export used types from galvan library to avoid referencing the used crates directly
 
-impl_transpile!(ArrayTypeItem, "std::collections::Vec<{}>", elements);
+impl_transpile!(ArrayTypeItem, "::std::vec::Vec<{}>", elements);
 impl_transpile!(
     DictionaryTypeItem,
-    "std::collections::HashMap<{}, {}>",
+    "::std::collections::HashMap<{}, {}>",
     key,
     value
 );
 impl_transpile!(OrderedDictionaryTypeItem, "TODO {} {}", key, value);
-impl_transpile!(SetTypeItem, "std::collections::HashSet<{}>", elements);
+impl_transpile!(SetTypeItem, "::std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
 impl_transpile_fn!(OptionalTypeItem, "Option<{}>", element);
 impl_transpile!(BasicTypeItem, "{}", ident);
@@ -25,7 +25,7 @@ impl Transpile for ResultTypeItem {
         if let Some(error) = error {
             transpile!(ctx, scope, "Result<{}, {}>", success, error)
         } else {
-            transpile!(ctx, scope, "anyhow::Result<{}>", success)
+            transpile!(ctx, scope, "::anyhow::Result<{}>", success)
         }
     }
 }
