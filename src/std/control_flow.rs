@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 // TODO: Improve transpilation for copy types and take bool instead of &bool here
 #[inline(always)]
 pub fn r#if<T, F>(condition: &bool, body: F) -> Option<T>
@@ -11,10 +13,12 @@ where
     }
 }
 
-pub trait __ToOption {
-    type Inner;
+pub trait __ToOption<T: ?Sized> {
+    type Inner: Borrow<T>;
 
     fn __to_option(&self) -> Option<Self::Inner>;
+
+    fn __borrow_inner(&self) -> Option<&T>;
 
     #[inline(always)]
     fn __or_else<F>(&self, f: F) -> Self::Inner
@@ -25,38 +29,52 @@ pub trait __ToOption {
     }
 }
 
-impl<T: ToOwned> __ToOption for Option<T> {
+impl<T: ToOwned> __ToOption<T> for Option<T> {
     type Inner = T::Owned;
 
     #[inline(always)]
     fn __to_option(&self) -> Option<Self::Inner> {
         self.as_ref().map(|x| x.to_owned())
     }
+
+    fn __borrow_inner(&self) -> Option<&T> {
+        self.as_ref().map(|x| x.borrow())
+    }
 }
 
-impl<T: ToOwned> __ToOption for &Option<T> {
+impl<T: ToOwned> __ToOption<T> for &Option<T> {
     type Inner = T::Owned;
 
     #[inline(always)]
     fn __to_option(&self) -> Option<Self::Inner> {
         self.as_ref().map(|x| x.to_owned())
     }
+
+    fn __borrow_inner(&self) -> Option<&T> {
+        self.as_ref().map(|x| x.borrow())
+    }
 }
 
-impl<T: ToOwned, _E> __ToOption for Result<T, _E> {
+impl<T: ToOwned, _E> __ToOption<T> for Result<T, _E> {
     type Inner = T::Owned;
 
     #[inline(always)]
     fn __to_option(&self) -> Option<Self::Inner> {
         self.as_ref().ok().map(|x| x.to_owned())
     }
+
+    fn __borrow_inner(&self) -> Option<&T> {
+        self.as_ref().ok().map(|x| x.borrow())
+    }
 }
 
 #[inline(always)]
-pub fn r#try<T, O, F>(fallible: &O, body: F) -> Option<T>
+pub fn r#try<T, O, F, B, S>(fallible: O, body: F) -> Option<T>
 where
-    F: FnOnce(O::Inner) -> T,
-    O: __ToOption + ToOwned,
+    F: FnOnce(&S) -> T,
+    O: __ToOption<B>,
+    B: Borrow<S>,
+    S: ?Sized,
 {
-    fallible.__to_option().map(body)
+    fallible.__borrow_inner().map(|b| b.borrow()).map(body)
 }

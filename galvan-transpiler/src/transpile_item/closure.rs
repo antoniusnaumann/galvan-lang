@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    Block, Closure, ClosureArgument, DeclModifier, ElseExpression, LetKeyword, Ownership,
+    Block, Closure, ClosureArgument, DeclModifier, ElseExpression, LetKeyword, Ownership, Param,
 };
 use galvan_resolver::{Scope, Variable};
 
@@ -32,7 +32,13 @@ impl Transpile for ClosureArgument {
         });
 
         if let Some(ty) = &self.ty {
-            transpile!(ctx, scope, "{}: {}", self.ident, ty)
+            let param = Param {
+                identifier: self.ident.clone(),
+                decl_modifier: None,
+                param_type: ty.clone(),
+            };
+
+            transpile!(ctx, scope, "{}", param)
         } else {
             // TODO: Handle refs and mut here as well
             self.ident.transpile(ctx, scope)

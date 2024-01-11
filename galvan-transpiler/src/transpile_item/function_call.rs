@@ -1,9 +1,9 @@
 use crate::context::Context;
-use crate::macros::{impl_transpile, impl_transpile_match, transpile};
+use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
 use galvan_ast::{
     ComparisonOperation, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
-    FunctionCall, FunctionCallArg, Ident, MemberFieldAccess, MemberFunctionCall, Ownership,
+    FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall, Ownership,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
