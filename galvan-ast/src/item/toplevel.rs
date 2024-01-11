@@ -13,22 +13,25 @@ pub enum RootItem {
     // CustomTask(TaskDecl),
 }
 
-trait Seal {}
-pub trait RootItemMarker: Seal {}
+mod private {
+    pub trait Seal {}
+}
 
-impl Seal for FnDecl {}
+pub trait RootItemMarker: private::Seal {}
+
+impl private::Seal for FnDecl {}
 
 impl RootItemMarker for FnDecl {}
 
-impl Seal for TypeDecl {}
+impl private::Seal for TypeDecl {}
 
 impl RootItemMarker for TypeDecl {}
 
-impl Seal for MainDecl {}
+impl private::Seal for MainDecl {}
 
 impl RootItemMarker for MainDecl {}
 
-impl Seal for TestDecl {}
+impl private::Seal for TestDecl {}
 
 impl RootItemMarker for TestDecl {}
 // impl RootItemMarker for TaskDecl {}
