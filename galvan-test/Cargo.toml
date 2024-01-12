@@ -1,0 +1,9 @@
+[package]
+name = "galvan-test"
+version = "0.0.0"
+
+[dependencies]
+galvan = { path = ".." }
+
+[build-dependencies]
+galvan = { path = "..", features = ["build"]}

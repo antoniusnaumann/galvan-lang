@@ -42,4 +42,5 @@ members = [
   "galvan-resolver",
   "galvan-transpiler",
   "galvan-test-macro",
+  "galvan-test"
 ]
