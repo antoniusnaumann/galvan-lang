@@ -165,7 +165,7 @@ mod test_utils {
 
     pub fn member(receiver: &str, ident: &str) -> Expression {
         MemberFieldAccess {
-            receiver: Ident::new(receiver),
+            receiver: vec![Ident::new(receiver).into()],
             identifier: Ident::new(ident),
         }
         .into()
