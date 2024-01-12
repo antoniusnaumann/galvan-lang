@@ -163,7 +163,18 @@ fn transpile_segmented(
 fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context, scope: &mut Scope) -> String {
     fn test_name<'a>(desc: &Option<StringLiteral>) -> Cow<'a, str> {
         desc.as_ref().map_or("test".into(), |desc| {
-            let snake = desc.as_str().trim_matches('\"').to_case(Case::Snake);
+            let snake = desc
+                .as_str()
+                .trim_matches('\"')
+                .to_case(Case::Snake)
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+
+            let snake = if snake.starts_with(|c: char| c.is_ascii_digit()) {
+                format!("test_{}", snake)
+            } else {
+                snake
+            };
+
             if snake.ends_with(|c: char| c.is_ascii_digit()) {
                 format!("{}_", snake).into()
             } else {

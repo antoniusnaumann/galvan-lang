@@ -13,12 +13,18 @@ impl Transpile for Body {
         let mut body_scope = Scope::child(scope);
         let scope = &mut body_scope;
 
+        let last = match self.statements.last() {
+            Some(Statement::Declaration(_)) | Some(Statement::Assignment(_)) => ";",
+            _ => "",
+        };
+
         format!(
             "{{\n{}\n}}",
             self.statements
                 .iter()
                 .map(|stmt| stmt.transpile(ctx, scope))
                 .join(";\n")
+                + last
         )
     }
 }

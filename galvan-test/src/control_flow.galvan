@@ -1,0 +1,24 @@
+test "If clause" {
+    if true {
+        assert(true)
+    } else {
+        assert(false)
+    }
+}
+
+test "If expression" {
+    let some = if 6 == 6 { "Something" }
+
+    // TODO: Auto-unwrap optionals in comparisons to make this work
+    // assert some == "Something"
+
+    let nothing = if 6 == 7 { "Something" }
+
+    // TODO: Introduce none keyword
+    // assert nothing == none
+}
+
+test "If-Else expression" {
+    let result = if 6 == 7 { "Correct" } else { "Wrong" }
+    assert result == "Wrong"
+}
