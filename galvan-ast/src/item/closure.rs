@@ -1,6 +1,6 @@
 use crate::{
-    Block, ConstructorCall, Expression, FunctionCall, Ident, MemberFieldAccess, MemberFunctionCall,
-    TypeElement,
+    Block, Body, ConstructorCall, Expression, FunctionCall, Ident, MemberFieldAccess,
+    MemberFunctionCall, TypeElement,
 };
 use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
@@ -24,13 +24,25 @@ impl FromPest<'_> for Closure {
         let Some(pair) = pairs.next() else {
             return Err(NoMatch);
         };
-        if pair.as_rule() != Rule::closure && pair.as_rule() != Rule::trailing_closure {
+        let rule = pair.as_rule();
+        if rule != Rule::closure && rule != Rule::trailing_closure {
             return Err(NoMatch);
         }
 
         let mut pairs = pair.into_inner();
         let arguments = Vec::<ClosureArgument>::from_pest(&mut pairs)?;
-        let block = Block::from_pest(&mut pairs)?;
+
+        let block = match rule {
+            Rule::closure => Block::from_pest(&mut pairs).or_else(|_| {
+                Expression::from_pest(&mut pairs).map(|e| Block {
+                    body: Body {
+                        statements: vec![e.into()],
+                    },
+                })
+            })?,
+            Rule::trailing_closure => Block::from_pest(&mut pairs)?,
+            _ => unreachable!(),
+        };
 
         Ok(Self { arguments, block })
     }

@@ -171,9 +171,7 @@ allowed_in_arithmetic = !{
 }
 
 allowed_in_member_call = !{
-    closure
-    // | trailing_closure_call
-    | collection_literal
+    collection_literal
     | function_call
     | constructor_call
     | boolean_literal
@@ -182,9 +180,7 @@ allowed_in_member_call = !{
     | ident
 }
 
-
-
-closure = { "|" ~ closure_arguments? ~ "|" ~ block }
+closure = { "|" ~ closure_arguments? ~ "|" ~ (block | expression) }
 closure_arguments = _{ (closure_argument ~ (comma ~ closure_argument)*)? ~ comma? }
 closure_argument = !{ ident ~ (colon ~ type_item)? }
 block = !{ (brace_open ~ body ~ brace_close) }
