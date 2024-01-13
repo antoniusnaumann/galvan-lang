@@ -11,6 +11,7 @@ use itertools::Itertools;
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         match self.identifier.as_str() {
+            "panic" => format!("panic!(\"{{}}\", {})", self.arguments.transpile(ctx, scope)),
             "println" => format!(
                 "println!(\"{{}}\", {})",
                 self.arguments.transpile(ctx, scope)
