@@ -25,7 +25,7 @@ impl Transpile for ResultTypeItem {
         if let Some(error) = error {
             transpile!(ctx, scope, "Result<{}, {}>", success, error)
         } else {
-            transpile!(ctx, scope, "::anyhow::Result<{}>", success)
+            transpile!(ctx, scope, "::galvan::std::FlexResult<{}>", success)
         }
     }
 }

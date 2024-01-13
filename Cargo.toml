@@ -26,6 +26,8 @@ license.workspace = true
 
 [dependencies]
 galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev08" }
+itertools = "0.12.0"
+anyhow = "1.0.79"
 
 [features]
 build = ["galvan-transpiler/exec"]

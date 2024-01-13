@@ -3,7 +3,7 @@ single(alias_type(inherited(), "ImplicitError", result(plain("Int"), None)))
 */
 
 /*# TRANSPILE
-"pub(crate) type ImplicitError = ::anyhow::Result<i64>;"
+"pub(crate) type ImplicitError = ::galvan::FlexResult<i64>;"
 */
 
 type ImplicitError = Int!
