@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile_variants, transpile};
 use crate::Transpile;
-use galvan_ast::{Assignment, AssignmentOperator, AssignmentTarget, DeclModifier, Ownership};
+use galvan_ast::{Assignment, AssignmentOperator, AssignmentTarget, Ownership};
 use galvan_resolver::Scope;
 
 impl_transpile_variants!(AssignmentTarget; Ident, MemberFieldAccess);

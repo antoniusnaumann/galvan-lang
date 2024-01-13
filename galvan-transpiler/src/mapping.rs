@@ -1,4 +1,4 @@
-use galvan_ast::TypeIdent;
+use galvan_ast::{FnSignature, TypeIdent};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -90,7 +90,7 @@ pub(crate) use mapping;
 pub(crate) use mapping_insert;
 
 /// Transpiled type names, depending on whether they are owned, borrowed, or mutably borrowed.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct RustType {
     owned: Box<str>,
     borrowed: Box<str>,

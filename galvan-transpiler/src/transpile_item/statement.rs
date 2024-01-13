@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile_variants, transpile};
+use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
     BasicTypeItem, BooleanLiteral, DeclModifier, Declaration, Expression, NumberLiteral, Ownership,
@@ -94,70 +95,6 @@ impl Transpile for Declaration {
     }
 }
 
-trait InferType {
-    fn infer_type(&self, scope: &mut Scope) -> Option<TypeElement>;
-}
-impl InferType for Expression {
-    fn infer_type(&self, scope: &mut Scope) -> Option<TypeElement> {
-        match self {
-            Expression::ElseExpression(_) => {
-                // todo!("Implement type inference for else expression")
-                None
-            }
-            Expression::Closure(_) => {
-                // todo!("Implement type inference for closure")
-                None
-            }
-            Expression::CollectionOperation(_) => {
-                // todo!("Implement type inference for collection operation")
-                None
-            }
-            Expression::ArithmeticOperation(_) => {
-                // todo!("Implement type inference for arithmetic operation")
-                None
-            }
-            Expression::FunctionCall(_) => {
-                // todo!("Implement type inference for function call")
-                None
-            }
-            Expression::ConstructorCall(constructor) => Some(constructor.identifier.clone().into()),
-            Expression::MemberFunctionCall(_) => {
-                // todo!("Implement type inference for member function call")
-                None
-            }
-            Expression::MemberFieldAccess(field) => {
-                // todo!("Implement type inference for member field access")
-                None
-            }
-            Expression::BooleanLiteral(_)
-            | Expression::LogicalOperation(_)
-            | Expression::ComparisonOperation(_) => Some(
-                BasicTypeItem {
-                    ident: TypeIdent::new("Bool"),
-                }
-                .into(),
-            ),
-            Expression::StringLiteral(_) => Some(
-                BasicTypeItem {
-                    ident: TypeIdent::new("String"),
-                }
-                .into(),
-            ),
-            Expression::NumberLiteral(_) => Some(
-                BasicTypeItem {
-                    ident: TypeIdent::new("__Number"),
-                }
-                .into(),
-            ),
-            Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
-            Expression::CollectionLiteral(_) => {
-                // todo!("Implement type inference for collection literal")
-                None
-            }
-        }
-    }
-}
-
 fn transpile_assignment_expression(ctx: &Context, expr: &Expression, scope: &mut Scope) -> String {
     match expr {
         Expression::Ident(ident) => {
@@ -189,21 +126,21 @@ impl_transpile_variants! { Expression;
 }
 
 impl Transpile for StringLiteral {
-    fn transpile(&self, _: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
         // TODO: Implement more sophisticated formatting (extract {} and put them as separate arguments)
         format!("format!({})", self.as_str())
     }
 }
 
 impl Transpile for NumberLiteral {
-    fn transpile(&self, _: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
         // TODO: Parse number and validate type
         format!("{}", self.as_str())
     }
 }
 
 impl Transpile for BooleanLiteral {
-    fn transpile(&self, _: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
         format!("{self}")
     }
 }

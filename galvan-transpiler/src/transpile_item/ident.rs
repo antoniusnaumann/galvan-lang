@@ -4,7 +4,7 @@ use crate::{Ident, Transpile, TypeIdent};
 use galvan_resolver::Scope;
 
 impl Transpile for Ident {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
         // TODO: Escape ident when name has collision with rust keyword
         // TODO: Use lookup to insert fully qualified name
         sanitize_name(self.as_str()).into()
@@ -12,8 +12,8 @@ impl Transpile for Ident {
 }
 
 impl Transpile for TypeIdent {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Some(decl) = ctx.lookup.types.get(self) else {
+    fn transpile(&self, ctx: &Context, _scope: &mut Scope) -> String {
+        let Some(_decl) = ctx.lookup.types.get(self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };
         // TODO: Handle module path here and use fully qualified name
@@ -35,8 +35,8 @@ pub trait TranspileType {
 }
 
 impl TranspileType for TypeIdent {
-    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: TypeOwnership) -> String {
-        let Some(decl) = ctx.lookup.types.get(self) else {
+    fn transpile_type(&self, ctx: &Context, _scope: &mut Scope, ownership: TypeOwnership) -> String {
+        let Some(_decl) = ctx.lookup.types.get(self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };
         // TODO: Handle module path here and use fully qualified name

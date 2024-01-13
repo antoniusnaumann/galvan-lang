@@ -7,6 +7,8 @@ pub fn builtins() -> Mapping {
 
         // Hack to explicitly enable rusts inference for number literals
         ("__Number" => "_", copy),
+        // Symbolic type name for partial inference
+        ("__Infer" => "_"),
 
         ("I8" => "i8", copy),
         ("I16" => "i16", copy),

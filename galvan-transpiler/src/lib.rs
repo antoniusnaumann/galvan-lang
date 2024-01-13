@@ -261,6 +261,7 @@ pub fn transpile(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Transpile
 }
 
 mod transpile_item;
+mod type_inference;
 
 trait Transpile {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String;
@@ -352,7 +353,7 @@ mod macros {
 use crate::builtins::builtins;
 use crate::context::{predefined_from, Context};
 use crate::macros::transpile;
-use crate::mapping::Mapping;
+
 use crate::sanitize::sanitize_name;
 use macros::punct;
 
@@ -403,13 +404,13 @@ where
 }
 
 impl Transpile for &str {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
         self.to_string()
     }
 }
 
 impl Transpile for String {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
         self.to_owned()
     }
 }

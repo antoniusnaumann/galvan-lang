@@ -1,10 +1,15 @@
-use galvan_ast::{DeclModifier, Ident, Ownership, TypeElement};
+use crate::{Lookup, LookupContext};
+use galvan_ast::{
+    DeclModifier, FnDecl, Ident, Ownership, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Scope<'a> {
     pub parent: Option<&'a Scope<'a>>,
     pub variables: HashMap<Ident, Variable>,
+
+    lookup: Option<LookupContext<'a>>,
 }
 
 impl Scope<'_> {
@@ -12,6 +17,7 @@ impl Scope<'_> {
         Scope {
             parent: Some(parent),
             variables: HashMap::new(),
+            lookup: None,
         }
     }
 
@@ -23,6 +29,36 @@ impl Scope<'_> {
         self.variables
             .get(ident)
             .or_else(|| self.parent.and_then(|parent| parent.get_variable(ident)))
+    }
+}
+
+impl<'a> Scope<'a> {
+    pub fn set_lookup(&mut self, lookup: LookupContext<'a>) {
+        self.lookup = Some(lookup);
+    }
+}
+
+impl Lookup for Scope<'_> {
+    fn resolve_type(&self, name: &TypeIdent) -> Option<&ToplevelItem<TypeDecl>> {
+        self.lookup
+            .as_ref()
+            .and_then(|lookup| lookup.resolve_type(name))
+            .or_else(|| self.parent.and_then(|parent| parent.resolve_type(name)))
+    }
+
+    fn resolve_function(
+        &self,
+        receiver: Option<&TypeIdent>,
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&ToplevelItem<FnDecl>> {
+        self.lookup
+            .as_ref()
+            .and_then(|lookup| lookup.resolve_function(receiver, name, labels))
+            .or_else(|| {
+                self.parent
+                    .and_then(|parent| parent.resolve_function(receiver, name, labels))
+            })
     }
 }
 

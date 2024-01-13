@@ -17,6 +17,17 @@ pub struct LookupContext<'a> {
     pub main: Option<&'a ToplevelItem<MainDecl>>,
 }
 
+pub trait Lookup {
+    fn resolve_type(&self, name: &TypeIdent) -> Option<&ToplevelItem<TypeDecl>>;
+
+    fn resolve_function(
+        &self,
+        receiver: Option<&TypeIdent>,
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&ToplevelItem<FnDecl>>;
+}
+
 // TODO: Include spans in errors
 #[derive(Debug, Error)]
 pub enum LookupError {
@@ -61,12 +72,12 @@ impl<'a> LookupContext<'a> {
     }
 }
 
-impl LookupContext<'_> {
-    pub fn resolve_type(&self, name: &TypeIdent) -> Option<&ToplevelItem<TypeDecl>> {
+impl Lookup for LookupContext<'_> {
+    fn resolve_type(&self, name: &TypeIdent) -> Option<&ToplevelItem<TypeDecl>> {
         self.types.get(&name).copied()
     }
 
-    pub fn resolve_function(
+    fn resolve_function(
         &self,
         receiver: Option<&TypeIdent>,
         name: &Ident,

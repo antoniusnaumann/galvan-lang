@@ -14,7 +14,7 @@ type Result = Box<ResultTypeItem>;
 type Plain = BasicTypeItem;
 
 #[type_union]
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::type_item))]
 pub type TypeElement =
     Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Plain;
@@ -84,39 +84,39 @@ impl TypeElement {
 }
 
 // TODO: Add a marker trait to constrain this to only type decls
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::array_type))]
 pub struct ArrayTypeItem {
     pub elements: TypeElement,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::dict_type))]
 pub struct DictionaryTypeItem {
     pub key: TypeElement,
     pub value: TypeElement,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::ordered_dict_type))]
 pub struct OrderedDictionaryTypeItem {
     pub key: TypeElement,
     pub value: TypeElement,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::set_type))]
 pub struct SetTypeItem {
     pub elements: TypeElement,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::tuple_type))]
 pub struct TupleTypeItem {
     pub elements: Vec<TypeElement>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OptionalTypeItem {
     pub some: TypeElement,
 }
@@ -149,7 +149,7 @@ impl OptionalTypeItem {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ResultTypeItem {
     pub success: TypeElement,
     pub error: Option<TypeElement>,
@@ -180,7 +180,7 @@ impl FromPest<'_> for ResultTypeItem {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, FromPest)]
 #[pest_ast(rule(Rule::basic_type))]
 pub struct BasicTypeItem {
     pub ident: TypeIdent,

@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::macros::{impl_transpile_variants, transpile};
+use crate::macros::transpile;
 use crate::Transpile;
 use galvan_ast::{
     ArithmeticOperation, ArithmeticOperator, CollectionOperation, CollectionOperator,

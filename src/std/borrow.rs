@@ -12,6 +12,7 @@ impl<T: ToOwned> __ToRef for &T {
 
     #[inline(always)]
     fn __to_ref(&self) -> Arc<Mutex<Self::Inner>> {
+        #[allow(suspicious_double_ref_op)]
         Arc::new(Mutex::new(self.deref().to_owned()))
     }
 }

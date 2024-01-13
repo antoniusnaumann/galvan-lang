@@ -28,7 +28,7 @@ pub fn predefined_from(mapping: &Mapping) -> SegmentedAsts {
     let types = mapping
         .types
         .iter()
-        .map(|(ident, rust_type)| ToplevelItem {
+        .map(|(ident, _rust_type)| ToplevelItem {
             item: TypeDecl::Empty(EmptyTypeDecl {
                 visibility: Visibility::Inherited,
                 ident: ident.clone(),
