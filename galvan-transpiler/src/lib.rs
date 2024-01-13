@@ -131,7 +131,7 @@ fn transpile_segmented(
     let main = segmented
         .main
         .as_ref()
-        .map(|main| transpile!(ctx, scope, "pub(crate) fn __main__() {{\n{}\n}}", main.body))
+        .map(|main| transpile!(ctx, scope, "pub(crate) fn __main__() {}", main.body))
         .unwrap_or_default();
 
     let lib = TranspileOutput {

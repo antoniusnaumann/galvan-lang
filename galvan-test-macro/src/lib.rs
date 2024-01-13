@@ -106,7 +106,14 @@ fn generate_test(path: PathBuf, macro_input: &MacroInput) -> TokenStream {
         panic!("Test file not found!")
     };
 
-    let expected_struct = expected_result(&test_file, tag).unwrap_or_else(|e| panic!("{}", e));
+    let Ok(expected_struct) = expected_result(&test_file, tag).map_err(|e| match e {
+        TestError::TagNotClosed => panic!("Tag not closed in test file!"),
+        TestError::InvalidRustCode => panic!("Invalid Rust code in test file!"),
+        TestError::TagNotFound => e,
+    }) else {
+        return quote! {};
+    };
+
     let code = test_file;
 
     let test_name = format_ident!("{prefix}_{name}");
@@ -133,7 +140,13 @@ fn generate_test(path: PathBuf, macro_input: &MacroInput) -> TokenStream {
     }
 }
 
-fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStream, &'static str> {
+enum TestError {
+    TagNotFound,
+    TagNotClosed,
+    InvalidRustCode,
+}
+
+fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStream, TestError> {
     let prefix = "/*#";
     let mut lines = vec![];
     let mut iter = test_file.lines();
@@ -148,7 +161,7 @@ fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStrea
                 break
             }
             Some(_) => continue,
-            None => return Err("Tag not found in test file!"),
+            None => return Err(TestError::TagNotFound),
         }
     }
 
@@ -156,11 +169,11 @@ fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStrea
         match iter.next() {
             Some(line) if line.starts_with("*/") => break,
             Some(line) => lines.push(line),
-            None => return Err("Tag not closed in test file!"),
+            None => return Err(TestError::TagNotClosed),
         }
     }
 
     let code = lines.join("\n");
     code.parse::<TokenStream>()
-        .map_err(|_| "Code in frontmatter is not valid Rust code!")
+        .map_err(|_| TestError::InvalidRustCode)
 }

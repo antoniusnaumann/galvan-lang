@@ -4,7 +4,7 @@ use crate::{MainDecl, Transpile};
 use galvan_ast::TestDecl;
 use galvan_resolver::Scope;
 
-impl_transpile!(MainDecl, "fn main() {{ {} }}", body);
+impl_transpile!(MainDecl, "fn main() {}", body);
 
 impl Transpile for TestDecl {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
