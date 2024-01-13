@@ -109,6 +109,9 @@ impl Transpile for FunctionCallArg {
                     }
                 }
             }
+            (None, Exp::Closure(closure)) => {
+                transpile!(ctx, scope, "{}", closure)
+            }
             (None, expression) => {
                 transpile!(ctx, scope, "&({})", expression)
             }
