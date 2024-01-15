@@ -1,5 +1,5 @@
 source = { SOI ~ space* ~ (space* ~ toplevel ~ space*)* ~ EOI }
-toplevel = { 
+toplevel = {
 	main
 	| build
 	| test
@@ -26,7 +26,7 @@ function = {
 
 fn_signature = {
     func_modifiers ~ function_keyword ~ ident ~ param_list ~ return_type?
-}// TODO: Add support for context arguments, varargs, default args, named args and trailing lambdas
+} // TODO: Add support for context arguments, varargs, default args and named args
 return_type = _{ arrow ~ type_item }
 
 annotation = ${ "@" ~ ident ~ annotation_params?}
@@ -63,121 +63,51 @@ task = { ident ~ brace_open ~ body ~ brace_close }
 
 body = { ((newline)* ~ statement ~ (newline | ";")+)* ~ statement? }
 
-statement = { assignment | declaration | expression | block }
+statement = { assignment | declaration | else_expression | trailing_closure_call | expression | block  }
 
-assignment = { assignment_target ~ assignment_operator ~ expression }
-assignment_target = { member_field_access | ident }
+assignment = { assignment_target ~ assignment_operator ~ (trailing_closure_call | expression) }
+assignment_target = { member_chain | ident }
+assignment_source = { else_expression | trailing_closure_call | expression }
 
-declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ expression }
+declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ assignment_source }
 declaration_modifier = ${ (ref_keyword | let_keyword | mut_keyword) ~ w }
+
+else_expression = { (trailing_closure_call | single_expression) ~ else_keyword ~ block }
 
 // TODO: Add block expressions and parenthesized expressions
 expression = {
-    else_expression
+    operator_chain
+    | member_chain
+    | single_expression
     | closure
-    | trailing_closure_call
-    | logical_expression
-    | comparison_expression
-    | collection_expression
-    | arithmetic_expression
-    | collection_literal
-    | function_call
-    | constructor_call
-    | member_function_call
-    | member_field_access
-    | boolean_literal
-    | string_literal
-    | number_literal
-    | ident
 }
 
-allowed_before_else_expression = !{
-    trailing_closure_call
-    | function_call
-    | constructor_call
-    | member_function_call
-    | member_field_access
-    | (ident ~ w)
+simple_expression = !{
+    member_chain
+    | single_expression
 }
 
-allowed_in_trailing_closure_call = !{
-    logical_expression
-    | comparison_expression
-    | collection_expression
-    | arithmetic_expression
-    | collection_literal
-    | function_call
-    | constructor_call
-    | member_function_call
-    | member_field_access
-    | boolean_literal
-    | string_literal
-    | number_literal
-    | ident
+operator_chain = ${
+    simple_expression ~ ((w ~ infix_operator ~ w) ~ (simple_expression))+
 }
 
-allowed_in_logical = !{
-    comparison_expression
-    | collection_expression
-    | arithmetic_expression
-    | collection_literal
-    | function_call
-    | constructor_call
-    | member_function_call
-    | member_field_access
-    | boolean_literal
-    | string_literal
-    | number_literal
-    | ident
+member_chain = {
+    ((strict_trailing_closure_call | single_expression) ~ space* ~ dot)+ ~ (function_call_base | ident)
 }
 
-allowed_in_comparison = !{
-    collection_expression
-    | arithmetic_expression
-    | collection_literal
-    | function_call
-    | constructor_call
-    | member_function_call
-    | member_field_access
-    | boolean_literal
-    | string_literal
-    | number_literal
-    | ident
-}
-
-allowed_in_collection = !{
-    arithmetic_expression
-    | collection_literal
-    | function_call
-    | constructor_call
-    | member_function_call
-    | member_field_access
-    | boolean_literal
-    | string_literal
-    | number_literal
-    | ident
-}
-
-allowed_in_arithmetic = !{
+single_expression = {
     collection_literal
     | function_call
     | constructor_call
-    | member_function_call
-    | member_field_access
-    | boolean_literal
-    | string_literal
-    | number_literal
+    | literal
     | ident
+    // | group
 }
 
-allowed_in_member_call = !{
-    collection_literal
-    | function_call
-    | constructor_call
-    | boolean_literal
+literal = {
+    boolean_literal
     | string_literal
     | number_literal
-    | ident
 }
 
 closure = { "|" ~ closure_arguments? ~ "|" ~ (block | expression) }
@@ -196,17 +126,15 @@ trailing_closure_call = ${
         ~ whitespace* ~ comma?
         ~ whitespace* ~ trailing_closure?))
 }
+strict_trailing_closure_call = ${
+     ident
+     ~ (whitespace* ~ trailing_closure_call_arg* ~ whitespace* ~ comma?)
+     ~ whitespace* ~ trailing_closure
+ }
 trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
-trailing_closure_call_arg = { (declaration_modifier)? ~ allowed_in_trailing_closure_call }
-else_expression = { allowed_before_else_expression ~ else_keyword ~ block }
-logical_expression = ${ allowed_in_logical ~ (space+ ~ logical_infix_operator ~ space+ ~ allowed_in_logical)+ }
-comparison_expression = ${ allowed_in_comparison ~ space+ ~ comparison_operator ~ space+ ~ allowed_in_comparison }
-collection_expression = ${ allowed_in_collection ~ space+ ~ collection_operator ~ space+ ~ allowed_in_collection }
-arithmetic_expression = ${ allowed_in_arithmetic ~ (space+ ~ arithmetic_operator ~ space+ ~ allowed_in_arithmetic)+ }
+trailing_closure_call_arg = { (declaration_modifier)? ~ expression }
 
-
-infix_operator = { space ~ infix_operator_ ~ space }
-infix_operator_ = {
+infix_operator = {
     arithmetic_operator
     | collection_operator
     | comparison_operator
@@ -218,10 +146,6 @@ function_call = { function_call_base }
 function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
 function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
 function_call_arg = { (declaration_modifier)? ~ expression }
-
-// TODO: Allow all kinds of expressions in front of . here
-member_function_call = { (allowed_in_member_call ~ space* ~ dot)+ ~ function_call_base }
-member_field_access = { (allowed_in_member_call ~ space* ~ dot)+ ~ ident }
 
 constructor_call = { type_ident ~ paren_open ~ constructor_call_args ~ paren_close }
 constructor_call_args = _{ (constructor_call_arg ~ (comma ~ constructor_call_arg)*)? }
