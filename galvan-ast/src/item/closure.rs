@@ -1,6 +1,6 @@
 use crate::{
     Block, Body, ConstructorCall, Expression, FunctionCall, Ident, MemberFieldAccess,
-    MemberFunctionCall, TypeElement,
+    MemberFunctionCall, SingleExpression, TypeElement,
 };
 use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
@@ -48,7 +48,7 @@ impl FromPest<'_> for Closure {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Debug, Clone, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::closure_argument))]
 pub struct ClosureArgument {
     pub ident: Ident,
@@ -76,7 +76,7 @@ impl FromPest<'_> for ElseExpression {
         }
 
         let mut pairs = pair.into_inner();
-        let receiver_pair = pairs.next()?;
+        let receiver_pair = pairs.next().ok_or(NoMatch)?;
 
         match receiver_pair.as_rule() {
             Rule::single_expression => {
@@ -91,6 +91,7 @@ impl FromPest<'_> for ElseExpression {
                 let block = Block::from_pest(&mut pairs)?;
                 Ok(Self { receiver, block })
             }
+            _ => Err(NoMatch),
         }
     }
 }

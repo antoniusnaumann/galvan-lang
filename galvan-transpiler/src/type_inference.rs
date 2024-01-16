@@ -1,8 +1,7 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, BasicTypeItem, CollectionLiteral, CollectionOperation,
-    CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, Expression,
-    MemberFieldAccess, OrderedDictLiteral, OrderedDictionaryTypeItem, SetLiteral, SetTypeItem,
-    TypeDecl, TypeElement, TypeIdent,
+    ArrayLiteral, ArrayTypeItem, BasicTypeItem, CollectionLiteral, CollectionOperator, DictLiteral,
+    DictLiteralElement, DictionaryTypeItem, Expression, MemberFieldAccess, OrderedDictLiteral,
+    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;

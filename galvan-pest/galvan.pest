@@ -92,7 +92,10 @@ operator_chain = ${
 }
 
 member_chain = {
-    ((strict_trailing_closure_call | single_expression) ~ space* ~ dot)+ ~ (function_call_base | ident)
+    member_chain_base ~ (function_call_base | ident)
+}
+member_chain_base = {
+    ((strict_trailing_closure_call | single_expression) ~ space* ~ dot)+
 }
 
 single_expression = {

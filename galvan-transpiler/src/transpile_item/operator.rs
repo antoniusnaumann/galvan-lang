@@ -1,10 +1,7 @@
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::Transpile;
-use galvan_ast::{
-    ArithmeticOperation, ArithmeticOperator, CollectionOperation, CollectionOperator,
-    ComparisonOperation, ComparisonOperator, LogicalOperation, LogicalOperator,
-};
+use galvan_ast::{ArithmeticOperator, CollectionOperator, ComparisonOperator, LogicalOperator};
 use galvan_resolver::Scope;
 use itertools::Itertools;
 
