@@ -57,15 +57,9 @@ pub struct ClosureArgument {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ElseExpression {
-    pub receiver: Box<Expression>,
+    pub receiver: Box<SingleExpression>,
     pub block: Block,
 }
-
-#[type_union(super = Expression)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::allowed_before_else_expression))]
-type AllowedBeforeElseExpression =
-    FunctionCall + ConstructorCall + MemberFunctionCall + MemberFieldAccess + Ident;
 
 impl FromPest<'_> for ElseExpression {
     type Rule = Rule;
@@ -82,9 +76,21 @@ impl FromPest<'_> for ElseExpression {
         }
 
         let mut pairs = pair.into_inner();
-        let receiver = Box::new(AllowedBeforeElseExpression::from_pest(&mut pairs)?.into());
-        let block = Block::from_pest(&mut pairs)?;
+        let receiver_pair = pairs.next()?;
 
-        Ok(Self { receiver, block })
+        match receiver_pair.as_rule() {
+            Rule::single_expression => {
+                let receiver =
+                    Box::new(SingleExpression::from_pest(&mut receiver_pair.into_inner())?.into());
+                let block = Block::from_pest(&mut pairs)?;
+                Ok(Self { receiver, block })
+            }
+            Rule::trailing_closure_call => {
+                let mut pairs = receiver_pair.into_inner();
+                let receiver = Box::new(FunctionCall::from_pest(&mut pairs)?.into());
+                let block = Block::from_pest(&mut pairs)?;
+                Ok(Self { receiver, block })
+            }
+        }
     }
 }
