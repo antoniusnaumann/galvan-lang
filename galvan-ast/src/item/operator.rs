@@ -5,6 +5,7 @@ use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
 use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
+use typeunion::type_union;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::operator_chain))]
@@ -155,3 +156,76 @@ impl FromPest<'_> for LogicalOperator {
 #[derive(Debug, Clone, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::custom_infix_operator))]
 pub struct CustomInfixOperator(#[pest_ast(outer(with(string)))] String);
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct OperatorTree {
+    pub left: OperatorTreeNode,
+    pub operator: InfixOperator,
+    pub right: OperatorTreeNode,
+}
+
+pub type Operation = Box<OperatorTree>;
+#[type_union]
+#[derive(Debug, PartialEq, Eq)]
+pub type OperatorTreeNode = Operation + SimpleExpression;
+
+trait Precedence {
+    fn precedence(&self) -> u8;
+}
+
+impl Precedence for LogicalOperator {
+    fn precedence(&self) -> u8 {
+        match self {
+            LogicalOperator::And => 8,
+            LogicalOperator::Or => 5,
+            LogicalOperator::Xor => 2,
+        }
+    }
+}
+
+impl Precedence for ComparisonOperator {
+    fn precedence(&self) -> u8 {
+        match self {
+            ComparisonOperator::Equal
+            | ComparisonOperator::NotEqual
+            | ComparisonOperator::Less
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::Greater
+            | ComparisonOperator::GreaterEqual => 12,
+            ComparisonOperator::Identical | ComparisonOperator::NotIdentical => 15,
+        }
+    }
+}
+
+impl Precedence for CollectionOperator {
+    fn precedence(&self) -> u8 {
+        match self {
+            CollectionOperator::Concat | CollectionOperator::Remove => 22,
+            CollectionOperator::Contains => 25,
+        }
+    }
+}
+
+impl Precedence for ArithmeticOperator {
+    fn precedence(&self) -> u8 {
+        match self {
+            ArithmeticOperator::Plus | ArithmeticOperator::Minus => 32,
+            ArithmeticOperator::Multiply
+            | ArithmeticOperator::Divide
+            | ArithmeticOperator::Remainder => 35,
+            ArithmeticOperator::Power => 38,
+        }
+    }
+}
+
+impl Precedence for CustomInfixOperator {
+    fn precedence(&self) -> u8 {
+        50
+    }
+}
+
+impl OperatorChain {
+    pub fn into_tree(self) -> OperatorTree {
+        todo!("Implement operator chain to tree conversion")
+    }
+}
