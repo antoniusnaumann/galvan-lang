@@ -1,9 +1,11 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
+use crate::transpile_item::statement::match_ident;
 use crate::Transpile;
 use galvan_ast::{
-    ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg,
-    MemberFieldAccess, MemberFunctionCall, Ownership,
+    ComparisonOperator, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
+    FunctionCall, FunctionCallArg, InfixOperator, MemberFieldAccess, MemberFunctionCall,
+    OperatorTree, Ownership, SingleExpression,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -24,13 +26,13 @@ impl Transpile for FunctionCall {
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
-                    expression: Expression::ComparisonOperation(comp),
+                    expression: Expression::OperatorTree(comp),
                 }) => {
                     if modifier.is_some() {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
                     }
 
-                    let ComparisonOperation {
+                    let OperatorTree {
                         left,
                         operator,
                         right,
@@ -41,7 +43,7 @@ impl Transpile for FunctionCall {
                         &[]
                     };
                     match operator {
-                        galvan_ast::ComparisonOperator::Equal => {
+                        InfixOperator::Comparison(ComparisonOperator::Equal) => {
                             transpile!(
                                 ctx,
                                 scope,
@@ -51,7 +53,7 @@ impl Transpile for FunctionCall {
                                 args.transpile(ctx, scope)
                             )
                         }
-                        galvan_ast::ComparisonOperator::NotEqual => {
+                        InfixOperator::Comparison(ComparisonOperator::NotEqual) => {
                             transpile!(
                                 ctx,
                                 scope,
@@ -88,7 +90,7 @@ impl Transpile for FunctionCallArg {
             (Some(Mod::Let(_)), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
-            (None, Exp::Ident(ident)) => {
+            (None, match_ident!(ident)) => {
                 match scope
                     .get_variable(ident)
                     .unwrap_or_else(|| {
@@ -116,10 +118,10 @@ impl Transpile for FunctionCallArg {
             (None, expression) => {
                 transpile!(ctx, scope, "&({})", expression)
             }
-            (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+            (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "&mut {}", expr)
             }
-            (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+            (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),

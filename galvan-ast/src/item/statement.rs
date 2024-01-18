@@ -41,7 +41,7 @@ pub type Literal = BooleanLiteral + StringLiteral + NumberLiteral;
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::expression))]
 pub type Expression =
-    OperatorChain + MemberFunctionCall + MemberFieldAccess + SingleExpression + Closure;
+    OperatorTree + MemberFunctionCall + MemberFieldAccess + SingleExpression + Closure;
 
 #[type_union(super = Expression)]
 #[derive(Debug, PartialEq, Eq, FromPest)]

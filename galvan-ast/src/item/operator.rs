@@ -1,4 +1,6 @@
 use super::*;
+use std::iter::Peekable;
+use std::vec::IntoIter;
 
 use derive_more::From;
 use from_pest::pest::iterators::Pairs;
@@ -23,6 +25,18 @@ pub enum InfixOperator {
     Comparison(ComparisonOperator),
     Logical(LogicalOperator),
     CustomInfix(CustomInfixOperator),
+}
+
+impl BindingPower for InfixOperator {
+    fn binding_power(&self) -> u8 {
+        match self {
+            InfixOperator::Arithmetic(op) => op.binding_power(),
+            InfixOperator::Collection(op) => op.binding_power(),
+            InfixOperator::Comparison(op) => op.binding_power(),
+            InfixOperator::Logical(op) => op.binding_power(),
+            InfixOperator::CustomInfix(op) => op.binding_power(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,17 +178,29 @@ pub struct OperatorTree {
     pub right: OperatorTreeNode,
 }
 
+impl FromPest<'_> for OperatorTree {
+    type Rule = Rule;
+    type FatalError = Void;
+
+    fn from_pest(
+        pairs: &mut Pairs<'_, Self::Rule>,
+    ) -> Result<Self, ConversionError<Self::FatalError>> {
+        let chain = OperatorChain::from_pest(pairs)?;
+        Ok(chain.into_tree())
+    }
+}
+
 pub type Operation = Box<OperatorTree>;
 #[type_union]
 #[derive(Debug, PartialEq, Eq)]
 pub type OperatorTreeNode = Operation + SimpleExpression;
 
-trait Precedence {
-    fn precedence(&self) -> u8;
+trait BindingPower {
+    fn binding_power(&self) -> u8;
 }
 
-impl Precedence for LogicalOperator {
-    fn precedence(&self) -> u8 {
+impl BindingPower for LogicalOperator {
+    fn binding_power(&self) -> u8 {
         match self {
             LogicalOperator::And => 8,
             LogicalOperator::Or => 5,
@@ -183,8 +209,8 @@ impl Precedence for LogicalOperator {
     }
 }
 
-impl Precedence for ComparisonOperator {
-    fn precedence(&self) -> u8 {
+impl BindingPower for ComparisonOperator {
+    fn binding_power(&self) -> u8 {
         match self {
             ComparisonOperator::Equal
             | ComparisonOperator::NotEqual
@@ -197,17 +223,17 @@ impl Precedence for ComparisonOperator {
     }
 }
 
-impl Precedence for CollectionOperator {
-    fn precedence(&self) -> u8 {
+impl BindingPower for CollectionOperator {
+    fn binding_power(&self) -> u8 {
         match self {
-            CollectionOperator::Concat | CollectionOperator::Remove => 22,
-            CollectionOperator::Contains => 25,
+            CollectionOperator::Concat | CollectionOperator::Remove => 25,
+            CollectionOperator::Contains => 22,
         }
     }
 }
 
-impl Precedence for ArithmeticOperator {
-    fn precedence(&self) -> u8 {
+impl BindingPower for ArithmeticOperator {
+    fn binding_power(&self) -> u8 {
         match self {
             ArithmeticOperator::Plus | ArithmeticOperator::Minus => 32,
             ArithmeticOperator::Multiply
@@ -218,14 +244,48 @@ impl Precedence for ArithmeticOperator {
     }
 }
 
-impl Precedence for CustomInfixOperator {
-    fn precedence(&self) -> u8 {
+impl BindingPower for CustomInfixOperator {
+    fn binding_power(&self) -> u8 {
         50
     }
 }
 
 impl OperatorChain {
     pub fn into_tree(self) -> OperatorTree {
-        todo!("Implement operator chain to tree conversion")
+        let Self { parts, operators } = self;
+
+        let mut parts = parts.into_iter();
+        let mut operators = operators.into_iter().peekable();
+        match parse_operation(&mut parts, &mut operators, 0) {
+            OperatorTreeNode::Operation(op) => *op,
+            OperatorTreeNode::SimpleExpression(_) => {
+                unreachable!("Operator chain should always have at least one operator")
+            }
+        }
     }
+}
+
+fn parse_operation(
+    parts: &mut IntoIter<SimpleExpression>,
+    operators: &mut Peekable<IntoIter<InfixOperator>>,
+    binding_power: u8,
+) -> OperatorTreeNode {
+    let mut left = OperatorTreeNode::from(parts.next().expect("Operator chain is empty"));
+
+    while let Some(operator) = operators.peek() {
+        if operator.binding_power() < binding_power {
+            break;
+        }
+
+        let operator = operators.next().unwrap();
+        let right = parse_operation(parts, operators, operator.binding_power());
+
+        left = OperatorTreeNode::from(Box::from(OperatorTree {
+            left,
+            operator,
+            right,
+        }));
+    }
+
+    left
 }

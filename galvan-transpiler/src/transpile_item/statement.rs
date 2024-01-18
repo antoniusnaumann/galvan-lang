@@ -107,6 +107,13 @@ fn transpile_assignment_expression(ctx: &Context, expr: &Expression, scope: &mut
     }
 }
 
+macro_rules! match_ident {
+    ($p:pat) => {
+        Expression::SingleExpression(SingleExpression::Ident($p))
+    };
+}
+pub(crate) use match_ident;
+
 impl_transpile_variants! { Expression;
     ElseExpression,
     Closure,
