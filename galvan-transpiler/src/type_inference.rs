@@ -1,7 +1,8 @@
 use galvan_ast::{
     ArrayLiteral, ArrayTypeItem, BasicTypeItem, CollectionLiteral, CollectionOperator, DictLiteral,
-    DictLiteralElement, DictionaryTypeItem, Expression, MemberFieldAccess, OrderedDictLiteral,
-    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, TypeDecl, TypeElement, TypeIdent,
+    DictLiteralElement, DictionaryTypeItem, Expression, InfixOperator, Literal, MemberFieldAccess,
+    OperatorTree, OperatorTreeNode, OrderedDictLiteral, OrderedDictionaryTypeItem, SetLiteral,
+    SetTypeItem, SimpleExpression, SingleExpression, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -12,55 +13,111 @@ pub(crate) trait InferType {
 impl InferType for Expression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            Expression::ElseExpression(_) => {
-                // todo!("Implement type inference for else expression")
-                None
-            }
             Expression::Closure(_) => {
                 // todo!("Implement type inference for closure")
                 None
             }
-            Expression::CollectionOperation(op) => {
-                match op.operator {
-                    CollectionOperator::Concat | CollectionOperator::Remove => {
-                        // todo!("Implement type inference for collection concat")
-                        None
-                    }
-                    CollectionOperator::Contains => Some(bool()),
-                }
-            }
-            Expression::ArithmeticOperation(_) => {
-                // todo!("Implement type inference for arithmetic operation")
-                None
-            }
-            Expression::FunctionCall(_) => {
-                // todo!("Implement type inference for function call")
-                None
-            }
-            Expression::ConstructorCall(constructor) => Some(constructor.identifier.clone().into()),
+            Expression::OperatorTree(tree) => tree.infer_type(scope),
             Expression::MemberFunctionCall(_) => {
                 // todo!("Implement type inference for member function call")
                 None
             }
             Expression::MemberFieldAccess(access) => access.infer_type(scope),
-            Expression::BooleanLiteral(_)
-            | Expression::LogicalOperation(_)
-            | Expression::ComparisonOperation(_) => Some(bool()),
-            Expression::StringLiteral(_) => Some(
+            Expression::SingleExpression(s) => s.infer_type(scope),
+        }
+    }
+}
+
+impl InferType for SimpleExpression {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            SimpleExpression::MemberFieldAccess(access) => access.infer_type(scope),
+            SimpleExpression::MemberFunctionCall(_) => {
+                // todo!("Implement type inference for member function call")
+                None
+            }
+            SimpleExpression::SingleExpression(expr) => expr.infer_type(scope),
+        }
+    }
+}
+
+impl InferType for SingleExpression {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            SingleExpression::CollectionLiteral(collection) => collection.infer_type(scope),
+            SingleExpression::FunctionCall(call) => {
+                // todo!("Implement type inference for function call")
+                None
+            }
+            SingleExpression::ConstructorCall(constructor) => {
+                Some(constructor.identifier.clone().into())
+            }
+            SingleExpression::Literal(literal) => literal.infer_type(scope),
+            SingleExpression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+        }
+    }
+}
+
+impl InferType for Literal {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            Literal::BooleanLiteral(_) => Some(bool()),
+            Literal::StringLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("String"),
                 }
                 .into(),
             ),
-            Expression::NumberLiteral(_) => Some(
+            Literal::NumberLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("__Number"),
                 }
                 .into(),
             ),
-            Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
-            Expression::CollectionLiteral(collection) => collection.infer_type(scope),
         }
+    }
+}
+
+impl InferType for OperatorTree {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let Self {
+            left,
+            operator,
+            right,
+        } = self;
+
+        match operator {
+            InfixOperator::Arithmetic(op) => {
+                // todo!("Implement type inference for arithmetic operator")
+                None
+            }
+            InfixOperator::Collection(op) => infer_collection_operation(scope, *op, left, right),
+            InfixOperator::Comparison(op) => Some(bool()),
+            InfixOperator::Logical(op) => Some(bool()),
+            InfixOperator::CustomInfix(op) => {
+                // todo!("Implement type inference for custom infix operator")
+                None
+            }
+        }
+    }
+}
+
+fn infer_collection_operation(
+    scope: &Scope,
+    op: CollectionOperator,
+    lhs: &OperatorTreeNode,
+    rhs: &OperatorTreeNode,
+) -> Option<TypeElement> {
+    match op {
+        CollectionOperator::Concat => {
+            // todo!("Implement type inference for collection concat")
+            None
+        }
+        CollectionOperator::Remove => {
+            // todo!("Implement type inference for collection remove")
+            None
+        }
+        CollectionOperator::Contains => Some(bool()),
     }
 }
 
@@ -80,12 +137,10 @@ fn infer() -> TypeElement {
 
 impl InferType for MemberFieldAccess {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self {
-            receiver,
-            identifier,
-        } = self;
-        let receiver_type = if receiver.len() == 1 {
-            receiver[0].infer_type(scope)?
+        let Self { base, field } = self;
+
+        let receiver_type = if base.base.len() == 1 {
+            base.base[0].infer_type(scope)?
         } else {
             return None;
         };
@@ -101,7 +156,7 @@ impl InferType for MemberFieldAccess {
                     TypeDecl::Struct(st) => st
                         .members
                         .iter()
-                        .find(|member| member.ident == *identifier)
+                        .find(|member| member.ident == *field)
                         .map(|member| member.r#type.clone()),
                     TypeDecl::Alias(_) => {
                         // TODO: Handle Inference for alias types

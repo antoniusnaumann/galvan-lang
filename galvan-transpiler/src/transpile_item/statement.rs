@@ -3,8 +3,8 @@ use crate::macros::{impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    BasicTypeItem, BooleanLiteral, DeclModifier, Declaration, Expression, NumberLiteral, Ownership,
-    Statement, StringLiteral, TypeElement, TypeIdent,
+    BooleanLiteral, DeclModifier, Declaration, Expression, Literal, NumberLiteral, Ownership,
+    SingleExpression, Statement, StringLiteral, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -95,9 +95,16 @@ impl Transpile for Declaration {
     }
 }
 
+macro_rules! match_ident {
+    ($p:pat) => {
+        Expression::SingleExpression(SingleExpression::Ident($p))
+    };
+}
+pub(crate) use match_ident;
+
 fn transpile_assignment_expression(ctx: &Context, expr: &Expression, scope: &mut Scope) -> String {
     match expr {
-        Expression::Ident(ident) => {
+        match_ident!(ident) => {
             transpile!(ctx, scope, "{}.to_owned()", ident)
         }
         Expression::MemberFieldAccess(access) => {
@@ -107,29 +114,26 @@ fn transpile_assignment_expression(ctx: &Context, expr: &Expression, scope: &mut
     }
 }
 
-macro_rules! match_ident {
-    ($p:pat) => {
-        Expression::SingleExpression(SingleExpression::Ident($p))
-    };
-}
-pub(crate) use match_ident;
-
 impl_transpile_variants! { Expression;
-    ElseExpression,
-    Closure,
-    LogicalOperation,
-    ComparisonOperation,
-    CollectionOperation,
-    ArithmeticOperation,
+    OperatorTree,
+    MemberFunctionCall,
+    MemberFieldAccess,
+    SingleExpression,
+    Closure
+}
+
+impl_transpile_variants! { SingleExpression;
     CollectionLiteral,
     FunctionCall,
     ConstructorCall,
-    MemberFunctionCall,
-    MemberFieldAccess,
+    Literal,
+    Ident
+}
+
+impl_transpile_variants! { Literal;
     BooleanLiteral,
     StringLiteral,
-    NumberLiteral,
-    Ident
+    NumberLiteral
 }
 
 impl Transpile for StringLiteral {

@@ -4,8 +4,8 @@ use crate::transpile_item::statement::match_ident;
 use crate::Transpile;
 use galvan_ast::{
     ComparisonOperator, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
-    FunctionCall, FunctionCallArg, InfixOperator, MemberFieldAccess, MemberFunctionCall,
-    OperatorTree, Ownership, SingleExpression,
+    FunctionCall, FunctionCallArg, InfixOperator, MemberChainBase, MemberFieldAccess,
+    MemberFunctionCall, OperatorTree, Ownership, SingleExpression,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -131,35 +131,26 @@ impl Transpile for FunctionCallArg {
 
 impl Transpile for MemberFunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self {
-            receiver,
-            identifier,
-            arguments,
-        } = self;
-
-        let receiver_chain = transpile_receiver_chain(ctx, scope, receiver);
-        transpile!(ctx, scope, "{receiver_chain}.{}({})", identifier, arguments)
+        let Self { base, call } = self;
+        transpile!(ctx, scope, "{}.{}", base, call)
     }
 }
 
 impl Transpile for MemberFieldAccess {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self {
-            receiver,
-            identifier,
-        } = self;
-
-        let chain = transpile_receiver_chain(ctx, scope, receiver);
-        transpile!(ctx, scope, "{chain}.{}", identifier)
+        let Self { base, field } = self;
+        transpile!(ctx, scope, "{}.{}", base, field)
     }
 }
 
-fn transpile_receiver_chain(ctx: &Context, scope: &mut Scope, receiver: &[Expression]) -> String {
-    receiver
-        .iter()
-        .map(|r| transpile!(ctx, scope, "{}", r))
-        .collect_vec()
-        .join(".")
+impl Transpile for MemberChainBase {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        self.base
+            .iter()
+            .map(|r| transpile!(ctx, scope, "{}", r))
+            .collect_vec()
+            .join(".")
+    }
 }
 
 impl_transpile!(ConstructorCall, "{} {{ {} }}", identifier, arguments,);
