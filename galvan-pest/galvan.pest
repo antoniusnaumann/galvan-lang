@@ -63,13 +63,13 @@ task = { ident ~ brace_open ~ body ~ brace_close }
 
 body = { ((newline)* ~ statement ~ (newline | semicolon)+)* ~ statement? }
 
-statement = { assignment | declaration | else_expression | trailing_closure_call | expression | block  }
+statement = { assignment | declaration | top_expression | block  }
 
-assignment = { assignment_target ~ assignment_operator ~ assignment_source }
+assignment = { assignment_target ~ assignment_operator ~ top_expression }
 assignment_target = { member_chain | ident }
-assignment_source = { else_expression | trailing_closure_call | expression }
+top_expression = { else_expression | trailing_closure_call | expression }
 
-declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ assignment_source }
+declaration = { declaration_modifier ~ ident ~ (colon ~ type_item)? ~ assign_ ~ top_expression }
 declaration_modifier = ${ (ref_keyword | let_keyword | mut_keyword) ~ w }
 
 else_expression = { (trailing_closure_call | single_expression) ~ else_keyword ~ block }

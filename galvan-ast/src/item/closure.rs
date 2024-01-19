@@ -1,6 +1,6 @@
 use crate::{
     Block, Body, ConstructorCall, Expression, FunctionCall, Ident, MemberFieldAccess,
-    MemberFunctionCall, SingleExpression, TypeElement,
+    MemberFunctionCall, SingleExpression, TopExpression, TypeElement,
 };
 use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
@@ -36,7 +36,7 @@ impl FromPest<'_> for Closure {
             Rule::closure => Block::from_pest(&mut pairs).or_else(|_| {
                 Expression::from_pest(&mut pairs).map(|e| Block {
                     body: Body {
-                        statements: vec![e.into()],
+                        statements: vec![TopExpression::from(e).into()],
                     },
                 })
             })?,
@@ -76,18 +76,16 @@ impl FromPest<'_> for ElseExpression {
         }
 
         let mut pairs = pair.into_inner();
-        let receiver_pair = pairs.next().ok_or(NoMatch)?;
+        println!("Else-Expression: \n{:#?}", pairs);
+        let receiver_pair = pairs.peek().ok_or(NoMatch)?;
 
         match receiver_pair.as_rule() {
             Rule::single_expression => {
-                let receiver = Box::new(SingleExpression::from_pest(
-                    &mut receiver_pair.into_inner(),
-                )?);
+                let receiver = Box::new(SingleExpression::from_pest(&mut pairs)?);
                 let block = Block::from_pest(&mut pairs)?;
                 Ok(Self { receiver, block })
             }
             Rule::trailing_closure_call => {
-                let mut pairs = receiver_pair.into_inner();
                 let receiver = Box::new(FunctionCall::from_pest(&mut pairs)?.into());
                 let block = Block::from_pest(&mut pairs)?;
                 Ok(Self { receiver, block })

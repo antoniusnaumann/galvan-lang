@@ -3,8 +3,8 @@ use crate::macros::{impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    AssignmentSource, BooleanLiteral, DeclModifier, Declaration, Expression, Literal,
-    NumberLiteral, Ownership, SingleExpression, Statement, StringLiteral, TypeElement,
+    BooleanLiteral, DeclModifier, Declaration, Expression, Literal, NumberLiteral, Ownership,
+    SingleExpression, Statement, StringLiteral, TopExpression, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -30,7 +30,7 @@ impl Transpile for Body {
     }
 }
 
-impl_transpile_variants!(Statement; Assignment, Expression, ElseExpression, Declaration, Block);
+impl_transpile_variants!(Statement; Assignment, TopExpression, Declaration, Block);
 
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -104,11 +104,11 @@ pub(crate) use match_ident;
 
 fn transpile_assignment_expression(
     ctx: &Context,
-    assigned: &AssignmentSource,
+    assigned: &TopExpression,
     scope: &mut Scope,
 ) -> String {
     match assigned {
-        AssignmentSource::Expression(expr) => match expr {
+        TopExpression::Expression(expr) => match expr {
             match_ident!(ident) => {
                 transpile!(ctx, scope, "{}.to_owned()", ident)
             }
@@ -117,7 +117,7 @@ fn transpile_assignment_expression(
             }
             expr => expr.transpile(ctx, scope),
         },
-        AssignmentSource::ElseExpression(e) => e.transpile(ctx, scope),
+        TopExpression::ElseExpression(e) => e.transpile(ctx, scope),
     }
 }
 

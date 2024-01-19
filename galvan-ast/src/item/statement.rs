@@ -19,56 +19,9 @@ pub struct Block {
 }
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq)]
-pub type Statement = Assignment + Declaration + ElseExpression + Expression + Block;
-
-impl FromPest<'_> for Statement {
-    type Rule = Rule;
-    type FatalError = Void;
-
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let pair = pairs.next().ok_or(NoMatch)?;
-        if pair.as_rule() != Rule::statement {
-            return Err(NoMatch);
-        }
-
-        let mut pairs = pair.into_inner();
-        match pairs.peek().ok_or(NoMatch)?.as_rule() {
-            Rule::assignment => {
-                let assignment = Assignment::from_pest(&mut pairs)?;
-                Ok(assignment.into())
-            }
-            Rule::declaration => {
-                let declaration = Declaration::from_pest(&mut pairs)?;
-                Ok(declaration.into())
-            }
-            Rule::else_expression => {
-                let else_expression = ElseExpression::from_pest(&mut pairs)?;
-                Ok(else_expression.into())
-            }
-            Rule::expression => {
-                let expression = Expression::from_pest(&mut pairs)?;
-                Ok(expression.into())
-            }
-            Rule::block => {
-                let block = Block::from_pest(&mut pairs)?;
-                Ok(block.into())
-            }
-            Rule::trailing_closure_call => {
-                let function_call = FunctionCall::from_pest(&mut pairs)?;
-                Ok(
-                    Expression::from(SimpleExpression::from(SingleExpression::from(
-                        function_call,
-                    )))
-                    .into(),
-                )
-            }
-            _ => Err(NoMatch),
-        }
-    }
-}
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::statement))]
+pub type Statement = Assignment + Declaration + TopExpression + Block;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::declaration))]
@@ -76,7 +29,7 @@ pub struct Declaration {
     pub decl_modifier: DeclModifier,
     pub identifier: Ident,
     pub type_annotation: Option<TypeElement>,
-    pub assignment: Option<AssignmentSource>,
+    pub assignment: Option<TopExpression>,
 }
 
 #[type_union]

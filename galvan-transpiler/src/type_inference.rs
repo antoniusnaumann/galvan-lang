@@ -1,9 +1,9 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, AssignmentSource, BasicTypeItem, Block, Body, CollectionLiteral,
-    CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
-    Expression, InfixOperator, Literal, MemberFieldAccess, OperatorTree, OperatorTreeNode,
-    OrderedDictLiteral, OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, SimpleExpression,
-    SingleExpression, Statement, TypeDecl, TypeElement, TypeIdent,
+    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
+    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, InfixOperator,
+    Literal, MemberFieldAccess, OperatorTree, OperatorTreeNode, OrderedDictLiteral,
+    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, SimpleExpression, SingleExpression,
+    Statement, TopExpression, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -12,14 +12,11 @@ pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement>;
 }
 
-impl InferType for AssignmentSource {
+impl InferType for TopExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            AssignmentSource::Expression(e) => e.infer_type(scope),
-            AssignmentSource::ElseExpression(_) => {
-                // todo!("Implement type inference for else expression")
-                None
-            }
+            TopExpression::Expression(e) => e.infer_type(scope),
+            TopExpression::ElseExpression(e) => e.infer_type(scope),
         }
     }
 }
@@ -63,8 +60,7 @@ impl InferType for Statement {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
             Statement::Assignment(assignment) => None,
-            Statement::Expression(expr) => expr.infer_type(scope),
-            Statement::ElseExpression(else_expr) => else_expr.infer_type(scope),
+            Statement::TopExpression(expr) => expr.infer_type(scope),
             Statement::Declaration(decl) => None,
             Statement::Block(block) => block.infer_type(scope),
         }
