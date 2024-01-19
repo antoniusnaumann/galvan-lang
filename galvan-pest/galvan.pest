@@ -61,7 +61,7 @@ param_base = _{ declaration_modifier? ~ ident ~ colon ~ type_item }
 
 task = { ident ~ brace_open ~ body ~ brace_close }
 
-body = { ((newline)* ~ statement ~ (newline | semicolon)+)+ ~ statement? }
+body = { ((newline)* ~ statement ~ (newline | semicolon)+)* ~ statement? }
 
 statement = { assignment | declaration | else_expression | trailing_closure_call | expression | block  }
 

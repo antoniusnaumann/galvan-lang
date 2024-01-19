@@ -5,6 +5,7 @@ use galvan_transpiler::exec::transpile_dir;
 #[allow(clippy::redundant_closure)]
 fn main() {
     let args: Vec<String> = env::args()
+        .filter(|s| !s.trim().is_empty())
         .map(|s| {
             if !s.ends_with(".galvan") {
                 s + ".galvan"

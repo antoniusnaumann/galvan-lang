@@ -1,42 +1,14 @@
-/*# AST
-multi(vec![
-    function(
-        public(),
-        "multiply",
-        params(
-            vec![
-                (None, "a", plain("Int")),
-                (None, "b", plain("Int"))
-            ]),
-        Some(plain("Int")),
-        empty_body(),
-    ).into(),
-    function(
-        public(),
-        "double",
-        params(vec![(None, "a", plain("Int"))]),
-        Some(plain("Int")),
-        body(vec![
-            function_call("multiply", vec![
-                (None, variable("a")),
-                (None, number("2")),
-            ]).into()
-        ])
-    ).into(),
-])
-*/
-
 /*# TRANSPILE
 // TODO: Remove the reference &a for copy types by type checking function signatures
 // TODO: Only insert & around expressions for non-copy types
 "
-pub fn multiply(a: i64, b: i64) -> i64 { }
+pub fn multiply(a: i64, b: i64) -> i64 { a * b }
 pub fn double(a: i64) -> i64 { multiply(a, &(2)) }
 "
 */
 
 pub fn multiply(a: Int, b : Int) -> Int {
-    // a * b
+    a * b
 }
 
 pub fn double(a: Int) -> Int {
