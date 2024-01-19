@@ -187,12 +187,12 @@ impl FromPest<'_> for OperatorTree {
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
         let pair = pairs.peek().ok_or(NoMatch)?;
-        println!("Rule: {:#?}, Operator chain: {:#?}", pair.as_rule(), pairs);
+        // println!("Rule: {:#?}, Operator chain: {:#?}", pair.as_rule(), pairs);
         if pair.as_rule() != Rule::operator_chain {
             return Err(NoMatch);
         }
 
-        println!("Operator chain: {:#?}", pairs);
+        // println!("Operator chain: {:#?}", pairs);
         let chain = OperatorChain::from_pest(pairs)?;
         Ok(chain.into_tree())
     }

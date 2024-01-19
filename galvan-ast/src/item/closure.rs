@@ -80,8 +80,9 @@ impl FromPest<'_> for ElseExpression {
 
         match receiver_pair.as_rule() {
             Rule::single_expression => {
-                let receiver =
-                    Box::new(SingleExpression::from_pest(&mut receiver_pair.into_inner())?.into());
+                let receiver = Box::new(SingleExpression::from_pest(
+                    &mut receiver_pair.into_inner(),
+                )?);
                 let block = Block::from_pest(&mut pairs)?;
                 Ok(Self { receiver, block })
             }

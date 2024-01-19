@@ -23,7 +23,9 @@ impl FromPest<'_> for FunctionCall {
         };
         let rule = pair.as_rule();
         match rule {
-            Rule::function_call | Rule::trailing_closure_call => {
+            Rule::function_call
+            | Rule::trailing_closure_call
+            | Rule::strict_trailing_closure_call => {
                 let mut pairs = pair.into_inner();
                 let identifier = Ident::from_pest(&mut pairs)?;
 
