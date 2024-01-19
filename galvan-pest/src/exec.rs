@@ -9,7 +9,7 @@ pub fn parse_current_dir() -> Vec<(ParseResult<'static>, Source)> {
 }
 
 pub fn parse_dir(path: impl AsRef<Path>) -> Vec<(ParseResult<'static>, Source)> {
-    read_sources(path)
+    read_sources(path, vec![])
         .unwrap()
         .into_iter()
         .map(|s| (parse_source(Box::leak(Box::new(s.clone()))), s))

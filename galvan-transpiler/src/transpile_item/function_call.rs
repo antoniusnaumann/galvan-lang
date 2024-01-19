@@ -1,9 +1,11 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
+use crate::transpile_item::statement::match_ident;
 use crate::Transpile;
 use galvan_ast::{
-    ComparisonOperation, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
-    FunctionCall, FunctionCallArg, MemberFieldAccess, MemberFunctionCall, Ownership,
+    ComparisonOperator, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
+    FunctionCall, FunctionCallArg, InfixOperator, MemberChainBase, MemberFieldAccess,
+    MemberFunctionCall, OperatorTree, Ownership, SingleExpression,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -24,13 +26,13 @@ impl Transpile for FunctionCall {
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
-                    expression: Expression::ComparisonOperation(comp),
+                    expression: Expression::OperatorTree(comp),
                 }) => {
                     if modifier.is_some() {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
                     }
 
-                    let ComparisonOperation {
+                    let OperatorTree {
                         left,
                         operator,
                         right,
@@ -41,7 +43,7 @@ impl Transpile for FunctionCall {
                         &[]
                     };
                     match operator {
-                        galvan_ast::ComparisonOperator::Equal => {
+                        InfixOperator::Comparison(ComparisonOperator::Equal) => {
                             transpile!(
                                 ctx,
                                 scope,
@@ -51,7 +53,7 @@ impl Transpile for FunctionCall {
                                 args.transpile(ctx, scope)
                             )
                         }
-                        galvan_ast::ComparisonOperator::NotEqual => {
+                        InfixOperator::Comparison(ComparisonOperator::NotEqual) => {
                             transpile!(
                                 ctx,
                                 scope,
@@ -65,7 +67,10 @@ impl Transpile for FunctionCall {
                     }
                 }
                 Some(_) => format!("assert!({})", self.arguments.transpile(ctx, scope)),
-                _ => todo!("TRANSPILER ERROR: assert expects a boolean argument"),
+                _ => todo!(
+                    "TRANSPILER ERROR: assert expects a boolean argument, found: {:#?}",
+                    self.arguments
+                ),
             },
             _ => {
                 // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
@@ -88,7 +93,7 @@ impl Transpile for FunctionCallArg {
             (Some(Mod::Let(_)), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
-            (None, Exp::Ident(ident)) => {
+            (None, match_ident!(ident)) => {
                 match scope
                     .get_variable(ident)
                     .unwrap_or_else(|| {
@@ -116,10 +121,10 @@ impl Transpile for FunctionCallArg {
             (None, expression) => {
                 transpile!(ctx, scope, "&({})", expression)
             }
-            (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+            (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "&mut {}", expr)
             }
-            (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ Exp::Ident(_)) => {
+            (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),
@@ -129,35 +134,26 @@ impl Transpile for FunctionCallArg {
 
 impl Transpile for MemberFunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self {
-            receiver,
-            identifier,
-            arguments,
-        } = self;
-
-        let receiver_chain = transpile_receiver_chain(ctx, scope, receiver);
-        transpile!(ctx, scope, "{receiver_chain}.{}({})", identifier, arguments)
+        let Self { base, call } = self;
+        transpile!(ctx, scope, "{}.{}", base, call)
     }
 }
 
 impl Transpile for MemberFieldAccess {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self {
-            receiver,
-            identifier,
-        } = self;
-
-        let chain = transpile_receiver_chain(ctx, scope, receiver);
-        transpile!(ctx, scope, "{chain}.{}", identifier)
+        let Self { base, field } = self;
+        transpile!(ctx, scope, "{}.{}", base, field)
     }
 }
 
-fn transpile_receiver_chain(ctx: &Context, scope: &mut Scope, receiver: &[Expression]) -> String {
-    receiver
-        .iter()
-        .map(|r| transpile!(ctx, scope, "{}", r))
-        .collect_vec()
-        .join(".")
+impl Transpile for MemberChainBase {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        self.base
+            .iter()
+            .map(|r| transpile!(ctx, scope, "{}", r))
+            .collect_vec()
+            .join(".")
+    }
 }
 
 impl_transpile!(ConstructorCall, "{} {{ {} }}", identifier, arguments,);

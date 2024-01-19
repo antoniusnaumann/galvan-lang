@@ -1,9 +1,20 @@
 use super::*;
+use std::iter::Peekable;
+use std::vec::IntoIter;
+
 use derive_more::From;
 use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
 use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
+use typeunion::type_union;
+
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::operator_chain))]
+pub struct OperatorChain {
+    pub base: SimpleExpression,
+    pub chain: Vec<(InfixOperator, SimpleExpression)>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, From, FromPest)]
 #[pest_ast(rule(Rule::infix_operator))]
@@ -14,6 +25,18 @@ pub enum InfixOperator {
     Comparison(ComparisonOperator),
     Logical(LogicalOperator),
     CustomInfix(CustomInfixOperator),
+}
+
+impl BindingPower for InfixOperator {
+    fn binding_power(&self) -> u8 {
+        match self {
+            InfixOperator::Arithmetic(op) => op.binding_power(),
+            InfixOperator::Collection(op) => op.binding_power(),
+            InfixOperator::Comparison(op) => op.binding_power(),
+            InfixOperator::Logical(op) => op.binding_power(),
+            InfixOperator::CustomInfix(op) => op.binding_power(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +61,7 @@ impl FromPest<'_> for ArithmeticOperator {
             return Err(NoMatch);
         }
         let pair = pair.into_inner().next().ok_or(NoMatch)?;
+
         match pair.as_rule() {
             Rule::plus => Ok(ArithmeticOperator::Plus),
             Rule::minus => Ok(ArithmeticOperator::Minus),
@@ -149,135 +173,127 @@ impl FromPest<'_> for LogicalOperator {
 pub struct CustomInfixOperator(#[pest_ast(outer(with(string)))] String);
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct LogicalOperation {
-    pub base: Box<Expression>,
-    pub chain: Vec<(LogicalOperator, Box<Expression>)>,
+pub struct OperatorTree {
+    pub left: OperatorTreeNode,
+    pub operator: InfixOperator,
+    pub right: OperatorTreeNode,
 }
 
-impl FromPest<'_> for LogicalOperation {
+impl FromPest<'_> for OperatorTree {
     type Rule = Rule;
     type FatalError = Void;
 
     fn from_pest(
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let pair = pairs.next().ok_or(NoMatch)?;
-        if pair.as_rule() != Rule::logical_expression {
+        let pair = pairs.peek().ok_or(NoMatch)?;
+        // println!("Rule: {:#?}, Operator chain: {:#?}", pair.as_rule(), pairs);
+        if pair.as_rule() != Rule::operator_chain {
             return Err(NoMatch);
         }
-        let mut pairs = pair.into_inner();
 
-        let base = AllowedInLogical::from_pest(&mut pairs)?;
-        let mut chain = vec![];
-
-        while pairs.len() > 0 {
-            let operator = LogicalOperator::from_pest(&mut pairs)?;
-            let expression = AllowedInLogical::from_pest(&mut pairs)?;
-            chain.push((operator, Box::new(expression.into())));
-        }
-
-        Ok(LogicalOperation {
-            base: Box::new(base.into()),
-            chain,
-        })
+        // println!("Operator chain: {:#?}", pairs);
+        let chain = OperatorChain::from_pest(pairs)?;
+        Ok(chain.into_tree())
     }
 }
 
+pub type Operation = Box<OperatorTree>;
+#[type_union]
 #[derive(Debug, PartialEq, Eq)]
-pub struct ComparisonOperation {
-    pub left: Box<Expression>,
-    pub operator: ComparisonOperator,
-    pub right: Box<Expression>,
+pub type OperatorTreeNode = Operation + SimpleExpression;
+
+trait BindingPower {
+    fn binding_power(&self) -> u8;
 }
 
-impl FromPest<'_> for ComparisonOperation {
-    type Rule = Rule;
-    type FatalError = Void;
-
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let pair = pairs.next().ok_or(NoMatch)?;
-        if pair.as_rule() != Rule::comparison_expression {
-            return Err(NoMatch);
+impl BindingPower for LogicalOperator {
+    fn binding_power(&self) -> u8 {
+        match self {
+            LogicalOperator::And => 8,
+            LogicalOperator::Or => 5,
+            LogicalOperator::Xor => 2,
         }
-        let mut pairs = pair.into_inner();
+    }
+}
 
-        let left = AllowedInComparison::from_pest(&mut pairs)?;
-        let operator = ComparisonOperator::from_pest(&mut pairs)?;
-        let right = AllowedInComparison::from_pest(&mut pairs)?;
+impl BindingPower for ComparisonOperator {
+    fn binding_power(&self) -> u8 {
+        match self {
+            ComparisonOperator::Equal
+            | ComparisonOperator::NotEqual
+            | ComparisonOperator::Less
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::Greater
+            | ComparisonOperator::GreaterEqual => 12,
+            ComparisonOperator::Identical | ComparisonOperator::NotIdentical => 15,
+        }
+    }
+}
 
-        Ok(ComparisonOperation {
-            left: Box::new(left.into()),
+impl BindingPower for CollectionOperator {
+    fn binding_power(&self) -> u8 {
+        match self {
+            CollectionOperator::Concat | CollectionOperator::Remove => 25,
+            CollectionOperator::Contains => 22,
+        }
+    }
+}
+
+impl BindingPower for ArithmeticOperator {
+    fn binding_power(&self) -> u8 {
+        match self {
+            ArithmeticOperator::Plus | ArithmeticOperator::Minus => 32,
+            ArithmeticOperator::Multiply
+            | ArithmeticOperator::Divide
+            | ArithmeticOperator::Remainder => 35,
+            ArithmeticOperator::Power => 38,
+        }
+    }
+}
+
+impl BindingPower for CustomInfixOperator {
+    fn binding_power(&self) -> u8 {
+        50
+    }
+}
+
+impl OperatorChain {
+    pub fn into_tree(self) -> OperatorTree {
+        // println!("Chain: {:#?}", self);
+        let Self { base, chain } = self;
+
+        let mut chain = chain.into_iter().peekable();
+        match parse_operation(base, &mut chain, 0) {
+            OperatorTreeNode::Operation(op) => *op,
+            OperatorTreeNode::SimpleExpression(_) => {
+                unreachable!("Operator chain should always have at least one operator")
+            }
+        }
+    }
+}
+
+fn parse_operation(
+    base: SimpleExpression,
+    chain: &mut Peekable<IntoIter<(InfixOperator, SimpleExpression)>>,
+    binding_power: u8,
+) -> OperatorTreeNode {
+    let mut left = base.into();
+
+    while let Some((operator, _)) = chain.peek() {
+        if operator.binding_power() < binding_power {
+            break;
+        }
+
+        let (operator, operand) = chain.next().unwrap();
+        let right = parse_operation(operand, chain, operator.binding_power());
+
+        left = OperatorTreeNode::from(Box::from(OperatorTree {
+            left,
             operator,
-            right: Box::new(right.into()),
-        })
+            right,
+        }));
     }
-}
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct CollectionOperation {
-    pub left: Box<Expression>,
-    pub operator: CollectionOperator,
-    pub right: Box<Expression>,
-}
-
-impl FromPest<'_> for CollectionOperation {
-    type Rule = Rule;
-    type FatalError = Void;
-
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let pair = pairs.next().ok_or(NoMatch)?;
-        if pair.as_rule() != Rule::collection_expression {
-            return Err(NoMatch);
-        }
-        let mut pairs = pair.into_inner();
-
-        let left = AllowedInCollection::from_pest(&mut pairs)?;
-        let operator = CollectionOperator::from_pest(&mut pairs)?;
-        let right = AllowedInCollection::from_pest(&mut pairs)?;
-
-        Ok(CollectionOperation {
-            left: Box::new(left.into()),
-            operator,
-            right: Box::new(right.into()),
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ArithmeticOperation {
-    pub base: Box<Expression>,
-    pub chain: Vec<(ArithmeticOperator, Box<Expression>)>,
-}
-
-impl FromPest<'_> for ArithmeticOperation {
-    type Rule = Rule;
-    type FatalError = Void;
-
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let pair = pairs.next().ok_or(NoMatch)?;
-        if pair.as_rule() != Rule::arithmetic_expression {
-            return Err(NoMatch);
-        }
-        let mut pairs = pair.into_inner();
-
-        let base = AllowedInArithmetic::from_pest(&mut pairs)?;
-        let mut chain = vec![];
-
-        while pairs.len() > 0 {
-            let operator = ArithmeticOperator::from_pest(&mut pairs)?;
-            let expression = AllowedInArithmetic::from_pest(&mut pairs)?;
-            chain.push((operator, Box::new(expression.into())));
-        }
-
-        Ok(ArithmeticOperation {
-            base: Box::new(base.into()),
-            chain,
-        })
-    }
+    left
 }

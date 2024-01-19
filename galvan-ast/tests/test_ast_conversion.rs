@@ -156,17 +156,19 @@ mod test_utils {
     }
 
     pub fn number(value: &str) -> Expression {
-        NumberLiteral::new(value).into()
+        SingleExpression::from(Literal::from(NumberLiteral::new(value))).into()
     }
 
     pub fn variable(ident: &str) -> Expression {
-        Ident::new(ident).into()
+        SingleExpression::from(Ident::new(ident)).into()
     }
 
     pub fn member(receiver: &str, ident: &str) -> Expression {
         MemberFieldAccess {
-            receiver: vec![Ident::new(receiver).into()],
-            identifier: Ident::new(ident),
+            base: MemberChainBase {
+                base: vec![Ident::new(receiver).into()],
+            },
+            field: Ident::new(ident),
         }
         .into()
     }
@@ -175,7 +177,7 @@ mod test_utils {
         ident: &str,
         arguments: Vec<(Option<DeclModifier>, Expression)>,
     ) -> Expression {
-        FunctionCall {
+        SingleExpression::from(FunctionCall {
             identifier: Ident::new(ident),
             arguments: arguments
                 .into_iter()
@@ -184,7 +186,7 @@ mod test_utils {
                     expression,
                 })
                 .collect(),
-        }
+        })
         .into()
     }
 
@@ -198,7 +200,7 @@ mod test_utils {
             decl_modifier: modifier,
             identifier: Ident::new(ident),
             type_annotation: ty,
-            expression: Some(expression),
+            assignment: Some(expression.into()),
         }
         .into()
     }

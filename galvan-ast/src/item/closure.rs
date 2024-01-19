@@ -1,6 +1,6 @@
 use crate::{
     Block, Body, ConstructorCall, Expression, FunctionCall, Ident, MemberFieldAccess,
-    MemberFunctionCall, TypeElement,
+    MemberFunctionCall, SingleExpression, TopExpression, TypeElement,
 };
 use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
@@ -36,7 +36,7 @@ impl FromPest<'_> for Closure {
             Rule::closure => Block::from_pest(&mut pairs).or_else(|_| {
                 Expression::from_pest(&mut pairs).map(|e| Block {
                     body: Body {
-                        statements: vec![e.into()],
+                        statements: vec![TopExpression::from(e).into()],
                     },
                 })
             })?,
@@ -48,7 +48,7 @@ impl FromPest<'_> for Closure {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Debug, Clone, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::closure_argument))]
 pub struct ClosureArgument {
     pub ident: Ident,
@@ -57,15 +57,9 @@ pub struct ClosureArgument {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ElseExpression {
-    pub receiver: Box<Expression>,
+    pub receiver: Box<SingleExpression>,
     pub block: Block,
 }
-
-#[type_union(super = Expression)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::allowed_before_else_expression))]
-type AllowedBeforeElseExpression =
-    FunctionCall + ConstructorCall + MemberFunctionCall + MemberFieldAccess + Ident;
 
 impl FromPest<'_> for ElseExpression {
     type Rule = Rule;
@@ -82,9 +76,21 @@ impl FromPest<'_> for ElseExpression {
         }
 
         let mut pairs = pair.into_inner();
-        let receiver = Box::new(AllowedBeforeElseExpression::from_pest(&mut pairs)?.into());
-        let block = Block::from_pest(&mut pairs)?;
+        // println!("Else-Expression: \n{:#?}", pairs);
+        let receiver_pair = pairs.peek().ok_or(NoMatch)?;
 
-        Ok(Self { receiver, block })
+        match receiver_pair.as_rule() {
+            Rule::single_expression => {
+                let receiver = Box::new(SingleExpression::from_pest(&mut pairs)?);
+                let block = Block::from_pest(&mut pairs)?;
+                Ok(Self { receiver, block })
+            }
+            Rule::trailing_closure_call => {
+                let receiver = Box::new(FunctionCall::from_pest(&mut pairs)?.into());
+                let block = Block::from_pest(&mut pairs)?;
+                Ok(Self { receiver, block })
+            }
+            _ => Err(NoMatch),
+        }
     }
 }
