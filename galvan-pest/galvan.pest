@@ -138,11 +138,11 @@ trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
 trailing_closure_call_arg = { (declaration_modifier)? ~ expression }
 
 infix_operator = {
-    arithmetic_operator
+    custom_infix_operator
     | collection_operator
+    | arithmetic_operator
     | comparison_operator
     | logical_infix_operator
-    | custom_infix_operator
 }
 
 function_call = { function_call_base }
