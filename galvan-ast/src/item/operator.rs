@@ -260,7 +260,7 @@ impl BindingPower for CustomInfixOperator {
 
 impl OperatorChain {
     pub fn into_tree(self) -> OperatorTree {
-        println!("Chain: {:#?}", self);
+        // println!("Chain: {:#?}", self);
         let Self { base, chain } = self;
 
         let mut chain = chain.into_iter().peekable();

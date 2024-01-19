@@ -1,5 +1,6 @@
 use crate::{FunctionCall, Ident, SingleExpression};
 use from_pest::pest::iterators::Pairs;
+use from_pest::ConversionError::NoMatch;
 use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
 
@@ -20,9 +21,12 @@ impl FromPest<'_> for MemberChainBase {
             return Err(ConversionError::NoMatch);
         }
 
+        // println!("Member chain base: {:#?}", pair);
         let mut pairs = pair.into_inner();
         let mut base = Vec::new();
         while let Some(pair) = pairs.peek() {
+            // println!("Member chain element: {:#?}", pair);
+            // println!("Member chain: {:#?}", base);
             let rule = pair.as_rule();
             match rule {
                 Rule::single_expression => {
@@ -59,8 +63,16 @@ impl FromPest<'_> for MemberFunctionCall {
     fn from_pest(
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let base = MemberChainBase::from_pest(pairs)?;
-        let call = FunctionCall::from_pest(pairs)?;
+        let Some(pair) = pairs.next() else {
+            return Err(NoMatch);
+        };
+        if pair.as_rule() != Rule::member_chain {
+            return Err(NoMatch);
+        }
+        let mut pairs = pair.into_inner();
+
+        let base = MemberChainBase::from_pest(&mut pairs)?;
+        let call = FunctionCall::from_pest(&mut pairs)?;
         Ok(Self { base, call })
     }
 }
@@ -72,8 +84,16 @@ impl FromPest<'_> for MemberFieldAccess {
     fn from_pest(
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let base = MemberChainBase::from_pest(pairs)?;
-        let field = Ident::from_pest(pairs)?;
+        let Some(pair) = pairs.next() else {
+            return Err(NoMatch);
+        };
+        if pair.as_rule() != Rule::member_chain {
+            return Err(NoMatch);
+        }
+        let mut pairs = pair.into_inner();
+
+        let base = MemberChainBase::from_pest(&mut pairs)?;
+        let field = Ident::from_pest(&mut pairs)?;
         Ok(Self { base, field })
     }
 }

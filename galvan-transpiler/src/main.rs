@@ -18,7 +18,7 @@ fn main() {
         .collect();
 
     let current_dir = env::current_dir().unwrap();
-    println!("Args: {:?}", args);
+    // println!("Args: {:?}", args);
     let transpiled = transpile_dir(current_dir, args).unwrap();
 
     for output in transpiled {
