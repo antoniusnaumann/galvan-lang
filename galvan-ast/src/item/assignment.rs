@@ -10,13 +10,18 @@ use super::*;
 pub struct Assignment {
     pub target: AssignmentTarget,
     pub operator: AssignmentOperator,
-    pub expression: Expression,
+    pub expression: AssignmentSource,
 }
 
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::assignment_target))]
 pub type AssignmentTarget = Ident + MemberFieldAccess;
+
+#[type_union]
+#[derive(Debug, PartialEq, Eq, FromPest)]
+#[pest_ast(rule(Rule::assignment_source))]
+pub type AssignmentSource = Expression + ElseExpression;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum AssignmentOperator {

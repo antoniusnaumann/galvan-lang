@@ -3,8 +3,8 @@ use crate::macros::{impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    BooleanLiteral, DeclModifier, Declaration, Expression, Literal, NumberLiteral, Ownership,
-    SingleExpression, Statement, StringLiteral, TypeElement,
+    AssignmentSource, BooleanLiteral, DeclModifier, Declaration, Expression, Literal,
+    NumberLiteral, Ownership, SingleExpression, Statement, StringLiteral, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -30,7 +30,7 @@ impl Transpile for Body {
     }
 }
 
-impl_transpile_variants!(Statement; Assignment, Expression, Declaration, Block);
+impl_transpile_variants!(Statement; Assignment, Expression, ElseExpression, Declaration, Block);
 
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -42,7 +42,7 @@ impl Transpile for Declaration {
         let identifier = self.identifier.transpile(ctx, scope);
 
         let inferred_type = self.type_annotation.clone().or_else(|| {
-            self.expression
+            self.assignment
                 .as_ref()
                 .and_then(|expr| expr.infer_type(scope))
         });
@@ -80,7 +80,7 @@ impl Transpile for Declaration {
 
         // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
         // TODO: Clone inner type from ref types to non-ref types
-        self.expression
+        self.assignment
             .as_ref()
             .map(|expr| transpile_assignment_expression(ctx, expr, scope))
             .map(|expr| {
@@ -102,15 +102,22 @@ macro_rules! match_ident {
 }
 pub(crate) use match_ident;
 
-fn transpile_assignment_expression(ctx: &Context, expr: &Expression, scope: &mut Scope) -> String {
-    match expr {
-        match_ident!(ident) => {
-            transpile!(ctx, scope, "{}.to_owned()", ident)
-        }
-        Expression::MemberFieldAccess(access) => {
-            transpile!(ctx, scope, "{}.to_owned()", access)
-        }
-        expr => expr.transpile(ctx, scope),
+fn transpile_assignment_expression(
+    ctx: &Context,
+    assigned: &AssignmentSource,
+    scope: &mut Scope,
+) -> String {
+    match assigned {
+        AssignmentSource::Expression(expr) => match expr {
+            match_ident!(ident) => {
+                transpile!(ctx, scope, "{}.to_owned()", ident)
+            }
+            Expression::MemberFieldAccess(access) => {
+                transpile!(ctx, scope, "{}.to_owned()", access)
+            }
+            expr => expr.transpile(ctx, scope),
+        },
+        AssignmentSource::ElseExpression(e) => e.transpile(ctx, scope),
     }
 }
 

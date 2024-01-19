@@ -12,8 +12,8 @@ use typeunion::type_union;
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::operator_chain))]
 pub struct OperatorChain {
-    pub parts: Vec<SimpleExpression>,
-    pub operators: Vec<InfixOperator>,
+    pub base: SimpleExpression,
+    pub chain: Vec<(InfixOperator, SimpleExpression)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, From, FromPest)]
@@ -61,6 +61,7 @@ impl FromPest<'_> for ArithmeticOperator {
             return Err(NoMatch);
         }
         let pair = pair.into_inner().next().ok_or(NoMatch)?;
+
         match pair.as_rule() {
             Rule::plus => Ok(ArithmeticOperator::Plus),
             Rule::minus => Ok(ArithmeticOperator::Minus),
@@ -185,6 +186,11 @@ impl FromPest<'_> for OperatorTree {
     fn from_pest(
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
+        let pair = pairs.next().ok_or(NoMatch)?;
+        if pair.as_rule() != Rule::operator_chain {
+            return Err(NoMatch);
+        }
+
         let chain = OperatorChain::from_pest(pairs)?;
         Ok(chain.into_tree())
     }
@@ -252,11 +258,11 @@ impl BindingPower for CustomInfixOperator {
 
 impl OperatorChain {
     pub fn into_tree(self) -> OperatorTree {
-        let Self { parts, operators } = self;
+        println!("Chain: {:#?}", self);
+        let Self { base, chain } = self;
 
-        let mut parts = parts.into_iter();
-        let mut operators = operators.into_iter().peekable();
-        match parse_operation(&mut parts, &mut operators, 0) {
+        let mut chain = chain.into_iter().peekable();
+        match parse_operation(base, &mut chain, 0) {
             OperatorTreeNode::Operation(op) => *op,
             OperatorTreeNode::SimpleExpression(_) => {
                 unreachable!("Operator chain should always have at least one operator")
@@ -266,19 +272,19 @@ impl OperatorChain {
 }
 
 fn parse_operation(
-    parts: &mut IntoIter<SimpleExpression>,
-    operators: &mut Peekable<IntoIter<InfixOperator>>,
+    base: SimpleExpression,
+    chain: &mut Peekable<IntoIter<(InfixOperator, SimpleExpression)>>,
     binding_power: u8,
 ) -> OperatorTreeNode {
-    let mut left = OperatorTreeNode::from(parts.next().expect("Operator chain is empty"));
+    let mut left = base.into();
 
-    while let Some(operator) = operators.peek() {
+    while let Some((operator, _)) = chain.peek() {
         if operator.binding_power() < binding_power {
             break;
         }
 
-        let operator = operators.next().unwrap();
-        let right = parse_operation(parts, operators, operator.binding_power());
+        let (operator, operand) = chain.next().unwrap();
+        let right = parse_operation(operand, chain, operator.binding_power());
 
         left = OperatorTreeNode::from(Box::from(OperatorTree {
             left,

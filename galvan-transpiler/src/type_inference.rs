@@ -1,8 +1,9 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, BasicTypeItem, CollectionLiteral, CollectionOperator, DictLiteral,
-    DictLiteralElement, DictionaryTypeItem, Expression, InfixOperator, Literal, MemberFieldAccess,
-    OperatorTree, OperatorTreeNode, OrderedDictLiteral, OrderedDictionaryTypeItem, SetLiteral,
-    SetTypeItem, SimpleExpression, SingleExpression, TypeDecl, TypeElement, TypeIdent,
+    ArrayLiteral, ArrayTypeItem, AssignmentSource, BasicTypeItem, Block, Body, CollectionLiteral,
+    CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
+    Expression, InfixOperator, Literal, MemberFieldAccess, OperatorTree, OperatorTreeNode,
+    OrderedDictLiteral, OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, SimpleExpression,
+    SingleExpression, Statement, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -10,6 +11,66 @@ use itertools::Itertools;
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement>;
 }
+
+impl InferType for AssignmentSource {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            AssignmentSource::Expression(e) => e.infer_type(scope),
+            AssignmentSource::ElseExpression(_) => {
+                // todo!("Implement type inference for else expression")
+                None
+            }
+        }
+    }
+}
+
+impl InferType for ElseExpression {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let receiver_type = self.receiver.infer_type(scope);
+        let block_type = self.block.infer_type(scope);
+
+        match (receiver_type, block_type) {
+            (Some(receiver_type), Some(block_type)) => {
+                if receiver_type == block_type {
+                    Some(receiver_type)
+                } else {
+                    todo!("TRANSPILER ERROR: Types of if and else expression don't match. (allow this when type unions are implemented)")
+                }
+            }
+            (Some(receiver_type), None) => Some(receiver_type),
+            (None, Some(block_type)) => Some(block_type),
+            (None, None) => None,
+        }
+    }
+}
+
+impl InferType for Block {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        // TODO: Block should have access to its inner scope
+        self.body.infer_type(scope)
+    }
+}
+
+impl InferType for Body {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        self.statements
+            .last()
+            .and_then(|stmt| stmt.infer_type(scope))
+    }
+}
+
+impl InferType for Statement {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            Statement::Assignment(assignment) => None,
+            Statement::Expression(expr) => expr.infer_type(scope),
+            Statement::ElseExpression(else_expr) => else_expr.infer_type(scope),
+            Statement::Declaration(decl) => None,
+            Statement::Block(block) => block.infer_type(scope),
+        }
+    }
+}
+
 impl InferType for Expression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {

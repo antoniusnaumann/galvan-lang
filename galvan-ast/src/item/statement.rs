@@ -21,7 +21,7 @@ pub struct Block {
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::statement))]
-pub type Statement = Assignment + Expression + Declaration + Block;
+pub type Statement = Assignment + Declaration + ElseExpression + Expression + Block;
 
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::declaration))]
@@ -29,7 +29,7 @@ pub struct Declaration {
     pub decl_modifier: DeclModifier,
     pub identifier: Ident,
     pub type_annotation: Option<TypeElement>,
-    pub expression: Option<Expression>,
+    pub assignment: Option<AssignmentSource>,
 }
 
 #[type_union]
@@ -69,7 +69,7 @@ impl FromPest<'_> for SingleExpression {
             Rule::single_expression => {
                 pairs.next();
                 let mut pairs = pair.into_inner();
-                let pair = pairs.next().ok_or(NoMatch)?;
+                let pair = pairs.peek().ok_or(NoMatch)?;
                 let rule = pair.as_rule();
                 match rule {
                     Rule::collection_literal => {

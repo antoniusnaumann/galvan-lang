@@ -35,7 +35,7 @@ impl FromPest<'_> for FunctionCall {
                         .into_iter()
                         .map(|arg| FunctionCallArg {
                             modifier: arg.modifier,
-                            expression: arg.expression.into(),
+                            expression: arg.expression,
                         })
                         .collect::<Vec<_>>();
                     if let Ok(closure) = Closure::from_pest(&mut pairs) {

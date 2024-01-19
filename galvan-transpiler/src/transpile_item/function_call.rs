@@ -67,7 +67,10 @@ impl Transpile for FunctionCall {
                     }
                 }
                 Some(_) => format!("assert!({})", self.arguments.transpile(ctx, scope)),
-                _ => todo!("TRANSPILER ERROR: assert expects a boolean argument"),
+                _ => todo!(
+                    "TRANSPILER ERROR: assert expects a boolean argument, found: {:#?}",
+                    self.arguments
+                ),
             },
             _ => {
                 // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>

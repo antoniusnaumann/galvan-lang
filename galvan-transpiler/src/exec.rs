@@ -4,8 +4,11 @@ use galvan_files::read_sources;
 
 use crate::{transpile, TranspileError, TranspileOutput};
 
-pub fn transpile_dir(path: impl AsRef<Path>) -> Result<Vec<TranspileOutput>, TranspileError> {
-    transpile(read_sources(path)?)
+pub fn transpile_dir(
+    path: impl AsRef<Path>,
+    filter: Vec<String>,
+) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile(read_sources(path, filter)?)
 }
 
 /// This is for use in macros and should not be used directly
@@ -16,7 +19,7 @@ pub mod __private {
     use std::path::PathBuf;
 
     pub fn __setup_galvan() -> String {
-        let transpiled = match transpile_dir("src") {
+        let transpiled = match transpile_dir("src", vec![]) {
             Ok(output) => output,
             Err(e) => return e.to_string(),
         };
