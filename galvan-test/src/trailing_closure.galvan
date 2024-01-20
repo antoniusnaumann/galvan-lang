@@ -24,7 +24,6 @@ test "Trailing closure as member function" {
     assert v == [4, 8, 12, 16]
 }
 
-// TODO: This test fails as 2 is transpiled as &(2) here by mistake
 test "Paren-less function call as member function" {
     let collection = [1, 2, 3, 4]
     let elements = collection.iter().copied().map |x| { x * 2 }.take 2

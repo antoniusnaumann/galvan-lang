@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::iter;
 use thiserror::Error;
 
-static SUPPRESS_WARNINGS: &str = "#![allow(unused_imports)]\n#![allow(dead_code)]";
+static SUPPRESS_WARNINGS: &str = "#![allow(warnings, unused)]";
 
 // TODO: Maybe use something like https://crates.io/crates/ruast to generate the Rust code in a more reliable way
 
@@ -137,7 +137,7 @@ fn transpile_segmented(
     let lib = TranspileOutput {
         file_name: galvan_module!("rs").into(),
         content: format!(
-            "extern crate galvan; pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
+            "extern crate galvan; #[allow(unused_imports)] pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
             galvan_module!(),
             SUPPRESS_WARNINGS,
             [modules, toplevel_functions, &main, &tests].join("\n\n")
