@@ -1,6 +1,5 @@
-use std::borrow::{Borrow, BorrowMut};
 use std::ops::Deref;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 pub trait __ToRef {
     type Inner;

@@ -35,9 +35,6 @@ impl Parse for MacroInput {
 #[proc_macro]
 pub fn generate_code_tests(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let macro_input = syn::parse_macro_input!(input as MacroInput);
-    let cwd = std::env::current_dir().unwrap();
-
-    // panic!("{:?}", std::env::current_dir());
 
     let tests = walkdir::WalkDir::new("example-code")
         .into_iter()

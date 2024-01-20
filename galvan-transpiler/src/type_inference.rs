@@ -59,9 +59,9 @@ impl InferType for Body {
 impl InferType for Statement {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            Statement::Assignment(assignment) => None,
+            Statement::Assignment(_) => None,
             Statement::TopExpression(expr) => expr.infer_type(scope),
-            Statement::Declaration(decl) => None,
+            Statement::Declaration(_) => None,
             Statement::Block(block) => block.infer_type(scope),
         }
     }
@@ -116,7 +116,7 @@ impl InferType for SingleExpression {
 }
 
 impl InferType for Literal {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+    fn infer_type(&self, _scope: &Scope) -> Option<TypeElement> {
         match self {
             Literal::BooleanLiteral(_) => Some(bool()),
             Literal::StringLiteral(_) => Some(
@@ -149,8 +149,8 @@ impl InferType for OperatorTree {
                 None
             }
             InfixOperator::Collection(op) => infer_collection_operation(scope, *op, left, right),
-            InfixOperator::Comparison(op) => Some(bool()),
-            InfixOperator::Logical(op) => Some(bool()),
+            InfixOperator::Comparison(_) => Some(bool()),
+            InfixOperator::Logical(_) => Some(bool()),
             InfixOperator::CustomInfix(op) => {
                 // todo!("Implement type inference for custom infix operator")
                 None

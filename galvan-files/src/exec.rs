@@ -1,4 +1,4 @@
-use crate::{FileError, GalvanFileExtension, Source, SourceResult};
+use crate::{FileError, GalvanFileExtension, Source};
 use std::path::Path;
 use walkdir::WalkDir;
 

@@ -78,10 +78,10 @@ impl FromPest<'_> for AssignmentOperator {
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
         let Some(pair) = pairs.next() else {
-            return Err(ConversionError::NoMatch);
+            return Err(NoMatch);
         };
         let Some(pair) = pair.into_inner().next() else {
-            return Err(ConversionError::NoMatch);
+            return Err(NoMatch);
         };
 
         match pair.as_rule() {

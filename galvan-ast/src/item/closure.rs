@@ -1,12 +1,10 @@
 use crate::{
-    Block, Body, ConstructorCall, Expression, FunctionCall, Ident, MemberFieldAccess,
-    MemberFunctionCall, SingleExpression, TopExpression, TypeElement,
+    Block, Body, Expression, FunctionCall, Ident, SingleExpression, TopExpression, TypeElement,
 };
 use from_pest::pest::iterators::Pairs;
 use from_pest::ConversionError::NoMatch;
 use from_pest::{ConversionError, FromPest, Void};
 use galvan_pest::Rule;
-use typeunion::type_union;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Closure {

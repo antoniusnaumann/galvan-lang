@@ -1,4 +1,4 @@
-use galvan_ast::{FnSignature, TypeIdent};
+use galvan_ast::TypeIdent;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
