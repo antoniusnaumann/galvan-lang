@@ -1,7 +1,9 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::transpile_item::statement::match_ident;
+use crate::type_inference::InferType;
 use crate::Transpile;
+use galvan_ast::TypeElement::Plain;
 use galvan_ast::{
     ComparisonOperator, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
     FunctionCall, FunctionCallArg, InfixOperator, MemberChainBase, MemberFieldAccess,
@@ -119,7 +121,18 @@ impl Transpile for FunctionCallArg {
                 transpile!(ctx, scope, "{}", closure)
             }
             (None, expression) => {
-                transpile!(ctx, scope, "&({})", expression)
+                let t = expression.infer_type(scope);
+                if t.is_some_and(|t| {
+                    if let Plain(plain) = t {
+                        ctx.mapping.is_copy(&plain.ident)
+                    } else {
+                        false
+                    }
+                }) {
+                    transpile!(ctx, scope, "{}", expression)
+                } else {
+                    transpile!(ctx, scope, "&({})", expression)
+                }
             }
             (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "&mut {}", expr)

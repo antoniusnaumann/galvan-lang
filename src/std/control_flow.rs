@@ -2,11 +2,11 @@ use std::borrow::Borrow;
 
 // TODO: Improve transpilation for copy types and take bool instead of &bool here
 #[inline(always)]
-pub fn r#if<T, F>(condition: &bool, body: F) -> Option<T>
+pub fn r#if<T, F>(condition: bool, body: F) -> Option<T>
 where
     F: FnOnce() -> T,
 {
-    if *condition {
+    if condition {
         Some(body())
     } else {
         None

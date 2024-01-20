@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use std::env;
 
 use galvan_transpiler::exec::transpile_dir;
