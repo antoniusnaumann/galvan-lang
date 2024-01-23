@@ -6,7 +6,7 @@ impl Transpile for Visibility {
     fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
         match self {
             Visibility::Public(_) => "pub",
-            // Visibility::Private => "",
+            Visibility::Private => "",
             Visibility::Inherited => "pub(crate)",
         }
         .into()

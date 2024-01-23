@@ -1,0 +1,20 @@
+fn shouted(self: String) -> String {
+    self.to_uppercase() ++ "!"
+}
+
+test "Call extension function on external type" {
+    let name = "Rust"
+    assert name.shouted() == "RUST!"
+}
+
+fn counted(self: [Int], value: Int) -> USize {
+    // TODO: This does not work due to double-borrowing in the generated code
+    // self.copied().filter |it| { it == value }.count()
+
+    2
+}
+
+test "Call extension function on complex type" {
+    let numbers = [1, 2, 3, 2, 1]
+    assert numbers.counted(2) == 2
+}

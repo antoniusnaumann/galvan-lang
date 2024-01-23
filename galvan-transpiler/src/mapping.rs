@@ -38,12 +38,6 @@ impl Mapping {
             .map(|rust_type| rust_type.is_copy)
             .unwrap_or(false)
     }
-
-    /// Returns whether the type is declared in a Galvan source in this crate
-    pub(crate) fn is_external(&self, type_id: &TypeIdent) -> bool {
-        // For now, types that have a type mapping are always external, while internal types (= types that are declared in the same crate in Galvan) never have a mapping.
-        self.types.get(type_id).is_some()
-    }
 }
 
 macro_rules! mapping {

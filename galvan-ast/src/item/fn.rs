@@ -9,7 +9,7 @@ pub struct FnDecl {
     pub block: Body,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::fn_signature))]
 pub struct FnSignature {
     // pub asyncness: Async,
@@ -46,13 +46,13 @@ impl FnSignature {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::param_list))]
 pub struct ParamList {
     pub params: Vec<Param>,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
+#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::param))]
 pub struct Param {
     pub decl_modifier: Option<DeclModifier>,

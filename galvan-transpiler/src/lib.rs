@@ -66,6 +66,11 @@ struct TypeFileContent<'a> {
     pub fns: Vec<&'a FnDecl>,
 }
 
+struct ExtensionFileContent<'a> {
+    pub elem: &'a TypeElement,
+    pub fns: Vec<&'a FnDecl>,
+}
+
 fn transpile_segmented(
     segmented: &SegmentedAsts,
     ctx: &Context,
@@ -75,6 +80,27 @@ fn transpile_segmented(
     struct ModuleName(Box<str>);
     fn module_name(ident: &TypeIdent) -> ModuleName {
         ident.as_str().to_case(Case::Snake).into_boxed_str().into()
+    }
+
+    fn extension_module_name(ty: &TypeElement) -> ModuleName {
+        extension_name(ty)
+            .to_ascii_lowercase()
+            .into_boxed_str()
+            .into()
+    }
+
+    fn add_extension_module<'a>(
+        extensions: &mut HashMap<ModuleName, ExtensionFileContent<'a>>,
+        func: &'a ToplevelItem<FnDecl>,
+        elem: &'a TypeElement,
+    ) {
+        let content = extensions
+            .entry(extension_module_name(elem))
+            .or_insert_with(|| ExtensionFileContent {
+                elem,
+                fns: Vec::new(),
+            });
+        content.fns.push(&func.item);
     }
 
     let mut type_files: HashMap<ModuleName, TypeFileContent> = HashMap::new();
@@ -96,15 +122,20 @@ fn transpile_segmented(
     }
 
     let mut toplevel_functions = Vec::new();
+    let mut extensions: HashMap<ModuleName, ExtensionFileContent> = HashMap::new();
     for func in &segmented.functions {
         if let Some(receiver) = func.signature.receiver() {
-            let TypeElement::Plain(ty) = &receiver.param_type else {
-                todo!("Allow extending complex types")
+            let elem = &receiver.param_type;
+            let TypeElement::Plain(ty) = elem else {
+                add_extension_module(&mut extensions, func, elem);
+                continue;
             };
-            let content = type_files.get_mut(&module_name(&ty.ident)).expect(
-                "TODO: Handle error for member functions that refer to types that are not declared",
-            );
-            content.fns.push(&func.item);
+            match type_files.get_mut(&module_name(&ty.ident)) {
+                Some(content) => content.fns.push(&func.item),
+                None => {
+                    add_extension_module(&mut extensions, func, elem);
+                }
+            }
         } else {
             toplevel_functions.push(func);
         }
@@ -118,10 +149,11 @@ fn transpile_segmented(
         .join("\n\n");
     let toplevel_functions = toplevel_functions.trim();
 
-    let tests = transpile_tests(&segmented, ctx, scope);
+    let tests = transpile_tests(segmented, ctx, scope);
 
     let modules = type_files
         .keys()
+        .chain(extensions.keys())
         .map(|id| sanitize_name(id))
         .map(|mod_name| format!("mod {mod_name};\npub use self::{mod_name}::*;"))
         .collect::<Vec<_>>()
@@ -145,19 +177,37 @@ fn transpile_segmented(
         .into(),
     };
 
-    let type_files = type_files.iter().map(|(k, v)| TranspileOutput {
+    let type_files = type_files
+        .iter()
+        .map(|(k, v)| TranspileOutput {
+            file_name: format!("{k}.rs").into(),
+            content: [
+                "use crate::*;",
+                &v.ty.transpile(ctx, scope),
+                &transpile_member_functions(v.ty.ident(), &v.fns, ctx, scope),
+            ]
+            .join("\n\n")
+            .trim()
+            .into(),
+        })
+        .collect_vec();
+
+    let extension_files = extensions.iter().map(|(k, v)| TranspileOutput {
         file_name: format!("{k}.rs").into(),
         content: [
             "use crate::*;",
-            &v.ty.transpile(ctx, scope),
-            &transpile_member_functions(v.ty.ident(), &v.fns, ctx, scope),
+            &transpile_extension_functions(v.elem, &v.fns, ctx, scope),
         ]
         .join("\n\n")
         .trim()
         .into(),
     });
 
-    Ok(type_files.chain(iter::once(lib)).collect())
+    Ok(type_files
+        .into_iter()
+        .chain(extension_files)
+        .chain(iter::once(lib))
+        .collect())
 }
 
 fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context, scope: &mut Scope) -> String {
@@ -238,6 +288,86 @@ fn transpile_member_functions(
         .collect::<Vec<_>>()
         .join("\n\n");
     transpile!(ctx, scope, "impl {} {{\n{transpiled_fns}\n}}", ty)
+}
+
+fn transpile_extension_functions(
+    ty: &TypeElement,
+    fns: &[&FnDecl],
+    ctx: &Context,
+    scope: &mut Scope,
+) -> String {
+    debug_assert_ne!(fns.len(), 0, "Extension functions should not be empty");
+    if fns
+        .iter()
+        .find(|f| f.signature.visibility != Visibility::Inherited)
+        .is_some()
+    {
+        todo!("TRANSPILER ERROR: Member functions for types declared outside of galvan module must have default visibility!");
+    }
+
+    let trait_name = extension_name(&ty);
+    let fn_signatures = fns
+        .iter()
+        .map(|f| FnSignature {
+            visibility: Visibility::Private,
+            ..f.signature.clone()
+        })
+        .map(|s| s.transpile(ctx, scope))
+        .collect::<Vec<_>>()
+        .join(";\n")
+        + ";";
+    let transpiled_fns = fns
+        .iter()
+        .map(|f| f.transpile(ctx, scope))
+        .map(|s| s.strip_prefix("pub(crate) ").unwrap().to_owned())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    transpile! {ctx, scope,
+        "
+        pub trait {trait_name} {{
+            {fn_signatures}
+        }}
+
+        impl {trait_name} for {} {{
+            {transpiled_fns}
+        }}
+        ", ty
+    }
+}
+
+fn extension_name(ty: &TypeElement) -> String {
+    fn escaped_name(ty: &TypeElement) -> String {
+        match ty {
+            TypeElement::Plain(ty) => ty.ident.as_str().to_case(Case::UpperCamel),
+            TypeElement::Tuple(ty) => format!(
+                "Tuple_{}",
+                ty.elements
+                    .iter()
+                    .map(escaped_name)
+                    .collect::<Vec<_>>()
+                    .join("_")
+            ),
+            TypeElement::Result(ty) => format!(
+                "Result_{}_{}",
+                escaped_name(&ty.success),
+                ty.error.as_ref().map_or("".into(), escaped_name)
+            ),
+            TypeElement::Optional(ty) => format!("Option_{}_Ext", escaped_name(&ty.some)),
+            TypeElement::Dictionary(ty) => {
+                format!("Dict_{}_{}", escaped_name(&ty.key), escaped_name(&ty.value))
+            }
+            TypeElement::OrderedDictionary(ty) => format!(
+                "OrderedDict_{}_{}",
+                escaped_name(&ty.key),
+                escaped_name(&ty.value)
+            ),
+            TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
+            TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
+        }
+    }
+
+    escaped_name(ty) + "_Ext"
 }
 
 pub struct TranspileOutput {

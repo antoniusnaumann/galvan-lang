@@ -36,7 +36,7 @@ pub enum Visibility {
     #[default]
     Inherited,
     Public(Pub),
-    // Private,
+    Private,
 }
 
 impl Visibility {
