@@ -4,6 +4,7 @@ mod collection;
 mod fn_decl;
 mod function_call;
 mod ident;
+mod member;
 mod operator;
 mod statement;
 mod r#struct;

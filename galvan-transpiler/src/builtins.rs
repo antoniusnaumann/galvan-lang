@@ -33,3 +33,19 @@ pub fn builtins() -> Mapping {
         ("Char" => "char", copy),
     )
 }
+
+/// Lists all iterator functions that have a closure which borrows its argument, leading to a double iterator when called on .iter()
+pub(crate) const BORROWED_ITERATOR_FNS: [&str; 12] = [
+    "filter",
+    "skip_while",
+    "take_while",
+    "inspect",
+    "partition",
+    "find",
+    "try_find",
+    "max_by_key",
+    "max_by",
+    "min_by_key",
+    "min_by",
+    "is_sorted_by",
+];

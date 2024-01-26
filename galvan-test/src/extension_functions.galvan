@@ -8,10 +8,10 @@ test "Call extension function on external type" {
 }
 
 fn counted(self: [Int], value: Int) -> USize {
-    // TODO: This does not work due to double-borrowing in the generated code
-    // self.copied().filter |it| { it == value }.count()
-
-    2
+    self.iter()
+        .copied()
+        .filter |it| { it == value }
+        .count()
 }
 
 test "Call extension function on complex type" {

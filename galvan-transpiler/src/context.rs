@@ -27,8 +27,8 @@ impl<'a> Context<'a> {
 pub fn predefined_from(mapping: &Mapping) -> SegmentedAsts {
     let types = mapping
         .types
-        .iter()
-        .map(|(ident, _rust_type)| ToplevelItem {
+        .keys()
+        .map(|ident| ToplevelItem {
             item: TypeDecl::Empty(EmptyTypeDecl {
                 visibility: Visibility::Inherited,
                 ident: ident.clone(),

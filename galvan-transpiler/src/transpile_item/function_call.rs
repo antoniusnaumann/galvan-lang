@@ -1,13 +1,14 @@
+use crate::builtins::BORROWED_ITERATOR_FNS;
 use crate::context::Context;
-use crate::macros::{impl_transpile, transpile};
+use crate::macros::transpile;
+use crate::transpile_item::closure::transpile_closure;
 use crate::transpile_item::statement::match_ident;
 use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::TypeElement::Plain;
 use galvan_ast::{
-    ComparisonOperator, ConstructorCall, ConstructorCallArg, DeclModifier, Expression,
-    FunctionCall, FunctionCallArg, InfixOperator, MemberChainBase, MemberFieldAccess,
-    MemberFunctionCall, OperatorTree, Ownership, SingleExpression,
+    ComparisonOperator, DeclModifier, Expression, FunctionCall, FunctionCallArg, InfixOperator,
+    OperatorTree, Ownership, SingleExpression,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -74,6 +75,24 @@ impl Transpile for FunctionCall {
                     self.arguments
                 ),
             },
+            s if BORROWED_ITERATOR_FNS.contains(&s) => {
+                let ident = self.identifier.transpile(ctx, scope);
+                let args = self
+                    .arguments
+                    .iter()
+                    .map(|a| match &a.expression {
+                        Expression::Closure(closure) => {
+                            assert!(
+                            a.modifier.is_none(),
+                            "TRANSPILER ERROR: closure modifier not allowed for iterator functions"
+                        );
+                            transpile_closure(ctx, scope, closure, true)
+                        }
+                        _ => a.transpile(ctx, scope),
+                    })
+                    .join(", ");
+                format!("{}({})", ident, args)
+            }
             _ => {
                 // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
                 let ident = self.identifier.transpile(ctx, scope);
@@ -144,30 +163,3 @@ impl Transpile for FunctionCallArg {
         }
     }
 }
-
-impl Transpile for MemberFunctionCall {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { base, call } = self;
-        transpile!(ctx, scope, "{}.{}", base, call)
-    }
-}
-
-impl Transpile for MemberFieldAccess {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { base, field } = self;
-        transpile!(ctx, scope, "{}.{}", base, field)
-    }
-}
-
-impl Transpile for MemberChainBase {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        self.base
-            .iter()
-            .map(|r| transpile!(ctx, scope, "{}", r))
-            .collect_vec()
-            .join(".")
-    }
-}
-
-impl_transpile!(ConstructorCall, "{} {{ {} }}", identifier, arguments,);
-impl_transpile!(ConstructorCallArg, "{}: {}", ident, expression);
