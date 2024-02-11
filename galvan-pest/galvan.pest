@@ -97,14 +97,17 @@ member_chain_base = {
     ((strict_trailing_closure_call | single_expression) ~ space* ~ dot)+
 }
 
-single_expression = {
+single_expression = ${
+    single_expression_ ~ postfix_operator*
+}
+
+single_expression_ = _{     
     collection_literal
     | function_call
     | constructor_call
     | literal
-    | ident
     // | group
-    ~ postfix_operator*
+    | ident
 }
 
 literal = {
@@ -113,7 +116,7 @@ literal = {
     | number_literal
 }
 
-closure = { "|" ~ closure_arguments? ~ "|" ~ (block | expression) }
+closure = !{ "|" ~ closure_arguments? ~ "|" ~ (block | expression) }
 closure_arguments = _{ (closure_argument ~ (comma ~ closure_argument)*)? ~ comma? }
 closure_argument = !{ ident ~ (colon ~ type_item)? }
 block = !{ (brace_open ~ body ~ brace_close) }
@@ -121,7 +124,7 @@ block = !{ (brace_open ~ body ~ brace_close) }
 // TODO: Also allow block expression here as closure with implicit names ("it" or #0, #1, #2)
 trailing_closure_call = ${
     ident
-    ~ whitespace* ~ (
+    ~ whitespace+ ~ (
     trailing_closure
     | (
         trailing_closure_call_arg
@@ -130,11 +133,12 @@ trailing_closure_call = ${
         ~ whitespace* ~ trailing_closure?))
 }
 strict_trailing_closure_call = ${
-     ident
-     ~ (whitespace* ~ trailing_closure_call_arg* ~ whitespace* ~ comma?)
+     ident ~ whitespace ~
+      (whitespace* ~ trailing_closure_call_arg* ~ whitespace* ~ comma?)
      ~ whitespace* ~ trailing_closure
  }
-trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block ~ postfix_operator* }
+// TODO: Allow postfix operators here
+trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
 trailing_closure_call_arg = { (declaration_modifier)? ~ expression }
 
 infix_operator = {
@@ -152,12 +156,12 @@ postfix_operator = {
 yeet_operator = { "!" }
 access_operator = { "[" ~ expression ~ "]" }
 
-function_call = { function_call_base }
+function_call = !{ function_call_base }
 function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
 function_call_args = _{ (function_call_arg ~ (comma ~ function_call_arg)*)? }
 function_call_arg = { (declaration_modifier)? ~ expression }
 
-constructor_call = { type_ident ~ paren_open ~ constructor_call_args ~ paren_close }
+constructor_call = !{ type_ident ~ paren_open ~ constructor_call_args ~ paren_close }
 constructor_call_args = _{ (constructor_call_arg ~ (comma ~ constructor_call_arg)*)? }
 constructor_call_arg = { ident ~ colon ~ expression }
 
@@ -319,7 +323,7 @@ result_type = ${ success_variant ~ exclamation_mark ~ error_variant? }
 optional_type = ${ opt_element_type ~ question_mark }
 
 // # Collection Literals
-collection_literal = { array_literal | set_literal | dict_literal | ordered_dict_literal }
+collection_literal = !{ array_literal | set_literal | dict_literal | ordered_dict_literal }
 array_literal = { bracket_open ~ array_literal_elements ~ comma? ~ bracket_close }
 array_literal_elements = _{ (expression ~ (comma ~ expression)*)? }
 set_literal = { brace_open ~ set_literal_elements ~ comma? ~ brace_close }
