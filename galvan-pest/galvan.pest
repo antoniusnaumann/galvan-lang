@@ -51,7 +51,6 @@ alias_type_decl = { type_decl_prelude ~ assign_ ~ type_item }
 tuple_type_decl = { type_decl_prelude ~ paren_open ~ tuple_fields ~ paren_close }
 tuple_fields = _{ (tuple_field ~ (comma ~ tuple_field)*)? }
 tuple_field = { type_item }
-tuple_element = { element_type }
 empty_type_decl = { type_decl_prelude }
 
 param_list = { (paren_open ~ (param ~ (comma ~ param)*)? ~ paren_close)? }
@@ -92,7 +91,7 @@ operator_chain = ${
 }
 
 member_chain = {
-    member_chain_base ~ (trailing_closure_call | function_call | ident)
+    member_chain_base ~ (trailing_closure_call | single_expression)
 }
 member_chain_base = {
     ((strict_trailing_closure_call | single_expression) ~ space* ~ dot)+
@@ -105,6 +104,7 @@ single_expression = {
     | literal
     | ident
     // | group
+    ~ postfix_operator*
 }
 
 literal = {
@@ -134,7 +134,7 @@ strict_trailing_closure_call = ${
      ~ (whitespace* ~ trailing_closure_call_arg* ~ whitespace* ~ comma?)
      ~ whitespace* ~ trailing_closure
  }
-trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
+trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block ~ postfix_operator* }
 trailing_closure_call_arg = { (declaration_modifier)? ~ expression }
 
 infix_operator = {
@@ -144,6 +144,13 @@ infix_operator = {
     | comparison_operator
     | logical_infix_operator
 }
+
+postfix_operator = { 
+    yeet_operator 
+    | access_operator
+}
+yeet_operator = { "!" }
+access_operator = { "[" ~ expression ~ "]" }
 
 function_call = { function_call_base }
 function_call_base = _{ ident ~ paren_open ~ function_call_args ~ paren_close }
@@ -294,7 +301,6 @@ allowed_in_optional = _{ basic_type | array_type | dict_type | ordered_dict_type
 
 error_variant = { allowed_in_error_variant }
 success_variant = { allowed_in_success_variant }
-ref_element = { allowed_in_error_variant }
 
 key_type = _{ type_item }
 value_type = _{ type_item }
