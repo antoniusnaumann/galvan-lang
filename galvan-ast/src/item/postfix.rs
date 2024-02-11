@@ -41,4 +41,4 @@ pub struct AccessExpression {
 }
 
 #[derive(Debug, From, PartialEq, Eq)]
-pub struct YeetExpression(SingleExpression);
+pub struct YeetExpression(pub SingleExpression);

@@ -12,4 +12,5 @@ mod task;
 mod test_decl;
 mod toplevel;
 mod r#type;
+mod postfix;
 mod visibility;
