@@ -48,9 +48,11 @@ pub type Expression =
 #[pest_ast(rule(Rule::simple_expression))]
 pub type SimpleExpression = MemberFunctionCall + MemberFieldAccess + SingleExpression;
 
+pub type Postfix = Box<PostfixExpression>;
 #[type_union]
 #[derive(Debug, PartialEq, Eq)]
-pub type SingleExpression = CollectionLiteral + FunctionCall + ConstructorCall + Literal + Ident;
+pub type SingleExpression =
+    Postfix + CollectionLiteral + FunctionCall + ConstructorCall + Literal + Ident;
 
 impl FromPest<'_> for SingleExpression {
     type Rule = Rule;
@@ -61,7 +63,7 @@ impl FromPest<'_> for SingleExpression {
     ) -> Result<Self, ConversionError<Self::FatalError>> {
         let pair = pairs.peek().ok_or(NoMatch)?;
         let rule = pair.as_rule();
-        match rule {
+        let exp = match rule {
             Rule::trailing_closure_call => {
                 let function_call = FunctionCall::from_pest(pairs)?;
                 Ok(function_call.into())
@@ -96,6 +98,8 @@ impl FromPest<'_> for SingleExpression {
                 }
             }
             _ => Err(NoMatch),
-        }
+        }?;
+
+        handle_postfixes(exp, pairs)
     }
 }

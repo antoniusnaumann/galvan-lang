@@ -37,12 +37,6 @@ type SuccessVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Opt
 /// A subset of TypeElement that can be used as the error variant of a result type
 type ErrorVariant = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
 
-#[type_union(super = TypeElement)]
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::ref_element))]
-/// A subset of TypeElement that can be contained in a stored reference
-pub type RefElement = Array + Dictionary + OrderedDictionary + Set + Tuple + Plain;
-
 impl From<TypeIdent> for TypeElement {
     fn from(value: TypeIdent) -> Self {
         Self::Plain(BasicTypeItem { ident: value })

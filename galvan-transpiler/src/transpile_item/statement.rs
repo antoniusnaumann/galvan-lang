@@ -3,8 +3,7 @@ use crate::macros::{impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    BooleanLiteral, DeclModifier, Declaration, Expression, Literal, NumberLiteral, Ownership,
-    SingleExpression, Statement, StringLiteral, TopExpression, TypeElement,
+    BooleanLiteral, DeclModifier, Declaration, Expression, Literal, NumberLiteral, Ownership, PostfixExpression, SingleExpression, Statement, StringLiteral, TopExpression, TypeElement
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -130,11 +129,17 @@ impl_transpile_variants! { Expression;
 }
 
 impl_transpile_variants! { SingleExpression;
+    Postfix,
     CollectionLiteral,
     FunctionCall,
     ConstructorCall,
     Literal,
     Ident
+}
+
+impl_transpile_variants! { PostfixExpression;
+    YeetExpression,
+    AccessExpression,
 }
 
 impl_transpile_variants! { Literal;

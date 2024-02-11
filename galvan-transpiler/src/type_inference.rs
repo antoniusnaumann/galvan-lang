@@ -111,6 +111,7 @@ impl InferType for SingleExpression {
             }
             SingleExpression::Literal(literal) => literal.infer_type(scope),
             SingleExpression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+            SingleExpression::Postfix(_) => todo!(),
         }
     }
 }
