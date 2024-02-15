@@ -94,7 +94,7 @@ impl FromPest<'_> for SingleExpression {
                         let ident = Ident::from_pest(&mut pairs)?;
                         Ok(ident.into())
                     }
-                    _ => Err(NoMatch),
+                    _ => unreachable!("Unexpected rule: {:#?}", rule),
                 }
             }
             _ => Err(NoMatch),

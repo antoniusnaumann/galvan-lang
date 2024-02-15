@@ -26,17 +26,8 @@ impl FromPest<'_> for MemberChain {
         let mut elements = Vec::new();
         while let Some(pair) = pairs.peek() {
             // println!("Member chain element: {:#?}", pair);
-            // println!("Member chain: {:#?}", base);
-            let rule = pair.as_rule();
-            match rule {
-                Rule::single_expression => {
-                    elements.push(SingleExpression::from_pest(&mut pairs)?);
-                }
-                Rule::trailing_closure_call => {
-                    elements.push(FunctionCall::from_pest(&mut pairs)?.into());
-                }
-                _ => Err(ConversionError::NoMatch)?,
-            }
+            // println!("Member chain: {:#?}", elements);
+            elements.push(SingleExpression::from_pest(&mut pairs)?);
         }
 
         Ok(Self { elements })
@@ -63,21 +54,16 @@ impl FromPest<'_> for MemberFunctionCall {
     fn from_pest(
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let Some(pair) = pairs.next() else {
-            return Err(NoMatch);
-        };
-        if pair.as_rule() != Rule::member_chain {
-            return Err(NoMatch);
-        }
-        let mut pairs = pair.into_inner();
-
-        let mut elements = MemberChain::from_pest(&mut pairs)?.elements;
-        let call = match elements.pop() { 
+        let mut elements = MemberChain::from_pest(pairs)?.elements;
+        let call = match elements.pop() {
             Some(SingleExpression::FunctionCall(f)) => f,
-            _ => return Err(NoMatch) 
+            _ => return Err(NoMatch),
         };
 
-        Ok(Self { base: elements, call })
+        Ok(Self {
+            base: elements,
+            call,
+        })
     }
 }
 
@@ -88,19 +74,14 @@ impl FromPest<'_> for MemberFieldAccess {
     fn from_pest(
         pairs: &mut Pairs<'_, Self::Rule>,
     ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let Some(pair) = pairs.next() else {
-            return Err(NoMatch);
-        };
-        if pair.as_rule() != Rule::member_chain {
-            return Err(NoMatch);
-        }
-        let mut pairs = pair.into_inner();
-
-        let mut elements = MemberChain::from_pest(&mut pairs)?.elements;
+        let mut elements = MemberChain::from_pest(pairs)?.elements;
         let field = match elements.pop() {
             Some(SingleExpression::Ident(i)) => i,
-            _ => return Err(NoMatch)
+            _ => return Err(NoMatch),
         };
-        Ok(Self { base: elements, field })
+        Ok(Self {
+            base: elements,
+            field,
+        })
     }
 }

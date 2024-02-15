@@ -14,11 +14,11 @@ pub(crate) fn handle_postfixes(
     pairs: &mut Pairs<'_, Rule>,
 ) -> Result<SingleExpression, ConversionError<Void>> {
     let mut exp = base;
-    while let Some(pair) = pairs.next() {
+    while let Some(pair) = pairs.peek() {
         if pair.as_rule() != Rule::postfix_operator {
-            return Err(ConversionError::NoMatch);
+            break;
         }
-
+        let pair = pairs.next().unwrap();
         let inner = pair.into_inner().next().unwrap();
         exp = match inner.as_rule() {
             Rule::yeet_operator => {
