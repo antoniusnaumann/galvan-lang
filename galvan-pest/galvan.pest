@@ -90,11 +90,13 @@ operator_chain = ${
     simple_expression ~ ((w ~ infix_operator ~ w) ~ (simple_expression))+
 }
 
-member_chain = {
-    member_chain_base ~ (trailing_closure_call | single_expression)
+member_chain = !{
+    (member_chain_element ~ space* ~ dot)+ ~ space* ~ member_chain_element
 }
-member_chain_base = {
-    ((strict_trailing_closure_call | single_expression) ~ space* ~ dot)+
+
+member_chain_element = _{ 
+    trailing_closure_call
+    | single_expression
 }
 
 single_expression = ${
@@ -132,11 +134,7 @@ trailing_closure_call = ${
         ~ whitespace* ~ comma?
         ~ whitespace* ~ trailing_closure?))
 }
-strict_trailing_closure_call = ${
-     ident ~ whitespace ~
-      (whitespace* ~ trailing_closure_call_arg* ~ whitespace* ~ comma?)
-     ~ whitespace* ~ trailing_closure
- }
+
 // TODO: Allow postfix operators here
 trailing_closure = { ("|" ~ closure_arguments ~ "|" ~ whitespace*)? ~ block }
 trailing_closure_call_arg = { (declaration_modifier)? ~ expression }

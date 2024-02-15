@@ -197,8 +197,8 @@ impl InferType for MemberFieldAccess {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let Self { base, field } = self;
 
-        let receiver_type = if base.base.len() == 1 {
-            base.base[0].infer_type(scope)?
+        let receiver_type = if base.len() == 1 {
+            base[0].infer_type(scope)?
         } else {
             return None;
         };

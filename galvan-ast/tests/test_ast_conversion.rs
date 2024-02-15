@@ -165,9 +165,7 @@ mod test_utils {
 
     pub fn member(receiver: &str, ident: &str) -> Expression {
         MemberFieldAccess {
-            base: MemberChainBase {
-                base: vec![Ident::new(receiver).into()],
-            },
+            base: vec![Ident::new(receiver).into()],
             field: Ident::new(ident),
         }
         .into()
