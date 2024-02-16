@@ -41,12 +41,12 @@ pub type Literal = BooleanLiteral + StringLiteral + NumberLiteral;
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::expression))]
 pub type Expression =
-    OperatorTree + MemberFunctionCall + MemberFieldAccess + SingleExpression + Closure;
+    OperatorTree + MemberChain + SingleExpression + Closure;
 
 #[type_union(super = Expression)]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::simple_expression))]
-pub type SimpleExpression = MemberFunctionCall + MemberFieldAccess + SingleExpression;
+pub type SimpleExpression = MemberChain + SingleExpression;
 
 pub type Postfix = Box<PostfixExpression>;
 #[type_union]
@@ -63,7 +63,7 @@ impl FromPest<'_> for SingleExpression {
     ) -> Result<Self, ConversionError<Self::FatalError>> {
         let pair = pairs.peek().ok_or(NoMatch)?;
         let rule = pair.as_rule();
-        let exp = match rule {
+        match rule {
             Rule::trailing_closure_call => {
                 let function_call = FunctionCall::from_pest(pairs)?;
                 Ok(function_call.into())
@@ -73,7 +73,7 @@ impl FromPest<'_> for SingleExpression {
                 let mut pairs = pair.into_inner();
                 let pair = pairs.peek().ok_or(NoMatch)?;
                 let rule = pair.as_rule();
-                match rule {
+                let exp = match rule {
                     Rule::collection_literal => {
                         let collection_literal = CollectionLiteral::from_pest(&mut pairs)?;
                         Ok(collection_literal.into())
@@ -95,11 +95,10 @@ impl FromPest<'_> for SingleExpression {
                         Ok(ident.into())
                     }
                     _ => unreachable!("Unexpected rule: {:#?}", rule),
-                }
+                }?;
+                handle_postfixes(exp, &mut pairs)
             }
             _ => Err(NoMatch),
-        }?;
-
-        handle_postfixes(exp, pairs)
+        }
     }
 }

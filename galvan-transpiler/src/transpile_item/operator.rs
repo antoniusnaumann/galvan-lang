@@ -30,7 +30,7 @@ impl Transpile for OperatorTree {
 }
 
 impl_transpile_variants!(OperatorTreeNode; Operation, SimpleExpression);
-impl_transpile_variants!(SimpleExpression; MemberFieldAccess, MemberFunctionCall, SingleExpression);
+impl_transpile_variants!(SimpleExpression; MemberChain, SingleExpression);
 
 fn transpile_logical(
     ctx: &Context,

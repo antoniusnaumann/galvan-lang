@@ -5,7 +5,9 @@ test "Use '!' operator on optional" {
 
 fn func_with_result() -> Int!USize {
     let vec = ["H", "Z"]
+    vec.binary_search("Hi")!
     let bail = vec.binary_search("Hi")!
 
-    if true { 27 }.ok_or(27)
+    let a = if true { 27 }
+    a.ok_or(27)
 }

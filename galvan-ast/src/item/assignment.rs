@@ -17,7 +17,7 @@ pub struct Assignment {
 #[type_union]
 #[derive(Debug, PartialEq, Eq, FromPest)]
 #[pest_ast(rule(Rule::assignment_target))]
-pub type AssignmentTarget = Ident + MemberFieldAccess;
+pub type AssignmentTarget = Ident + MemberChain;
 
 #[type_union]
 #[derive(Debug, PartialEq, Eq)]

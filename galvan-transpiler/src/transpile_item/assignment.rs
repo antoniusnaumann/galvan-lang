@@ -4,7 +4,7 @@ use crate::Transpile;
 use galvan_ast::{Assignment, AssignmentOperator, AssignmentTarget, Ownership, TopExpression};
 use galvan_resolver::Scope;
 
-impl_transpile_variants!(AssignmentTarget; Ident, MemberFieldAccess);
+impl_transpile_variants!(AssignmentTarget; Ident, MemberChain);
 
 impl Transpile for Assignment {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -25,7 +25,7 @@ impl Transpile for Assignment {
                 Ownership::Copy => "",
                 Ownership::Ref => todo!("Handle assignment to ref variable"),
             }),
-            AssignmentTarget::MemberFieldAccess(_) => "",
+            AssignmentTarget::MemberChain(_) => "",
         };
 
         match operator {

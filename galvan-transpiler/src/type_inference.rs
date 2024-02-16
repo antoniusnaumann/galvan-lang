@@ -1,7 +1,7 @@
 use galvan_ast::{
     ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
     DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, InfixOperator,
-    Literal, MemberFieldAccess, OperatorTree, OperatorTreeNode, OrderedDictLiteral,
+    Literal, MemberChain, OperatorTree, OperatorTreeNode, OrderedDictLiteral,
     OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, SimpleExpression, SingleExpression,
     Statement, TopExpression, TypeDecl, TypeElement, TypeIdent,
 };
@@ -75,11 +75,7 @@ impl InferType for Expression {
                 None
             }
             Expression::OperatorTree(tree) => tree.infer_type(scope),
-            Expression::MemberFunctionCall(_) => {
-                // todo!("Implement type inference for member function call")
-                None
-            }
-            Expression::MemberFieldAccess(access) => access.infer_type(scope),
+            Expression::MemberChain(access) => access.infer_type(scope),
             Expression::SingleExpression(s) => s.infer_type(scope),
         }
     }
@@ -88,11 +84,7 @@ impl InferType for Expression {
 impl InferType for SimpleExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            SimpleExpression::MemberFieldAccess(access) => access.infer_type(scope),
-            SimpleExpression::MemberFunctionCall(_) => {
-                // todo!("Implement type inference for member function call")
-                None
-            }
+            SimpleExpression::MemberChain(access) => access.infer_type(scope),
             SimpleExpression::SingleExpression(expr) => expr.infer_type(scope),
         }
     }
@@ -193,12 +185,12 @@ fn infer() -> TypeElement {
     .into()
 }
 
-impl InferType for MemberFieldAccess {
+impl InferType for MemberChain {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { base, field } = self;
+        let Self { elements } = self;
 
-        let receiver_type = if base.len() == 1 {
-            base[0].infer_type(scope)?
+        let receiver_type = if elements.len() == 2 {
+            elements[0].infer_type(scope)?
         } else {
             return None;
         };
@@ -211,11 +203,13 @@ impl InferType for MemberFieldAccess {
                     TypeDecl::Tuple(tuple) => {
                         todo!("IMPLEMENT: Access member of tuple type")
                     }
-                    TypeDecl::Struct(st) => st
-                        .members
-                        .iter()
-                        .find(|member| member.ident == *field)
-                        .map(|member| member.r#type.clone()),
+                    TypeDecl::Struct(st) => {
+                        let field = self.field_ident()?;
+                        st.members
+                            .iter()
+                            .find(|member| member.ident == *field)
+                            .map(|member| member.r#type.clone())
+                    }
                     TypeDecl::Alias(_) => {
                         // TODO: Handle Inference for alias types
                         None
@@ -232,10 +226,14 @@ impl InferType for MemberFieldAccess {
                 None
             }
             other => {
-                todo!(
-                    "TRANSPILER ERROR: Cannot access member of type {:#?}",
-                    other
-                )
+                if self.is_field() {
+                    todo!(
+                        "TRANSPILER ERROR: Cannot access member of type {:#?}",
+                        other
+                    )
+                } else {
+                    None
+                }
             }
         }
     }

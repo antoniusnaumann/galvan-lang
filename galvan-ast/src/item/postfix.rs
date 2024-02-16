@@ -18,6 +18,7 @@ pub(crate) fn handle_postfixes(
         if pair.as_rule() != Rule::postfix_operator {
             break;
         }
+
         let pair = pairs.next().unwrap();
         let inner = pair.into_inner().next().unwrap();
         exp = match inner.as_rule() {

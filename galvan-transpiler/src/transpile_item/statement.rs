@@ -111,7 +111,7 @@ fn transpile_assignment_expression(
             match_ident!(ident) => {
                 transpile!(ctx, scope, "{}.to_owned()", ident)
             }
-            Expression::MemberFieldAccess(access) => {
+            Expression::MemberChain(access) if access.is_field() => {
                 transpile!(ctx, scope, "{}.to_owned()", access)
             }
             expr => expr.transpile(ctx, scope),
@@ -122,8 +122,7 @@ fn transpile_assignment_expression(
 
 impl_transpile_variants! { Expression;
     OperatorTree,
-    MemberFunctionCall,
-    MemberFieldAccess,
+    MemberChain,
     SingleExpression,
     Closure
 }

@@ -153,10 +153,10 @@ impl Transpile for FunctionCallArg {
                     transpile!(ctx, scope, "&({})", expression)
                 }
             }
-            (Some(Mod::Mut(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
+            (Some(Mod::Mut(_)), expr @ Exp::MemberChain(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "&mut {}", expr)
             }
-            (Some(Mod::Ref(_)), expr @ Exp::MemberFieldAccess(_) | expr @ match_ident!(_)) => {
+            (Some(Mod::Ref(_)), expr @ Exp::MemberChain(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),
