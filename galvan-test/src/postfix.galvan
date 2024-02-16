@@ -1,0 +1,11 @@
+test "Use '!' operator on optional" {
+    let bailed = func_with_result()
+    assert bailed.unwrap_err() == 1
+}
+
+fn func_with_result() -> Int!USize {
+    let vec = ["H", "Z"]
+    let bail = vec.binary_search("Hi")!
+
+    if true { 27 }.ok_or(27)
+}
