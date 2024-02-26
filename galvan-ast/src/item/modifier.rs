@@ -1,5 +1,3 @@
-use galvan_pest::Rule;
-
 #[derive(Clone, Default, Debug)]
 pub struct Modifiers {
     pub visibility: Visibility,
@@ -29,25 +27,14 @@ impl Modifiers {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::visibility))]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Visibility {
     // Inherited usually means pub(crate)
     #[default]
     Inherited,
-    Public(Pub),
+    Public,
     Private,
 }
-
-impl Visibility {
-    pub fn public() -> Self {
-        Self::Public(Pub)
-    }
-}
-
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::pub_keyword))]
-pub struct Pub;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ownership {
