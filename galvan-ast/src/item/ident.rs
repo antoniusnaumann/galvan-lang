@@ -1,11 +1,7 @@
 use derive_more::{Display, From};
-use galvan_pest::Rule;
 
-use super::string;
-
-#[derive(Clone, Debug, Display, PartialEq, Eq, From, FromPest, Hash)]
-#[pest_ast(rule(Rule::ident))]
-pub struct Ident(#[pest_ast(outer(with(string)))] String);
+#[derive(Clone, Debug, Display, PartialEq, Eq, From, Hash)]
+pub struct Ident(String);
 
 impl Ident {
     pub fn new(name: impl Into<String>) -> Ident {
@@ -17,9 +13,8 @@ impl Ident {
     }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, Hash, From, FromPest)]
-#[pest_ast(rule(Rule::type_ident))]
-pub struct TypeIdent(#[pest_ast(outer(with(string)))] String);
+#[derive(Clone, Debug, Display, PartialEq, Eq, Hash, From)]
+pub struct TypeIdent(String);
 
 impl TypeIdent {
     pub fn new(name: impl Into<String>) -> TypeIdent {
