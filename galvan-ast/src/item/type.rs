@@ -1,10 +1,8 @@
 use derive_more::From;
-use galvan_pest::Rule;
 
 use super::{DeclModifier, Ident, TypeElement, TypeIdent, Visibility};
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::type_decl))]
+#[derive(Debug, PartialEq, Eq, From)]
 pub enum TypeDecl {
     Tuple(TupleTypeDecl),
     Struct(StructTypeDecl),
@@ -23,31 +21,27 @@ impl TypeDecl {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::tuple_type_decl))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TupleTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub members: Vec<TupleTypeMember>,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::tuple_field))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TupleTypeMember {
     // pub visibility: Visibility,
     pub r#type: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::struct_type_decl))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub members: Vec<StructTypeMember>,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::struct_field))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructTypeMember {
     // pub visibility: Visibility,
     pub decl_modifier: Option<DeclModifier>,
@@ -55,16 +49,14 @@ pub struct StructTypeMember {
     pub r#type: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::alias_type_decl))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AliasTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub r#type: TypeElement,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::empty_type_decl))]
+#[derive(Debug, PartialEq, Eq)]
 /// An empty struct without any fields e.g.: `type Empty`
 pub struct EmptyTypeDecl {
     pub visibility: Visibility,
