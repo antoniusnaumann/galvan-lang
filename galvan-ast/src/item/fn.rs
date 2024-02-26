@@ -1,16 +1,13 @@
 use super::*;
-use derive_more::From;
-use galvan_pest::Rule;
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::function))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FnDecl {
+    // pub annotations,
     pub signature: FnSignature,
     pub block: Body,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::fn_signature))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FnSignature {
     // pub asyncness: Async,
     // pub constness: Const,
@@ -46,36 +43,21 @@ impl FnSignature {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::param_list))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParamList {
     pub params: Vec<Param>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::param))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Param {
     pub decl_modifier: Option<DeclModifier>,
     pub identifier: Ident,
     pub param_type: TypeElement,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::declaration_modifier))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DeclModifier {
-    Let(LetKeyword),
-    Mut(MutKeyword),
-    Ref(RefKeyword),
+    Let,
+    Mut,
+    Ref,
 }
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::let_keyword))]
-pub struct LetKeyword;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::mut_keyword))]
-pub struct MutKeyword;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::ref_keyword))]
-pub struct RefKeyword;
