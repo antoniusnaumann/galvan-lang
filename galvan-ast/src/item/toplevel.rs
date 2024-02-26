@@ -1,10 +1,8 @@
 use derive_more::From;
-use galvan_pest::Rule;
 
 use super::{FnDecl, MainDecl, TestDecl, TypeDecl};
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::toplevel))]
+#[derive(Debug, PartialEq, Eq, From)]
 pub enum RootItem {
     Fn(FnDecl),
     Type(TypeDecl),
