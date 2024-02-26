@@ -1,6 +1,6 @@
 use derive_more::From;
 
-use super::{FnDecl, MainDecl, TestDecl, TypeDecl};
+use super::{FnDecl, TypeDecl, Body, Ident, StringLiteral};
 
 #[derive(Debug, PartialEq, Eq, From)]
 pub enum RootItem {
@@ -9,6 +9,24 @@ pub enum RootItem {
     Main(MainDecl),
     Test(TestDecl),
     // CustomTask(TaskDecl),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct MainDecl {
+    pub body: Body,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TestDecl {
+    pub name: Option<StringLiteral>,
+    pub body: Body,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TaskDecl {
+    pub ident: Ident,
+    // name: Option<String>,
+    pub body: Body,
 }
 
 mod private {
