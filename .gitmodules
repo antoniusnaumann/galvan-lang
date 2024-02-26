@@ -1,0 +1,3 @@
+[submodule "tree-sitter-galvan"]
+	path = tree-sitter-galvan
+	url = https://github.com/antoniusnaumann/tree-sitter-galvan
