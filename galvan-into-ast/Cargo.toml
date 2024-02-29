@@ -1,13 +1,11 @@
 [package]
-name = "galvan-ast"
-description = "AST for the Galvan programming language"
+name = "galvan-into-ast"
+description = "CST to AST conversion for the Galvan programming language"
 
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
 license.workspace = true
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 derive_more = { version = "0.99.17", features = [] }
@@ -17,6 +15,8 @@ itertools.workspace = true
 thiserror.workspace = true
 
 galvan-files.workspace = true
+galvan-ast.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true
+
