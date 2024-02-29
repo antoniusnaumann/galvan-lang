@@ -132,30 +132,3 @@ impl_transpile_variants! { PostfixExpression;
     YeetExpression,
     AccessExpression,
 }
-
-impl_transpile_variants! { Literal;
-    BooleanLiteral,
-    StringLiteral,
-    NumberLiteral,
-    NoneLiteral,
-}
-
-impl Transpile for StringLiteral {
-    fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
-        // TODO: Implement more sophisticated formatting (extract {} and put them as separate arguments)
-        format!("format!({})", self.as_str())
-    }
-}
-
-impl Transpile for NumberLiteral {
-    fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
-        // TODO: Parse number and validate type
-        format!("{}", self.as_str())
-    }
-}
-
-impl Transpile for BooleanLiteral {
-    fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
-        format!("{self}")
-    }
-}
