@@ -1,23 +1,14 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
-    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group,
-    InfixOperation, InfixOperator, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral,
-    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, Statement, TypeDecl, TypeElement,
-    TypeIdent,
+    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, DictLiteral,
+    DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group, InfixOperation,
+    Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
+    SetLiteral, SetTypeItem, Statement, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
 
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement>;
-}
-
-impl InferType for TopExpression {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        match self {
-            TopExpression::Expression(e) => e.infer_type(scope),
-        }
-    }
 }
 
 impl InferType for ElseExpression {

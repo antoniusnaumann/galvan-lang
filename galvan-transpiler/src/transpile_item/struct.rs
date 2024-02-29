@@ -18,13 +18,13 @@ impl_transpile!(TupleTypeMember, "{}", r#type);
 impl Transpile for StructTypeMember {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         match self.decl_modifier {
-            Some(DeclModifier::Let(_)) => {
+            Some(DeclModifier::Let) => {
                 todo!("Decide if let should be allowed on struct fields (and what it should mean")
             }
-            Some(DeclModifier::Mut(_)) => {
+            Some(DeclModifier::Mut) => {
                 todo!("Decide if mut should be allowed on struct fields (and what it should mean)")
             }
-            Some(DeclModifier::Ref(_)) => {
+            Some(DeclModifier::Ref) => {
                 transpile!(
                     ctx,
                     scope,

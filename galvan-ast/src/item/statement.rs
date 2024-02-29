@@ -42,4 +42,4 @@ pub type Expression =
     + Group;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Group(Box<Expression>);
+pub struct Group(pub Box<Expression>);

@@ -7,8 +7,8 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::TypeElement::Plain;
 use galvan_ast::{
-    ComparisonOperator, DeclModifier, Expression, FunctionCall, FunctionCallArg, InfixOperator,
-    OperatorTree, Ownership, SingleExpression,
+    ComparisonOperator, DeclModifier, Expression, FunctionCall, FunctionCallArg, InfixExpression,
+    InfixOperation, Ownership,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -29,40 +29,36 @@ impl Transpile for FunctionCall {
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
-                    expression: Expression::OperatorTree(comp),
+                    expression: Expression::Infix(InfixExpression::Comparison(comp)),
                 }) => {
                     if modifier.is_some() {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
                     }
 
-                    let OperatorTree {
-                        left,
-                        operator,
-                        right,
-                    } = comp;
+                    let InfixOperation { lhs, operator, rhs } = comp;
                     let args = if self.arguments.len() > 1 {
                         &self.arguments[1..]
                     } else {
                         &[]
                     };
                     match operator {
-                        InfixOperator::Comparison(ComparisonOperator::Equal) => {
+                        ComparisonOperator::Equal => {
                             transpile!(
                                 ctx,
                                 scope,
                                 "assert_eq!({}, {}, {})",
-                                left,
-                                right,
+                                lhs,
+                                rhs,
                                 args.transpile(ctx, scope)
                             )
                         }
-                        InfixOperator::Comparison(ComparisonOperator::NotEqual) => {
+                        ComparisonOperator::NotEqual => {
                             transpile!(
                                 ctx,
                                 scope,
                                 "assert_ne!({}, {}, {})",
-                                left,
-                                right,
+                                lhs,
+                                rhs,
                                 args.transpile(ctx, scope)
                             )
                         }
@@ -111,7 +107,7 @@ impl Transpile for FunctionCallArg {
             expression,
         } = self;
         match (modifier, expression) {
-            (Some(Mod::Let(_)), _) => {
+            (Some(Mod::Let), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
             (None, match_ident!(ident)) => {
@@ -153,10 +149,16 @@ impl Transpile for FunctionCallArg {
                     transpile!(ctx, scope, "&({})", expression)
                 }
             }
-            (Some(Mod::Mut(_)), expr @ Exp::MemberChain(_) | expr @ match_ident!(_)) => {
+            (
+                Some(Mod::Mut),
+                expr @ Exp::Infix(InfixExpression::Member(_)) | expr @ match_ident!(_),
+            ) => {
                 transpile!(ctx, scope, "&mut {}", expr)
             }
-            (Some(Mod::Ref(_)), expr @ Exp::MemberChain(_) | expr @ match_ident!(_)) => {
+            (
+                Some(Mod::Ref),
+                expr @ Exp::Infix(InfixExpression::Member(_)) | expr @ match_ident!(_),
+            ) => {
                 transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),
