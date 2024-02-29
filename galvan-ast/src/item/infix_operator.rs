@@ -5,7 +5,17 @@ use crate::Expression;
 pub trait InfixOperator {}
 
 #[derive(Clone, Debug, PartialEq, Eq, From)]
-pub struct InfixExpression<Op: InfixOperator> {
+pub enum InfixExpression {
+    Logical(InfixOperation<LogicalOperator>),
+    Arithmetic(InfixOperation<ArithmeticOperator>),
+    Collection(InfixOperation<CollectionOperator>),
+    Comparison(InfixOperation<ComparisonOperator>),
+    Member(InfixOperation<MemberOperator>),
+    Custom(InfixOperation<CustomInfix>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, From)]
+pub struct InfixOperation<Op: InfixOperator> {
     pub lhs: Expression,
     pub operator: Op,
     pub rhs: Expression,
