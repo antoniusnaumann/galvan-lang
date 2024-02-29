@@ -3,7 +3,7 @@ use crate::macros::{impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    BooleanLiteral, DeclModifier, Declaration, Expression, Literal, NumberLiteral, Ownership, PostfixExpression, SingleExpression, Statement, StringLiteral, TopExpression, TypeElement
+    BooleanLiteral, DeclModifier, Declaration, Expression, InfixExpression, Literal, NumberLiteral, Ownership, PostfixExpression, Statement, StringLiteral, TypeElement
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -29,13 +29,13 @@ impl Transpile for Body {
     }
 }
 
-impl_transpile_variants!(Statement; Assignment, TopExpression, Declaration, Block);
+impl_transpile_variants!(Statement; Assignment, Expression, Declaration /*, Block */);
 
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         let keyword = match self.decl_modifier {
-            DeclModifier::Let(_) | DeclModifier::Ref(_) => "let",
-            DeclModifier::Mut(_) => "let mut",
+            DeclModifier::Let | DeclModifier::Ref => "let",
+            DeclModifier::Mut => "let mut",
         };
 
         let identifier = self.identifier.transpile(ctx, scope);
@@ -50,10 +50,8 @@ impl Transpile for Declaration {
             .as_ref()
             .map(|ty| transpile!(ctx, scope, "{}", ty));
         let ty = match self.decl_modifier {
-            DeclModifier::Let(_) | DeclModifier::Mut(_) => {
-                ty.map_or("".into(), |ty| format!(": {ty}"))
-            }
-            DeclModifier::Ref(_) => {
+            DeclModifier::Let | DeclModifier::Mut => ty.map_or("".into(), |ty| format!(": {ty}")),
+            DeclModifier::Ref => {
                 format!(
                     ": std::sync::Arc<std::sync::Mutex<{}>>",
                     ty.unwrap_or("_".into()),
@@ -67,13 +65,13 @@ impl Transpile for Declaration {
             modifier: self.decl_modifier,
             ty: inferred_type.clone(),
             ownership: match self.decl_modifier {
-                DeclModifier::Let(_) | DeclModifier::Mut(_) => match inferred_type {
+                DeclModifier::Let | DeclModifier::Mut => match inferred_type {
                     Some(TypeElement::Plain(plain)) if ctx.mapping.is_copy(&plain.ident) => {
                         Ownership::Copy
                     }
                     _ => Ownership::Owned,
                 },
-                DeclModifier::Ref(_) => Ownership::Ref,
+                DeclModifier::Ref => Ownership::Ref,
             },
         });
 
@@ -83,7 +81,7 @@ impl Transpile for Declaration {
             .as_ref()
             .map(|expr| transpile_assignment_expression(ctx, expr, scope))
             .map(|expr| {
-                if matches!(self.decl_modifier, DeclModifier::Ref(_)) {
+                if matches!(self.decl_modifier, DeclModifier::Ref) {
                     format!("(&({expr})).__to_ref()")
                 } else {
                     expr
@@ -96,44 +94,38 @@ impl Transpile for Declaration {
 
 macro_rules! match_ident {
     ($p:pat) => {
-        Expression::SingleExpression(SingleExpression::Ident($p))
+        Expression::Ident($p)
     };
 }
 pub(crate) use match_ident;
 
 fn transpile_assignment_expression(
     ctx: &Context,
-    assigned: &TopExpression,
+    assigned: &Expression,
     scope: &mut Scope,
 ) -> String {
     match assigned {
-        TopExpression::Expression(expr) => match expr {
-            match_ident!(ident) => {
-                transpile!(ctx, scope, "{}.to_owned()", ident)
-            }
-            Expression::MemberChain(access) if access.is_field() => {
-                transpile!(ctx, scope, "{}.to_owned()", access)
-            }
-            expr => expr.transpile(ctx, scope),
-        },
-        TopExpression::ElseExpression(e) => e.transpile(ctx, scope),
+        match_ident!(ident) => {
+            transpile!(ctx, scope, "{}.to_owned()", ident)
+        }
+        Expression::Infix(InfixExpression::Member(access)) if access.is_field() => {
+            transpile!(ctx, scope, "{}.to_owned()", access)
+        }
+        expr => expr.transpile(ctx, scope),
     }
 }
 
 impl_transpile_variants! { Expression;
-    OperatorTree,
-    MemberChain,
-    SingleExpression,
-    Closure
-}
-
-impl_transpile_variants! { SingleExpression;
+    Ident,
+    Infix,
     Postfix,
     CollectionLiteral,
     FunctionCall,
     ConstructorCall,
+    ElseExpression,
     Literal,
-    Ident
+    Closure,
+    Group,
 }
 
 impl_transpile_variants! { PostfixExpression;
@@ -144,7 +136,8 @@ impl_transpile_variants! { PostfixExpression;
 impl_transpile_variants! { Literal;
     BooleanLiteral,
     StringLiteral,
-    NumberLiteral
+    NumberLiteral,
+    NoneLiteral,
 }
 
 impl Transpile for StringLiteral {
