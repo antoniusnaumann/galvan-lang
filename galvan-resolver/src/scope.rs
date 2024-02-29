@@ -73,6 +73,6 @@ pub struct Variable {
 
 impl Variable {
     pub fn is_mut(&self) -> bool {
-        matches!(self.modifier, DeclModifier::Mut(_))
+        matches!(self.modifier, DeclModifier::Mut)
     }
 }

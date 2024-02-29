@@ -364,6 +364,7 @@ fn extension_name(ty: &TypeElement) -> String {
             ),
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
+            TypeElement::Generic(ty) => todo!("Generics are not supported yet!"),
         }
     }
 

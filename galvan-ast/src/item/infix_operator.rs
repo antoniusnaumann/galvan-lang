@@ -1,10 +1,10 @@
 use derive_more::From;
 
-use crate::Expression;
+use crate::{Expression, Ident};
 
 pub trait InfixOperator {}
 
-#[derive(Clone, Debug, PartialEq, Eq, From)]
+#[derive(Debug, PartialEq, Eq, From)]
 pub enum InfixExpression {
     Logical(InfixOperation<LogicalOperator>),
     Arithmetic(InfixOperation<ArithmeticOperator>),
@@ -14,11 +14,29 @@ pub enum InfixExpression {
     Custom(InfixOperation<CustomInfix>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, From)]
+#[derive(Debug, PartialEq, Eq, From)]
 pub struct InfixOperation<Op: InfixOperator> {
     pub lhs: Expression,
     pub operator: Op,
     pub rhs: Expression,
+}
+
+impl InfixOperation<MemberOperator> {
+    pub fn is_field(&self) -> bool {
+        match self.rhs {
+            Expression::Ident(_) => true,
+            // TODO: Expression::Postfix(p) => match self p.without_postfix() {
+            // Expression::Ident(_) => true, _ => false },
+            _ => false,
+        }
+    }
+
+    pub fn field_ident(&self) -> Option<&Ident> {
+        match &self.rhs {
+            Expression::Ident(ident) => Some(ident),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,3 +94,5 @@ impl InfixOperator for MemberOperator {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CustomInfix(String); 
+
+impl InfixOperator for CustomInfix {}

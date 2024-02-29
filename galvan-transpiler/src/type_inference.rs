@@ -1,9 +1,9 @@
 use galvan_ast::{
     ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
-    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, InfixOperator,
-    Literal, MemberChain, OperatorTree, OperatorTreeNode, OrderedDictLiteral,
-    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, SimpleExpression, SingleExpression,
-    Statement, TopExpression, TypeDecl, TypeElement, TypeIdent,
+    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group,
+    InfixOperation, InfixOperator, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral,
+    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, Statement, TypeDecl, TypeElement,
+    TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -16,7 +16,6 @@ impl InferType for TopExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
             TopExpression::Expression(e) => e.infer_type(scope),
-            TopExpression::ElseExpression(e) => e.infer_type(scope),
         }
     }
 }
@@ -60,9 +59,9 @@ impl InferType for Statement {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
             Statement::Assignment(_) => None,
-            Statement::TopExpression(expr) => expr.infer_type(scope),
+            Statement::Expression(expr) => expr.infer_type(scope),
             Statement::Declaration(_) => None,
-            Statement::Block(block) => block.infer_type(scope),
+            // Statement::Block(block) => block.infer_type(scope),
         }
     }
 }
@@ -74,36 +73,18 @@ impl InferType for Expression {
                 // todo!("Implement type inference for closure")
                 None
             }
-            Expression::OperatorTree(tree) => tree.infer_type(scope),
-            Expression::MemberChain(access) => access.infer_type(scope),
-            Expression::SingleExpression(s) => s.infer_type(scope),
-        }
-    }
-}
-
-impl InferType for SimpleExpression {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        match self {
-            SimpleExpression::MemberChain(access) => access.infer_type(scope),
-            SimpleExpression::SingleExpression(expr) => expr.infer_type(scope),
-        }
-    }
-}
-
-impl InferType for SingleExpression {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        match self {
-            SingleExpression::CollectionLiteral(collection) => collection.infer_type(scope),
-            SingleExpression::FunctionCall(call) => {
+            Expression::ElseExpression(e) => e.infer_type(scope),
+            Expression::CollectionLiteral(collection) => collection.infer_type(scope),
+            Expression::FunctionCall(call) => {
                 // todo!("Implement type inference for function call")
                 None
             }
-            SingleExpression::ConstructorCall(constructor) => {
-                Some(constructor.identifier.clone().into())
-            }
-            SingleExpression::Literal(literal) => literal.infer_type(scope),
-            SingleExpression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
-            SingleExpression::Postfix(_) => todo!(),
+            Expression::ConstructorCall(constructor) => Some(constructor.identifier.clone().into()),
+            Expression::Literal(literal) => literal.infer_type(scope),
+            Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+            Expression::Postfix(_) => todo!(),
+            Expression::Infix(operation) => operation.infer_type(scope),
+            Expression::Group(Group(expr)) => expr.infer_type(scope),
         }
     }
 }
@@ -124,50 +105,8 @@ impl InferType for Literal {
                 }
                 .into(),
             ),
+            Literal::NoneLiteral(_) => Some(OptionalTypeItem { some: infer() }.into()),
         }
-    }
-}
-
-impl InferType for OperatorTree {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self {
-            left,
-            operator,
-            right,
-        } = self;
-
-        match operator {
-            InfixOperator::Arithmetic(op) => {
-                // todo!("Implement type inference for arithmetic operator")
-                None
-            }
-            InfixOperator::Collection(op) => infer_collection_operation(scope, *op, left, right),
-            InfixOperator::Comparison(_) => Some(bool()),
-            InfixOperator::Logical(_) => Some(bool()),
-            InfixOperator::CustomInfix(op) => {
-                // todo!("Implement type inference for custom infix operator")
-                None
-            }
-        }
-    }
-}
-
-fn infer_collection_operation(
-    scope: &Scope,
-    op: CollectionOperator,
-    lhs: &OperatorTreeNode,
-    rhs: &OperatorTreeNode,
-) -> Option<TypeElement> {
-    match op {
-        CollectionOperator::Concat => {
-            // todo!("Implement type inference for collection concat")
-            None
-        }
-        CollectionOperator::Remove => {
-            // todo!("Implement type inference for collection remove")
-            None
-        }
-        CollectionOperator::Contains => Some(bool()),
     }
 }
 
@@ -185,15 +124,11 @@ fn infer() -> TypeElement {
     .into()
 }
 
-impl InferType for MemberChain {
+impl InferType for InfixOperation<MemberOperator> {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { elements } = self;
+        let Self { lhs, operator, rhs } = self;
 
-        let receiver_type = if elements.len() == 2 {
-            elements[0].infer_type(scope)?
-        } else {
-            return None;
-        };
+        let receiver_type = lhs.infer_type(scope)?;
 
         match receiver_type {
             TypeElement::Plain(ty) => {
