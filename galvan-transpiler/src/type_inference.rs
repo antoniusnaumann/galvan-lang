@@ -1,8 +1,9 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, DictLiteral,
-    DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group, InfixOperation,
-    Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
-    SetLiteral, SetTypeItem, Statement, TypeDecl, TypeElement, TypeIdent,
+    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
+    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group,
+    InfixExpression, InfixOperation, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral,
+    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, Statement, TypeDecl, TypeElement,
+    TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -96,7 +97,7 @@ impl InferType for Literal {
                 }
                 .into(),
             ),
-            Literal::NoneLiteral(_) => Some(OptionalTypeItem { some: infer() }.into()),
+            Literal::NoneLiteral(_) => Some(Box::new(OptionalTypeItem { some: infer() }).into()),
         }
     }
 }
@@ -113,6 +114,31 @@ fn infer() -> TypeElement {
         ident: TypeIdent::new("__Infer"),
     }
     .into()
+}
+
+impl InferType for InfixExpression {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            InfixExpression::Logical(e) => Some(bool()),
+            InfixExpression::Arithmetic(e) => todo!(),
+            InfixExpression::Collection(e) => e.infer_type(scope),
+            InfixExpression::Comparison(e) => Some(bool()),
+            InfixExpression::Member(e) => e.infer_type(scope),
+            InfixExpression::Custom(e) => todo!("Infer type for custom operators!"),
+        }
+    }
+}
+
+impl InferType for InfixOperation<CollectionOperator> {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let Self { lhs, operator, rhs } = self;
+
+        match operator {
+            CollectionOperator::Concat => lhs.infer_type(scope),
+            CollectionOperator::Remove => lhs.infer_type(scope),
+            CollectionOperator::Contains => Some(bool()),
+        }
+    }
 }
 
 impl InferType for InfixOperation<MemberOperator> {

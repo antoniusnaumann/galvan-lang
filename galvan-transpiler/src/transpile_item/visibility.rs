@@ -5,7 +5,7 @@ use galvan_resolver::Scope;
 impl Transpile for Visibility {
     fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
         match self {
-            Visibility::Public(_) => "pub",
+            Visibility::Public => "pub",
             Visibility::Private => "",
             Visibility::Inherited => "pub(crate)",
         }
