@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use crate::builtins::BORROWED_ITERATOR_FNS;
 use crate::context::Context;
 use crate::macros::transpile;
@@ -29,11 +30,13 @@ impl Transpile for FunctionCall {
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
-                    expression: Expression::Infix(InfixExpression::Comparison(comp)),
-                }) => {
+                    expression: Expression::Infix(e),
+                }) if e.is_comparison() => {
                     if modifier.is_some() {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
                     }
+
+                    let InfixExpression::Comparison(comp) = e.borrow() else { unreachable!() };
 
                     let InfixOperation { lhs, operator, rhs } = comp;
                     let args = if self.arguments.len() > 1 {
@@ -149,15 +152,16 @@ impl Transpile for FunctionCallArg {
                     transpile!(ctx, scope, "&({})", expression)
                 }
             }
+            // TODO: Check if the infix expression is a member field access
             (
                 Some(Mod::Mut),
-                expr @ Exp::Infix(InfixExpression::Member(_)) | expr @ match_ident!(_),
+                expr @ Exp::Infix(_) | expr @ match_ident!(_),
             ) => {
                 transpile!(ctx, scope, "&mut {}", expr)
             }
             (
                 Some(Mod::Ref),
-                expr @ Exp::Infix(InfixExpression::Member(_)) | expr @ match_ident!(_),
+                expr @ Exp::Infix(_) | expr @ match_ident!(_),
             ) => {
                 transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }

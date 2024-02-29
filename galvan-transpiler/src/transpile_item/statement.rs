@@ -1,9 +1,11 @@
+use std::borrow::Borrow;
+
 use crate::context::Context;
-use crate::macros::{impl_transpile_variants, transpile};
+use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    BooleanLiteral, DeclModifier, Declaration, Expression, InfixExpression, Literal, NumberLiteral, Ownership, PostfixExpression, Statement, StringLiteral, TypeElement
+    DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership, PostfixExpression, Statement, TypeElement
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -108,8 +110,13 @@ fn transpile_assignment_expression(
         match_ident!(ident) => {
             transpile!(ctx, scope, "{}.to_owned()", ident)
         }
-        Expression::Infix(InfixExpression::Member(access)) if access.is_field() => {
-            transpile!(ctx, scope, "{}.to_owned()", access)
+        Expression::Infix(infix) => {
+            match infix.borrow() {
+                InfixExpression::Member(access) if access.is_field() => {
+                    transpile!(ctx, scope, "{}.to_owned()", access)
+                }
+                expr => expr.transpile(ctx, scope),
+            }
         }
         expr => expr.transpile(ctx, scope),
     }
@@ -127,6 +134,8 @@ impl_transpile_variants! { Expression;
     Closure,
     Group,
 }
+
+impl_transpile!(Group, "({})", 0);
 
 impl_transpile_variants! { PostfixExpression;
     YeetExpression,

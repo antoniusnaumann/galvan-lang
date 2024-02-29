@@ -14,6 +14,12 @@ pub enum InfixExpression {
     Custom(InfixOperation<CustomInfix>),
 }
 
+impl InfixExpression {
+    pub fn is_comparison(&self) -> bool {
+        matches!(self, Self::Comparison(_))
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, From)]
 pub struct InfixOperation<Op: InfixOperator> {
     pub lhs: Expression,

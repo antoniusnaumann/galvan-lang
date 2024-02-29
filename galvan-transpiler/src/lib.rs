@@ -410,7 +410,7 @@ mod macros {
     }
 
     macro_rules! impl_transpile {
-        ($ty:ty, $string:expr, $($field:ident),*$(,)?) => {
+        ($ty:ty, $string:expr, $($field:tt),*$(,)?) => {
             impl crate::Transpile for $ty {
                 fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
                     crate::macros::transpile!(ctx, scope, $string, $(self.$field),*)
