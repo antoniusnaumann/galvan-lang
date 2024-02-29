@@ -1,14 +1,12 @@
 use derive_more::{Display, From};
-use from_pest::pest::iterators::Pairs;
-use from_pest::ConversionError::NoMatch;
-use from_pest::{ConversionError, FromPest, Void};
-use galvan_pest::Rule;
+use typeunion::type_union;
 
-use super::string;
+#[type_union]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral;
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::string_literal))]
-pub struct StringLiteral(#[pest_ast(outer(with(string)))] String);
+#[derive(Clone, Debug, PartialEq, Eq, From)]
+pub struct StringLiteral(String);
 
 impl StringLiteral {
     pub fn as_str(&self) -> &str {
@@ -28,10 +26,9 @@ impl AsRef<str> for StringLiteral {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::number_literal))]
+#[derive(Clone, Debug, PartialEq, Eq, From)]
 // TODO: Parse number literal and validate type
-pub struct NumberLiteral(#[pest_ast(outer(with(string)))] String);
+pub struct NumberLiteral(String);
 
 impl NumberLiteral {
     pub fn new(value: &str) -> Self {
@@ -45,26 +42,6 @@ impl NumberLiteral {
 #[derive(Clone, Copy, Display, Debug, PartialEq, Eq, From)]
 pub struct BooleanLiteral(pub bool);
 
-impl FromPest<'_> for BooleanLiteral {
-    type Rule = Rule;
-    type FatalError = Void;
+#[derive(Clone, Copy, Display, Debug, PartialEq, Eq, From)]
+pub struct NoneLiteral;
 
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let Some(pair) = pairs.next() else {
-            return Err(NoMatch);
-        };
-
-        if pair.as_rule() != Rule::boolean_literal {
-            return Err(NoMatch);
-        }
-
-        let mut pairs = pair.into_inner();
-        match pairs.next() {
-            Some(b) if b.as_rule() == Rule::true_keyword => Ok(BooleanLiteral(true)),
-            Some(b) if b.as_rule() == Rule::false_keyword => Ok(BooleanLiteral(false)),
-            _ => unreachable!(),
-        }
-    }
-}
