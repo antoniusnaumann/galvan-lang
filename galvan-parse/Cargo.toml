@@ -8,6 +8,17 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tree-sitter-galvan = { path = "../tree-sitter-galvan" } 
+tree-sitter = "0.20"
+
+tree-sitter-galvan = { path = "../tree-sitter-galvan" }
 
 galvan-files.workspace = true
+
+[features]
+exec = ["galvan-files/exec"]
+
+[[bin]]
+name = "galvan-parse"
+required-features = ["exec"]
+path = "src/main.rs"
+

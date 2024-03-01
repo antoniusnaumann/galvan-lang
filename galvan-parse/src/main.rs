@@ -1,4 +1,4 @@
-use galvan_pest::exec::parse_current_dir;
+use galvan_parse::exec::parse_current_dir;
 use std::path::Path;
 
 fn main() {
