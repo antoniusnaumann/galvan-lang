@@ -2,6 +2,7 @@ use convert_case::{Case, Casing};
 use derive_more::{Deref, Display, From};
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
+use galvan_into_ast::{AstError, IntoAst, SegmentAst};
 use galvan_resolver::{LookupError, Scope};
 use itertools::Itertools;
 use std::borrow::Cow;

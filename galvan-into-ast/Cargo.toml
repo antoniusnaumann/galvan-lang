@@ -16,6 +16,7 @@ thiserror.workspace = true
 
 galvan-files.workspace = true
 galvan-ast.workspace = true
+galvan-parse.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true

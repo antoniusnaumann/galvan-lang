@@ -20,7 +20,7 @@ itertools.workspace = true
 galvan-files.workspace = true
 galvan-ast.workspace = true
 galvan-resolver.workspace = true
-
+galvan-into-ast.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true

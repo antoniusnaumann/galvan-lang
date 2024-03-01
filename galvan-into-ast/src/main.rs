@@ -1,5 +1,3 @@
-use galvan_ast::pest_adapter::IntoPestAst;
-use galvan_pest::exec::parse_current_dir;
 use std::path::PathBuf;
 
 fn main() {

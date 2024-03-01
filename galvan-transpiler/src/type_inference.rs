@@ -119,19 +119,19 @@ fn infer() -> TypeElement {
 impl InferType for InfixExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            InfixExpression::Logical(e) => Some(bool()),
-            InfixExpression::Arithmetic(e) => todo!(),
+            InfixExpression::Logical(_) => Some(bool()),
+            InfixExpression::Arithmetic(_) => todo!(),
             InfixExpression::Collection(e) => e.infer_type(scope),
-            InfixExpression::Comparison(e) => Some(bool()),
+            InfixExpression::Comparison(_) => Some(bool()),
             InfixExpression::Member(e) => e.infer_type(scope),
-            InfixExpression::Custom(e) => todo!("Infer type for custom operators!"),
+            InfixExpression::Custom(_) => todo!("Infer type for custom operators!"),
         }
     }
 }
 
 impl InferType for InfixOperation<CollectionOperator> {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { lhs, operator, rhs } = self;
+        let Self { lhs, operator, rhs: _ } = self;
 
         match operator {
             CollectionOperator::Concat => lhs.infer_type(scope),
@@ -143,7 +143,7 @@ impl InferType for InfixOperation<CollectionOperator> {
 
 impl InferType for InfixOperation<MemberOperator> {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { lhs, operator, rhs } = self;
+        let Self { lhs, operator: _, rhs: _ } = self;
 
         let receiver_type = lhs.infer_type(scope)?;
 
