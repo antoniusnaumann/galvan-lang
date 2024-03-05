@@ -3,7 +3,8 @@ pub mod exec;
 
 use galvan_files::Source;
 use thiserror::Error;
-use tree_sitter::{Parser, Tree};
+
+pub use tree_sitter::*;
 
 #[derive(Debug, Error)]
 #[error("Could not parse source: {path}")]

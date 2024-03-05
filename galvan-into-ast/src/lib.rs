@@ -5,21 +5,49 @@ use galvan_parse::*;
 mod result;
 pub use result::{AstError, AstResult};
 
+mod items;
 
 pub trait IntoAst {
+    fn try_into_ast(self, source: Source) -> AstResult;
+}
+
+pub trait SourceIntoAst {
     fn try_into_ast(self) -> AstResult;
 }
 
-impl IntoAst for Source {
+pub trait ReadCursor: Sized {
+    fn read_cursor(cursor: &mut TreeCursor<'_>) -> Result<Self, AstError>;
+}
+
+impl SourceIntoAst for Source {
     fn try_into_ast(self) -> AstResult {
         let parsed = parse_source(&self)?;
-        parsed.try_into_ast().map(|ast| ast.with_source(self))
+        parsed.try_into_ast(self).map(|ast| ast.with_source(self))
     }
 }
 
 impl IntoAst for ParseTree {
-    fn try_into_ast(self) -> AstResult {
-        todo!()
+    fn try_into_ast(self, source: Source) -> AstResult {
+        let root = self.root_node();
+        let mut cursor = root.walk();
+        
+        let mut ast = Ast { toplevel: vec![], source };
+
+        if cursor.goto_first_child() {
+            let node = cursor.node();
+            let item = RootItem::read_cursor(&mut cursor)?;
+
+            ast.toplevel.push(item);
+
+            while cursor.goto_next_sibling() {
+                let node = cursor.node();
+                let item = RootItem::read_cursor(&mut cursor)?;
+
+                ast.toplevel.push(item);
+            }
+        }
+
+        Ok(ast)
     }
 }
 
