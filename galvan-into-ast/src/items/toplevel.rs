@@ -1,7 +1,7 @@
-use galvan_ast::{FnDecl, MainDecl, RootItem, TestDecl, TypeDecl};
+use galvan_ast::{Body, FnDecl, MainDecl, RootItem, TestDecl, TypeDecl};
 use galvan_parse::TreeCursor;
 
-use crate::{result::CursorUtil, AstError, ReadCursor};
+use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor};
 
 impl ReadCursor for RootItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>) -> Result<Self, AstError> {
@@ -17,7 +17,23 @@ impl ReadCursor for RootItem {
     }
 }
 
-impl ReadCursor for MainDecl {}
+impl ReadCursor for MainDecl {
+    fn read_cursor(cursor: &mut TreeCursor<'_>) -> Result<Self, AstError> {
+        cursor_expect!(cursor, "main");
+        cursor.goto_first_child();
+        cursor_expect!(cursor, "main_keyword");
+
+        cursor.goto_next_sibling();
+        let body_rule = cursor_expect!(cursor, "body");
+        let body = Body::read_cursor(cursor)?;
+
+        assert!(!cursor.goto_next_sibling(), "Unexpected token in main");
+
+        cursor.goto_parent();
+
+        Ok(MainDecl { body })
+    }
+}
 
 impl ReadCursor for TestDecl {}
 

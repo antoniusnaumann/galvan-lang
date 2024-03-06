@@ -7,6 +7,9 @@ pub use result::{AstError, AstResult};
 
 mod items;
 
+mod cursor_macro;
+pub(crate) use cursor_macro::*;
+
 pub trait IntoAst {
     fn try_into_ast(self, source: Source) -> AstResult;
 }
