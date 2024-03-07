@@ -53,8 +53,8 @@ pub enum DeclModifier {
     Ref,
 }
 
-impl DeclModifier {
-    pub(crate) fn print_ast(&self, indent: usize) -> String {
+impl PrintAst for DeclModifier {
+    fn print_ast(&self, indent: usize) -> String {
         let indent_str = " ".repeat(indent);
         match self {
             DeclModifier::Let => format!("{indent_str}let"),

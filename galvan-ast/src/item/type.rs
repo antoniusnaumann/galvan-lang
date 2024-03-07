@@ -1,8 +1,11 @@
 use derive_more::From;
+use galvan_ast_macro::AstNode;
+
+use crate::{AstNode, Span};
 
 use super::{DeclModifier, Ident, TypeElement, TypeIdent, Visibility};
 
-#[derive(Debug, PartialEq, Eq, From)]
+#[derive(Debug, PartialEq, Eq, From, AstNode)]
 pub enum TypeDecl {
     Tuple(TupleTypeDecl),
     Struct(StructTypeDecl),
@@ -21,44 +24,50 @@ impl TypeDecl {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct TupleTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub members: Vec<TupleTypeMember>,
+    pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct TupleTypeMember {
     // pub visibility: Visibility,
     pub r#type: TypeElement,
+    pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct StructTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub members: Vec<StructTypeMember>,
+    pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct StructTypeMember {
     // pub visibility: Visibility,
     pub decl_modifier: Option<DeclModifier>,
     pub ident: Ident,
     pub r#type: TypeElement,
+    pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct AliasTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub r#type: TypeElement,
+    pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 /// An empty struct without any fields e.g.: `type Empty`
 pub struct EmptyTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub span: Span,
 }

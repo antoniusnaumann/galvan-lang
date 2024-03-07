@@ -1,6 +1,7 @@
 use derive_more::From;
+use galvan_ast_macro::AstNode;
 
-use crate::{Expression, Ident};
+use crate::{AstNode, Expression, Ident, Span};
 
 pub trait InfixOperator {}
 
@@ -20,11 +21,12 @@ impl InfixExpression {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, From)]
+#[derive(Debug, PartialEq, Eq, From, AstNode)]
 pub struct InfixOperation<Op: InfixOperator> {
     pub lhs: Expression,
     pub operator: Op,
     pub rhs: Expression,
+    pub span: Span,
 }
 
 impl InfixOperation<MemberOperator> {

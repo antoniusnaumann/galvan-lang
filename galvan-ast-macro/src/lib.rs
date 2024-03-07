@@ -36,7 +36,7 @@ pub fn ast_node_derive(input: TokenStream) -> TokenStream {
                 &self.span
             }
 
-            fn print_ast(&self, indent: usize) -> String {
+            fn print(&self, indent: usize) -> String {
                 let indent_str = " ".repeat(indent);
                 let mut result = format!("{}{}\n", indent_str, stringify!(#struct_name));
                 #(

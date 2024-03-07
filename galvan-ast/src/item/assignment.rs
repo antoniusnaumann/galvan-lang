@@ -1,10 +1,15 @@
+use galvan_ast_macro::AstNode;
+
+use crate::{AstNode, PrintAst, Span};
+
 use super::*;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Assignment {
     pub target: Expression,
     pub operator: AssignmentOperator,
     pub expression: Expression,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -16,4 +21,21 @@ pub enum AssignmentOperator {
     DivAssign,
     RemAssign,
     PowAssign,
+}
+
+impl PrintAst for AssignmentOperator {
+    fn print_ast(&self, indent: usize) -> String {
+        let indent_str = " ".repeat(indent);
+        let op = match self {
+            AssignmentOperator::Assign => "=",
+            AssignmentOperator::AddAssign => "+=",
+            AssignmentOperator::SubAssign => "-=",
+            AssignmentOperator::MulAssign => "*=",
+            AssignmentOperator::DivAssign => "/=",
+            AssignmentOperator::RemAssign => "%=",
+            AssignmentOperator::PowAssign => "**=",
+        };
+
+        format!("{indent_str}{op}")
+    }
 }
