@@ -8,6 +8,7 @@ use galvan_files::Source;
 mod item;
 
 pub use item::*;
+use itertools::Itertools;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Ast {
@@ -55,9 +56,31 @@ pub struct SegmentedAsts {
     // pub other: Vec<ToplevelItem<CustomTaskDecl>>
 }
 
+pub trait PrintAst {
+    fn print_ast(&self, indent: usize) -> String;
+}
+
 pub trait AstNode {
     fn span(&self) -> &Span;
-    fn print_ast(&self, indent: usize) -> String;
+    fn print(&self, indent: usize) -> String;
+}
+
+impl <T> PrintAst for Vec<T> where T: PrintAst {
+    fn print_ast(&self, indent: usize) -> String {
+        self.iter().map(|i| i.print_ast(indent)).join("\n")
+    }
+}
+
+impl <T> PrintAst for Option<T> where T: PrintAst {
+    fn print_ast(&self, indent: usize) -> String {
+        self.iter().map(|i| i.print_ast(indent)).join("\n")
+    }
+}
+
+impl <T> PrintAst for T where T: AstNode {
+    fn print_ast(&self, indent: usize) -> String {
+        AstNode::print(self, indent)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

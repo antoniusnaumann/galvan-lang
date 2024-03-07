@@ -1,6 +1,6 @@
 use galvan_ast_macro::AstNode;
 
-use crate::{Span, AstNode};
+use crate::{Span, AstNode, PrintAst};
 
 use super::*;
 
@@ -32,16 +32,18 @@ impl FnSignature {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct ParamList {
     pub params: Vec<Param>,
+    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Param {
     pub decl_modifier: Option<DeclModifier>,
     pub identifier: Ident,
     pub param_type: TypeElement,
+    pub span: Span,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -49,4 +51,15 @@ pub enum DeclModifier {
     Let,
     Mut,
     Ref,
+}
+
+impl DeclModifier {
+    pub(crate) fn print_ast(&self, indent: usize) -> String {
+        let indent_str = " ".repeat(indent);
+        match self {
+            DeclModifier::Let => format!("{indent_str}let"),
+            DeclModifier::Mut => format!("{indent_str}mut"),
+            DeclModifier::Ref => format!("{indent_str}ref"),
+        }
+    }
 }
