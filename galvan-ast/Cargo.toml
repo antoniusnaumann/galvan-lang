@@ -17,6 +17,7 @@ itertools.workspace = true
 thiserror.workspace = true
 
 galvan-files.workspace = true
+galvan-ast-macro.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true

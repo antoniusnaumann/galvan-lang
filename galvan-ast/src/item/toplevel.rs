@@ -1,6 +1,8 @@
 use derive_more::From;
+use galvan_ast_macro::{ast_node, AstNode};
 
 use super::{FnDecl, TypeDecl, Body, Ident, StringLiteral};
+use crate::{AstNode, Span};
 
 #[derive(Debug, PartialEq, Eq, From)]
 pub enum RootItem {
@@ -11,7 +13,8 @@ pub enum RootItem {
     // CustomTask(TaskDecl),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
+#[ast_node]
 pub struct MainDecl {
     pub body: Body,
 }

@@ -1,8 +1,13 @@
-use super::*;
-use crate::item::closure::Closure;
+use galvan_ast_macro::{AstNode, ast_node};
 use typeunion::type_union;
 
-#[derive(Debug, PartialEq, Eq)]
+use super::*;
+use crate::item::closure::Closure;
+use crate::{AstNode, Span};
+
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+#[ast_node]
 pub struct Body {
     pub statements: Vec<Statement>,
 }

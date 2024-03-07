@@ -55,4 +55,22 @@ pub struct SegmentedAsts {
     // pub other: Vec<ToplevelItem<CustomTaskDecl>>
 }
 
+pub trait AstNode {
+    fn span(&self) -> &Span;
+    fn print_ast(&self, indent: usize) -> String;
+}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub range: (usize, usize),
+    /// Start as Row, Column position
+    pub start: Point,
+    /// End as Row, Column position
+    pub end: Point,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Point {
+    pub row: usize,
+    pub col: usize,
+}
