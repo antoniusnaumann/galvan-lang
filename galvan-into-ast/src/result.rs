@@ -34,11 +34,16 @@ impl TreeSitterError for Node<'_> {
 }
 
 pub trait CursorUtil {
-    fn curr(&self) -> Result<&str, AstError>;
+    fn kind(&self) -> Result<&str, AstError>;
+    fn curr(&self) -> Result<Node<'_>, AstError>;
 }
 
 impl CursorUtil for TreeCursor<'_> {
-    fn curr(&self) -> Result<&str, AstError> {
-        Ok(self.node().err()?.kind())
+    fn kind(&self) -> Result<&str, AstError> {
+        Ok(self.curr()?.kind())
+    }
+
+    fn curr(&self) -> Result<Node<'_>, AstError> {
+        Ok(self.node().err()?)
     }
 }

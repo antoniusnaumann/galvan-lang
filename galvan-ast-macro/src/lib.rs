@@ -2,34 +2,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, ItemStruct, Data, Fields};
-
-#[proc_macro_attribute]
-pub fn ast_node(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemStruct);
-
-    let visibility = &input.vis;
-    let struct_name = &input.ident;
-
-    for field in input.fields.iter() {
-        if let Some(ident) = &field.ident {
-            if ident == "span" {
-                panic!("Cannot use attribute macro as field `span` is already defined!");
-            }
-        }
-    }
-
-    let fields: Vec<_> = input.fields.into_iter().collect();
-
-    let expanded = quote! {
-        #visibility struct #struct_name {
-            #(#fields)*,
-            pub span: Span,
-        }
-    };
-
-    TokenStream::from(expanded)
-}
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 #[proc_macro_derive(AstNode)]
 pub fn ast_node_derive(input: TokenStream) -> TokenStream {

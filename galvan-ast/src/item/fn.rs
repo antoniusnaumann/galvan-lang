@@ -1,13 +1,18 @@
+use galvan_ast_macro::AstNode;
+
+use crate::{Span, AstNode};
+
 use super::*;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct FnDecl {
     // pub annotations,
     pub signature: FnSignature,
-    pub block: Body,
+    pub body: Body,
+    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct FnSignature {
     // pub asyncness: Async,
     // pub constness: Const,
@@ -15,26 +20,10 @@ pub struct FnSignature {
     pub identifier: Ident,
     pub parameters: ParamList,
     pub return_type: Option<TypeElement>,
+    pub span: Span,
 }
 
 impl FnSignature {
-    pub fn new(
-        mods: Modifiers,
-        ident: Ident,
-        parameters: ParamList,
-        return_type: Option<TypeElement>,
-    ) -> Self {
-        // TODO: Verify that only first parameter is named self (or no self exists)
-        FnSignature {
-            // asyncness: mods.asyncness,
-            // constness: mods.constness,
-            visibility: mods.visibility,
-            identifier: ident,
-            parameters,
-            return_type,
-        }
-    }
-
     pub fn receiver(&self) -> Option<&Param> {
         self.parameters
             .params

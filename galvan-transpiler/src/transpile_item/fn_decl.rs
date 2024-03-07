@@ -11,7 +11,7 @@ impl Transpile for FnDecl {
         let scope = &mut function_scope;
 
         let signature = self.signature.transpile(ctx, scope);
-        let block = self.block.transpile(ctx, scope);
+        let block = self.body.transpile(ctx, scope);
         transpile!(ctx, scope, "{} {}", signature, block)
     }
 }

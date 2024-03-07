@@ -1,4 +1,4 @@
-use galvan_ast::{Ast, RootItem, SegmentedAsts, ToplevelItem};
+use galvan_ast::{Ast, Point, RootItem, SegmentedAsts, Span, ToplevelItem};
 use galvan_files::Source;
 use galvan_parse::*;
 
@@ -131,3 +131,23 @@ impl SegmentAst for Vec<Ast> {
         })
     }
 }
+
+pub trait SpanExt {
+    fn from_node(node: Node<'_>) -> Span;
+}
+
+impl SpanExt for Span {
+    pub fn from_node(node: Node<'_>) {
+        let start_byte = node.start_byte();
+        let end_byte = node.end_byte();
+        let start_point = node.start_position();
+        let end_point = node.end_position();
+
+        let start = Point { row: start_point.row, col: start_point.column };
+        let end = Point { row: end_point.row, col: end_point.column };
+
+        Span { range: (start_byte, end_byte), start, end }
+    }
+}
+
+
