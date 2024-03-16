@@ -31,6 +31,7 @@ impl Transpile for FunctionCall {
                 Some(FunctionCallArg {
                     modifier,
                     expression: Expression::Infix(e),
+                    span,
                 }) if e.is_comparison() => {
                     if modifier.is_some() {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
@@ -38,7 +39,7 @@ impl Transpile for FunctionCall {
 
                     let InfixExpression::Comparison(comp) = e.borrow() else { unreachable!() };
 
-                    let InfixOperation { lhs, operator, rhs } = comp;
+                    let InfixOperation { lhs, operator, rhs, span } = comp;
                     let args = if self.arguments.len() > 1 {
                         &self.arguments[1..]
                     } else {
@@ -108,6 +109,7 @@ impl Transpile for FunctionCallArg {
         let Self {
             modifier,
             expression,
+            span,
         } = self;
         match (modifier, expression) {
             (Some(Mod::Let), _) => {

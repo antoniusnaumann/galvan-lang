@@ -33,6 +33,7 @@ pub fn ast_node_derive(input: TokenStream) -> TokenStream {
     let gen = quote! {
         impl AstNode for #struct_name {
             fn span(&self) -> &Span {
+                let num = 0;
                 &self.span
             }
 

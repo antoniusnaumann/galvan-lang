@@ -5,6 +5,9 @@ use galvan_parse::*;
 mod result;
 pub use result::{AstError, AstResult};
 
+mod modifiers;
+pub(crate) use modifiers::*;
+
 mod items;
 
 mod cursor_macro;
@@ -137,7 +140,7 @@ pub trait SpanExt {
 }
 
 impl SpanExt for Span {
-    pub fn from_node(node: Node<'_>) {
+    fn from_node(node: Node<'_>) {
         let start_byte = node.start_byte();
         let end_byte = node.end_byte();
         let start_point = node.start_position();
