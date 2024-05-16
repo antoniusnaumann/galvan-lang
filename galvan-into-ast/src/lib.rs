@@ -22,7 +22,7 @@ pub trait SourceIntoAst {
 }
 
 pub trait ReadCursor: Sized {
-    fn read_cursor(cursor: &mut TreeCursor<'_>) -> Result<Self, AstError>;
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError>;
 }
 
 impl SourceIntoAst for Source {
@@ -41,13 +41,13 @@ impl IntoAst for ParseTree {
 
         if cursor.goto_first_child() {
             let node = cursor.node();
-            let item = RootItem::read_cursor(&mut cursor)?;
+            let item = RootItem::read_cursor(&mut cursor, &source)?;
 
             ast.toplevel.push(item);
 
             while cursor.goto_next_sibling() {
                 let node = cursor.node();
-                let item = RootItem::read_cursor(&mut cursor)?;
+                let item = RootItem::read_cursor(&mut cursor, &source)?;
 
                 ast.toplevel.push(item);
             }
