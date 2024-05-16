@@ -36,7 +36,7 @@ impl ReadCursor for StructTypeDecl {
     }
 }
 
-impl ReadCursor for StructMember {
+impl ReadCursor for StructTypeMember {
     fn read_cursor(cursor: &mut TreeCursor<'_>) -> Result<Self, AstError> {
         let struct_field = cursor_expect!(cursor, "struct_field");
         let span = Span::from_node(struct_field);
