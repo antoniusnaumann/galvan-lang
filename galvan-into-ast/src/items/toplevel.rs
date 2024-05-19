@@ -1,9 +1,9 @@
 use galvan_ast::{
     AliasTypeDecl, Body, EmptyTypeDecl, FnDecl, FnSignature, Ident, MainDecl, ParamList, RootItem,
-    Span, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement,
+    Span, Statement, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement,
     Visibility,
 };
-use galvan_parse::{Range, TreeCursor};
+use galvan_parse::TreeCursor;
 
 use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
@@ -103,6 +103,29 @@ impl ReadCursor for FnDecl {
             body,
             span,
         })
+    }
+}
+
+impl ReadCursor for Body {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let body = cursor_expect!(cursor, "body");
+        let span = Span::from_node(body);
+        cursor.goto_first_child();
+
+        cursor_expect!(cursor, "brace_open");
+        cursor.goto_next_sibling();
+
+        let mut statements = vec![];
+        while cursor.kind()? == "statement" {
+            let stmt = Statement::read_cursor(cursor, source)?;
+            statements.push(stmt);
+            cursor.goto_next_sibling();
+        }
+
+        cursor_expect!(cursor, "brace_close");
+        cursor.goto_parent();
+
+        Ok(Body { statements, span })
     }
 }
 

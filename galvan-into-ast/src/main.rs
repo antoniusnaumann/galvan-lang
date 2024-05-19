@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+use galvan_into_ast::IntoAst;
+use galvan_parse::exec::parse_current_dir;
+
 fn main() {
     let src = parse_current_dir();
 
@@ -21,7 +24,7 @@ fn main() {
             }
         };
 
-        let ast = parsed.try_into_ast();
+        let ast = parsed.try_into_ast(source);
 
         match ast {
             Ok(ast) => {
