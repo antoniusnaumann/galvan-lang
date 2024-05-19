@@ -1,4 +1,4 @@
-use crate::{AstNode, Span, Expression};
+use crate::{AstNode, Expression, PrintAst, Span};
 use derive_more::From;
 use galvan_ast_macro::AstNode;
 use typeunion::type_union;

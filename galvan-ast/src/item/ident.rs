@@ -1,5 +1,7 @@
 use derive_more::{Display, From};
 
+use crate::AstNode;
+
 #[derive(Clone, Debug, Display, PartialEq, Eq, From, Hash)]
 pub struct Ident(String);
 
@@ -13,6 +15,16 @@ impl Ident {
     }
 }
 
+impl AstNode for Ident {
+    fn span(&self) -> &crate::Span {
+        todo!()
+    }
+
+    fn print(&self, indent: usize) -> String {
+        format!("{}{}", " ".repeat(indent), self.0)
+    }
+}
+
 #[derive(Clone, Debug, Display, PartialEq, Eq, Hash, From)]
 pub struct TypeIdent(String);
 
@@ -23,6 +35,16 @@ impl TypeIdent {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl AstNode for TypeIdent {
+    fn span(&self) -> &crate::Span {
+        todo!()
+    }
+
+    fn print(&self, indent: usize) -> String {
+        self.0.clone()
     }
 }
 

@@ -1,11 +1,11 @@
 use derive_more::From;
 use galvan_ast_macro::AstNode;
 
-use crate::{AstNode, Span};
+use crate::{AstNode, PrintAst, Span};
 
 use super::{DeclModifier, Ident, TypeElement, TypeIdent, Visibility};
 
-#[derive(Debug, PartialEq, Eq, From, AstNode)]
+#[derive(Debug, PartialEq, Eq, From)]
 pub enum TypeDecl {
     Tuple(TupleTypeDecl),
     Struct(StructTypeDecl),

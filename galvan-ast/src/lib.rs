@@ -65,25 +65,34 @@ pub trait AstNode {
     fn print(&self, indent: usize) -> String;
 }
 
-impl <T> PrintAst for Vec<T> where T: PrintAst {
+impl<T> PrintAst for Vec<T>
+where
+    T: PrintAst,
+{
     fn print_ast(&self, indent: usize) -> String {
         self.iter().map(|i| i.print_ast(indent)).join("\n")
     }
 }
 
-impl <T> PrintAst for Option<T> where T: PrintAst {
+impl<T> PrintAst for Option<T>
+where
+    T: PrintAst,
+{
     fn print_ast(&self, indent: usize) -> String {
         self.iter().map(|i| i.print_ast(indent)).join("\n")
     }
 }
 
-impl <T> PrintAst for T where T: AstNode {
+impl<T> PrintAst for T
+where
+    T: AstNode,
+{
     fn print_ast(&self, indent: usize) -> String {
         AstNode::print(self, indent)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     pub range: (usize, usize),
     /// Start as Row, Column position
@@ -92,7 +101,7 @@ pub struct Span {
     pub end: Point,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Point {
     pub row: usize,
     pub col: usize,

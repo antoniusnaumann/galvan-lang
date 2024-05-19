@@ -36,8 +36,11 @@ impl IntoAst for ParseTree {
     fn try_into_ast(self, source: Source) -> AstResult {
         let root = self.root_node();
         let mut cursor = root.walk();
-        
-        let mut ast = Ast { toplevel: vec![], source };
+
+        let mut ast = Ast {
+            toplevel: vec![],
+            source,
+        };
 
         if cursor.goto_first_child() {
             let node = cursor.node();
@@ -140,17 +143,25 @@ pub trait SpanExt {
 }
 
 impl SpanExt for Span {
-    fn from_node(node: Node<'_>) {
+    fn from_node(node: Node<'_>) -> Span {
         let start_byte = node.start_byte();
         let end_byte = node.end_byte();
         let start_point = node.start_position();
         let end_point = node.end_position();
 
-        let start = Point { row: start_point.row, col: start_point.column };
-        let end = Point { row: end_point.row, col: end_point.column };
+        let start = Point {
+            row: start_point.row,
+            col: start_point.column,
+        };
+        let end = Point {
+            row: end_point.row,
+            col: end_point.column,
+        };
 
-        Span { range: (start_byte, end_byte), start, end }
+        Span {
+            range: (start_byte, end_byte),
+            start,
+            end,
+        }
     }
 }
-
-

@@ -1,7 +1,7 @@
-use galvan_ast_macro::AstNode;
+use galvan_ast_macro::{AstNode, PrintAst};
 use typeunion::type_union;
 
-use crate::{AstNode, Ident, Span, TypeIdent};
+use crate::{AstNode, Ident, PrintAst, Span, TypeIdent};
 
 type Array = Box<ArrayTypeItem>;
 type Dictionary = Box<DictionaryTypeItem>;
@@ -14,16 +14,10 @@ type Plain = BasicTypeItem;
 type Generic = GenericTypeItem;
 
 #[type_union]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PrintAst)]
 pub type TypeElement =
     Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Plain + Generic;
 
-impl From<TypeIdent> for TypeElement {
-    fn from(value: TypeIdent) -> Self {
-        let span = value.span();
-        Self::Plain(BasicTypeItem { ident: value, span })
-    }
-}
 // TODO: Add a marker trait to constrain this to only type decls
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
 pub struct ArrayTypeItem {
@@ -81,4 +75,3 @@ pub struct GenericTypeItem {
     pub ident: Ident,
     pub span: Span,
 }
-

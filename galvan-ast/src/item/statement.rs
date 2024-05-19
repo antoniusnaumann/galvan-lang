@@ -1,9 +1,9 @@
-use galvan_ast_macro::AstNode;
+use galvan_ast_macro::{AstNode, PrintAst};
 use typeunion::type_union;
 
 use super::*;
 use crate::item::closure::Closure;
-use crate::{AstNode, Span};
+use crate::{AstNode, PrintAst, Span};
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Body {
@@ -11,13 +11,14 @@ pub struct Body {
     pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Block {
     pub body: Body,
+    pub span: Span,
 }
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Debug, PartialEq, Eq, PrintAst)]
 pub type Statement = Assignment + Declaration + Expression; // + Block;
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
@@ -34,10 +35,9 @@ type Postfix = Box<PostfixExpression>;
 
 #[type_union]
 #[derive(Debug, PartialEq, Eq, AstNode)]
-pub type Expression =
-    ElseExpression 
+pub type Expression = ElseExpression
     + FunctionCall
-    + Infix 
+    + Infix
     + Postfix
     + CollectionLiteral
     + ConstructorCall
@@ -46,7 +46,7 @@ pub type Expression =
     + Closure
     + Group;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Group {
     pub inner: Box<Expression>,
     pub span: Span,

@@ -1,6 +1,6 @@
 use galvan_ast_macro::AstNode;
 
-use crate::{Block, Expression, Ident, Span, TypeElement, AstNode};
+use crate::{AstNode, Block, Expression, Ident, PrintAst, Span, TypeElement};
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Closure {

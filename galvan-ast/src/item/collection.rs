@@ -1,5 +1,5 @@
-use crate::{AstNode, Expression, Span};
-use galvan_ast_macro::AstNode;
+use crate::{AstNode, Expression, PrintAst, Span};
+use galvan_ast_macro::{AstNode, PrintAst};
 use typeunion::type_union;
 
 #[type_union]

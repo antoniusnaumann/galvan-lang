@@ -1,6 +1,9 @@
-use galvan_ast::{Span, StructTypeDecl, StructTypeMember, TypeElement, Visibility};
+use galvan_ast::{
+    Ident, Span, StructTypeDecl, StructTypeMember, TypeElement, TypeIdent, Visibility,
+};
 use galvan_parse::TreeCursor;
 
+use crate::result::CursorUtil;
 use crate::{cursor_expect, read_visibility, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for StructTypeDecl {
@@ -9,7 +12,7 @@ impl ReadCursor for StructTypeDecl {
         let span = Span::from_node(struct_decl);
 
         cursor.goto_first_child();
-        
+
         let visibility = read_visibility(cursor, source)?;
         cursor_expect!(cursor, "type_keyword");
 
@@ -23,16 +26,21 @@ impl ReadCursor for StructTypeDecl {
         let mut members = vec![];
         while cursor.kind()? == "struct_field" {
             let field = StructTypeMember::read_cursor(cursor, source)?;
-            members.append(field);
+            members.push(field);
 
             cursor.goto_next_sibling();
         }
 
         cursor_expect!(cursor, "brace_close");
-        
+
         cursor.goto_parent();
-        
-        Ok(StructTypeDecl { visibility, ident, members, span })
+
+        Ok(StructTypeDecl {
+            visibility,
+            ident,
+            members,
+            span,
+        })
     }
 }
 
@@ -57,6 +65,11 @@ impl ReadCursor for StructTypeMember {
 
         cursor.goto_parent();
 
-        Ok(StructTypeMember { decl_modifier, ident, r#type, span })
+        Ok(StructTypeMember {
+            decl_modifier,
+            ident,
+            r#type,
+            span,
+        })
     }
 }

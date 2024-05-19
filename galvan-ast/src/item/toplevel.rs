@@ -1,8 +1,8 @@
 use derive_more::From;
 use galvan_ast_macro::AstNode;
 
-use super::{FnDecl, TypeDecl, Body, Ident, StringLiteral};
-use crate::{AstNode, Span};
+use super::{Body, FnDecl, Ident, StringLiteral, TypeDecl};
+use crate::{AstNode, PrintAst, Span};
 
 #[derive(Debug, PartialEq, Eq, From)]
 pub enum RootItem {
