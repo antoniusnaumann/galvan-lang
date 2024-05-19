@@ -1,9 +1,11 @@
 use galvan_ast::{
-    AliasTypeDecl, Body, EmptyTypeDecl, FnDecl, FnSignature, Ident, MainDecl, ParamList, RootItem, Span, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement, Visibility
+    AliasTypeDecl, Body, EmptyTypeDecl, FnDecl, FnSignature, Ident, MainDecl, ParamList, RootItem,
+    Span, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement,
+    Visibility,
 };
 use galvan_parse::{Range, TreeCursor};
 
-use crate::{cursor_expect, read_visibility, result::CursorUtil, AstError, ReadCursor, SpanExt};
+use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for RootItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
@@ -54,7 +56,7 @@ impl ReadCursor for TestDecl {
         };
 
         cursor.goto_next_sibling();
-            let body = Body::read_cursor(cursor, source)?;
+        let body = Body::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
 
@@ -66,18 +68,18 @@ impl ReadCursor for TypeDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let ty = cursor_expect!(cursor, "type_declaration");
         cursor.goto_first_child();
-        
-        // TODO  Parse type declaration variatns
-        let decl = Ok(match cursor.kind()? {
-            "struct" => StructTypeDecl::read_cursor(cursor, source),
-            "alias" => AliasTypeDecl::read_cursor(cursor, source),
-            "enum_type" => todo!("Parse enum type"),
-            "tuple_struct" => TupleTypeDecl::read_cursor(cursor, source),
-            "empty_struct" => EmptyTypeDecl::read_cursor(cursor, source),
-            _ => unreachable!(),
-        });
 
-        cursor.goto_parent(); 
+        // TODO  Parse type declaration variatns
+        let decl = match cursor.kind()? {
+            "struct" => StructTypeDecl::read_cursor(cursor, source)?.into(),
+            "alias" => AliasTypeDecl::read_cursor(cursor, source)?.into(),
+            "enum_type" => todo!("Parse enum type"),
+            "tuple_struct" => TupleTypeDecl::read_cursor(cursor, source)?.into(),
+            "empty_struct" => EmptyTypeDecl::read_cursor(cursor, source)?.into(),
+            _ => unreachable!(),
+        };
+
+        cursor.goto_parent();
 
         Ok(decl)
     }
@@ -109,8 +111,8 @@ impl ReadCursor for FnSignature {
         let signature = cursor_expect!(cursor, "fn_signature");
         let span = Span::from_node(signature);
         cursor.goto_first_child();
-        
-        let visibility = read_visibility(cursor, source)?;
+
+        let visibility = Visibility::read_cursor(cursor, source)?;
 
         cursor_expect!(cursor, "fn_keyword");
 

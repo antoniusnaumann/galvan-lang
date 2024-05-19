@@ -1,10 +1,10 @@
 use galvan_ast::{
-    Ident, Span, StructTypeDecl, StructTypeMember, TypeElement, TypeIdent, Visibility,
+    DeclModifier, Ident, Span, StructTypeDecl, StructTypeMember, TypeElement, TypeIdent, Visibility,
 };
 use galvan_parse::TreeCursor;
 
 use crate::result::CursorUtil;
-use crate::{cursor_expect, read_visibility, AstError, ReadCursor, SpanExt};
+use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for StructTypeDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
@@ -13,7 +13,7 @@ impl ReadCursor for StructTypeDecl {
 
         cursor.goto_first_child();
 
-        let visibility = read_visibility(cursor, source)?;
+        let visibility = Visibility::read_cursor(cursor, source)?;
         cursor_expect!(cursor, "type_keyword");
 
         cursor.goto_next_sibling();
@@ -51,8 +51,8 @@ impl ReadCursor for StructTypeMember {
 
         cursor.goto_first_child();
 
-        let visibility = read_visibility(cursor)?;
-        let decl_modifier = read_decl_modifier(cursor)?;
+        let visibility = Visibility::read_cursor(cursor, source)?;
+        let decl_modifier = DeclModifier::read_cursor(cursor, source)?;
 
         cursor.goto_next_sibling();
         let ident = Ident::read_cursor(cursor, source)?;

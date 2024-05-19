@@ -92,7 +92,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Span {
     pub range: (usize, usize),
     /// Start as Row, Column position
@@ -101,7 +101,7 @@ pub struct Span {
     pub end: Point,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Point {
     pub row: usize,
     pub col: usize,
