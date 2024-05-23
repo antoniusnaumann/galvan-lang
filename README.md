@@ -27,7 +27,7 @@ Galvan is a modern programming language that transpiles to Rust. It provides a c
 In Galvan, `main` is not a function but an "entry point".
 ```rust
 main {
-    let name = "Galvan"
+    let name = "Galvan";
     print("Welcome to {name}, the modern language!")
 }
 ```
@@ -55,8 +55,8 @@ Types in Galvan are defined with the `type` keyword.
 ```rust
 /// A struct definition
 pub type Color {
-    r: Int
-    g: Int
+    r: Int,
+    g: Int,
     b: Int
 }
 
@@ -96,7 +96,7 @@ fn bark(self: Dog) {
 }
 
 main {
-    let dog = Dog(name: "Bello")
+    let dog = Dog(name: "Bello");
     dog.bark()
 }
 ```
@@ -124,11 +124,11 @@ type FileOrIoErr = File!IoError
 The error variant is specified after the `!` symbol. If it is not given, a flexible error type is used.
 
 > [!WARNING]
-> `!`, `?` and `??` are not implemented yet
+> `!` and `?` are not implemented yet
 ```rust
 fn open_file(path: String) -> File! {
-    let file = File::open(path)!
-    let contents = file.read_to_string()?.find("foo")?.uppercase() ?? ""
+    let file = File::open(path)!;
+    let contents = file.read_to_string()?.find("foo")?.uppercase() else { "" };
     
     contents
 }
@@ -137,7 +137,7 @@ fn open_file(path: String) -> File! {
 
 `?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not none.
 
-`??` is the null-coalescing operator, you can use it to provide a default if the left-hand side expression is none. The right-hand side of the null-coalescing operator cannot be a return or throw expression.
+`else` can also be used as the null-coalescing operator (since you can use else after every expression that is an optional or a result type), you can use it to provide a default if the left-hand side expression is none. 
 
 ### Union Types
 Galvan supports union types everywhere where a type identifier is expected:
@@ -177,9 +177,9 @@ fn bark_at(self: Dog, other: Dog) {
 // A copy is happening here as the value is mutated
 fn shout_at(self: Dog, other: Dog) {
     // Redeclaring is neccessary as value parameters cannot be mutated
-    let other = other
+    let other = other;
     // Copy is happening here
-    other.name = other.name.uppercase()
+    other.name = other.name.uppercase();
     print("{self.name} shouts at {other.name}")
 }
 ```
@@ -195,20 +195,20 @@ fn grow(mut self: Dog) {
 References that are allowed to be stored in structs have to be declared as heap references. This is done by prefixing the declaration with `ref`:
 ```rust
 pub type Person {
-    name: String
-    age: Int
+    name: String,
+    age: Int,
     // This is a heap reference
     ref dog: Dog
 }
 
 main {
     // Note that constructors use '(' with named arguments
-    ref dog = Dog(name: "Bello", age: 5)
+    ref dog = Dog(name: "Bello", age: 5);
     // The `dog` field now points to the same entity as the `dog` variable 
-    let person = Person(name: "Jochen, age: 67, dog: ref dog)
-    dog.age += 1
+    let person = Person(name: "Jochen, age: 67, dog: ref dog);
+    dog.age += 1;
     
-    print(person.dog.age) // 6
+    print(person.dog.age); // 6
     print(dog.age) // 6
 }
 ```
@@ -224,10 +224,10 @@ fn make_uppercase(mut arg: String) { ... }
 fn store(ref arg: String) { ... }
 
 main {
-    ref my_string = "This is a heap ref"
+    ref my_string = "This is a heap ref";
     
     // Argument must be annotated as mutable
-    make_uppercase(mut my_string)
+    make_uppercase(mut my_string);
     // Argument must be annotated as ref
     store(ref my_string)
 }
