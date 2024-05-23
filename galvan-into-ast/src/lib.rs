@@ -28,7 +28,7 @@ pub trait ReadCursor: Sized {
 impl SourceIntoAst for Source {
     fn try_into_ast(self) -> AstResult {
         let parsed = parse_source(&self)?;
-        parsed.try_into_ast(self).map(|ast| ast.with_source(self))
+        parsed.try_into_ast(self.clone()).map(|ast| ast.with_source(self))
     }
 }
 
@@ -44,13 +44,13 @@ impl IntoAst for ParseTree {
 
         if cursor.goto_first_child() {
             let node = cursor.node();
-            let item = RootItem::read_cursor(&mut cursor, &source)?;
+            let item = RootItem::read_cursor(&mut cursor, &ast.source)?;
 
             ast.toplevel.push(item);
 
             while cursor.goto_next_sibling() {
                 let node = cursor.node();
-                let item = RootItem::read_cursor(&mut cursor, &source)?;
+                let item = RootItem::read_cursor(&mut cursor, &ast.source)?;
 
                 ast.toplevel.push(item);
             }
