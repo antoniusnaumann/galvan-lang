@@ -18,6 +18,15 @@ galvan-files.workspace = true
 galvan-ast.workspace = true
 galvan-parse.workspace = true
 
+[features]
+exec = ["galvan-parse/exec"]
+
 [dev-dependencies]
 galvan-test-macro.workspace = true
+
+[[bin]]
+name = "galvan-into-ast"
+required-features = ["exec"]
+path = "src/main.rs"
+
 

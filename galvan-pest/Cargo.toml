@@ -9,8 +9,8 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pest = "2.7.5"
-pest_derive = "2.7.5"
+pest = "2.7.10"
+pest_derive = "2.7.10"
 
 galvan-files.workspace = true
 

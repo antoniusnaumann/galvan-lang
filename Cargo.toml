@@ -15,8 +15,8 @@ galvan-resolver = { path = "galvan-resolver", version = "0.0.0-dev09" }
 galvan-into-ast = { path = "galvan-into-ast", version = "0.0.0-dev09" }
 galvan-parse = { path = "galvan-parse", version = "0.0.0-dev09" }
 
-thiserror = "1.0.51"
-itertools = "0.12.0"
+thiserror = "1.0.61"
+itertools = "0.13.0"
 
 [package]
 name = "galvan"
@@ -29,8 +29,8 @@ license.workspace = true
 
 [dependencies]
 galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev09" }
-itertools = "0.12.0"
-anyhow = "1.0.79"
+itertools = "0.13.0"
+anyhow = "1.0.86"
 
 [features]
 build = ["galvan-transpiler/exec"]

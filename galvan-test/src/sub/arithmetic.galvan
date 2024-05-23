@@ -1,0 +1,56 @@
+test "Addition" {
+    let a = 1
+    let b = 2
+    let c = a + b
+
+    assert c == 3
+}
+
+test "Subtraction" {
+    let a = 1
+    let b = 2
+    let c = a - b
+
+    assert c == -1
+}
+
+test "Multiplication" {
+    let a = 17
+    let b = 2
+    let c = a * b
+
+    assert c == 34
+}
+
+test "Division" {
+    let a = 8
+    let b = 2
+    let c = a / b
+
+    assert c == 4
+}
+
+test "Remainder" {
+    let a = 1
+    let b = 2
+    let c = a % b
+
+    assert c == 1
+}
+
+test "Precedence: Addition, Multiplication" {
+    let a = 1
+    let b = 2
+    let c = 3
+    let d = a + b * c
+
+    assert d == 7
+}
+
+test "Exponentiation" {
+    let a: U32 = 2
+    let b: U32 = 3
+    let c = a ^ b
+
+    assert c == 8
+}

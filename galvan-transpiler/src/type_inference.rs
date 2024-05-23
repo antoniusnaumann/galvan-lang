@@ -71,7 +71,13 @@ impl InferType for Expression {
                 // todo!("Implement type inference for function call")
                 None
             }
-            Expression::ConstructorCall(constructor) => Some(TypeIdent::new(constructor.identifier)),
+            Expression::ConstructorCall(constructor) => Some(
+                BasicTypeItem {
+                    ident: TypeIdent::new(constructor.identifier.clone()),
+                    span: Span::default(),
+                }
+                .into(),
+            ),
             Expression::Literal(literal) => literal.infer_type(scope),
             Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
             Expression::Postfix(_) => todo!(),

@@ -15,7 +15,7 @@ pub type ParseResult = Result<ParseTree, ParseError>;
 pub fn parse_source(source: &Source) -> ParseResult {
     let mut parser = Parser::new();
     parser
-        .set_language(tree_sitter_galvan::language())
+        .set_language(&tree_sitter_galvan::language())
         .expect("Error loading Galvan grammar!");
 
     let content = source.content();

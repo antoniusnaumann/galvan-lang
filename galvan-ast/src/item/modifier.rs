@@ -1,5 +1,4 @@
-use crate::{AstNode, PrintAst, Span};
-use galvan_ast_macro::AstNode;
+use crate::{AstNode, Span};
 use std::ops::Deref;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,6 +11,27 @@ impl Visibility {
     pub fn new(kind: VisibilityKind, span: Span) -> Self {
         Self { kind, span }
     }
+
+    pub fn private() -> Self {
+        Self {
+            kind: VisibilityKind::Private,
+            span: Span::default(),
+        }
+    }
+
+    pub fn public() -> Self {
+        Self {
+            kind: VisibilityKind::Public,
+            span: Span::default(),
+        }
+    }
+
+    pub fn inherited() -> Self {
+        Self {
+            kind: VisibilityKind::Inherited,
+            span: Span::default(),
+        }
+    }
 }
 
 impl Deref for Visibility {
@@ -23,8 +43,8 @@ impl Deref for Visibility {
 }
 
 impl AstNode for Visibility {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 
     fn print(&self, indent: usize) -> String {

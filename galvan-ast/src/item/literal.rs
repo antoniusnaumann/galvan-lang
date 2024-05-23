@@ -16,8 +16,8 @@ pub struct StringLiteral {
 }
 
 impl AstNode for StringLiteral {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 
     fn print(&self, indent: usize) -> String {
@@ -51,8 +51,8 @@ pub struct NumberLiteral {
 }
 
 impl AstNode for NumberLiteral {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 
     fn print(&self, indent: usize) -> String {
@@ -73,8 +73,8 @@ pub struct BooleanLiteral {
 }
 
 impl AstNode for BooleanLiteral {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 
     fn print(&self, indent: usize) -> String {
@@ -86,8 +86,8 @@ impl AstNode for BooleanLiteral {
 pub struct NoneLiteral(Span);
 
 impl AstNode for NoneLiteral {
-    fn span(&self) -> &Span {
-        &self.0
+    fn span(&self) -> Span {
+        self.0
     }
 
     fn print(&self, indent: usize) -> String {

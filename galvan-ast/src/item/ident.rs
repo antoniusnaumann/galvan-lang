@@ -1,6 +1,6 @@
 use derive_more::{Display, From};
 
-use crate::AstNode;
+use crate::{AstNode, Span};
 
 #[derive(Clone, Debug, Display, PartialEq, Eq, From, Hash)]
 pub struct Ident(String);
@@ -16,8 +16,9 @@ impl Ident {
 }
 
 impl AstNode for Ident {
-    fn span(&self) -> &crate::Span {
-        todo!()
+    fn span(&self) -> Span {
+        // TODO  Save a meaningful span in this struct
+        Span::default()
     }
 
     fn print(&self, indent: usize) -> String {
@@ -45,8 +46,10 @@ impl From<TypeIdent> for String {
 }
 
 impl AstNode for TypeIdent {
-    fn span(&self) -> &crate::Span {
-        todo!()
+    fn span(&self) -> Span {
+        // TODO  Save a meaningful span in this struct
+        Span::default()
+
     }
 
     fn print(&self, indent: usize) -> String {

@@ -28,8 +28,8 @@ pub fn ast_node_derive(input: TokenStream) -> TokenStream {
 
             let gen = quote! {
                 impl AstNode for #struct_name {
-                    fn span(&self) -> &Span {
-                        &self.span
+                    fn span(&self) -> Span {
+                        self.span
                     }
 
                     fn print(&self, indent: usize) -> String {

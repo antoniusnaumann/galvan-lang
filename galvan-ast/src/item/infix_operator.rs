@@ -32,8 +32,8 @@ pub struct InfixOperation<Op: InfixOperator> {
 }
 
 impl<T: InfixOperator> AstNode for InfixOperation<T> {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 
     fn print(&self, indent: usize) -> String {
