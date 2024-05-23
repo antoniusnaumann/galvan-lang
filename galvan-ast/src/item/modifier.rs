@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Visibility {
-    kind: VisibilityKind,
+    pub kind: VisibilityKind,
     span: Span,
 }
 

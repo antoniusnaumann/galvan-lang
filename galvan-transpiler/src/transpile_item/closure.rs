@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    Block, Closure, ClosureArgument, DeclModifier, ElseExpression, Ownership, Param,
+    AstNode, Block, Closure, ClosureArgument, DeclModifier, ElseExpression, Ownership, Param
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -61,6 +61,7 @@ fn transpile_closure_argument(
             identifier: arg.ident.clone(),
             decl_modifier: None,
             param_type: ty.clone(),
+            span: ty.span(),
         };
         transpile!(ctx, scope, "{prefix}{}", param)
     } else {

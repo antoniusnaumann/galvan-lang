@@ -1,4 +1,4 @@
-use galvan_ast_macro::{AstNode, PrintAst};
+use galvan_ast_macro::AstNode;
 use typeunion::type_union;
 
 use crate::{AstNode, Ident, PrintAst, Span, TypeIdent};
@@ -14,7 +14,7 @@ type Plain = BasicTypeItem;
 type Generic = GenericTypeItem;
 
 #[type_union]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PrintAst)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
 pub type TypeElement =
     Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Plain + Generic;
 

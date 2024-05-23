@@ -135,7 +135,7 @@ impl_transpile_variants! { Expression;
     Group,
 }
 
-impl_transpile!(Group, "({})", 0);
+impl_transpile!(Group, "({})", inner);
 
 impl_transpile_variants! { PostfixExpression;
     YeetExpression,

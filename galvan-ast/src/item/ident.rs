@@ -38,6 +38,12 @@ impl TypeIdent {
     }
 }
 
+impl From<TypeIdent> for String {
+    fn from(value: TypeIdent) -> Self {
+        value.0
+    }
+}
+
 impl AstNode for TypeIdent {
     fn span(&self) -> &crate::Span {
         todo!()

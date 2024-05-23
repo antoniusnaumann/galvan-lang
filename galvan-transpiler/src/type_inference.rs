@@ -2,7 +2,7 @@ use galvan_ast::{
     ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
     DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group,
     InfixExpression, InfixOperation, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral,
-    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, Statement, TypeDecl, TypeElement,
+    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
     TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
@@ -71,12 +71,12 @@ impl InferType for Expression {
                 // todo!("Implement type inference for function call")
                 None
             }
-            Expression::ConstructorCall(constructor) => Some(constructor.identifier.clone().into()),
+            Expression::ConstructorCall(constructor) => Some(TypeIdent::new(constructor.identifier)),
             Expression::Literal(literal) => literal.infer_type(scope),
             Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
             Expression::Postfix(_) => todo!(),
             Expression::Infix(operation) => operation.infer_type(scope),
-            Expression::Group(Group(expr)) => expr.infer_type(scope),
+            Expression::Group(Group { inner, span: _span }) => inner.infer_type(scope),
         }
     }
 }
@@ -88,16 +88,24 @@ impl InferType for Literal {
             Literal::StringLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("String"),
+                    span: Span::default(),
                 }
                 .into(),
             ),
             Literal::NumberLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("__Number"),
+                    span: Span::default(),
                 }
                 .into(),
             ),
-            Literal::NoneLiteral(_) => Some(Box::new(OptionalTypeItem { some: infer() }).into()),
+            Literal::NoneLiteral(_) => Some(
+                Box::new(OptionalTypeItem {
+                    some: infer(),
+                    span: Span::default(),
+                })
+                .into(),
+            ),
         }
     }
 }
@@ -105,6 +113,7 @@ impl InferType for Literal {
 fn bool() -> TypeElement {
     BasicTypeItem {
         ident: TypeIdent::new("Bool"),
+        span: Span::default(),
     }
     .into()
 }
@@ -112,6 +121,7 @@ fn bool() -> TypeElement {
 fn infer() -> TypeElement {
     BasicTypeItem {
         ident: TypeIdent::new("__Infer"),
+        span: Span::default(),
     }
     .into()
 }
@@ -131,7 +141,12 @@ impl InferType for InfixExpression {
 
 impl InferType for InfixOperation<CollectionOperator> {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { lhs, operator, rhs: _ } = self;
+        let Self {
+            lhs,
+            operator,
+            rhs: _,
+            span: _span,
+        } = self;
 
         match operator {
             CollectionOperator::Concat => lhs.infer_type(scope),
@@ -143,7 +158,12 @@ impl InferType for InfixOperation<CollectionOperator> {
 
 impl InferType for InfixOperation<MemberOperator> {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { lhs, operator: _, rhs: _ } = self;
+        let Self {
+            lhs,
+            operator: _,
+            rhs: _,
+            span: _span,
+        } = self;
 
         let receiver_type = lhs.infer_type(scope)?;
 
@@ -205,28 +225,54 @@ impl InferType for CollectionLiteral {
 impl InferType for ArrayLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let elements = infer_from_elements(&self.elements, scope);
-        Some(Box::new(ArrayTypeItem { elements }).into())
+        Some(
+            Box::new(ArrayTypeItem {
+                elements,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 
 impl InferType for SetLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let elements = infer_from_elements(&self.elements, scope);
-        Some(Box::new(SetTypeItem { elements }).into())
+        Some(
+            Box::new(SetTypeItem {
+                elements,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 
 impl InferType for DictLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let (key, value) = infer_dict_elements(&self.elements, scope);
-        Some(Box::new(DictionaryTypeItem { key, value }).into())
+        Some(
+            Box::new(DictionaryTypeItem {
+                key,
+                value,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 
 impl InferType for OrderedDictLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let (key, value) = infer_dict_elements(&self.elements, scope);
-        Some(Box::new(OrderedDictionaryTypeItem { key, value }).into())
+        Some(
+            Box::new(OrderedDictionaryTypeItem {
+                key,
+                value,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 

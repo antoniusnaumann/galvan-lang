@@ -21,7 +21,7 @@ impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let ResultTypeItem { success, error } = self;
+        let ResultTypeItem { success, error, span: _span } = self;
         if let Some(error) = error {
             transpile!(ctx, scope, "Result<{}, {}>", success, error)
         } else {

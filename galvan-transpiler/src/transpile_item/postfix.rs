@@ -14,6 +14,6 @@ impl Transpile for YeetExpression {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         // TODO: check that type is error or optional 
         // TODO: check that we are inside a function that returns a compatible error
-        transpile!(ctx, scope, "{}?", self.0)
+        transpile!(ctx, scope, "{}?", self.inner)
     }
 }

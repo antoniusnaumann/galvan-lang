@@ -11,6 +11,7 @@ impl Transpile for Assignment {
             target,
             operator,
             expression: exp,
+            span: _span,
         } = self;
 
         let prefix = match target {

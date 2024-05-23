@@ -60,7 +60,7 @@ pub fn ast_node_derive(input: TokenStream) -> TokenStream {
                         }
                     }
 
-                    fn span(&self) -> &Span {
+                    fn span(&self) -> Span {
                         use #struct_name::*;
                         match self {
                             #(

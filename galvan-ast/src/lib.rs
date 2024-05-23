@@ -61,7 +61,7 @@ pub trait PrintAst {
 }
 
 pub trait AstNode {
-    fn span(&self) -> &Span;
+    fn span(&self) -> Span;
     fn print(&self, indent: usize) -> String;
 }
 

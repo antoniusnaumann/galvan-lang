@@ -26,7 +26,7 @@ impl Transpile for NumberLiteral {
 
 impl Transpile for BooleanLiteral {
     fn transpile(&self, _: &Context, _scope: &mut Scope) -> String {
-        format!("{self}")
+        format!("{}", self.value)
     }
 }
 
