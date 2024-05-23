@@ -12,7 +12,7 @@ impl ReadCursor for Statement {
             "assignment" => Statement::Assignment(Assignment::read_cursor(cursor, source)?),
             "declaration" => Statement::Declaration(Declaration::read_cursor(cursor, source)?),
             "expression" => Statement::Expression(Expression::read_cursor(cursor, source)?),
-            "free_function" => Statement::Expression(FunctionCall::read_cursor(cursor, source)?),
+            "free_function" => Statement::Expression(FunctionCall::read_cursor(cursor, source)?.into()),
             _ => unreachable!("Unknown statement kind: {:?}", cursor.kind()?),
         };
 

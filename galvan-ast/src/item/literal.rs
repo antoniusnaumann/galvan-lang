@@ -11,8 +11,8 @@ pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral;
 
 #[derive(Clone, Debug, PartialEq, Eq, From)]
 pub struct StringLiteral {
-    value: String,
-    span: Span,
+    pub value: String,
+    pub span: Span,
 }
 
 impl AstNode for StringLiteral {
