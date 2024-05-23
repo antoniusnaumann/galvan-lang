@@ -167,3 +167,9 @@ impl ReadCursor for FnSignature {
         })
     }
 }
+
+impl ReadCursor for ParamList {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        todo!("Convert ParamList to Rust")
+    }
+}

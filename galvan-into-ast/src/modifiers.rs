@@ -1,8 +1,8 @@
-use galvan_ast::{Span, Visibility, VisibilityKind};
+use galvan_ast::{DeclModifier, Span, Visibility, VisibilityKind};
 use galvan_parse::TreeCursor;
 
 use crate::result::CursorUtil;
-use crate::{AstError, ReadCursor};
+use crate::{cursor_expect, AstError, ReadCursor};
 
 impl ReadCursor for Visibility {
     fn read_cursor(cursor: &mut TreeCursor, source: &str) -> Result<Visibility, AstError> {
@@ -17,5 +17,22 @@ impl ReadCursor for Visibility {
                 Span::default(),
             )
         })
+    }
+}
+
+impl ReadCursor for DeclModifier {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        cursor_expect!(cursor, "declaration_modifier");
+
+        cursor.goto_first_child();
+
+        let modifier = match cursor.kind()? {
+            "ref_keyword" => Self::Ref,
+            "let_keyword" => Self::Let,
+            "mut_keyword" => Self::Mut,
+            _ => unreachable!("Unexpected declaration modifier!")
+        };
+
+        Ok(modifier)
     }
 }

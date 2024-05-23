@@ -1,5 +1,6 @@
 use galvan_ast::{
-    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl, TypeElement, TypeIdent, Visibility
+    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember,
+    TupleTypeDecl, TypeElement, TypeIdent, Visibility,
 };
 use galvan_parse::TreeCursor;
 
@@ -52,7 +53,11 @@ impl ReadCursor for StructTypeMember {
         cursor.goto_first_child();
 
         let visibility = Visibility::read_cursor(cursor, source)?;
-        let decl_modifier = DeclModifier::read_cursor(cursor, source)?;
+        let decl_modifier = if cursor.kind()? == "declaration_modifier" {
+            Some(DeclModifier::read_cursor(cursor, source)?)
+        } else {
+            None
+        };
 
         cursor.goto_next_sibling();
         let ident = Ident::read_cursor(cursor, source)?;
@@ -101,7 +106,12 @@ impl ReadCursor for AliasTypeDecl {
         let r#type = TypeElement::read_cursor(cursor, source)?;
         cursor.goto_parent();
 
-        Ok(Self { visibility, ident, r#type, span })
+        Ok(Self {
+            visibility,
+            ident,
+            r#type,
+            span,
+        })
     }
 }
 
@@ -118,6 +128,10 @@ impl ReadCursor for EmptyTypeDecl {
 
         cursor.goto_parent();
 
-        Ok(EmptyTypeDecl { visibility, ident, span })
+        Ok(EmptyTypeDecl {
+            visibility,
+            ident,
+            span,
+        })
     }
 }
