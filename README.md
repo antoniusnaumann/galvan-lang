@@ -494,3 +494,13 @@ test "Ensure that addition works correctly" {
 }
 ```
 Like 'main', 'test' is not a function but an entry point. Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
+
+## Semicolon Inference
+> [!WARNING]
+> Semicolon Inference is not yet implemented
+
+While Galvan uses semicolons to separate statements, Galvan infers semicolons on newlines, except when:
+- the next line starts with an operator (including membership operators like `.` and `?.`)
+- the current line ends with an operator or a comma
+- the next non-whitespace and non-newline character is a `]`, `}`, or `)`
+- the last non-whitespace and non-newline character was a `[`, `{` or `(`
