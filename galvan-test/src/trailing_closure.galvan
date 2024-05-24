@@ -26,8 +26,7 @@ test "Trailing closure as member function" {
 
 test "Paren-less function call as member function" {
     let collection = [1, 2, 3, 4];
-    let elements = collection.iter().copied().map |x| { x * 2 }.reduce 2 |acc, e| { acc + e };
+    let result = collection.iter().copied().map |x| { x * 2 }.reduce 2 |acc, e| { acc + e };
 
-    let v = elements.vec();
-    assert v == [2, 4]
+    assert result == 22
 }
