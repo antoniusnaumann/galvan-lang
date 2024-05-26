@@ -27,7 +27,7 @@ Galvan is a modern programming language that transpiles to Rust. It provides a c
 In Galvan, `main` is not a function but an "entry point".
 ```rust
 main {
-    let name = "Galvan";
+    let name = "Galvan"
     print("Welcome to {name}, the modern language!")
 }
 ```
@@ -96,7 +96,7 @@ fn bark(self: Dog) {
 }
 
 main {
-    let dog = Dog(name: "Bello");
+    let dog = Dog(name: "Bello")
     dog.bark()
 }
 ```
@@ -127,8 +127,8 @@ The error variant is specified after the `!` symbol. If it is not given, a flexi
 > `!` and `?` are not implemented yet
 ```rust
 fn open_file(path: String) -> File! {
-    let file = File::open(path)!;
-    let contents = file.read_to_string()?.find("foo")?.uppercase() else { "" };
+    let file = File::open(path)!
+    let contents = file.read_to_string()?.find("foo")?.uppercase() else { "" }
     
     contents
 }
@@ -177,9 +177,9 @@ fn bark_at(self: Dog, other: Dog) {
 // A copy is happening here as the value is mutated
 fn shout_at(self: Dog, other: Dog) {
     // Redeclaring is neccessary as value parameters cannot be mutated
-    let other = other;
+    let other = other
     // Copy is happening here
-    other.name = other.name.uppercase();
+    other.name = other.name.uppercase()
     print("{self.name} shouts at {other.name}")
 }
 ```
@@ -203,12 +203,12 @@ pub type Person {
 
 main {
     // Note that constructors use '(' with named arguments
-    ref dog = Dog(name: "Bello", age: 5);
+    ref dog = Dog(name: "Bello", age: 5)
     // The `dog` field now points to the same entity as the `dog` variable 
-    let person = Person(name: "Jochen, age: 67, dog: ref dog);
-    dog.age += 1;
+    let person = Person(name: "Jochen, age: 67, dog: ref dog)
+    dog.age += 1
     
-    print(person.dog.age); // 6
+    print(person.dog.age) // 6
     print(dog.age) // 6
 }
 ```
@@ -224,10 +224,10 @@ fn make_uppercase(mut arg: String) { ... }
 fn store(ref arg: String) { ... }
 
 main {
-    ref my_string = "This is a heap ref";
+    ref my_string = "This is a heap ref"
     
     // Argument must be annotated as mutable
-    make_uppercase(mut my_string);
+    make_uppercase(mut my_string)
     // Argument must be annotated as ref
     store(ref my_string)
 }
@@ -409,6 +409,11 @@ Collection operators:
 - `[:]`: Slicing
 - `in`, `∈`, `∊`: Membership
 
+Range operators:
+- `..<`: Exclusive Range
+- `..=`: Inclusive Range
+- `+-`, `±`: Inclusive Range around a value (tolerance)
+
 #### Unicode and Custom Operators
 Galvan supports Unicode and custom operators:
 > [!WARNING]
@@ -496,11 +501,8 @@ test "Ensure that addition works correctly" {
 Like 'main', 'test' is not a function but an entry point. Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
 
 ## Semicolon Inference
-> [!WARNING]
-> Semicolon Inference is not yet implemented
+While Galvan uses semicolons to separate statements, Galvan infers semicolons on newlines when:
+- the next line starts with an alpha-character (or an underscore) as the first non-whitespace character
+- the next line starts with `{`, `(`, `[`, or `'`, `"` as the first non-whitespace character
 
-While Galvan uses semicolons to separate statements, Galvan infers semicolons on newlines, except when:
-- the next line starts with an operator (including membership operators like `.` and `?.`)
-- the current line ends with an operator or a comma
-- the next non-whitespace and non-newline character is a `]`, `}`, or `)`
-- the last non-whitespace and non-newline character was a `[`, `{` or `(`
+Regardless of the rules above, Galvan does not infer a semicolon when the current line itself is not a valid statement.
