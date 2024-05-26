@@ -4,8 +4,8 @@ type Dog {
 }
 
 test "Create struct" {
-    let dog = Dog(name: "Rex", age: 3);
-    assert dog.name == "Rex";
+    let dog = Dog(name: "Rex", age: 3)
+    assert dog.name == "Rex"
     assert dog.age == 3
 }
 
@@ -14,7 +14,7 @@ fn shout_name(self: Dog) -> String {
 }
 
 test "Call method" {
-    let dog = Dog(name: "Rex", age: 3);
+    let dog = Dog(name: "Rex", age: 3)
     assert dog.shout_name() == "REX"
 }
 
@@ -23,13 +23,13 @@ fn happy_birthday(mut self: Dog) {
 }
 
 test "Call method with mutation" {
-    mut dog = Dog(name: "Rex", age: 3);
-    dog.happy_birthday();
+    mut dog = Dog(name: "Rex", age: 3)
+    dog.happy_birthday()
     assert dog.age == 4
 }
 
 test "Mutate struct" {
-    mut dog = Dog(name: "Rex", age: 3);
-    dog.name = "Bello";
+    mut dog = Dog(name: "Rex", age: 3)
+    dog.name = "Bello"
     assert dog.name == "Bello"
 }

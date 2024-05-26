@@ -3,14 +3,14 @@ fn greet(name: String) -> String {
 }
 
 test "String interpolation" {
-    assert "Hello, World!" == greet("World");
+    assert "Hello, World!" == greet("World")
     assert "Hello, Galvan!" == greet("Galvan")
 }
 
 // TODO: String interpolation should be able to take any expression
 test "Interpolation with Integers" {
-    let x = 3;
-    let y = 7;
-    let sum = x + y;
+    let x = 3
+    let y = 7
+    let sum = x + y
     assert "3 + 7 = 10" == "{x} + {y} = {sum}"
 }

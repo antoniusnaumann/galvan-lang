@@ -1,23 +1,23 @@
 test "Logical AND" {
-    let a = true;
-    let b = false;
+    let a = true
+    let b = false
 
-    assert(a and b == false);
+    assert(a and b == false)
 
-    let a = true;
-    let b = true;
+    let a = true
+    let b = true
 
     assert(a and b)
 }
 
 test "Logical OR" {
-    let a = true;
-    let b = false;
+    let a = true
+    let b = false
 
-    assert(a or b);
+    assert(a or b)
 
-    let a = false;
-    let b = false;
+    let a = false
+    let b = false
 
     assert(a or b == false)
 }
