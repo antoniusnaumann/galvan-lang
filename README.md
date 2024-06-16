@@ -101,6 +101,25 @@ main {
 }
 ```
 
+### Default Values
+> [!WARNING]
+> Default values are not implemented yet
+
+Struct types in Galvan can allow ommitting certain attributes when created with the default initializer. To do so, 
+
+```rust
+type Book {
+    title: String = "Lorem Ipsum"
+    content: String = "Lorem ipsum dolor sit amet..."
+}
+
+main {
+    let book = Book()
+}
+```
+
+In case the type can be constructed without arguments, Rust's `Default` trait is automatically implemented.
+
 ### Collections
 
 Galvan features syntactic sugar for collection types:
