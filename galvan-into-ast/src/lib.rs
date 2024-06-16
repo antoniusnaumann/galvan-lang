@@ -28,7 +28,7 @@ pub trait ReadCursor: Sized {
 impl SourceIntoAst for Source {
     fn try_into_ast(self) -> AstResult {
         let parsed = parse_source(&self)?;
-        parsed.try_into_ast(self.clone()).map(|ast| ast.with_source(self))
+        parsed.try_into_ast(self)
     }
 }
 

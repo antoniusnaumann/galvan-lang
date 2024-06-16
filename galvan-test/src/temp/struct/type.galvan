@@ -1,0 +1,5 @@
+
+type Dog {
+    // name: String,
+    // age: Int
+}
