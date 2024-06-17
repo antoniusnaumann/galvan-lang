@@ -59,7 +59,6 @@ impl ReadCursor for StructTypeMember {
             None
         };
 
-        cursor.goto_next_sibling();
         let ident = Ident::read_cursor(cursor, source)?;
 
         cursor.goto_next_sibling();
