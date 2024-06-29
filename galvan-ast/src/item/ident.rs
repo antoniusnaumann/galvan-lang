@@ -26,12 +26,13 @@ impl AstNode for Ident {
     }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, Hash, From)]
+#[derive(Clone, Debug, Display, PartialEq, Eq, Hash)]
 pub struct TypeIdent(String);
 
 impl TypeIdent {
     pub fn new(name: impl Into<String>) -> TypeIdent {
-        TypeIdent(name.into())
+        let name: String = name.into();
+        TypeIdent(name.trim().to_owned())
     }
 
     pub fn as_str(&self) -> &str {

@@ -194,7 +194,7 @@ impl ReadCursor for BasicTypeItem {
 impl ReadCursor for TypeIdent {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let ident = cursor_expect!(cursor, "type_ident");
-        let inner = &source[ident.start_byte()..=ident.end_byte()];
+        let inner = &source[ident.start_byte()..ident.end_byte()];
 
         Ok(Self::new(inner))
     }
@@ -203,7 +203,7 @@ impl ReadCursor for TypeIdent {
 impl ReadCursor for Ident {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let ident = cursor_expect!(cursor, "ident");
-        let inner = &source[ident.start_byte()..=ident.end_byte()];
+        let inner = &source[ident.start_byte()..ident.end_byte()];
 
         Ok(Self::new(inner))
     }
