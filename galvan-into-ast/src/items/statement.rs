@@ -1,7 +1,8 @@
+use crate::items::{read_free_function_call, read_trailing_closure_call};
 use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
-    Assignment, DeclModifier, Declaration, Expression, FunctionCall, Ident, Span, Statement, TypeElement
+    Assignment, Closure, CollectionLiteral, ConstructorCall, DeclModifier, Declaration, ElseExpression, Expression, FunctionCall, Group, Ident, InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement
 };
 use galvan_parse::TreeCursor;
 
@@ -15,7 +16,7 @@ impl ReadCursor for Statement {
             "declaration" => Statement::Declaration(Declaration::read_cursor(cursor, source)?),
             "expression" => Statement::Expression(Expression::read_cursor(cursor, source)?),
             "free_function" => {
-                Statement::Expression(FunctionCall::read_cursor(cursor, source)?.into())
+                Statement::Expression(read_free_function_call(cursor, source)?.into())
             }
             _ => unreachable!("Unknown statement kind: {:?}", cursor.kind()?),
         };
@@ -69,12 +70,26 @@ impl ReadCursor for Assignment {
 
 impl ReadCursor for Expression {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!("Implement Expression::read_cursor")
-    }
-}
+        cursor_expect!(cursor, "expression");
 
-impl ReadCursor for FunctionCall {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!("Implement FunctionCall::read_cursor")
+        cursor.goto_first_child();
+        
+        let inner: Expression = match cursor.kind()? {
+            "else_expression" => ElseExpression::read_cursor(cursor, source)?.into(),
+            "trailing_closure_expression" => read_trailing_closure_call(cursor, source)?.into(),   
+            "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),
+            "postfix_expression" => Expression::Postfix(PostfixExpression::read_cursor(cursor, source)?.into()),
+            "constructor_call" => ConstructorCall::read_cursor(cursor, source)?.into(),
+             "collection_literal" => CollectionLiteral::read_cursor(cursor, source)?.into(),
+            "literal" => Literal::read_cursor(cursor, source)?.into(),
+            "ident" => Ident::read_cursor(cursor, source)?.into(),
+            "closure" => Closure::read_cursor(cursor, source)?.into(),
+            "group" => Group::read_cursor(cursor, source)?.into(),
+            _ => Expression::Infix(InfixExpression::read_cursor(cursor, source)?.into()),
+        };
+        
+        cursor.goto_parent();
+
+        Ok(inner)
     }
 }

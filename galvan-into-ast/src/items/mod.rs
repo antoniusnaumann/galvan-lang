@@ -13,3 +13,6 @@ pub use statement::*;
 
 mod literal;
 pub use literal::*;
+
+mod expression;
+pub use expression::*;

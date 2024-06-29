@@ -46,8 +46,8 @@ impl AsRef<str> for StringLiteral {
 #[derive(Clone, Debug, PartialEq, Eq)]
 // TODO: Parse number literal and validate type
 pub struct NumberLiteral {
-    value: String,
-    span: Span,
+    pub value: String,
+    pub span: Span,
 }
 
 impl AstNode for NumberLiteral {
@@ -69,7 +69,7 @@ impl NumberLiteral {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, From)]
 pub struct BooleanLiteral {
     pub value: bool,
-    span: Span,
+    pub span: Span,
 }
 
 impl AstNode for BooleanLiteral {
@@ -83,7 +83,7 @@ impl AstNode for BooleanLiteral {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NoneLiteral(Span);
+pub struct NoneLiteral(pub Span);
 
 impl AstNode for NoneLiteral {
     fn span(&self) -> Span {
