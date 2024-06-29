@@ -5,9 +5,13 @@ macro_rules! cursor_expect {
             use crate::result::CursorUtil;
             let node = $cursor.curr()?;
             if node.kind() != $rule {
-                unreachable!("Expected {} keyword, got: {}", $rule, node.kind());
+                let kind = node.kind();
+                $cursor.goto_parent();
+                let parent = $cursor.curr()?;
+                unreachable!("Expected {} keyword, got: {}, in: {}", $rule, kind, parent.kind());
+            } else {
+                node
             }
-            node
         }
     };
 }

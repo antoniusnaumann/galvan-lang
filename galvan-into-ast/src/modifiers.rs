@@ -33,6 +33,8 @@ impl ReadCursor for DeclModifier {
             _ => unreachable!("Unexpected declaration modifier!")
         };
 
+        cursor.goto_parent();
+
         Ok(modifier)
     }
 }
