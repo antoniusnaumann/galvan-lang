@@ -1,6 +1,8 @@
 use crate::result::CursorUtil;
-use crate::{cursor_expect, AstError, ReadCursor};
-use galvan_ast::{Assignment, Declaration, Expression, FunctionCall, Statement};
+use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
+use galvan_ast::{
+    Assignment, DeclModifier, Declaration, Expression, FunctionCall, Ident, Span, Statement, TypeElement
+};
 use galvan_parse::TreeCursor;
 
 impl ReadCursor for Statement {
@@ -12,7 +14,9 @@ impl ReadCursor for Statement {
             "assignment" => Statement::Assignment(Assignment::read_cursor(cursor, source)?),
             "declaration" => Statement::Declaration(Declaration::read_cursor(cursor, source)?),
             "expression" => Statement::Expression(Expression::read_cursor(cursor, source)?),
-            "free_function" => Statement::Expression(FunctionCall::read_cursor(cursor, source)?.into()),
+            "free_function" => {
+                Statement::Expression(FunctionCall::read_cursor(cursor, source)?.into())
+            }
             _ => unreachable!("Unknown statement kind: {:?}", cursor.kind()?),
         };
 
@@ -23,7 +27,37 @@ impl ReadCursor for Statement {
 
 impl ReadCursor for Declaration {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!("Implement Declaration::read_cursor")
+        let node = cursor_expect!(cursor, "declaration");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+
+        let decl_modifier = DeclModifier::read_cursor(cursor, source)?;
+        cursor.goto_next_sibling();
+        let identifier = Ident::read_cursor(cursor, source)?;
+        cursor.goto_next_sibling();
+
+        let type_annotation = match cursor.kind()? {
+            "colon" => {
+                cursor.goto_next_sibling();
+                Some(TypeElement::read_cursor(cursor, source)?)
+            }
+            _ => None,
+        };
+
+        let assignment = match cursor.kind()? {
+            "assign" => {
+                cursor.goto_next_sibling();
+                Some(Expression::read_cursor(cursor, source)?)
+            }
+            _ => None,
+        };
+
+        cursor.goto_parent();
+
+        let decl = Declaration { decl_modifier, identifier, type_annotation, assignment, span };
+
+        Ok(decl)
     }
 }
 
