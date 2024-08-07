@@ -1,5 +1,5 @@
 use galvan_ast::{
-    BooleanLiteral, CollectionLiteral, Literal, NoneLiteral, NumberLiteral, Span, StringLiteral,
+    BooleanLiteral, Literal, NoneLiteral, NumberLiteral, Span, StringLiteral
 };
 use galvan_parse::TreeCursor;
 
@@ -63,8 +63,4 @@ impl ReadCursor for StringLiteral {
     }
 }
 
-impl ReadCursor for CollectionLiteral {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!()
-    }
-}
+
