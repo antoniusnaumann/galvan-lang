@@ -30,7 +30,7 @@ test "Paren-less function call as member function" {
     	.iter()
 	.copied()
 	.map |x| { x * 2 }
-	.reduce 2 |acc, e| { acc + e }
+	.fold 2 |acc, e| { acc + e }
 
     assert result == 22
 }
