@@ -1,5 +1,5 @@
 use galvan_ast::{
-    Closure, ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Span, TypeIdent
+    Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Span, TypeElement, TypeIdent
 };
 use galvan_parse::TreeCursor;
 
@@ -7,7 +7,20 @@ use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for FunctionCall {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!()
+        let node = cursor_expect!(cursor, "function_call");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+        let identifier = Ident::read_cursor(cursor, source)?;
+
+        cursor.goto_next_sibling();
+        cursor_expect!(cursor, "paren_open");
+        
+        cursor.goto_next_sibling();
+        let arguments = read_arguments(cursor, source)?;
+        cursor.goto_parent();
+
+        Ok(FunctionCall { identifier, arguments, span})
     }
 }
 
@@ -50,7 +63,7 @@ fn read_arguments(
         cursor.goto_next_sibling();
     }
     
-    println!("args: {}", args.len());
+    // println!("args: {}", args.len());
     Ok(args)
 }
 
@@ -81,7 +94,46 @@ impl ReadCursor for FunctionCallArg {
 
 impl ReadCursor for Closure {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!()
+        let node = cursor_expect!(cursor, "closure");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+        cursor_expect!(cursor, "pipe");
+        cursor.goto_next_sibling();
+        let mut arguments = Vec::new();
+        while cursor.kind()? == "closure_argument" {
+            arguments.push(ClosureArgument::read_cursor(cursor, source)?);
+            cursor.goto_next_sibling();
+        }
+
+        cursor_expect!(cursor, "pipe");
+        cursor.goto_next_sibling();
+
+        let body = Body::read_cursor(cursor, source)?;
+        let block_span = body.span.clone();
+        let block = Block { body, span: block_span };
+
+        cursor.goto_parent();
+        Ok(Closure { arguments, block, span })
+    }
+}
+
+impl ReadCursor for ClosureArgument {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "closure_argument");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+        let ident = Ident::read_cursor(cursor, source)?;
+        cursor.goto_next_sibling();
+        
+        let ty = if cursor.kind()? == "colon" {
+            cursor.goto_next_sibling();
+            Some(TypeElement::read_cursor(cursor, source)?)
+        } else { None };
+
+        cursor.goto_parent();
+        Ok(ClosureArgument { ident, ty, span })
     }
 }
 
