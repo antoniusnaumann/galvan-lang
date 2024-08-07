@@ -1,5 +1,7 @@
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, Ident, OptionalTypeItem, OrderedDictionaryTypeItem, ResultTypeItem, SetTypeItem, Span, TupleTypeItem, TypeElement, TypeIdent
+    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, Ident, OptionalTypeItem,
+    OrderedDictionaryTypeItem, ResultTypeItem, SetTypeItem, Span, TupleTypeItem, TypeElement,
+    TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -45,7 +47,28 @@ impl ReadCursor for TypeElement {
 
 impl ReadCursor for ResultTypeItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!()
+        let node = cursor_expect!(cursor, "result_type");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+        let success = TypeElement::read_cursor(cursor, source)?;
+
+        cursor.goto_next_sibling();
+        cursor_expect!(cursor, "exclamation_mark");
+
+        cursor.goto_next_sibling();
+        let error = if cursor.kind()? == "type_item" {
+            Some(TypeElement::read_cursor(cursor, source)?)
+        } else {
+            None
+        };
+
+        cursor.goto_parent();
+        Ok(ResultTypeItem {
+            success,
+            error,
+            span,
+        })
     }
 }
 
@@ -207,5 +230,4 @@ impl ReadCursor for Ident {
 
         Ok(Self::new(inner))
     }
-
 }

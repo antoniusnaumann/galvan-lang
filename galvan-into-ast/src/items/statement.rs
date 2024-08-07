@@ -43,7 +43,9 @@ impl ReadCursor for Declaration {
         let type_annotation = match cursor.kind()? {
             "colon" => {
                 cursor.goto_next_sibling();
-                Some(TypeElement::read_cursor(cursor, source)?)
+                let elem = Some(TypeElement::read_cursor(cursor, source)?);
+                cursor.goto_next_sibling();
+                elem
             }
             _ => None,
         };
@@ -51,7 +53,9 @@ impl ReadCursor for Declaration {
         let assignment = match cursor.kind()? {
             "assign" => {
                 cursor.goto_next_sibling();
-                Some(Expression::read_cursor(cursor, source)?)
+                let expr = Some(Expression::read_cursor(cursor, source)?);
+                cursor.goto_next_sibling();
+                expr
             }
             _ => None,
         };

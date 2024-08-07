@@ -48,8 +48,8 @@ test "Precedence: Addition, Multiplication" {
 }
 
 test "Exponentiation" {
-    let a: U32 = 2;
-    let b: U32 = 3;
+    let a: U32 = 23;
+    let b: U32 = 34;
     let c = a ^ b;
 
     assert c == 8

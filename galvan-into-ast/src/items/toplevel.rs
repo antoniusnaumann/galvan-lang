@@ -145,6 +145,7 @@ impl ReadCursor for FnSignature {
         cursor.goto_next_sibling();
         let parameters = ParamList::read_cursor(cursor, source)?;
 
+        cursor.goto_next_sibling();
         let return_type = if cursor.kind()? == "return_type" {
             cursor.goto_first_child();
             cursor_expect!(cursor, "single_arrow");
