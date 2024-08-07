@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::macros::{impl_transpile, impl_transpile_fn, impl_transpile_variants, transpile};
+use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::{Transpile, TypeElement};
 use galvan_ast::*;
 use galvan_resolver::Scope;
@@ -16,17 +16,23 @@ impl_transpile!(
 impl_transpile!(OrderedDictionaryTypeItem, "TODO {} {}", key, value);
 impl_transpile!(SetTypeItem, "::std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
-impl_transpile_fn!(OptionalTypeItem, "Option<{}>", element);
+impl_transpile!(OptionalTypeItem, "Option<{}>", some);
 impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let ResultTypeItem { success, error } = self;
+        let ResultTypeItem { success, error, span: _span } = self;
         if let Some(error) = error {
             transpile!(ctx, scope, "Result<{}, {}>", success, error)
         } else {
             transpile!(ctx, scope, "::galvan::std::FlexResult<{}>", success)
         }
+    }
+}
+
+impl Transpile for GenericTypeItem {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        todo!("Transpile generic type parameters!")
     }
 }
 
@@ -39,4 +45,5 @@ impl_transpile_variants! { TypeElement;
     Tuple
     Optional
     Result
+    Generic
 }

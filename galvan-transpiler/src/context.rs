@@ -1,5 +1,5 @@
 use crate::mapping::Mapping;
-use galvan_ast::{EmptyTypeDecl, SegmentedAsts, ToplevelItem, TypeDecl, Visibility};
+use galvan_ast::{AstNode, EmptyTypeDecl, SegmentedAsts, ToplevelItem, TypeDecl, Visibility, VisibilityKind};
 use galvan_files::Source;
 use galvan_resolver::{LookupContext, LookupError};
 
@@ -30,8 +30,9 @@ pub fn predefined_from(mapping: &Mapping) -> SegmentedAsts {
         .keys()
         .map(|ident| ToplevelItem {
             item: TypeDecl::Empty(EmptyTypeDecl {
-                visibility: Visibility::Inherited,
+                visibility: Visibility::new(VisibilityKind::Inherited, ident.span().clone()),
                 ident: ident.clone(),
+                span: ident.span().clone(),
             }),
             source: Source::Missing,
         })

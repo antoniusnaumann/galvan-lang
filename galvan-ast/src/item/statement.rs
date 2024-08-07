@@ -1,104 +1,53 @@
-use super::*;
-use crate::item::closure::Closure;
-use from_pest::pest::iterators::Pairs;
-use from_pest::ConversionError::NoMatch;
-use from_pest::{ConversionError, FromPest, Void};
-use galvan_pest::Rule;
+use galvan_ast_macro::{AstNode, PrintAst};
 use typeunion::type_union;
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::body))]
+use super::*;
+use crate::item::closure::Closure;
+use crate::{AstNode, PrintAst, Span};
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Body {
     pub statements: Vec<Statement>,
+    pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::block))]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Block {
     pub body: Body,
+    pub span: Span,
 }
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::statement))]
-pub type Statement = Assignment + Declaration + TopExpression + Block;
+#[derive(Debug, PartialEq, Eq, PrintAst)]
+pub type Statement = Assignment + Declaration + Expression; // + Block;
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::declaration))]
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Declaration {
     pub decl_modifier: DeclModifier,
     pub identifier: Ident,
     pub type_annotation: Option<TypeElement>,
-    pub assignment: Option<TopExpression>,
+    pub assignment: Option<Expression>,
+    pub span: Span,
 }
 
-#[type_union]
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::literal))]
-pub type Literal = BooleanLiteral + StringLiteral + NumberLiteral;
+type Infix = Box<InfixExpression>;
+type Postfix = Box<PostfixExpression>;
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::expression))]
-pub type Expression =
-    OperatorTree + MemberChain + SingleExpression + Closure;
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub type Expression = ElseExpression
+    + FunctionCall
+    + Infix
+    + Postfix
+    + CollectionLiteral
+    + ConstructorCall
+    + Literal
+    + Ident
+    + Closure
+    + Group;
 
-#[type_union(super = Expression)]
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::simple_expression))]
-pub type SimpleExpression = MemberChain + SingleExpression;
-
-pub type Postfix = Box<PostfixExpression>;
-#[type_union]
-#[derive(Debug, PartialEq, Eq)]
-pub type SingleExpression =
-    Postfix + CollectionLiteral + FunctionCall + ConstructorCall + Literal + Ident;
-
-impl FromPest<'_> for SingleExpression {
-    type Rule = Rule;
-    type FatalError = Void;
-
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let pair = pairs.peek().ok_or(NoMatch)?;
-        let rule = pair.as_rule();
-        match rule {
-            Rule::trailing_closure_call => {
-                let function_call = FunctionCall::from_pest(pairs)?;
-                Ok(function_call.into())
-            }
-            Rule::single_expression => {
-                pairs.next();
-                let mut pairs = pair.into_inner();
-                let pair = pairs.peek().ok_or(NoMatch)?;
-                let rule = pair.as_rule();
-                let exp = match rule {
-                    Rule::collection_literal => {
-                        let collection_literal = CollectionLiteral::from_pest(&mut pairs)?;
-                        Ok(collection_literal.into())
-                    }
-                    Rule::function_call => {
-                        let function_call = FunctionCall::from_pest(&mut pairs)?;
-                        Ok(function_call.into())
-                    }
-                    Rule::constructor_call => {
-                        let constructor_call = ConstructorCall::from_pest(&mut pairs)?;
-                        Ok(constructor_call.into())
-                    }
-                    Rule::literal => {
-                        let literal = Literal::from_pest(&mut pairs)?;
-                        Ok(literal.into())
-                    }
-                    Rule::ident => {
-                        let ident = Ident::from_pest(&mut pairs)?;
-                        Ok(ident.into())
-                    }
-                    _ => unreachable!("Unexpected rule: {:#?}", rule),
-                }?;
-                handle_postfixes(exp, &mut pairs)
-            }
-            _ => Err(NoMatch),
-        }
-    }
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct Group {
+    pub inner: Box<Expression>,
+    pub span: Span,
 }

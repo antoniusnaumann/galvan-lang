@@ -1,16 +1,35 @@
 use derive_more::From;
-use galvan_pest::Rule;
+use galvan_ast_macro::AstNode;
 
-use super::{FnDecl, MainDecl, TestDecl, TypeDecl};
+use super::{Body, FnDecl, Ident, StringLiteral, TypeDecl};
+use crate::{AstNode, PrintAst, Span};
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::toplevel))]
+#[derive(Debug, PartialEq, Eq, From)]
 pub enum RootItem {
     Fn(FnDecl),
     Type(TypeDecl),
     Main(MainDecl),
     Test(TestDecl),
     // CustomTask(TaskDecl),
+}
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct MainDecl {
+    pub body: Body,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TestDecl {
+    pub name: Option<StringLiteral>,
+    pub body: Body,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TaskDecl {
+    pub ident: Ident,
+    // name: Option<String>,
+    pub body: Body,
 }
 
 mod private {

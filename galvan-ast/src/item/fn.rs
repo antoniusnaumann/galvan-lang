@@ -1,16 +1,18 @@
-use super::*;
-use derive_more::From;
-use galvan_pest::Rule;
+use galvan_ast_macro::AstNode;
 
-#[derive(Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::function))]
+use crate::{Span, AstNode, PrintAst};
+
+use super::*;
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct FnDecl {
+    // pub annotations,
     pub signature: FnSignature,
-    pub block: Body,
+    pub body: Body,
+    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::fn_signature))]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct FnSignature {
     // pub asyncness: Async,
     // pub constness: Const,
@@ -18,26 +20,10 @@ pub struct FnSignature {
     pub identifier: Ident,
     pub parameters: ParamList,
     pub return_type: Option<TypeElement>,
+    pub span: Span,
 }
 
 impl FnSignature {
-    pub fn new(
-        mods: Modifiers,
-        ident: Ident,
-        parameters: ParamList,
-        return_type: Option<TypeElement>,
-    ) -> Self {
-        // TODO: Verify that only first parameter is named self (or no self exists)
-        FnSignature {
-            // asyncness: mods.asyncness,
-            // constness: mods.constness,
-            visibility: mods.visibility,
-            identifier: ident,
-            parameters,
-            return_type,
-        }
-    }
-
     pub fn receiver(&self) -> Option<&Param> {
         self.parameters
             .params
@@ -46,36 +32,34 @@ impl FnSignature {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::param_list))]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct ParamList {
     pub params: Vec<Param>,
+    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::param))]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Param {
     pub decl_modifier: Option<DeclModifier>,
     pub identifier: Ident,
     pub param_type: TypeElement,
+    pub span: Span,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::declaration_modifier))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DeclModifier {
-    Let(LetKeyword),
-    Mut(MutKeyword),
-    Ref(RefKeyword),
+    Let,
+    Mut,
+    Ref,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::let_keyword))]
-pub struct LetKeyword;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::mut_keyword))]
-pub struct MutKeyword;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPest)]
-#[pest_ast(rule(Rule::ref_keyword))]
-pub struct RefKeyword;
+impl PrintAst for DeclModifier {
+    fn print_ast(&self, indent: usize) -> String {
+        let indent_str = " ".repeat(indent);
+        match self {
+            DeclModifier::Let => format!("{indent_str}let"),
+            DeclModifier::Mut => format!("{indent_str}mut"),
+            DeclModifier::Ref => format!("{indent_str}ref"),
+        }
+    }
+}

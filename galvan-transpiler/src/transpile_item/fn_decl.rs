@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::transpile_item::ident::TypeOwnership;
 use crate::{FnDecl, FnSignature, Param, ParamList, Transpile};
-use galvan_ast::{DeclModifier, LetKeyword, Ownership, TypeElement};
+use galvan_ast::{DeclModifier, Ownership, TypeElement};
 use galvan_resolver::{Scope, Variable};
 
 impl Transpile for FnDecl {
@@ -11,7 +11,7 @@ impl Transpile for FnDecl {
         let scope = &mut function_scope;
 
         let signature = self.signature.transpile(ctx, scope);
-        let block = self.block.transpile(ctx, scope);
+        let block = self.body.transpile(ctx, scope);
         transpile!(ctx, scope, "{} {}", signature, block)
     }
 }
@@ -75,36 +75,36 @@ impl Transpile for Param {
 
         scope.declare_variable(Variable {
             ident: self.identifier.clone(),
-            modifier: self.decl_modifier.unwrap_or(DeclModifier::Let(LetKeyword)),
+            modifier: self.decl_modifier.unwrap_or(DeclModifier::Let),
             ty: Some(self.param_type.clone()),
             ownership: match self.decl_modifier {
-                Some(DeclModifier::Let(_)) | None => match self.param_type {
+                Some(DeclModifier::Let) | None => match self.param_type {
                     TypeElement::Plain(ref plain) if ctx.mapping.is_copy(&plain.ident) => {
                         Ownership::Copy
                     }
                     _ => Ownership::Borrowed,
                 },
-                Some(DeclModifier::Mut(_)) => Ownership::MutBorrowed,
-                Some(DeclModifier::Ref(_)) => Ownership::Ref,
+                Some(DeclModifier::Mut) => Ownership::MutBorrowed,
+                Some(DeclModifier::Ref) => Ownership::Ref,
             },
         });
 
         match self.decl_modifier {
-            Some(DeclModifier::Let(_)) | None => {
+            Some(DeclModifier::Let) | None => {
                 if is_self {
                     "&self".into()
                 } else {
                     transpile_type!(self, ctx, scope, TypeOwnership::Borrowed, "&", "")
                 }
             }
-            Some(DeclModifier::Mut(_)) => {
+            Some(DeclModifier::Mut) => {
                 if is_self {
                     "&mut self".into()
                 } else {
                     transpile_type!(self, ctx, scope, TypeOwnership::MutBorrowed, "&mut")
                 }
             }
-            Some(DeclModifier::Ref(_)) => {
+            Some(DeclModifier::Ref) => {
                 if is_self {
                     panic!("Functions with ref-receivers should be handled elsewhere!")
                 }

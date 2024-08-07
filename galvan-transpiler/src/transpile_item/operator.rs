@@ -1,118 +1,91 @@
-use crate::context::Context;
-use crate::macros::{impl_transpile_variants, transpile};
+use crate::macros::impl_transpile_variants;
 use crate::Transpile;
+use crate::{context::Context, transpile};
 use galvan_ast::{
-    ArithmeticOperator, CollectionOperator, ComparisonOperator, InfixOperator, LogicalOperator,
-    OperatorTree, OperatorTreeNode, SimpleExpression,
+    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression, InfixOperation, LogicalOperator
 };
 use galvan_resolver::Scope;
 
-impl Transpile for OperatorTree {
+impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Comparison, Custom, Member);
+
+impl Transpile for InfixOperation<LogicalOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self {
-            left,
-            operator,
-            right,
-        } = self;
+        let Self { lhs, operator, rhs, span: _span } = self;
+        match operator {
+            LogicalOperator::And => transpile!(ctx, scope, "{} && {}", lhs, rhs),
+            LogicalOperator::Or => transpile!(ctx, scope, "{} || {}", lhs, rhs),
+            LogicalOperator::Xor => todo!("Correctly handle xor chains"),
+        }
+    }
+}
+
+impl Transpile for InfixOperation<ComparisonOperator> {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let Self { lhs, operator, rhs, span: _span } = self;
 
         match operator {
-            InfixOperator::Arithmetic(op) => transpile_arithmetic(ctx, scope, *op, left, right),
-            InfixOperator::Collection(op) => {
-                transpile_collection_operation(ctx, scope, *op, left, right)
+            ComparisonOperator::Equal => transpile!(ctx, scope, "{} == {}", lhs, rhs),
+            ComparisonOperator::NotEqual => {
+                transpile!(ctx, scope, "{} != {}", lhs, rhs)
             }
-            InfixOperator::Comparison(op) => transpile_comparison(ctx, scope, *op, left, right),
-            InfixOperator::Logical(op) => transpile_logical(ctx, scope, *op, left, right),
-            InfixOperator::CustomInfix(op) => {
-                todo!("Implement custom operator support")
+            ComparisonOperator::Less => transpile!(ctx, scope, "{} < {}", lhs, rhs),
+            ComparisonOperator::LessEqual => {
+                transpile!(ctx, scope, "{} <= {}", lhs, rhs)
+            }
+            ComparisonOperator::Greater => transpile!(ctx, scope, "{} > {}", lhs, rhs),
+            ComparisonOperator::GreaterEqual => {
+                transpile!(ctx, scope, "{} >= {}", lhs, rhs)
+            }
+            ComparisonOperator::Identical => {
+                transpile!(ctx, scope, "::std::sync::Arc::ptr_eq({}, {})", lhs, rhs)
+            }
+            ComparisonOperator::NotIdentical => {
+                transpile!(ctx, scope, "!::std::sync::Arc::ptr_eq({}, {})", lhs, rhs)
             }
         }
     }
 }
 
-impl_transpile_variants!(OperatorTreeNode; Operation, SimpleExpression);
-impl_transpile_variants!(SimpleExpression; MemberChain, SingleExpression);
+impl Transpile for InfixOperation<CollectionOperator> {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let Self { lhs, operator, rhs, span: _span } = self;
 
-fn transpile_logical(
-    ctx: &Context,
-    scope: &mut Scope,
-    op: LogicalOperator,
-    left: &OperatorTreeNode,
-    right: &OperatorTreeNode,
-) -> String {
-    match op {
-        LogicalOperator::And => transpile!(ctx, scope, "{} && {}", left, right),
-        LogicalOperator::Or => transpile!(ctx, scope, "{} || {}", left, right),
-        LogicalOperator::Xor => todo!("Correctly handle xor chains"),
-    }
-}
-
-fn transpile_comparison(
-    ctx: &Context,
-    scope: &mut Scope,
-    op: ComparisonOperator,
-    left: &OperatorTreeNode,
-    right: &OperatorTreeNode,
-) -> String {
-    match op {
-        ComparisonOperator::Equal => transpile!(ctx, scope, "{} == {}", left, right),
-        ComparisonOperator::NotEqual => {
-            transpile!(ctx, scope, "{} != {}", left, right)
-        }
-        ComparisonOperator::Less => transpile!(ctx, scope, "{} < {}", left, right),
-        ComparisonOperator::LessEqual => {
-            transpile!(ctx, scope, "{} <= {}", left, right)
-        }
-        ComparisonOperator::Greater => transpile!(ctx, scope, "{} > {}", left, right),
-        ComparisonOperator::GreaterEqual => {
-            transpile!(ctx, scope, "{} >= {}", left, right)
-        }
-        ComparisonOperator::Identical => {
-            transpile!(ctx, scope, "::std::sync::Arc::ptr_eq({}, {})", left, right)
-        }
-        ComparisonOperator::NotIdentical => {
-            transpile!(ctx, scope, "!::std::sync::Arc::ptr_eq({}, {})", left, right)
+        match operator {
+            CollectionOperator::Concat => {
+                // TODO: Check if underlying expression is already owned or copy
+                transpile!(
+                    ctx,
+                    scope,
+                    "[({}).to_owned(), ({}).to_owned()].concat()",
+                    lhs,
+                    rhs
+                )
+            }
+            CollectionOperator::Remove => todo!("Implement remove operator"),
+            CollectionOperator::Contains => {
+                transpile!(ctx, scope, "({}).contains(&({}))", rhs, lhs)
+            }
         }
     }
 }
 
-fn transpile_collection_operation(
-    ctx: &Context,
-    scope: &mut Scope,
-    op: CollectionOperator,
-    left: &OperatorTreeNode,
-    right: &OperatorTreeNode,
-) -> String {
-    match op {
-        CollectionOperator::Concat => {
-            // TODO: Check if underlying expression is already owned or copy
-            transpile!(
-                ctx,
-                scope,
-                "[({}).to_owned(), ({}).to_owned()].concat()",
-                left,
-                right
-            )
-        }
-        CollectionOperator::Remove => todo!("Implement remove operator"),
-        CollectionOperator::Contains => {
-            transpile!(ctx, scope, "({}).contains(&({}))", right, left)
+impl Transpile for InfixOperation<ArithmeticOperator> {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let Self { lhs, operator, rhs, span: _span } = self;
+
+        match operator {
+            ArithmeticOperator::Add => transpile!(ctx, scope, "{} + {}", lhs, rhs),
+            ArithmeticOperator::Sub => transpile!(ctx, scope, "{} - {}", lhs, rhs),
+            ArithmeticOperator::Mul => transpile!(ctx, scope, "{} * {}", lhs, rhs),
+            ArithmeticOperator::Div => transpile!(ctx, scope, "{} / {}", lhs, rhs),
+            ArithmeticOperator::Rem => transpile!(ctx, scope, "{} % {}", lhs, rhs),
+            ArithmeticOperator::Exp => transpile!(ctx, scope, "{}.pow({})", lhs, rhs),
         }
     }
 }
 
-fn transpile_arithmetic(
-    ctx: &Context,
-    scope: &mut Scope,
-    op: ArithmeticOperator,
-    left: &OperatorTreeNode,
-    right: &OperatorTreeNode,
-) -> String {
-    match op {
-        ArithmeticOperator::Plus => transpile!(ctx, scope, "{} + {}", left, right),
-        ArithmeticOperator::Minus => transpile!(ctx, scope, "{} - {}", left, right),
-        ArithmeticOperator::Multiply => transpile!(ctx, scope, "{} * {}", left, right),
-        ArithmeticOperator::Divide => transpile!(ctx, scope, "{} / {}", left, right),
-        ArithmeticOperator::Remainder => transpile!(ctx, scope, "{} % {}", left, right),
-        ArithmeticOperator::Power => transpile!(ctx, scope, "{}.pow({})", left, right),
+impl Transpile for InfixOperation<CustomInfix> {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        todo!("Implement custom infix operator!")
     }
 }

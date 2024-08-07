@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    Block, Closure, ClosureArgument, DeclModifier, ElseExpression, LetKeyword, Ownership, Param,
+    AstNode, Block, Closure, ClosureArgument, DeclModifier, ElseExpression, Ownership, Param
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -50,7 +50,7 @@ fn transpile_closure_argument(
     // TODO: Type inference
     scope.declare_variable(Variable {
         ident: arg.ident.clone(),
-        modifier: DeclModifier::Let(LetKeyword), // TODO: Closure arg modifiers self.modifier.clone(),
+        modifier: DeclModifier::Let, // TODO: Closure arg modifiers self.modifier.clone(),
         ty: arg.ty.clone(),
         ownership: Ownership::Borrowed,
     });
@@ -61,6 +61,7 @@ fn transpile_closure_argument(
             identifier: arg.ident.clone(),
             decl_modifier: None,
             param_type: ty.clone(),
+            span: ty.span(),
         };
         transpile!(ctx, scope, "{prefix}{}", param)
     } else {

@@ -1,28 +1,12 @@
-/*# AST
-multi(vec![
-    empty_type(inherited(), "Dog").into(),
-    function(
-        inherited(),
-        "woof",
-        params(
-            vec![
-                (None, "self", plain("Dog")),
-            ]),
-        None,
-        empty_body()
-    ).into()
-])
-*/
-
-/*# TRANSPILE
-"
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Dog;
-impl Dog {
-pub(crate) fn woof(&self) { }
-}
-"
-*/
+//@TRANSPILE
+//"
+//#[derive(Clone, Debug, PartialEq)]
+//pub(crate) struct Dog;
+//impl Dog {
+//pub(crate) fn woof(&self) { }
+//}
+//"
+//@end
 type Dog
 
 fn woof(self: Dog) { }

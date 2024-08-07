@@ -1,17 +1,16 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
-use galvan_ast::{ConstructorCall, ConstructorCallArg, MemberChain};
+use galvan_ast::{ConstructorCall, ConstructorCallArg, InfixOperation, MemberOperator};
 use galvan_resolver::Scope;
-use itertools::Itertools;
 
-impl Transpile for MemberChain {
+impl Transpile for InfixOperation<MemberOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        self.elements
-            .iter()
-            .map(|r| transpile!(ctx, scope, "{}", r))
-            .collect_vec()
-            .join(".")
+        let Self { lhs, operator, rhs, span: _span } = self;
+        match operator {
+            MemberOperator::Dot => transpile!(ctx, scope, "{}.{}", lhs, rhs),
+            MemberOperator::SafeCall => transpile!(ctx, scope, "{}.map(|__elem__| {{ __elem__.{} }})", lhs, rhs),
+        }
     }
 }
 

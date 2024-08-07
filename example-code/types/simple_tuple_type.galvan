@@ -1,9 +1,5 @@
-/*# AST
-single(tuple_type(public(), "SimpleTuple", vec![tuple_member(plain("Int")), tuple_member(plain("Int"))]))
-*/
-
-/*# TRANSPILE
-"#[derive(Clone, Debug, PartialEq)] pub struct SimpleTuple(i64, i64);"
-*/
+//@TRANSPILE
+//"#[derive(Clone, Debug, PartialEq)] pub struct SimpleTuple(i64, i64);"
+//@end
 
 pub type SimpleTuple(Int, Int)

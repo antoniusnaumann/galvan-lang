@@ -1,0 +1,16 @@
+[package]
+name = "galvan-ast-macro"
+description = "AST macros for the Galvan programming language"
+
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["derive", "full"] }
+quote = "1.0"
+proc-macro2 = "1.0"

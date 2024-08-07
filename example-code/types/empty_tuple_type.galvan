@@ -1,9 +1,5 @@
-/*# AST
-single(tuple_type(inherited(), "EmptyTuple", vec![]))
-*/
-
-/*# TRANSPILE
-"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyTuple();"
-*/
+//@ TRANSPILE
+//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyTuple();"
+//@end
 
 type EmptyTuple()

@@ -1,24 +1,39 @@
-use derive_more::{Display, From};
-use from_pest::pest::iterators::Pairs;
-use from_pest::ConversionError::NoMatch;
-use from_pest::{ConversionError, FromPest, Void};
-use galvan_pest::Rule;
+use derive_more::From;
+use typeunion::type_union;
 
-use super::string;
+use galvan_ast_macro::AstNode;
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::string_literal))]
-pub struct StringLiteral(#[pest_ast(outer(with(string)))] String);
+use crate::{AstNode, Span};
+
+#[type_union]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral;
+
+#[derive(Clone, Debug, PartialEq, Eq, From)]
+pub struct StringLiteral {
+    pub value: String,
+    pub span: Span,
+}
+
+impl AstNode for StringLiteral {
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn print(&self, indent: usize) -> String {
+        format!("{}\"{}\"", " ".repeat(indent), self.value)
+    }
+}
 
 impl StringLiteral {
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.value
     }
 }
 
 impl From<StringLiteral> for String {
     fn from(string: StringLiteral) -> Self {
-        string.0
+        string.value
     }
 }
 
@@ -28,43 +43,54 @@ impl AsRef<str> for StringLiteral {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, From, FromPest)]
-#[pest_ast(rule(Rule::number_literal))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 // TODO: Parse number literal and validate type
-pub struct NumberLiteral(#[pest_ast(outer(with(string)))] String);
+pub struct NumberLiteral {
+    pub value: String,
+    pub span: Span,
+}
 
-impl NumberLiteral {
-    pub fn new(value: &str) -> Self {
-        Self(value.into())
+impl AstNode for NumberLiteral {
+    fn span(&self) -> Span {
+        self.span
     }
-    pub fn as_str(&self) -> &str {
-        &self.0
+
+    fn print(&self, indent: usize) -> String {
+        format!("{}{}", " ".repeat(indent), self.value)
     }
 }
 
-#[derive(Clone, Copy, Display, Debug, PartialEq, Eq, From)]
-pub struct BooleanLiteral(pub bool);
+impl NumberLiteral {
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
 
-impl FromPest<'_> for BooleanLiteral {
-    type Rule = Rule;
-    type FatalError = Void;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, From)]
+pub struct BooleanLiteral {
+    pub value: bool,
+    pub span: Span,
+}
 
-    fn from_pest(
-        pairs: &mut Pairs<'_, Self::Rule>,
-    ) -> Result<Self, ConversionError<Self::FatalError>> {
-        let Some(pair) = pairs.next() else {
-            return Err(NoMatch);
-        };
+impl AstNode for BooleanLiteral {
+    fn span(&self) -> Span {
+        self.span
+    }
 
-        if pair.as_rule() != Rule::boolean_literal {
-            return Err(NoMatch);
-        }
+    fn print(&self, indent: usize) -> String {
+        format!("{}{}", " ".repeat(indent), self.value)
+    }
+}
 
-        let mut pairs = pair.into_inner();
-        match pairs.next() {
-            Some(b) if b.as_rule() == Rule::true_keyword => Ok(BooleanLiteral(true)),
-            Some(b) if b.as_rule() == Rule::false_keyword => Ok(BooleanLiteral(false)),
-            _ => unreachable!(),
-        }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoneLiteral(pub Span);
+
+impl AstNode for NoneLiteral {
+    fn span(&self) -> Span {
+        self.0
+    }
+
+    fn print(&self, indent: usize) -> String {
+        format!("{}None", " ".repeat(indent))
     }
 }

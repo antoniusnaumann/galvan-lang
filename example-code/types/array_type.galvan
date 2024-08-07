@@ -1,9 +1,5 @@
-/*# AST
-single(alias_type(inherited(), "IntArray", array(plain("Int"))))
-*/
-
-/*# TRANSPILE
-"pub(crate) type IntArray = ::std::vec::Vec<i64>;"
-*/
+//@TRANSPILE
+//"pub(crate) type IntArray = ::std::vec::Vec<i64>;"
+//@end
 
 type IntArray = [Int]

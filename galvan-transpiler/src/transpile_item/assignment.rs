@@ -1,10 +1,8 @@
 use crate::context::Context;
-use crate::macros::{impl_transpile_variants, transpile};
+use crate::macros::transpile;
 use crate::Transpile;
-use galvan_ast::{Assignment, AssignmentOperator, AssignmentTarget, Ownership, TopExpression};
+use galvan_ast::{Assignment, AssignmentOperator, Ownership, Expression};
 use galvan_resolver::Scope;
-
-impl_transpile_variants!(AssignmentTarget; Ident, MemberChain);
 
 impl Transpile for Assignment {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -13,10 +11,11 @@ impl Transpile for Assignment {
             target,
             operator,
             expression: exp,
+            span: _span,
         } = self;
 
         let prefix = match target {
-            AssignmentTarget::Ident(ident) => scope.get_variable(ident).map_or("", |var| match var
+            Expression::Ident(ident) => scope.get_variable(ident).map_or("", |var| match var
                 .ownership
             {
                 Ownership::Owned => "",
@@ -25,7 +24,7 @@ impl Transpile for Assignment {
                 Ownership::Copy => "",
                 Ownership::Ref => todo!("Handle assignment to ref variable"),
             }),
-            AssignmentTarget::MemberChain(_) => "",
+            _ => "",
         };
 
         match operator {
@@ -53,5 +52,3 @@ impl Transpile for Assignment {
         }
     }
 }
-
-impl_transpile_variants!(TopExpression; Expression, ElseExpression);

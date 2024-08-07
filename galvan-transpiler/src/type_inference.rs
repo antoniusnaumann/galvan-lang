@@ -1,24 +1,11 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
-    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, InfixOperator,
-    Literal, MemberChain, OperatorTree, OperatorTreeNode, OrderedDictLiteral,
-    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, SimpleExpression, SingleExpression,
-    Statement, TopExpression, TypeDecl, TypeElement, TypeIdent,
+    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group, InfixExpression, InfixOperation, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
 
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement>;
-}
-
-impl InferType for TopExpression {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        match self {
-            TopExpression::Expression(e) => e.infer_type(scope),
-            TopExpression::ElseExpression(e) => e.infer_type(scope),
-        }
-    }
 }
 
 impl InferType for ElseExpression {
@@ -60,9 +47,9 @@ impl InferType for Statement {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
             Statement::Assignment(_) => None,
-            Statement::TopExpression(expr) => expr.infer_type(scope),
+            Statement::Expression(expr) => expr.infer_type(scope),
             Statement::Declaration(_) => None,
-            Statement::Block(block) => block.infer_type(scope),
+            // Statement::Block(block) => block.infer_type(scope),
         }
     }
 }
@@ -74,36 +61,24 @@ impl InferType for Expression {
                 // todo!("Implement type inference for closure")
                 None
             }
-            Expression::OperatorTree(tree) => tree.infer_type(scope),
-            Expression::MemberChain(access) => access.infer_type(scope),
-            Expression::SingleExpression(s) => s.infer_type(scope),
-        }
-    }
-}
-
-impl InferType for SimpleExpression {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        match self {
-            SimpleExpression::MemberChain(access) => access.infer_type(scope),
-            SimpleExpression::SingleExpression(expr) => expr.infer_type(scope),
-        }
-    }
-}
-
-impl InferType for SingleExpression {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        match self {
-            SingleExpression::CollectionLiteral(collection) => collection.infer_type(scope),
-            SingleExpression::FunctionCall(call) => {
+            Expression::ElseExpression(e) => e.infer_type(scope),
+            Expression::CollectionLiteral(collection) => collection.infer_type(scope),
+            Expression::FunctionCall(call) => {
                 // todo!("Implement type inference for function call")
                 None
             }
-            SingleExpression::ConstructorCall(constructor) => {
-                Some(constructor.identifier.clone().into())
-            }
-            SingleExpression::Literal(literal) => literal.infer_type(scope),
-            SingleExpression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
-            SingleExpression::Postfix(_) => todo!(),
+            Expression::ConstructorCall(constructor) => Some(
+                BasicTypeItem {
+                    ident: TypeIdent::new(constructor.identifier.clone()),
+                    span: Span::default(),
+                }
+                .into(),
+            ),
+            Expression::Literal(literal) => literal.infer_type(scope),
+            Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+            Expression::Postfix(postfix) => postfix.infer_type(scope),
+            Expression::Infix(operation) => operation.infer_type(scope),
+            Expression::Group(Group { inner, span: _span }) => inner.infer_type(scope),
         }
     }
 }
@@ -115,65 +90,32 @@ impl InferType for Literal {
             Literal::StringLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("String"),
+                    span: Span::default(),
                 }
                 .into(),
             ),
             Literal::NumberLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("__Number"),
+                    span: Span::default(),
                 }
+                .into(),
+            ),
+            Literal::NoneLiteral(_) => Some(
+                Box::new(OptionalTypeItem {
+                    some: infer(),
+                    span: Span::default(),
+                })
                 .into(),
             ),
         }
     }
 }
 
-impl InferType for OperatorTree {
-    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self {
-            left,
-            operator,
-            right,
-        } = self;
-
-        match operator {
-            InfixOperator::Arithmetic(op) => {
-                // todo!("Implement type inference for arithmetic operator")
-                None
-            }
-            InfixOperator::Collection(op) => infer_collection_operation(scope, *op, left, right),
-            InfixOperator::Comparison(_) => Some(bool()),
-            InfixOperator::Logical(_) => Some(bool()),
-            InfixOperator::CustomInfix(op) => {
-                // todo!("Implement type inference for custom infix operator")
-                None
-            }
-        }
-    }
-}
-
-fn infer_collection_operation(
-    scope: &Scope,
-    op: CollectionOperator,
-    lhs: &OperatorTreeNode,
-    rhs: &OperatorTreeNode,
-) -> Option<TypeElement> {
-    match op {
-        CollectionOperator::Concat => {
-            // todo!("Implement type inference for collection concat")
-            None
-        }
-        CollectionOperator::Remove => {
-            // todo!("Implement type inference for collection remove")
-            None
-        }
-        CollectionOperator::Contains => Some(bool()),
-    }
-}
-
 fn bool() -> TypeElement {
     BasicTypeItem {
         ident: TypeIdent::new("Bool"),
+        span: Span::default(),
     }
     .into()
 }
@@ -181,19 +123,69 @@ fn bool() -> TypeElement {
 fn infer() -> TypeElement {
     BasicTypeItem {
         ident: TypeIdent::new("__Infer"),
+        span: Span::default(),
     }
     .into()
 }
 
-impl InferType for MemberChain {
+impl InferType for InfixExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
-        let Self { elements } = self;
+        match self {
+            InfixExpression::Logical(_) => Some(bool()),
+            InfixExpression::Arithmetic(e) => e.infer_type(scope),
+            InfixExpression::Collection(e) => e.infer_type(scope),
+            InfixExpression::Comparison(_) => Some(bool()),
+            InfixExpression::Member(e) => e.infer_type(scope),
+            InfixExpression::Custom(_) => todo!("Infer type for custom operators!"),
+        }
+    }
+}
 
-        let receiver_type = if elements.len() == 2 {
-            elements[0].infer_type(scope)?
-        } else {
-            return None;
-        };
+impl InferType for InfixOperation<ArithmeticOperator> {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let first = self.lhs.infer_type(scope);
+        let second = self.rhs.infer_type(scope);
+        
+
+        if let (Some(TypeElement::Plain(a)), Some(TypeElement::Plain(b))) = (&first, &second) {
+            if a.ident != b.ident && !a.ident.is_intrinsic() && !b.ident.is_intrinsic() {
+                todo!("TRANSPILER ERROR: Operands are expected to be of the same type, but were: '{:#?}' and '{:#?}'. \nThis will later be relaxed by automatically lifting the more restrictive operand", a, b)
+            }
+        }
+
+        let result = first.or(second);
+
+        result
+    }
+}
+
+impl InferType for InfixOperation<CollectionOperator> {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let Self {
+            lhs,
+            operator,
+            rhs: _,
+            span: _span,
+        } = self;
+
+        match operator {
+            CollectionOperator::Concat => lhs.infer_type(scope),
+            CollectionOperator::Remove => lhs.infer_type(scope),
+            CollectionOperator::Contains => Some(bool()),
+        }
+    }
+}
+
+impl InferType for InfixOperation<MemberOperator> {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let Self {
+            lhs,
+            operator: _,
+            rhs: _,
+            span: _span,
+        } = self;
+
+        let receiver_type = lhs.infer_type(scope)?;
 
         match receiver_type {
             TypeElement::Plain(ty) => {
@@ -239,6 +231,36 @@ impl InferType for MemberChain {
     }
 }
 
+impl InferType for PostfixExpression {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            PostfixExpression::YeetExpression(yeet) => {
+                // TODO: Check if return type is matching
+                match yeet.inner.infer_type(scope) {
+                    Some(inner) => match inner {
+                        TypeElement::Optional(res) => Some(res.some),
+                        TypeElement::Result(res) => Some(res.success),
+                        _ => todo!("TRANSPILER_ERROR: Yeet operator can only be used on result or optional types"),
+                    },
+                    None => None,
+                }
+            },
+            PostfixExpression::AccessExpression(access) => {
+                match access.base.infer_type(scope) {
+                    Some(base) => match base {
+                        TypeElement::Array(array) => Some(array.elements),
+                        TypeElement::Dictionary(dict) => Some(dict.value),
+                        TypeElement::OrderedDictionary(dict) => Some(dict.value),
+                        TypeElement::Set(set) => Some(set.elements),
+                        _ => todo!("TRANSPILER_ERROR: Access operator can only be used on collection types"),
+                    },
+                    None => None,
+                }
+            },
+        }
+    }
+}
+
 impl InferType for CollectionLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
@@ -253,28 +275,54 @@ impl InferType for CollectionLiteral {
 impl InferType for ArrayLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let elements = infer_from_elements(&self.elements, scope);
-        Some(Box::new(ArrayTypeItem { elements }).into())
+        Some(
+            Box::new(ArrayTypeItem {
+                elements,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 
 impl InferType for SetLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let elements = infer_from_elements(&self.elements, scope);
-        Some(Box::new(SetTypeItem { elements }).into())
+        Some(
+            Box::new(SetTypeItem {
+                elements,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 
 impl InferType for DictLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let (key, value) = infer_dict_elements(&self.elements, scope);
-        Some(Box::new(DictionaryTypeItem { key, value }).into())
+        Some(
+            Box::new(DictionaryTypeItem {
+                key,
+                value,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 
 impl InferType for OrderedDictLiteral {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let (key, value) = infer_dict_elements(&self.elements, scope);
-        Some(Box::new(OrderedDictionaryTypeItem { key, value }).into())
+        Some(
+            Box::new(OrderedDictionaryTypeItem {
+                key,
+                value,
+                span: Span::default(),
+            })
+            .into(),
+        )
     }
 }
 

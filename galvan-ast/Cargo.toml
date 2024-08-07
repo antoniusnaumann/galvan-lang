@@ -10,25 +10,14 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pest-ast = "0.3.4"
-pest_derive = "2.7.5"
-from-pest = "0.3.2"
 derive_more = { version = "0.99.17", features = [] }
 typeunion = "0.1.0"
 
 itertools.workspace = true
 thiserror.workspace = true
 
-galvan-pest.workspace = true
 galvan-files.workspace = true
+galvan-ast-macro.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true
-
-[features]
-exec = ["galvan-pest/exec"]
-
-[[bin]]
-name = "galvan-ast"
-required-features = ["exec"]
-path = "src/main.rs"

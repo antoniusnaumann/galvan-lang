@@ -1,9 +1,5 @@
-/*# AST
-single(empty_type(inherited(), "EmptyMarker"))
-*/
-
-/*# TRANSPILE
-"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyMarker;"
-*/
+//@TRANSPILE
+//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyMarker;"
+//@end
 
 type EmptyMarker

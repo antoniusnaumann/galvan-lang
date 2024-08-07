@@ -55,8 +55,8 @@ Types in Galvan are defined with the `type` keyword.
 ```rust
 /// A struct definition
 pub type Color {
-    r: Int
-    g: Int
+    r: Int,
+    g: Int,
     b: Int
 }
 
@@ -101,6 +101,25 @@ main {
 }
 ```
 
+### Default Values
+> [!WARNING]
+> Default values are not implemented yet
+
+Struct types in Galvan can allow ommitting certain attributes when created with the default initializer. To do so, 
+
+```rust
+type Book {
+    title: String = "Lorem Ipsum"
+    content: String = "Lorem ipsum dolor sit amet..."
+}
+
+main {
+    let book = Book()
+}
+```
+
+In case the type can be constructed without arguments, Rust's `Default` trait is automatically implemented.
+
 ### Collections
 
 Galvan features syntactic sugar for collection types:
@@ -124,11 +143,11 @@ type FileOrIoErr = File!IoError
 The error variant is specified after the `!` symbol. If it is not given, a flexible error type is used.
 
 > [!WARNING]
-> `!`, `?` and `??` are not implemented yet
+> `!` and `?` are not implemented yet
 ```rust
 fn open_file(path: String) -> File! {
     let file = File::open(path)!
-    let contents = file.read_to_string()?.find("foo")?.uppercase() ?? ""
+    let contents = file.read_to_string()?.find("foo")?.uppercase() else { "" }
     
     contents
 }
@@ -137,7 +156,7 @@ fn open_file(path: String) -> File! {
 
 `?` is the safe call operator in Galvan. The subsequent expression is only evaluated if the result is not an error and not none.
 
-`??` is the null-coalescing operator, you can use it to provide a default if the left-hand side expression is none. The right-hand side of the null-coalescing operator cannot be a return or throw expression.
+`else` can also be used as the null-coalescing operator (since you can use else after every expression that is an optional or a result type), you can use it to provide a default if the left-hand side expression is none. 
 
 ### Union Types
 Galvan supports union types everywhere where a type identifier is expected:
@@ -195,8 +214,8 @@ fn grow(mut self: Dog) {
 References that are allowed to be stored in structs have to be declared as heap references. This is done by prefixing the declaration with `ref`:
 ```rust
 pub type Person {
-    name: String
-    age: Int
+    name: String,
+    age: Int,
     // This is a heap reference
     ref dog: Dog
 }
@@ -409,6 +428,11 @@ Collection operators:
 - `[:]`: Slicing
 - `in`, `∈`, `∊`: Membership
 
+Range operators:
+- `..<`: Exclusive Range
+- `..=`: Inclusive Range
+- `+-`, `±`: Inclusive Range around a value (tolerance)
+
 #### Unicode and Custom Operators
 Galvan supports Unicode and custom operators:
 > [!WARNING]
@@ -494,3 +518,10 @@ test "Ensure that addition works correctly" {
 }
 ```
 Like 'main', 'test' is not a function but an entry point. Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
+
+## Semicolon Inference
+While Galvan uses semicolons to separate statements, Galvan infers semicolons on newlines when:
+- the next line starts with an alpha-character (or an underscore) as the first non-whitespace character
+- the next line starts with `{`, `(`, `[`, or `'`, `"` as the first non-whitespace character
+
+Regardless of the rules above, Galvan does not infer a semicolon when the current line itself is not a valid statement.

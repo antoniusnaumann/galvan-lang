@@ -10,7 +10,7 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-regex = "1.10.2"
+regex = "1.10.4"
 convert_case = "0.6.0"
 derive_more = "0.99.17"
 
@@ -20,7 +20,7 @@ itertools.workspace = true
 galvan-files.workspace = true
 galvan-ast.workspace = true
 galvan-resolver.workspace = true
-
+galvan-into-ast.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true

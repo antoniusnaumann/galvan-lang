@@ -1,26 +1,10 @@
-/*# AST
-multi(vec![
-    empty_type(inherited(), "Dog").into(),
-    function(
-        inherited(),
-        "bark",
-        params(
-            vec![
-                (Some(Ref.into()), "dog", plain("Dog")),
-            ]),
-        None,
-        empty_body()
-    ).into()
-])
-*/
-
-/*# TRANSPILE
-"
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Dog;
-pub(crate) fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { }
-"
-*/
+//@TRANSPILE
+//"
+//#[derive(Clone, Debug, PartialEq)]
+//pub(crate) struct Dog;
+//pub(crate) fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { }
+//"
+//@end
 type Dog
 
 fn bark(ref dog: Dog) { }

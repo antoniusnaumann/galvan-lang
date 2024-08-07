@@ -1,6 +1,5 @@
 [package]
-name = "galvan-pest"
-description = "Parser for the Galvan language using pest-grammar"
+name = "galvan-parse"
 authors.workspace = true
 edition.workspace = true
 version.workspace = true
@@ -9,10 +8,12 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pest = "2.7.5"
-pest_derive = "2.7.5"
+tree-sitter = "0.22"
+
+tree-sitter-galvan = { path = "../tree-sitter-galvan" }
 
 galvan-files.workspace = true
+thiserror.workspace = true
 
 [features]
 exec = ["galvan-files/exec"]
@@ -21,3 +22,4 @@ exec = ["galvan-files/exec"]
 name = "galvan-parse"
 required-features = ["exec"]
 path = "src/main.rs"
+

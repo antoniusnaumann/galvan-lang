@@ -1,9 +1,5 @@
-/*# AST
-single(struct_type(inherited(), "EmptyStruct", vec![]))
-*/
-
-/*# TRANSPILE
-"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyStruct { }"
-*/
+//@TRANSPILE
+//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyStruct { }"
+//@end
 
 type EmptyStruct {}

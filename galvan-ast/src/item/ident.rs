@@ -1,11 +1,9 @@
 use derive_more::{Display, From};
-use galvan_pest::Rule;
 
-use super::string;
+use crate::{AstNode, Span};
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, From, FromPest, Hash)]
-#[pest_ast(rule(Rule::ident))]
-pub struct Ident(#[pest_ast(outer(with(string)))] String);
+#[derive(Clone, Debug, Display, PartialEq, Eq, From, Hash)]
+pub struct Ident(String);
 
 impl Ident {
     pub fn new(name: impl Into<String>) -> Ident {
@@ -17,17 +15,50 @@ impl Ident {
     }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, Hash, From, FromPest)]
-#[pest_ast(rule(Rule::type_ident))]
-pub struct TypeIdent(#[pest_ast(outer(with(string)))] String);
+impl AstNode for Ident {
+    fn span(&self) -> Span {
+        // TODO  Save a meaningful span in this struct
+        Span::default()
+    }
+
+    fn print(&self, indent: usize) -> String {
+        format!("{}{}", " ".repeat(indent), self.0)
+    }
+}
+
+#[derive(Clone, Debug, Display, PartialEq, Eq, Hash)]
+pub struct TypeIdent(String);
 
 impl TypeIdent {
     pub fn new(name: impl Into<String>) -> TypeIdent {
-        TypeIdent(name.into())
+        let name: String = name.into();
+        TypeIdent(name.trim().to_owned())
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn is_intrinsic(&self) -> bool {
+        self.0.starts_with("__")
+    }
+}
+
+impl From<TypeIdent> for String {
+    fn from(value: TypeIdent) -> Self {
+        value.0
+    }
+}
+
+impl AstNode for TypeIdent {
+    fn span(&self) -> Span {
+        // TODO  Save a meaningful span in this struct
+        Span::default()
+
+    }
+
+    fn print(&self, indent: usize) -> String {
+        self.0.clone()
     }
 }
 

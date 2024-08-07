@@ -8,12 +8,14 @@ license = "MIT"
 galvan-ast = { path = "galvan-ast", version = "0.0.0-dev09" }
 # galvan-core = { path = "galvan-core", version = "0.0.0-dev09" }
 galvan-files = { path = "galvan-files", version = "0.0.0-dev09" }
-galvan-pest = { path = "galvan-pest", version = "0.0.0-dev09" }
 galvan-test-macro = { path = "galvan-test-macro", version = "0.0.0-dev09" }
+galvan-ast-macro = { path = "galvan-ast-macro", version = "0.0.0-dev09"}
 galvan-resolver = { path = "galvan-resolver", version = "0.0.0-dev09" }
+galvan-into-ast = { path = "galvan-into-ast", version = "0.0.0-dev09" }
+galvan-parse = { path = "galvan-parse", version = "0.0.0-dev09" }
 
-thiserror = "1.0.51"
-itertools = "0.12.0"
+thiserror = "1.0.61"
+itertools = "0.13.0"
 
 [package]
 name = "galvan"
@@ -26,8 +28,8 @@ license.workspace = true
 
 [dependencies]
 galvan-transpiler = { path = "galvan-transpiler", version = "0.0.0-dev09" }
-itertools = "0.12.0"
-anyhow = "1.0.79"
+itertools = "0.13.0"
+anyhow = "1.0.86"
 
 [features]
 build = ["galvan-transpiler/exec"]
@@ -37,12 +39,15 @@ build = ["galvan-transpiler/exec"]
 [workspace]
 resolver = "2"
 members = [
+  "galvan-ast-macro",
   "galvan-ast",
+  "galvan-into-ast",
+  "galvan-parse",
   # "galvan-core",
   "galvan-files",
-  "galvan-pest",
   "galvan-resolver",
   "galvan-transpiler",
   "galvan-test-macro",
-  "galvan-test"
+  "galvan-test",
+  "tree-sitter-galvan",
 ]

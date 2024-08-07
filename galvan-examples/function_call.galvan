@@ -4,8 +4,8 @@ fn greet(name: String) {
 }
 
 type Dog {
-    name: String,
-    age: Int,
+    name: String
+    age: Int
 }
 
 // Member functions are also declared top-level but their first parameter is called "self"

@@ -2,6 +2,7 @@ use convert_case::{Case, Casing};
 use derive_more::{Deref, Display, From};
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
+use galvan_into_ast::{AstError, IntoAst, SegmentAst, SourceIntoAst};
 use galvan_resolver::{LookupError, Scope};
 use itertools::Itertools;
 use std::borrow::Cow;
@@ -299,7 +300,7 @@ fn transpile_extension_functions(
     debug_assert_ne!(fns.len(), 0, "Extension functions should not be empty");
     if fns
         .iter()
-        .find(|f| f.signature.visibility != Visibility::Inherited)
+        .find(|f| f.signature.visibility.kind != VisibilityKind::Inherited)
         .is_some()
     {
         todo!("TRANSPILER ERROR: Member functions for types declared outside of galvan module must have default visibility!");
@@ -309,7 +310,7 @@ fn transpile_extension_functions(
     let fn_signatures = fns
         .iter()
         .map(|f| FnSignature {
-            visibility: Visibility::Private,
+            visibility: Visibility::private(),
             ..f.signature.clone()
         })
         .map(|s| s.transpile(ctx, scope))
@@ -364,6 +365,7 @@ fn extension_name(ty: &TypeElement) -> String {
             ),
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
+            TypeElement::Generic(ty) => todo!("Generics are not supported yet!"),
         }
     }
 
@@ -409,7 +411,7 @@ mod macros {
     }
 
     macro_rules! impl_transpile {
-        ($ty:ty, $string:expr, $($field:ident),*$(,)?) => {
+        ($ty:ty, $string:expr, $($field:tt),*$(,)?) => {
             impl crate::Transpile for $ty {
                 fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
                     crate::macros::transpile!(ctx, scope, $string, $(self.$field),*)
