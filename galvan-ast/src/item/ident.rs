@@ -38,6 +38,10 @@ impl TypeIdent {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn is_intrinsic(&self) -> bool {
+        self.0.starts_with("__")
+    }
 }
 
 impl From<TypeIdent> for String {

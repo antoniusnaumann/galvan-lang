@@ -1,9 +1,5 @@
 use galvan_ast::{
-    ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator,
-    DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group,
-    InfixExpression, InfixOperation, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral,
-    OrderedDictionaryTypeItem, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
-    TypeIdent,
+    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group, InfixExpression, InfixOperation, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -80,7 +76,7 @@ impl InferType for Expression {
             ),
             Expression::Literal(literal) => literal.infer_type(scope),
             Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
-            Expression::Postfix(_) => todo!(),
+            Expression::Postfix(postfix) => postfix.infer_type(scope),
             Expression::Infix(operation) => operation.infer_type(scope),
             Expression::Group(Group { inner, span: _span }) => inner.infer_type(scope),
         }
@@ -136,12 +132,30 @@ impl InferType for InfixExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
             InfixExpression::Logical(_) => Some(bool()),
-            InfixExpression::Arithmetic(_) => todo!(),
+            InfixExpression::Arithmetic(e) => e.infer_type(scope),
             InfixExpression::Collection(e) => e.infer_type(scope),
             InfixExpression::Comparison(_) => Some(bool()),
             InfixExpression::Member(e) => e.infer_type(scope),
             InfixExpression::Custom(_) => todo!("Infer type for custom operators!"),
         }
+    }
+}
+
+impl InferType for InfixOperation<ArithmeticOperator> {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        let first = self.lhs.infer_type(scope);
+        let second = self.rhs.infer_type(scope);
+        
+
+        if let (Some(TypeElement::Plain(a)), Some(TypeElement::Plain(b))) = (&first, &second) {
+            if a.ident != b.ident && !a.ident.is_intrinsic() && !b.ident.is_intrinsic() {
+                todo!("TRANSPILER ERROR: Operands are expected to be of the same type, but were: '{:#?}' and '{:#?}'. \nThis will later be relaxed by automatically lifting the more restrictive operand", a, b)
+            }
+        }
+
+        let result = first.or(second);
+
+        result
     }
 }
 
@@ -213,6 +227,36 @@ impl InferType for InfixOperation<MemberOperator> {
                     None
                 }
             }
+        }
+    }
+}
+
+impl InferType for PostfixExpression {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        match self {
+            PostfixExpression::YeetExpression(yeet) => {
+                // TODO: Check if return type is matching
+                match yeet.inner.infer_type(scope) {
+                    Some(inner) => match inner {
+                        TypeElement::Optional(res) => Some(res.some),
+                        TypeElement::Result(res) => Some(res.success),
+                        _ => todo!("TRANSPILER_ERROR: Yeet operator can only be used on result or optional types"),
+                    },
+                    None => None,
+                }
+            },
+            PostfixExpression::AccessExpression(access) => {
+                match access.base.infer_type(scope) {
+                    Some(base) => match base {
+                        TypeElement::Array(array) => Some(array.elements),
+                        TypeElement::Dictionary(dict) => Some(dict.value),
+                        TypeElement::OrderedDictionary(dict) => Some(dict.value),
+                        TypeElement::Set(set) => Some(set.elements),
+                        _ => todo!("TRANSPILER_ERROR: Access operator can only be used on collection types"),
+                    },
+                    None => None,
+                }
+            },
         }
     }
 }
