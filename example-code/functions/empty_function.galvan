@@ -1,9 +1,5 @@
-/*# AST
-single(function(inherited(), "empty", params(vec![]), None, empty_body()))
-*/
-
-/*# TRANSPILE
-"pub(crate) fn empty() { }"
-*/
+//@TRANSPILE
+// "pub(crate) fn empty() { }"
+//@end
 
 fn empty() {}

@@ -1,12 +1,8 @@
-/*# AST
-single(struct_type(public(), "SimpleStruct", vec![struct_member("member", plain("String"))]));
-*/
-
-/*# TRANSPILE
-"#[derive(Clone, Debug, PartialEq)] pub struct SimpleStruct {
-    pub(crate) member: String
-}"
-*/
+//@TRANSPILE
+//"#[derive(Clone, Debug, PartialEq)] pub struct SimpleStruct {
+//    pub(crate) member: String
+//}"
+//@end
 
 pub type SimpleStruct {
     member: String

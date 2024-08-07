@@ -1,9 +1,9 @@
-/*# TRANSPILE
-"
-pub(crate) fn __main__() {
-    let a: ::std::vec::Vec<_> = vec![1, 2, 3];
-}"
-*/
+//@TRANSPILE
+//"
+//pub(crate) fn __main__() {
+//    let a: ::std::vec::Vec<_> = vec![1, 2, 3];
+//}"
+//@end
 
 main {
     let a = [1, 2, 3]

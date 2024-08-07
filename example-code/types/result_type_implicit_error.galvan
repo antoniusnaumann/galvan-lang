@@ -1,9 +1,5 @@
-/*# AST
-single(alias_type(inherited(), "ImplicitError", result(plain("Int"), None)))
-*/
-
-/*# TRANSPILE
-"pub(crate) type ImplicitError = ::galvan::std::FlexResult<i64>;"
-*/
+//@TRANSPILE
+//"pub(crate) type ImplicitError = ::galvan::std::FlexResult<i64>;"
+//@end
 
 type ImplicitError = Int!

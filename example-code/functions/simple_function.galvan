@@ -1,22 +1,6 @@
-/*# AST
-single(
-    function(
-        public(),
-        "add",
-        params(
-            vec![
-                (None, "a", plain("Int")),
-                (None, "b", plain("Int"))
-            ]),
-        Some(plain("Int")),
-        empty_body()
-    )
-)
-*/
-
-/*# TRANSPILE
-"pub fn add(a: i64, b: i64) -> i64 { }"
-*/
+//@TRANSPILE
+//"pub fn add(a: i64, b: i64) -> i64 { }"
+//@end
 
 pub fn add(a: Int, b: Int) -> Int {
     // a + b

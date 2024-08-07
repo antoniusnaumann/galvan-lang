@@ -1,9 +1,5 @@
-/*# AST
-single(alias_type(inherited(), "ExplicitError", result(plain("Int"), Some(plain("String")))))
-*/
-
-/*# TRANSPILE
-"pub(crate) type ExplicitError = Result<i64, String>;"
-*/
+//@TRANSPILE
+//"pub(crate) type ExplicitError = Result<i64, String>;"
+//@end
 
 type ExplicitError = Int!String

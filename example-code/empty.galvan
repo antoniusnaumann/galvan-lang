@@ -1,7 +1,3 @@
-/*# AST
-empty()
-*/
-
-/*# TRANSPILE
-""
-*/
+//@TRANSPILE
+//""
+//@end

@@ -1,5 +1,6 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
+use core::panic;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
@@ -144,7 +145,7 @@ enum TestError {
 }
 
 fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStream, TestError> {
-    let prefix = "/*#";
+    let prefix = "//@";
     let mut lines = vec![];
     let mut iter = test_file.lines();
 
@@ -164,8 +165,8 @@ fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStrea
 
     loop {
         match iter.next() {
-            Some(line) if line.starts_with("*/") => break,
-            Some(line) => lines.push(line),
+            Some(line) if line.starts_with("//@end") => break,
+            Some(line) => lines.push(line.strip_prefix("//").unwrap()),
             None => return Err(TestError::TagNotClosed),
         }
     }

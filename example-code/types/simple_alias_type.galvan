@@ -1,9 +1,5 @@
-/*# AST
-single(alias_type(public(), "AliasType", plain("Int")))
-*/
-
-/*# TRANSPILE
-"pub type AliasType = i64;"
-*/
+//@TRANSPILE
+//"pub type AliasType = i64;"
+//@end
 
 pub type AliasType = Int
