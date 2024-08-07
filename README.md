@@ -55,8 +55,8 @@ Types in Galvan are defined with the `type` keyword.
 ```rust
 /// A struct definition
 pub type Color {
-    r: Int,
-    g: Int,
+    r: Int
+    g: Int
     b: Int
 }
 
@@ -224,7 +224,7 @@ main {
     // Note that constructors use '(' with named arguments
     ref dog = Dog(name: "Bello", age: 5)
     // The `dog` field now points to the same entity as the `dog` variable 
-    let person = Person(name: "Jochen, age: 67, dog: ref dog)
+    let person = Person(name: "Jochen", age: 67, dog: ref dog)
     dog.age += 1
     
     print(person.dog.age) // 6
@@ -359,7 +359,7 @@ fn checked_divide(a: Float, b: Float) -> Float! {
 ```
 
 ### Generics
-In Galvan, type identifiers are always starting with an upper case letter. Using a lower case letter instead introduces a type parameter:
+In Galvan, type identifiers always start with an upper case letter. Using a lower case letter instead introduces a type parameter:
 > [!WARNING]
 > Generics are not implemented yet
 ```rust
@@ -424,6 +424,7 @@ Comparison operators:
 Collection operators:
 - `++`: Concatenation
 - `--`: Removal
+- `**`: Repetition
 - `[]`: Indexing
 - `[:]`: Slicing
 - `in`, `∈`, `∊`: Membership
@@ -454,6 +455,8 @@ main {
 This section defines custom infix `⨁` and prefix `√` operators. 
 Note that no whitespace is allowed between a prefix operator and the operands.
 Infix operators have to be surrounded by whitespace.
+
+Prefix operators generally take precedence over infix operators.
 
 ### Closures
 Closures are defined using the parameter list syntax:
@@ -525,3 +528,4 @@ While Galvan uses semicolons to separate statements, Galvan infers semicolons on
 - the next line starts with `{`, `(`, `[`, or `'`, `"` as the first non-whitespace character
 
 Regardless of the rules above, Galvan does not infer a semicolon when the current line itself is not a valid statement.
+Galvan also infers commas for struct type declarations if a newline is used after each field instead.
