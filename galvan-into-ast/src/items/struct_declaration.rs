@@ -1,6 +1,5 @@
 use galvan_ast::{
-    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember,
-    TupleTypeDecl, TypeElement, TypeIdent, Visibility,
+    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeElement, TypeIdent, Visibility
 };
 use galvan_parse::TreeCursor;
 
@@ -82,7 +81,70 @@ impl ReadCursor for StructTypeMember {
 
 impl ReadCursor for TupleTypeDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!("Implement ast conversion for tuple type")
+        let node = cursor_expect!(cursor, "tuple_struct");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+
+        let visibility = Visibility::read_cursor(cursor, source)?;
+        cursor_expect!(cursor, "type_keyword");
+
+        cursor.goto_next_sibling();
+        let ident = TypeIdent::read_cursor(cursor, source)?;
+
+        cursor.goto_next_sibling();
+        cursor_expect!(cursor, "paren_open");
+
+        cursor.goto_next_sibling();
+        let mut members = vec![];
+        while cursor.kind()? == "tuple_field" {
+            let field = TupleTypeMember::read_cursor(cursor, source)?;
+            members.push(field);
+
+            cursor.goto_next_sibling();
+        }
+
+        cursor_expect!(cursor, "paren_close");
+
+        cursor.goto_parent();
+
+        Ok(TupleTypeDecl {
+            visibility,
+            ident,
+            members,
+            span,
+        })
+    }
+}
+
+impl ReadCursor for TupleTypeMember {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "tuple_field");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+
+        // TODO: Implement field visibility and declaration modifier
+        let visibility = Visibility::read_cursor(cursor, source)?;
+        let decl_modifier = if cursor.kind()? == "declaration_modifier" {
+            let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
+            cursor.goto_next_sibling();
+            modifier
+        } else {
+            None
+        };
+
+
+        cursor.goto_next_sibling();
+        let r#type = TypeElement::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(TupleTypeMember {
+            // decl_modifier,
+            r#type,
+            span,
+        })
     }
 }
 
