@@ -1,5 +1,5 @@
 use galvan_ast::{
-    Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Span, TypeElement, TypeIdent
+    AstNode, Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg, DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Span, TypeElement, TypeIdent
 };
 use galvan_parse::TreeCursor;
 
@@ -15,12 +15,16 @@ impl ReadCursor for FunctionCall {
 
         cursor.goto_next_sibling();
         cursor_expect!(cursor, "paren_open");
-        
+
         cursor.goto_next_sibling();
         let arguments = read_arguments(cursor, source)?;
         cursor.goto_parent();
 
-        Ok(FunctionCall { identifier, arguments, span})
+        Ok(FunctionCall {
+            identifier,
+            arguments,
+            span,
+        })
     }
 }
 
@@ -57,13 +61,12 @@ fn read_arguments(
     source: &str,
 ) -> Result<Vec<FunctionCallArg>, AstError> {
     let mut args = vec![];
-
+    
     while cursor.kind()? == "function_call_arg" {
         args.push(FunctionCallArg::read_cursor(cursor, source)?);
-        cursor.goto_next_sibling();
+        if !cursor.goto_next_sibling() { break; }
     }
-    
-    // println!("args: {}", args.len());
+
     Ok(args)
 }
 
@@ -73,13 +76,15 @@ impl ReadCursor for FunctionCallArg {
         let span = Span::from_node(node);
 
         cursor.goto_first_child();
-        let modifier = if cursor.kind()? == "declaration_modifier" { 
+        let modifier = if cursor.kind()? == "declaration_modifier" {
             let decl_mod = Some(DeclModifier::read_cursor(cursor, source)?);
             cursor.goto_next_sibling();
-                
-            decl_mod
-        } else { None };
 
+            decl_mod
+        } else {
+            None
+        };
+        
         let expression = Expression::read_cursor(cursor, source)?;
         cursor.goto_parent();
 
@@ -109,12 +114,36 @@ impl ReadCursor for Closure {
         cursor_expect!(cursor, "pipe");
         cursor.goto_next_sibling();
 
-        let body = Body::read_cursor(cursor, source)?;
-        let block_span = body.span.clone();
-        let block = Block { body, span: block_span };
+        let block = if cursor.kind()? == "expression" {
+            let expression = Expression::read_cursor(cursor, source)?;
+            let span = expression.span();
+            let body = Body { statements: vec![expression.into()], span };
+
+            Block {
+                body,
+                span,
+            }
+        } else if cursor.kind()? == "body" {
+            let body = Body::read_cursor(cursor, source)?;
+            let span = body.span;
+
+            Block {
+                body,
+                span,
+            }
+        } else {
+            unreachable!(
+                "Expected 'body' or 'expression' in closure but got: {}",
+                cursor.kind().unwrap()
+            )
+        };
 
         cursor.goto_parent();
-        Ok(Closure { arguments, block, span })
+        Ok(Closure {
+            arguments,
+            block,
+            span,
+        })
     }
 }
 
@@ -126,11 +155,13 @@ impl ReadCursor for ClosureArgument {
         cursor.goto_first_child();
         let ident = Ident::read_cursor(cursor, source)?;
         cursor.goto_next_sibling();
-        
+
         let ty = if cursor.kind()? == "colon" {
             cursor.goto_next_sibling();
             Some(TypeElement::read_cursor(cursor, source)?)
-        } else { None };
+        } else {
+            None
+        };
 
         cursor.goto_parent();
         Ok(ClosureArgument { ident, ty, span })
