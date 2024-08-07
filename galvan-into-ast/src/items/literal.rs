@@ -46,7 +46,7 @@ impl ReadCursor for NumberLiteral {
         let node = cursor_expect!(cursor, "number_literal");
         let span = Span::from_node(node);
 
-        let value = source[node.start_byte()..=node.end_byte()].to_owned();
+        let value = source[node.start_byte()..node.end_byte()].to_owned();
 
         Ok(NumberLiteral { value, span })
     }
@@ -57,7 +57,7 @@ impl ReadCursor for StringLiteral {
         let node = cursor_expect!(cursor, "string_literal");
         let span = Span::from_node(node);
 
-        let value = source[node.start_byte()..=node.end_byte()].to_owned();
+        let value = source[node.start_byte()..node.end_byte()].to_owned();
 
         Ok(Self { value, span })
     }
