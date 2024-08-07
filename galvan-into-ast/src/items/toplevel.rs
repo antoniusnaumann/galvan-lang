@@ -1,7 +1,7 @@
 use galvan_ast::{
-    AliasTypeDecl, Body, EmptyTypeDecl, FnDecl, FnSignature, Ident, MainDecl, ParamList, RootItem,
-    Span, Statement, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement,
-    Visibility,
+    AliasTypeDecl, Body, DeclModifier, EmptyTypeDecl, FnDecl, FnSignature, Ident, MainDecl, Param,
+    ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl,
+    TypeDecl, TypeElement, Visibility,
 };
 use galvan_parse::TreeCursor;
 
@@ -170,6 +170,49 @@ impl ReadCursor for FnSignature {
 
 impl ReadCursor for ParamList {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!("Convert ParamList to Rust")
+        let node = cursor_expect!(cursor, "param_list");
+        let span = Span::from_node(node);
+        cursor.goto_first_child();
+
+        cursor_expect!(cursor, "paren_open");
+        cursor.goto_next_sibling();
+        let mut params = Vec::new();
+        while cursor.kind()? != "paren_close" {
+            params.push(Param::read_cursor(cursor, source)?);
+            cursor.goto_next_sibling();
+        }
+
+        cursor.goto_parent();
+        Ok(ParamList { params, span })
+    }
+}
+
+impl ReadCursor for Param {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "param");
+        let span = Span::from_node(node);
+        cursor.goto_first_child();
+
+        let decl_modifier = if cursor.kind()? == "declaration_modifier" {
+            Some(DeclModifier::read_cursor(cursor, source)?)
+        } else {
+            None
+        };
+
+        let identifier = Ident::read_cursor(cursor, source)?;
+        cursor.goto_next_sibling();
+
+        cursor_expect!(cursor, "colon");
+        cursor.goto_next_sibling();
+
+        let param_type = TypeElement::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+        Ok(Param {
+            decl_modifier,
+            identifier,
+            param_type,
+            span,
+        })
     }
 }
