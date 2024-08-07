@@ -7,30 +7,30 @@ test "If clause" {
 }
 
 test "If expression" {
-    let some = if 6 == 6 { "Something" };
+    let some = if 6 == 6 { "Something" }
 
     // TODO: Auto-unwrap optionals in comparisons to make this work
     // assert some == "Something"
 
-    let nothing = if 6 == 7 { "Something" };
+    let nothing = if 6 == 7 { "Something" }
 
     // TODO: Introduce none keyword
     // assert nothing == none
 }
 
 test "If-Else expression" {
-    let result = if 6 == 7 { "Correct" } else { "Wrong" };
+    let result = if 6 == 7 { "Correct" } else { "Wrong" }
     assert result == "Wrong"
 }
 
 test "Try expression" {
-    let optional = if true { 6 };
+    let optional = if true { 6 }
 
     let result = try optional |value| {
         value + 1
     } else {
         panic "Optional was none"
-    };
+    }
 
     assert result == 7
 }

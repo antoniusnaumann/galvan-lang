@@ -1,5 +1,5 @@
 type Dog {
-    name: String,
+    name: String
     age: Int
 }
 

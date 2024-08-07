@@ -3,7 +3,7 @@ fn shouted(self: String) -> String {
 }
 
 test "Call extension function on external type" {
-    let name = "Rust";
+    let name = "Rust"
     assert name.shouted() == "RUST!"
 }
 
@@ -15,6 +15,6 @@ fn counted(self: [Int], value: Int) -> USize {
 }
 
 test "Call extension function on complex type" {
-    let numbers = [1, 2, 3, 2, 1];
+    let numbers = [1, 2, 3, 2, 1]
     assert numbers.counted(2) == 2
 }
