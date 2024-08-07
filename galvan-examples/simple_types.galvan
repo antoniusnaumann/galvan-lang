@@ -5,22 +5,14 @@ pub type Struct {
   b: TypeB
 }
 
-/*
-A block comment
-*/
-
 pub type OtherStruct {
   member: TypeC
-  /** A struct member */
   other_member: TypeD
 }
 
 /// A type alias for Struct
 type Alias = Struct
 
-/**
- * A tuple type
- */
 type Tuple(TypeA, TypeB)
 
 
