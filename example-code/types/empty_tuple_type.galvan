@@ -1,5 +1,5 @@
 //@ TRANSPILE
-//#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyTuple();"
+//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyTuple();"
 //@end
 
 type EmptyTuple()

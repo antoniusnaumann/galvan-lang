@@ -2,7 +2,7 @@
 //"#[derive(Clone, Debug, PartialEq)] pub(crate) struct WithRef {
 //    pub(crate) ref_member: std::sync::Arc<std::sync::Mutex<String>>
 //}"
-//@
+//@end
 
 
 type WithRef {

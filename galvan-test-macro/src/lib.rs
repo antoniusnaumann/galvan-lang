@@ -39,7 +39,7 @@ pub fn generate_code_tests(input: proc_macro::TokenStream) -> proc_macro::TokenS
 
     let tests = walkdir::WalkDir::new("example-code")
         .into_iter()
-        .map(|entry| entry.unwrap())
+        .map(|entry| entry.expect("entry to exist"))
         .filter(|entry| entry.file_type().is_file())
         .filter(|entry| !entry.file_name().to_string_lossy().starts_with('_'))
         .map(|entry| entry.path().to_path_buf())
@@ -106,7 +106,7 @@ fn generate_test(path: PathBuf, macro_input: &MacroInput) -> TokenStream {
 
     let Ok(expected_struct) = expected_result(&test_file, tag).map_err(|e| match e {
         TestError::TagNotClosed => panic!("Tag not closed in test file!"),
-        TestError::InvalidRustCode => panic!("Invalid Rust code in test file!"),
+        TestError::InvalidRustCode => panic!("Invalid Rust code in test file '{}'!", path.to_string_lossy()),
         TestError::TagNotFound => e,
     }) else {
         return quote! {};
@@ -166,7 +166,7 @@ fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStrea
     loop {
         match iter.next() {
             Some(line) if line.starts_with("//@end") => break,
-            Some(line) => lines.push(line.strip_prefix("//").unwrap()),
+            Some(line) => lines.push(line.strip_prefix("//").expect(&format!("line to start with '//': {line} in \n{test_file}"))),
             None => return Err(TestError::TagNotClosed),
         }
     }
