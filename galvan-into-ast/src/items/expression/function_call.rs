@@ -72,6 +72,7 @@ pub fn read_trailing_closure_call(
         span: closure_span,
     });
 
+    cursor.goto_parent();
     Ok(FunctionCall {
         identifier,
         arguments,

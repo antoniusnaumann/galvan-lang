@@ -58,7 +58,7 @@ impl <T> ReadCursor for InfixOperation<T> where T: InfixOperator + ReadCursor {
 }
 
 impl ReadCursor for MemberOperator {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         let op = match cursor.kind()? {
             "member_call_operator" => Self::Dot,
             "safe_call_operator" => Self::SafeCall,
@@ -70,7 +70,7 @@ impl ReadCursor for MemberOperator {
 }
 
 impl ReadCursor for LogicalOperator {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         let op = match cursor.kind()? {
             "and" => Self::And,
             "or" => Self::Or,

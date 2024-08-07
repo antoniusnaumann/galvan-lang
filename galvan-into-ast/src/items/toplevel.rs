@@ -194,7 +194,9 @@ impl ReadCursor for Param {
         cursor.goto_first_child();
 
         let decl_modifier = if cursor.kind()? == "declaration_modifier" {
-            Some(DeclModifier::read_cursor(cursor, source)?)
+            let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
+            cursor.goto_next_sibling();
+            modifier
         } else {
             None
         };
