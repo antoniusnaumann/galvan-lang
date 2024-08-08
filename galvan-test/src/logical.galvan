@@ -19,5 +19,5 @@ test "Logical OR" {
     let a = false
     let b = false
 
-    assert(a or b == false)
+    assert a or b == false
 }
