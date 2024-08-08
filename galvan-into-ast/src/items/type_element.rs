@@ -12,7 +12,7 @@ impl ReadCursor for TypeElement {
         let type_item = cursor_expect!(cursor, "type_item");
         let span = Span::from_node(type_item);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let inner = match cursor.kind()? {
             "result_type" => {
@@ -50,13 +50,13 @@ impl ReadCursor for ResultTypeItem {
         let node = cursor_expect!(cursor, "result_type");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let success = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "exclamation_mark");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let error = if cursor.kind()? == "type_item" {
             Some(TypeElement::read_cursor(cursor, source)?)
         } else {
@@ -77,10 +77,10 @@ impl ReadCursor for OptionalTypeItem {
         let optional = cursor_expect!(cursor, "optional_type");
         let span = Span::from_node(optional);
 
-        cursor.goto_first_child();
+        cursor.child();
         let some = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _question_mark = cursor_expect!(cursor, "question_mark");
 
         cursor.goto_parent();
@@ -94,13 +94,13 @@ impl ReadCursor for ArrayTypeItem {
         let array = cursor_expect!(cursor, "array_type");
         let span = Span::from_node(array);
 
-        cursor.goto_first_child();
+        cursor.child();
         let _bracket = cursor_expect!(cursor, "bracket_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let inner = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _bracket = cursor_expect!(cursor, "bracket_close");
 
         cursor.goto_parent();
@@ -117,19 +117,19 @@ impl ReadCursor for DictionaryTypeItem {
         let dict = cursor_expect!(cursor, "dict_type");
         let span = Span::from_node(dict);
 
-        cursor.goto_first_child();
+        cursor.child();
         let _brace = cursor_expect!(cursor, "brace_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let key = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _colon = cursor_expect!(cursor, "colon");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let value = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _brace = cursor_expect!(cursor, "brace_close");
 
         cursor.goto_parent();
@@ -143,19 +143,19 @@ impl ReadCursor for OrderedDictionaryTypeItem {
         let dict = cursor_expect!(cursor, "ordered_dict_type");
         let span = Span::from_node(dict);
 
-        cursor.goto_first_child();
+        cursor.child();
         let _bracket = cursor_expect!(cursor, "bracket_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let key = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _colon = cursor_expect!(cursor, "colon");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let value = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _bracket = cursor_expect!(cursor, "bracket_close");
 
         cursor.goto_parent();
@@ -169,13 +169,13 @@ impl ReadCursor for SetTypeItem {
         let set = cursor_expect!(cursor, "set_type");
         let span = Span::from_node(set);
 
-        cursor.goto_first_child();
+        cursor.child();
         let _brace = cursor_expect!(cursor, "brace_close");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let inner = TypeElement::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let _brace = cursor_expect!(cursor, "brace_close");
 
         cursor.goto_parent();
@@ -204,7 +204,7 @@ impl ReadCursor for BasicTypeItem {
         let type_item = cursor_expect!(cursor, "basic_type");
         let span = Span::from_node(type_item);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let ident = TypeIdent::read_cursor(cursor, source)?;
 

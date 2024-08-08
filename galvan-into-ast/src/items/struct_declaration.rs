@@ -11,24 +11,24 @@ impl ReadCursor for StructTypeDecl {
         let struct_decl = cursor_expect!(cursor, "struct");
         let span = Span::from_node(struct_decl);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let visibility = Visibility::read_cursor(cursor, source)?;
         cursor_expect!(cursor, "type_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let ident = TypeIdent::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "brace_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut members = vec![];
         while cursor.kind()? == "struct_field" {
             let field = StructTypeMember::read_cursor(cursor, source)?;
             members.push(field);
 
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "brace_close");
@@ -49,12 +49,12 @@ impl ReadCursor for StructTypeMember {
         let struct_field = cursor_expect!(cursor, "struct_field");
         let span = Span::from_node(struct_field);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let visibility = Visibility::read_cursor(cursor, source)?;
         let decl_modifier = if cursor.kind()? == "declaration_modifier" {
             let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
             modifier
         } else {
             None
@@ -62,10 +62,10 @@ impl ReadCursor for StructTypeMember {
 
         let ident = Ident::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "colon");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let r#type = TypeElement::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
@@ -84,24 +84,24 @@ impl ReadCursor for TupleTypeDecl {
         let node = cursor_expect!(cursor, "tuple_struct");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let visibility = Visibility::read_cursor(cursor, source)?;
         cursor_expect!(cursor, "type_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let ident = TypeIdent::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "paren_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut members = vec![];
         while cursor.kind()? == "tuple_field" {
             let field = TupleTypeMember::read_cursor(cursor, source)?;
             members.push(field);
 
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "paren_close");
@@ -122,20 +122,20 @@ impl ReadCursor for TupleTypeMember {
         let node = cursor_expect!(cursor, "tuple_field");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         // TODO: Implement field visibility and declaration modifier
         let visibility = Visibility::read_cursor(cursor, source)?;
         let decl_modifier = if cursor.kind()? == "declaration_modifier" {
             let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
             modifier
         } else {
             None
         };
 
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let r#type = TypeElement::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
@@ -153,19 +153,19 @@ impl ReadCursor for AliasTypeDecl {
         let alias = cursor_expect!(cursor, "alias");
         let span = Span::from_node(alias);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let visibility = Visibility::read_cursor(cursor, source)?;
         cursor_expect!(cursor, "type_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
 
         let ident = TypeIdent::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
 
         cursor_expect!(cursor, "assign");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let r#type = TypeElement::read_cursor(cursor, source)?;
         cursor.goto_parent();
 
@@ -183,10 +183,10 @@ impl ReadCursor for EmptyTypeDecl {
         let empty_type = cursor_expect!(cursor, "empty_struct");
         let span = Span::from_node(empty_type);
 
-        cursor.goto_first_child();
+        cursor.child();
         let visibility = Visibility::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let ident = TypeIdent::read_cursor(cursor, source)?;
 
         cursor.goto_parent();

@@ -44,11 +44,11 @@ impl <T> ReadCursor for InfixOperation<T> where T: InfixOperator + ReadCursor {
         let node = cursor.curr()?;
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let lhs = Expression::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
         let operator = T::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
         let rhs = Expression::read_cursor(cursor, source)?;
         cursor.goto_parent();
 

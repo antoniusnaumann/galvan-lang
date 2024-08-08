@@ -11,13 +11,13 @@ impl ReadCursor for FunctionCall {
         let node = cursor_expect!(cursor, "function_call");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let identifier = Ident::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "paren_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let arguments = read_arguments(cursor, source)?;
         cursor.goto_parent();
 
@@ -36,20 +36,20 @@ pub fn read_trailing_closure_call(
     let node = cursor_expect!(cursor, "trailing_closure_expression");
     let span = Span::from_node(node);
 
-    cursor.goto_first_child();
+    cursor.child();
     let identifier = Ident::read_cursor(cursor, source)?;
 
-    cursor.goto_next_sibling();
+    cursor.next();
     let mut arguments = read_arguments(cursor, source)?;
 
     let mut closure_arguments = Vec::new();
     if cursor.kind()? == "pipe" {
-        cursor.goto_next_sibling();
+        cursor.next();
         while cursor.kind()? != "pipe" {
             closure_arguments.push(ClosureArgument::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
-        cursor.goto_next_sibling();
+        cursor.next();
     }
 
     let body = Body::read_cursor(cursor, source)?;
@@ -87,9 +87,9 @@ pub fn read_free_function_call(
     let node = cursor_expect!(cursor, "free_function");
     let span = Span::from_node(node);
 
-    cursor.goto_first_child();
+    cursor.child();
     let identifier = Ident::read_cursor(cursor, source)?;
-    cursor.goto_next_sibling();
+    cursor.next();
     let arguments = read_arguments(cursor, source)?;
     cursor.goto_parent();
 
@@ -109,7 +109,7 @@ fn read_arguments(
 
     while cursor.kind()? == "function_call_arg" {
         args.push(FunctionCallArg::read_cursor(cursor, source)?);
-        if !cursor.goto_next_sibling() {
+        if !cursor.next() {
             break;
         }
     }
@@ -122,10 +122,10 @@ impl ReadCursor for FunctionCallArg {
         let node = cursor_expect!(cursor, "function_call_arg");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let modifier = if cursor.kind()? == "declaration_modifier" {
             let decl_mod = Some(DeclModifier::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
 
             decl_mod
         } else {
@@ -149,17 +149,17 @@ impl ReadCursor for Closure {
         let node = cursor_expect!(cursor, "closure");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "pipe");
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut arguments = Vec::new();
         while cursor.kind()? == "closure_argument" {
             arguments.push(ClosureArgument::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "pipe");
-        cursor.goto_next_sibling();
+        cursor.next();
 
         let block = if cursor.kind()? == "expression" {
             let expression = Expression::read_cursor(cursor, source)?;
@@ -196,12 +196,12 @@ impl ReadCursor for ClosureArgument {
         let node = cursor_expect!(cursor, "closure_argument");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let ident = Ident::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
 
         let ty = if cursor.kind()? == "colon" {
-            cursor.goto_next_sibling();
+            cursor.next();
             Some(TypeElement::read_cursor(cursor, source)?)
         } else {
             None
@@ -217,18 +217,18 @@ impl ReadCursor for ConstructorCall {
         let node = cursor_expect!(cursor, "constructor_call");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let identifier = TypeIdent::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "paren_open");
 
         let mut arguments = vec![];
-        cursor.goto_next_sibling();
+        cursor.next();
         while cursor.kind()? != "paren_close" {
             let arg = ConstructorCallArg::read_cursor(cursor, source)?;
             arguments.push(arg);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor.goto_parent();
@@ -247,13 +247,13 @@ impl ReadCursor for ConstructorCallArg {
         let node = cursor_expect!(cursor, "constructor_call_arg");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let ident = Ident::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "colon");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let expression = Expression::read_cursor(cursor, source)?;
 
         cursor.goto_parent();

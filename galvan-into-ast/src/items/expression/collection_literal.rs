@@ -10,7 +10,7 @@ impl ReadCursor for CollectionLiteral {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         cursor_expect!(cursor, "collection_literal");
 
-        cursor.goto_first_child();
+        cursor.child();
         let inner = match cursor.kind()? {
             "array_literal" => ArrayLiteral::read_cursor(cursor, source)?.into(),
             "set_literal" => SetLiteral::read_cursor(cursor, source)?.into(),
@@ -29,14 +29,14 @@ impl ReadCursor for ArrayLiteral {
         let node = cursor_expect!(cursor, "array_literal");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "bracket_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut elements = Vec::new();
         while cursor.kind()? == "expression" {
             elements.push(Expression::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "bracket_close");
@@ -51,14 +51,14 @@ impl ReadCursor for SetLiteral {
         let node = cursor_expect!(cursor, "set_literal");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "brace_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut elements = Vec::new();
         while cursor.kind()? == "expression" {
             elements.push(Expression::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "brace_close");
@@ -73,14 +73,14 @@ impl ReadCursor for OrderedDictLiteral {
         let node = cursor_expect!(cursor, "ordered_dict_literal");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "bracket_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut elements = Vec::new();
         while cursor.kind()? == "dict_element" {
             elements.push(DictLiteralElement::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "bracket_open");
@@ -96,14 +96,14 @@ impl ReadCursor for DictLiteral {
         let node = cursor_expect!(cursor, "dict_literal");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "brace_open");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut elements = Vec::new();
         while cursor.kind()? == "dict_element" {
             elements.push(DictLiteralElement::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "brace_close");
@@ -118,10 +118,10 @@ impl ReadCursor for DictLiteralElement {
         let node = cursor_expect!(cursor, "dict_element");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let key = Expression::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let value = Expression::read_cursor(cursor, source)?;
 
         Ok(DictLiteralElement { key, value, span })

@@ -12,7 +12,7 @@ impl ReadCursor for Statement {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         cursor_expect!(cursor, "statement");
 
-        cursor.goto_first_child();
+        cursor.child();
         let inner = match cursor.kind()? {
             "assignment" => Statement::Assignment(Assignment::read_cursor(cursor, source)?),
             "declaration" => Statement::Declaration(Declaration::read_cursor(cursor, source)?),
@@ -33,18 +33,18 @@ impl ReadCursor for Declaration {
         let node = cursor_expect!(cursor, "declaration");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let decl_modifier = DeclModifier::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
         let identifier = Ident::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
 
         let type_annotation = match cursor.kind()? {
             "colon" => {
-                cursor.goto_next_sibling();
+                cursor.next();
                 let elem = Some(TypeElement::read_cursor(cursor, source)?);
-                cursor.goto_next_sibling();
+                cursor.next();
                 elem
             }
             _ => None,
@@ -52,9 +52,9 @@ impl ReadCursor for Declaration {
 
         let assignment = match cursor.kind()? {
             "assign" => {
-                cursor.goto_next_sibling();
+                cursor.next();
                 let expr = Some(Expression::read_cursor(cursor, source)?);
-                cursor.goto_next_sibling();
+                cursor.next();
                 expr
             }
             _ => None,
@@ -79,13 +79,13 @@ impl ReadCursor for Assignment {
         let node = cursor_expect!(cursor, "assignment");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let lhs = Expression::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let operator = AssignmentOperator::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let rhs = Expression::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
@@ -119,7 +119,7 @@ impl ReadCursor for Expression {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         cursor_expect!(cursor, "expression");
 
-        cursor.goto_first_child();
+        cursor.child();
 
         let inner: Expression = match cursor.kind()? {
             "else_expression" => ElseExpression::read_cursor(cursor, source)?.into(),

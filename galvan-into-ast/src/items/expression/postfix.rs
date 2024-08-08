@@ -10,23 +10,23 @@ impl ReadCursor for PostfixExpression {
         let node = cursor_expect!(cursor, "postfix_expression");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let inner = Expression::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "postfix_operator");
 
-        cursor.goto_first_child();
+        cursor.child();
         let res = match cursor.kind()? {
             "yeet_operator" => YeetExpression { inner, span }.into(),
             "access_operator" => {
-                cursor.goto_first_child();
+                cursor.child();
                 cursor_expect!(cursor, "bracket_open");
 
-                cursor.goto_next_sibling();
+                cursor.next();
                 let index = Expression::read_cursor(cursor, source)?;
 
-                cursor.goto_next_sibling();
+                cursor.next();
                 cursor_expect!(cursor, "bracket_close");
 
                 cursor.goto_parent();
@@ -51,13 +51,13 @@ impl ReadCursor for ElseExpression {
         let node = cursor_expect!(cursor, "else_expression");
         let span = Span::from_node(node);
         
-        cursor.goto_first_child();
+        cursor.child();
         let receiver = Expression::read_cursor(cursor, source)?.into();
 
-        cursor.goto_next_sibling();
+        cursor.next();
         cursor_expect!(cursor, "else_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let body = Body::read_cursor(cursor, source)?;
         let body_span = body.span;
         let block = Block { body, span: body_span };

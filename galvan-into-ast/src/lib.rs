@@ -3,6 +3,7 @@ use galvan_files::Source;
 use galvan_parse::*;
 
 mod result;
+use result::CursorUtil;
 pub use result::{AstError, AstResult};
 
 mod modifiers;
@@ -42,14 +43,12 @@ impl IntoAst for ParseTree {
             source,
         };
 
-        if cursor.goto_first_child() {
-            let node = cursor.node();
+        if cursor.child() {
             let item = RootItem::read_cursor(&mut cursor, &ast.source)?;
 
             ast.toplevel.push(item);
 
-            while cursor.goto_next_sibling() {
-                let node = cursor.node();
+            while cursor.next() {
                 let item = RootItem::read_cursor(&mut cursor, &ast.source)?;
 
                 ast.toplevel.push(item);

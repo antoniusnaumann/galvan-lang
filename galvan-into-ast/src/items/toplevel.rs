@@ -25,13 +25,13 @@ impl ReadCursor for MainDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let main = cursor_expect!(cursor, "main");
         let span = Span::from_node(main);
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "main_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let body = Body::read_cursor(cursor, source)?;
 
-        assert!(!cursor.goto_next_sibling(), "Unexpected token in main");
+        assert!(!cursor.next(), "Unexpected token in main");
 
         cursor.goto_parent();
 
@@ -43,19 +43,19 @@ impl ReadCursor for TestDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let test = cursor_expect!(cursor, "test");
         let span = Span::from_node(test);
-        cursor.goto_first_child();
+        cursor.child();
         cursor_expect!(cursor, "test_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let name = if cursor.kind()? == "string_literal" {
             let lit = Some(StringLiteral::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
             lit
         } else {
             None
         };
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let body = Body::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
@@ -67,7 +67,7 @@ impl ReadCursor for TestDecl {
 impl ReadCursor for TypeDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let ty = cursor_expect!(cursor, "type_declaration");
-        cursor.goto_first_child();
+        cursor.child();
 
         // TODO  Parse type declaration variatns
         let decl = match cursor.kind()? {
@@ -89,11 +89,11 @@ impl ReadCursor for FnDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let function = cursor_expect!(cursor, "function");
         let span = Span::from_node(function);
-        cursor.goto_first_child();
+        cursor.child();
 
         let signature = FnSignature::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let body = Body::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
@@ -110,16 +110,16 @@ impl ReadCursor for Body {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let body = cursor_expect!(cursor, "body");
         let span = Span::from_node(body);
-        cursor.goto_first_child();
+        cursor.child();
 
         cursor_expect!(cursor, "brace_open");
-        cursor.goto_next_sibling();
+        cursor.next();
 
         let mut statements = vec![];
         while cursor.kind()? == "statement" {
             let stmt = Statement::read_cursor(cursor, source)?;
             statements.push(stmt);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor_expect!(cursor, "brace_close");
@@ -133,23 +133,23 @@ impl ReadCursor for FnSignature {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let signature = cursor_expect!(cursor, "fn_signature");
         let span = Span::from_node(signature);
-        cursor.goto_first_child();
+        cursor.child();
 
         let visibility = Visibility::read_cursor(cursor, source)?;
 
         cursor_expect!(cursor, "fn_keyword");
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let identifier = Ident::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let parameters = ParamList::read_cursor(cursor, source)?;
 
-        cursor.goto_next_sibling();
+        cursor.next();
         let return_type = if cursor.kind()? == "return_type" {
-            cursor.goto_first_child();
+            cursor.child();
             cursor_expect!(cursor, "single_arrow");
-            cursor.goto_next_sibling();
+            cursor.next();
             let ty = Some(TypeElement::read_cursor(cursor, source)?);
             cursor.goto_parent();
             ty
@@ -173,14 +173,14 @@ impl ReadCursor for ParamList {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let node = cursor_expect!(cursor, "param_list");
         let span = Span::from_node(node);
-        cursor.goto_first_child();
+        cursor.child();
 
         cursor_expect!(cursor, "paren_open");
-        cursor.goto_next_sibling();
+        cursor.next();
         let mut params = Vec::new();
         while cursor.kind()? != "paren_close" {
             params.push(Param::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
         }
 
         cursor.goto_parent();
@@ -192,21 +192,21 @@ impl ReadCursor for Param {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let node = cursor_expect!(cursor, "param");
         let span = Span::from_node(node);
-        cursor.goto_first_child();
+        cursor.child();
 
         let decl_modifier = if cursor.kind()? == "declaration_modifier" {
             let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
-            cursor.goto_next_sibling();
+            cursor.next();
             modifier
         } else {
             None
         };
 
         let identifier = Ident::read_cursor(cursor, source)?;
-        cursor.goto_next_sibling();
+        cursor.next();
 
         cursor_expect!(cursor, "colon");
-        cursor.goto_next_sibling();
+        cursor.next();
 
         let param_type = TypeElement::read_cursor(cursor, source)?;
 

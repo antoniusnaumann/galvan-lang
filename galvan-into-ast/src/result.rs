@@ -36,6 +36,10 @@ impl TreeSitterError for Node<'_> {
 pub trait CursorUtil {
     fn kind(&self) -> Result<&str, AstError>;
     fn curr(&self) -> Result<Node<'_>, AstError>;
+    /// Goes to the next sibling, skipping comments if possible
+    fn next(&mut self) -> bool;
+    /// Goes to the first child, skipping comments if possible
+    fn child(&mut self) -> bool;
 }
 
 impl CursorUtil for TreeCursor<'_> {
@@ -45,5 +49,27 @@ impl CursorUtil for TreeCursor<'_> {
 
     fn curr(&self) -> Result<Node<'_>, AstError> {
         Ok(self.node().err()?)
+    }
+
+    fn next(&mut self) -> bool {
+        let mut res = self.goto_next_sibling();
+
+        while let Ok("comment") = self.kind() {
+            if !res { break; }
+            res = self.goto_next_sibling();
+        }
+
+        res
+    }
+
+    fn child(&mut self) -> bool {
+        let mut res = self.goto_first_child();
+
+        while let Ok("comment") = self.kind() {
+            if !res { break; }
+            res = self.goto_next_sibling();
+        }
+
+        res
     }
 }

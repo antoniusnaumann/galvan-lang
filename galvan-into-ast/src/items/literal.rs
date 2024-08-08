@@ -10,7 +10,7 @@ impl ReadCursor for Literal {
         let node = cursor_expect!(cursor, "literal");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let inner = match cursor.kind()? {
             "none_keyword" => Literal::NoneLiteral(NoneLiteral(span)),
             "boolean_literal" => BooleanLiteral::read_cursor(cursor, source)?.into(),
@@ -29,7 +29,7 @@ impl ReadCursor for BooleanLiteral {
         let node = cursor_expect!(cursor, "boolean_literal");
         let span = Span::from_node(node);
 
-        cursor.goto_first_child();
+        cursor.child();
         let lit = match cursor.kind()? {
             "true_keyword" => BooleanLiteral { value: true, span },
             "false_keyword" => BooleanLiteral { value: false, span },
