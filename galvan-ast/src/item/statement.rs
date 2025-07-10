@@ -19,7 +19,7 @@ pub struct Block {
 
 #[type_union]
 #[derive(Debug, PartialEq, Eq, PrintAst)]
-pub type Statement = Assignment + Declaration + Expression; // + Block;
+pub type Statement = Assignment + Declaration + Expression + Return; // + Block;
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct Declaration {
@@ -27,6 +27,13 @@ pub struct Declaration {
     pub identifier: Ident,
     pub type_annotation: Option<TypeElement>,
     pub assignment: Option<Expression>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct Return {
+    pub expression: Expression,
+    pub is_explicit: bool,
     pub span: Span,
 }
 

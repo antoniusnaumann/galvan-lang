@@ -1,11 +1,13 @@
 use std::borrow::Borrow;
 
+use crate::cast::cast;
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership, PostfixExpression, Statement, TypeElement
+    DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership, PostfixExpression,
+    Return, Statement, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -31,7 +33,7 @@ impl Transpile for Body {
     }
 }
 
-impl_transpile_variants!(Statement; Assignment, Expression, Declaration /*, Block */);
+impl_transpile_variants!(Statement; Assignment, Expression, Declaration, Return /*, Block */);
 
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -94,6 +96,21 @@ impl Transpile for Declaration {
     }
 }
 
+impl Transpile for Return {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let prefix = if self.is_explicit { "return " } else { "" };
+
+        transpile!(
+            ctx,
+            scope,
+            "{prefix}{}",
+            cast(&self.expression, &scope.return_type, scope)
+                .as_ref()
+                .unwrap_or(&self.expression)
+        )
+    }
+}
+
 macro_rules! match_ident {
     ($p:pat) => {
         Expression::Ident($p)
@@ -110,14 +127,12 @@ fn transpile_assignment_expression(
         match_ident!(ident) => {
             transpile!(ctx, scope, "{}.to_owned()", ident)
         }
-        Expression::Infix(infix) => {
-            match infix.borrow() {
-                InfixExpression::Member(access) if access.is_field() => {
-                    transpile!(ctx, scope, "{}.to_owned()", access)
-                }
-                expr => expr.transpile(ctx, scope),
+        Expression::Infix(infix) => match infix.borrow() {
+            InfixExpression::Member(access) if access.is_field() => {
+                transpile!(ctx, scope, "{}.to_owned()", access)
             }
-        }
+            expr => expr.transpile(ctx, scope),
+        },
         expr => expr.transpile(ctx, scope),
     }
 }

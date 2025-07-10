@@ -21,7 +21,11 @@ impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let ResultTypeItem { success, error, span: _span } = self;
+        let ResultTypeItem {
+            success,
+            error,
+            span: _span,
+        } = self;
         if let Some(error) = error {
             transpile!(ctx, scope, "Result<{}, {}>", success, error)
         } else {
@@ -36,6 +40,8 @@ impl Transpile for GenericTypeItem {
     }
 }
 
+impl_transpile!(NeverTypeItem, "!",);
+
 impl_transpile_variants! { TypeElement;
     Plain
     Array
@@ -46,4 +52,5 @@ impl_transpile_variants! { TypeElement;
     Optional
     Result
     Generic
+    Never
 }

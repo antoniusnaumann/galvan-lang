@@ -1,5 +1,9 @@
 use galvan_ast::{
-    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral, CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression, Expression, Group, InfixExpression, InfixOperation, Literal, MemberOperator, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent
+    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
+    CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
+    Expression, Group, InfixExpression, InfixOperation, Literal, MemberOperator, NeverTypeItem,
+    OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem, PostfixExpression, SetLiteral,
+    SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -49,7 +53,13 @@ impl InferType for Statement {
             Statement::Assignment(_) => None,
             Statement::Expression(expr) => expr.infer_type(scope),
             Statement::Declaration(_) => None,
-            // Statement::Block(block) => block.infer_type(scope),
+            Statement::Return(ret) => {
+                if ret.is_explicit {
+                    Some(TypeElement::Never(NeverTypeItem { span: ret.span }))
+                } else {
+                    ret.expression.infer_type(scope)
+                }
+            } // Statement::Block(block) => block.infer_type(scope),
         }
     }
 }
@@ -145,7 +155,6 @@ impl InferType for InfixOperation<ArithmeticOperator> {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         let first = self.lhs.infer_type(scope);
         let second = self.rhs.infer_type(scope);
-        
 
         if let (Some(TypeElement::Plain(a)), Some(TypeElement::Plain(b))) = (&first, &second) {
             if a.ident != b.ident && !a.ident.is_intrinsic() && !b.ident.is_intrinsic() {
@@ -244,18 +253,18 @@ impl InferType for PostfixExpression {
                     },
                     None => None,
                 }
-            },
-            PostfixExpression::AccessExpression(access) => {
-                match access.base.infer_type(scope) {
-                    Some(base) => match base {
-                        TypeElement::Array(array) => Some(array.elements),
-                        TypeElement::Dictionary(dict) => Some(dict.value),
-                        TypeElement::OrderedDictionary(dict) => Some(dict.value),
-                        TypeElement::Set(set) => Some(set.elements),
-                        _ => todo!("TRANSPILER_ERROR: Access operator can only be used on collection types"),
-                    },
-                    None => None,
-                }
+            }
+            PostfixExpression::AccessExpression(access) => match access.base.infer_type(scope) {
+                Some(base) => match base {
+                    TypeElement::Array(array) => Some(array.elements),
+                    TypeElement::Dictionary(dict) => Some(dict.value),
+                    TypeElement::OrderedDictionary(dict) => Some(dict.value),
+                    TypeElement::Set(set) => Some(set.elements),
+                    _ => todo!(
+                        "TRANSPILER_ERROR: Access operator can only be used on collection types"
+                    ),
+                },
+                None => None,
             },
         }
     }

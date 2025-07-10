@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub struct Scope<'a> {
     pub parent: Option<&'a Scope<'a>>,
     pub variables: HashMap<Ident, Variable>,
+    pub return_type: Option<TypeElement>,
 
     lookup: Option<LookupContext<'a>>,
 }
@@ -18,6 +19,7 @@ impl Scope<'_> {
             parent: Some(parent),
             variables: HashMap::new(),
             lookup: None,
+            return_type: None,
         }
     }
 

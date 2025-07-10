@@ -1,3 +1,5 @@
+use galvan_ast::TypeElement;
+
 use crate::mapping::{mapping, Mapping};
 
 /// Mapping of standard Galvan types to Rust types
@@ -49,3 +51,17 @@ pub(crate) const BORROWED_ITERATOR_FNS: [&str; 12] = [
     "min_by",
     "is_sorted_by",
 ];
+
+pub trait CheckBuiltins {
+    fn is_infer(&self) -> bool;
+}
+
+impl CheckBuiltins for TypeElement {
+    fn is_infer(&self) -> bool {
+        let TypeElement::Plain(plain) = self else {
+            return false;
+        };
+
+        plain.ident.as_str() == "__Infer"
+    }
+}

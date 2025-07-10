@@ -29,6 +29,7 @@ mod builtins;
 #[cfg(feature = "exec")]
 pub mod exec;
 
+mod cast;
 mod context;
 mod mapping;
 mod sanitize;
@@ -366,6 +367,7 @@ fn extension_name(ty: &TypeElement) -> String {
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
             TypeElement::Generic(ty) => todo!("Generics are not supported yet!"),
+            TypeElement::Never(_) => format!("Never"),
         }
     }
 

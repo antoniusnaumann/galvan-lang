@@ -12,11 +12,20 @@ type Optional = Box<OptionalTypeItem>;
 type Result = Box<ResultTypeItem>;
 type Plain = BasicTypeItem;
 type Generic = GenericTypeItem;
+type Never = NeverTypeItem;
 
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
-pub type TypeElement =
-    Array + Dictionary + OrderedDictionary + Set + Tuple + Optional + Result + Plain + Generic;
+pub type TypeElement = Array
+    + Dictionary
+    + OrderedDictionary
+    + Set
+    + Tuple
+    + Optional
+    + Result
+    + Plain
+    + Generic
+    + Never;
 
 // TODO: Add a marker trait to constrain this to only type decls
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
@@ -73,5 +82,10 @@ pub struct BasicTypeItem {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
 pub struct GenericTypeItem {
     pub ident: Ident,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
+pub struct NeverTypeItem {
     pub span: Span,
 }

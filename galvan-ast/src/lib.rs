@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate core;
 
-use std::ops::Deref;
+use std::{fmt::Display, ops::Deref};
 
 use galvan_files::Source;
 
@@ -63,6 +63,13 @@ pub trait PrintAst {
 pub trait AstNode {
     fn span(&self) -> Span;
     fn print(&self, indent: usize) -> String;
+}
+
+impl PrintAst for bool {
+    fn print_ast(&self, indent: usize) -> String {
+        let indent_str = " ".repeat(indent);
+        format!("{indent_str}{self}\n")
+    }
 }
 
 impl<T> PrintAst for Vec<T>
