@@ -37,6 +37,9 @@ impl ReadCursor for ArrayLiteral {
         while cursor.kind()? == "expression" {
             elements.push(Expression::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor_expect!(cursor, "bracket_close");
@@ -87,7 +90,6 @@ impl ReadCursor for OrderedDictLiteral {
         cursor.goto_parent();
 
         Ok(OrderedDictLiteral { elements, span })
-
     }
 }
 

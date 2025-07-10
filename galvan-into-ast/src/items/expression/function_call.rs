@@ -48,6 +48,9 @@ pub fn read_trailing_closure_call(
         while cursor.kind()? != "pipe" {
             closure_arguments.push(ClosureArgument::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
         cursor.next();
     }
@@ -112,6 +115,9 @@ fn read_arguments(
         if !cursor.next() {
             break;
         }
+        while cursor.kind()? == "," {
+            cursor.next();
+        }
     }
 
     Ok(args)
@@ -156,6 +162,9 @@ impl ReadCursor for Closure {
         while cursor.kind()? == "closure_argument" {
             arguments.push(ClosureArgument::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor_expect!(cursor, "pipe");
@@ -229,6 +238,9 @@ impl ReadCursor for ConstructorCall {
             let arg = ConstructorCallArg::read_cursor(cursor, source)?;
             arguments.push(arg);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor.goto_parent();

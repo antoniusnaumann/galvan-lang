@@ -1,5 +1,6 @@
 use galvan_ast::{
-    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeElement, TypeIdent, Visibility
+    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember,
+    TupleTypeDecl, TupleTypeMember, TypeElement, TypeIdent, Visibility,
 };
 use galvan_parse::TreeCursor;
 
@@ -29,6 +30,9 @@ impl ReadCursor for StructTypeDecl {
             members.push(field);
 
             cursor.next();
+            while cursor.kind()? == "," || cursor.kind()? == ";" {
+                cursor.next();
+            }
         }
 
         cursor_expect!(cursor, "brace_close");
@@ -102,6 +106,9 @@ impl ReadCursor for TupleTypeDecl {
             members.push(field);
 
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor_expect!(cursor, "paren_close");
@@ -133,7 +140,6 @@ impl ReadCursor for TupleTypeMember {
         } else {
             None
         };
-
 
         cursor.next();
         let r#type = TypeElement::read_cursor(cursor, source)?;

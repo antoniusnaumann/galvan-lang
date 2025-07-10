@@ -181,6 +181,9 @@ impl ReadCursor for ParamList {
         while cursor.kind()? != "paren_close" {
             params.push(Param::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor.goto_parent();
