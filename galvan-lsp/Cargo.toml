@@ -1,0 +1,26 @@
+[package]
+name = "galvan-lsp"
+description = "Language Server Protocol implementation for Galvan"
+
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+tower-lsp = "0.20"
+tokio = { version = "1.0", features = ["full"] }
+serde_json = "1.0"
+anyhow = "1.0"
+
+galvan-ast.workspace = true
+galvan-files.workspace = true
+galvan-into-ast.workspace = true
+
+[features]
+exec = []
+
+[[bin]]
+name = "galvan-lsp"
+required-features = ["exec"]
+path = "src/main.rs"

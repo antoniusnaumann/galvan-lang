@@ -49,5 +49,6 @@ members = [
   "galvan-transpiler",
   "galvan-test-macro",
   "galvan-test",
-  "tree-sitter-galvan",
+  "galvan-lsp",
+  # "tree-sitter-galvan",
 ]
