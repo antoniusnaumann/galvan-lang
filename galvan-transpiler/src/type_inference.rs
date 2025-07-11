@@ -25,6 +25,7 @@ impl InferType for ElseExpression {
             (Some(receiver_type), Some(block_type)) if receiver_type.is_same(&block_type) => {
                 Some(receiver_type)
             }
+            (ty, Some(TypeElement::Never(_))) | (Some(TypeElement::Never(_)), ty) => ty,
             (Some(receiver_type), None) => Some(receiver_type),
             (Some(TypeElement::Optional(receiver_type)), Some(block_type)) => {
                 if receiver_type.some.is_same(&block_type) {
