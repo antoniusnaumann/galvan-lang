@@ -16,6 +16,7 @@ anyhow = "1.0"
 galvan-ast.workspace = true
 galvan-files.workspace = true
 galvan-into-ast.workspace = true
+galvan-parse.workspace = true
 
 [features]
 exec = []

@@ -50,5 +50,5 @@ members = [
   "galvan-test-macro",
   "galvan-test",
   "galvan-lsp",
-  # "tree-sitter-galvan",
+  "tree-sitter-galvan",
 ]
