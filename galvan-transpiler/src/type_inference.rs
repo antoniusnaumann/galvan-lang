@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use galvan_ast::{
     ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
@@ -7,6 +9,8 @@ use galvan_ast::{
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
+
+use crate::builtins::IsSame;
 
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement>;
@@ -18,16 +22,20 @@ impl InferType for ElseExpression {
         let block_type = self.block.infer_type(scope);
 
         match (receiver_type, block_type) {
-            (Some(receiver_type), Some(block_type)) => {
-                if receiver_type == block_type {
-                    Some(receiver_type)
+            (Some(receiver_type), Some(block_type)) if receiver_type.is_same(&block_type) => {
+                Some(receiver_type)
+            }
+            (Some(receiver_type), None) => Some(receiver_type),
+            (Some(TypeElement::Optional(receiver_type)), Some(block_type)) => {
+                if receiver_type.some.is_same(&block_type) {
+                    Some(block_type)
                 } else {
                     todo!("TRANSPILER ERROR: Types of if and else expression don't match. (allow this when type unions are implemented)")
                 }
             }
-            (Some(receiver_type), None) => Some(receiver_type),
             (None, Some(block_type)) => Some(block_type),
             (None, None) => None,
+            (_, _) => todo!("TRANSPILER ERROR: Types of if and else expression don't match."),
         }
     }
 }
@@ -75,7 +83,30 @@ impl InferType for Expression {
             Expression::CollectionLiteral(collection) => collection.infer_type(scope),
             Expression::FunctionCall(call) => {
                 // todo!("Implement type inference for function call")
-                None
+                if call.identifier.as_str() == "if" {
+                    call.arguments.last().and_then(|last| {
+                        let Expression::Closure(ref closure) = last.expression else {
+                            panic!("'if' is missing body")
+                        };
+                        closure
+                            .block
+                            .body
+                            .statements
+                            .last()
+                            .and_then(|stmt| stmt.infer_type(scope))
+                            .map(|ty| {
+                                TypeElement::Optional(
+                                    OptionalTypeItem {
+                                        some: ty,
+                                        span: Span::default(),
+                                    }
+                                    .into(),
+                                )
+                            })
+                    })
+                } else {
+                    None
+                }
             }
             Expression::ConstructorCall(constructor) => Some(
                 BasicTypeItem {

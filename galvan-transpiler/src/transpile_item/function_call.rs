@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use crate::builtins::BORROWED_ITERATOR_FNS;
 use crate::context::Context;
 use crate::macros::transpile;
@@ -13,6 +12,7 @@ use galvan_ast::{
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
+use std::borrow::Borrow;
 
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -27,6 +27,9 @@ impl Transpile for FunctionCall {
                 "println!(\"{{:?}}\", {})",
                 self.arguments.transpile(ctx, scope)
             ),
+            "if" => {
+                format!("TODO: transpile if expression and cast last expression to expected type")
+            }
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
@@ -37,9 +40,16 @@ impl Transpile for FunctionCall {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
                     }
 
-                    let InfixExpression::Comparison(comp) = e.borrow() else { unreachable!() };
+                    let InfixExpression::Comparison(comp) = e.borrow() else {
+                        unreachable!()
+                    };
 
-                    let InfixOperation { lhs, operator, rhs, span } = comp;
+                    let InfixOperation {
+                        lhs,
+                        operator,
+                        rhs,
+                        span,
+                    } = comp;
                     let args = if self.arguments.len() > 1 {
                         &self.arguments[1..]
                     } else {
@@ -155,16 +165,10 @@ impl Transpile for FunctionCallArg {
                 }
             }
             // TODO: Check if the infix expression is a member field access
-            (
-                Some(Mod::Mut),
-                expr @ Exp::Infix(_) | expr @ match_ident!(_),
-            ) => {
+            (Some(Mod::Mut), expr @ Exp::Infix(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "&mut {}", expr)
             }
-            (
-                Some(Mod::Ref),
-                expr @ Exp::Infix(_) | expr @ match_ident!(_),
-            ) => {
+            (Some(Mod::Ref), expr @ Exp::Infix(_) | expr @ match_ident!(_)) => {
                 transpile!(ctx, scope, "::std::sync::Arc::clone(&{})", expr)
             }
             _ => todo!("TRANSPILER ERROR: Modifier only allowed for fields or variables"),

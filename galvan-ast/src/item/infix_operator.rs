@@ -7,7 +7,7 @@ pub trait InfixOperator {
     fn symbol(&self) -> &str;
 }
 
-#[derive(Debug, PartialEq, Eq, From, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, From, AstNode)]
 pub enum InfixExpression {
     Logical(InfixOperation<LogicalOperator>),
     Arithmetic(InfixOperation<ArithmeticOperator>),
@@ -23,7 +23,7 @@ impl InfixExpression {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, From)]
+#[derive(Clone, Debug, PartialEq, Eq, From)]
 pub struct InfixOperation<Op: InfixOperator> {
     pub lhs: Expression,
     pub operator: Op,

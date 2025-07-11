@@ -4,7 +4,7 @@ use crate::{AstNode, PrintAst, Span};
 
 use super::*;
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Assignment {
     pub target: Expression,
     pub operator: AssignmentOperator,
@@ -12,7 +12,7 @@ pub struct Assignment {
     pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AssignmentOperator {
     Assign,
     AddAssign,

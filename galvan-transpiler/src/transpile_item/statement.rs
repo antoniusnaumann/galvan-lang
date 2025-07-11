@@ -6,8 +6,8 @@ use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership, PostfixExpression,
-    Return, Statement, TypeElement,
+    AstNode, DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership,
+    PostfixExpression, Return, Statement, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -15,6 +15,7 @@ use itertools::Itertools;
 impl Transpile for Body {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         let mut body_scope = Scope::child(scope);
+        body_scope.return_type = scope.return_type.to_owned();
         let scope = &mut body_scope;
 
         let last = match self.statements.last() {
@@ -22,11 +23,26 @@ impl Transpile for Body {
             _ => "",
         };
 
+        let len = self.statements.len();
+
         format!(
             "{{\n{}\n}}",
             self.statements
                 .iter()
-                .map(|stmt| stmt.transpile(ctx, scope))
+                .enumerate()
+                .map(|(i, stmt)| {
+                    if i == len - 1 {
+                        if let Statement::Expression(expression) = stmt {
+                            return Return {
+                                expression: expression.to_owned(),
+                                is_explicit: false,
+                                span: expression.span(),
+                            }
+                            .transpile(ctx, scope);
+                        }
+                    };
+                    stmt.transpile(ctx, scope)
+                })
                 .join(";\n")
                 + last
         )
@@ -100,13 +116,9 @@ impl Transpile for Return {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         let prefix = if self.is_explicit { "return " } else { "" };
 
-        transpile!(
-            ctx,
-            scope,
+        format!(
             "{prefix}{}",
-            cast(&self.expression, &scope.return_type, scope)
-                .as_ref()
-                .unwrap_or(&self.expression)
+            cast(&self.expression, &scope.return_type.clone(), ctx, scope)
         )
     }
 }

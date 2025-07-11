@@ -1,4 +1,8 @@
-use galvan_ast::TypeElement;
+use galvan_ast::{
+    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, OptionalTypeItem,
+    OrderedDictionaryTypeItem, ResultTypeItem, SetTypeItem, TupleTypeItem, TypeElement,
+};
+use itertools::Itertools;
 
 use crate::mapping::{mapping, Mapping};
 
@@ -56,6 +60,10 @@ pub trait CheckBuiltins {
     fn is_infer(&self) -> bool;
 }
 
+pub trait IsSame {
+    fn is_same(&self, other: &Self) -> bool;
+}
+
 impl CheckBuiltins for TypeElement {
     fn is_infer(&self) -> bool {
         let TypeElement::Plain(plain) = self else {
@@ -63,5 +71,95 @@ impl CheckBuiltins for TypeElement {
         };
 
         plain.ident.as_str() == "__Infer"
+    }
+}
+
+impl IsSame for TypeElement {
+    fn is_same(&self, other: &TypeElement) -> bool {
+        match (self, other) {
+            (TypeElement::Array(a), TypeElement::Array(b)) => a.is_same(b),
+            (TypeElement::Dictionary(a), TypeElement::Dictionary(b)) => a.is_same(b),
+            (TypeElement::OrderedDictionary(a), TypeElement::OrderedDictionary(b)) => a.is_same(b),
+            (TypeElement::Set(a), TypeElement::Set(b)) => a.is_same(b),
+            (TypeElement::Tuple(a), TypeElement::Tuple(b)) => a.is_same(b),
+            (TypeElement::Optional(a), TypeElement::Optional(b)) => a.is_same(b),
+            (TypeElement::Result(a), TypeElement::Result(b)) => a.is_same(b),
+            (TypeElement::Plain(a), TypeElement::Plain(b)) => a.is_same(b),
+            (TypeElement::Generic(a), TypeElement::Generic(b)) => a.is_same(b),
+            (TypeElement::Never(_), TypeElement::Never(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl IsSame for ArrayTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.elements.is_same(&other.elements)
+    }
+}
+
+impl IsSame for DictionaryTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.key.is_same(&other.key) && self.value.is_same(&other.value)
+    }
+}
+
+impl IsSame for OrderedDictionaryTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.key.is_same(&other.key) && self.value.is_same(&other.value)
+    }
+}
+
+impl IsSame for SetTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.elements.is_same(&other.elements)
+    }
+}
+
+impl IsSame for TupleTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        if self.elements.len() != other.elements.len() {
+            return false;
+        }
+        for (a, b) in self.elements.iter().zip_eq(&other.elements) {
+            if !a.is_same(&b) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl IsSame for OptionalTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.some.is_same(&other.some)
+    }
+}
+
+impl IsSame for ResultTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.success.is_same(&other.success)
+            && ((self.error.is_none() && other.error.is_none())
+                || (self
+                    .error
+                    .as_ref()
+                    .is_some_and(|a| other.error.as_ref().is_some_and(|b| a.is_same(b)))))
+    }
+}
+
+impl IsSame for BasicTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        match (self.ident.as_str(), other.ident.as_str()) {
+            (a, b) if a == b => true,
+            ("I64", "Int") | ("Int", "I64") => true,
+            ("__Infer", _) | (_, "__Infer") => true,
+            (_, _) => false,
+        }
+    }
+}
+
+impl IsSame for GenericTypeItem {
+    fn is_same(&self, other: &Self) -> bool {
+        self.ident == other.ident
     }
 }

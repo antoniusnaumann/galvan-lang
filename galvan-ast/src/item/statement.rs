@@ -5,23 +5,23 @@ use super::*;
 use crate::item::closure::Closure;
 use crate::{AstNode, PrintAst, Span};
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Body {
     pub statements: Vec<Statement>,
     pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Block {
     pub body: Body,
     pub span: Span,
 }
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq, PrintAst)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub type Statement = Assignment + Declaration + Expression + Return; // + Block;
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Declaration {
     pub decl_modifier: DeclModifier,
     pub identifier: Ident,
@@ -30,7 +30,7 @@ pub struct Declaration {
     pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Return {
     pub expression: Expression,
     pub is_explicit: bool,
@@ -41,7 +41,7 @@ type Infix = Box<InfixExpression>;
 type Postfix = Box<PostfixExpression>;
 
 #[type_union]
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub type Expression = ElseExpression
     + FunctionCall
     + Infix
@@ -53,7 +53,7 @@ pub type Expression = ElseExpression
     + Closure
     + Group;
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Group {
     pub inner: Box<Expression>,
     pub span: Span,
