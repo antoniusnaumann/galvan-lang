@@ -4,7 +4,7 @@ use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
     Declaration, ElseExpression, Expression, FunctionCall, Group, Ident, InfixExpression, Literal,
-    PostfixExpression, Span, Statement, TypeElement,
+    PostfixExpression, Return, Span, Statement, Throw, TypeElement,
 };
 use galvan_parse::TreeCursor;
 
@@ -17,9 +17,7 @@ impl ReadCursor for Statement {
             "assignment" => Statement::Assignment(Assignment::read_cursor(cursor, source)?),
             "declaration" => Statement::Declaration(Declaration::read_cursor(cursor, source)?),
             "expression" => Statement::Expression(Expression::read_cursor(cursor, source)?),
-            "free_function" => {
-                Statement::Expression(read_free_function_call(cursor, source)?.into())
-            }
+            "free_function" => read_free_function_call(cursor, source)?,
             _ => unreachable!("Unknown statement kind: {:?}", cursor.kind()?),
         };
 

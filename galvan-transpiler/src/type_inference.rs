@@ -68,7 +68,8 @@ impl InferType for Statement {
                 } else {
                     ret.expression.infer_type(scope)
                 }
-            } // Statement::Block(block) => block.infer_type(scope),
+            }
+            Statement::Throw(throw) => Some(TypeElement::Never(NeverTypeItem { span: throw.span })), // Statement::Block(block) => block.infer_type(scope),
         }
     }
 }

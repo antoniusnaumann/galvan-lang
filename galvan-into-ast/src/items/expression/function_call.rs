@@ -1,6 +1,7 @@
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg,
-    DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Span, TypeElement, TypeIdent,
+    DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
+    TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -86,7 +87,7 @@ pub fn read_trailing_closure_call(
 pub fn read_free_function_call(
     cursor: &mut TreeCursor<'_>,
     source: &str,
-) -> Result<FunctionCall, AstError> {
+) -> Result<Statement, AstError> {
     let node = cursor_expect!(cursor, "free_function");
     let span = Span::from_node(node);
 
@@ -96,12 +97,36 @@ pub fn read_free_function_call(
     let arguments = read_arguments(cursor, source)?;
     cursor.goto_parent();
 
-    let func = FunctionCall {
-        identifier,
-        arguments,
-        span,
+    let call = match identifier.as_str() {
+        "return" => {
+            // TODO: Allow return without argument
+            if arguments.len() > 1 {
+                todo!("TRANSPILER ERROR: Return needs exactly one argument")
+            };
+            let expression = arguments.into_iter().next().unwrap().expression;
+            Statement::Return(Return {
+                expression,
+                is_explicit: true,
+                span,
+            })
+        }
+        "throw" => {
+            if arguments.len() > 1 {
+                todo!("TRANSPILER ERROR: Throw needs exactly one argument")
+            };
+            let expression = arguments.into_iter().next().unwrap().expression;
+            Statement::Throw(Throw { expression, span })
+        }
+        _ => Statement::Expression(
+            FunctionCall {
+                identifier,
+                arguments,
+                span,
+            }
+            .into(),
+        ),
     };
-    Ok(func)
+    Ok(call)
 }
 
 fn read_arguments(

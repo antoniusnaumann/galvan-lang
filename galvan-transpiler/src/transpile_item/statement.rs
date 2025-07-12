@@ -7,7 +7,7 @@ use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
     AstNode, DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership,
-    PostfixExpression, Return, Statement, TypeElement,
+    PostfixExpression, Return, Statement, Throw, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -49,7 +49,7 @@ impl Transpile for Body {
     }
 }
 
-impl_transpile_variants!(Statement; Assignment, Expression, Declaration, Return /*, Block */);
+impl_transpile_variants!(Statement; Assignment, Expression, Declaration, Return, Throw /*, Block */);
 
 impl Transpile for Declaration {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -118,6 +118,15 @@ impl Transpile for Return {
 
         format!(
             "{prefix}{}",
+            cast(&self.expression, &scope.return_type.clone(), ctx, scope)
+        )
+    }
+}
+
+impl Transpile for Throw {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        format!(
+            "Err({})",
             cast(&self.expression, &scope.return_type.clone(), ctx, scope)
         )
     }
