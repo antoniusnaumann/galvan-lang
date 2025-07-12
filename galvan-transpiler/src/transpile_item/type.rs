@@ -16,7 +16,7 @@ impl_transpile!(
 impl_transpile!(OrderedDictionaryTypeItem, "TODO {} {}", key, value);
 impl_transpile!(SetTypeItem, "::std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
-impl_transpile!(OptionalTypeItem, "Option<{}>", some);
+impl_transpile!(OptionalTypeItem, "Option<{}>", inner);
 impl_transpile!(BasicTypeItem, "{}", ident);
 
 impl Transpile for ResultTypeItem {

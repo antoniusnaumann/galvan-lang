@@ -1,4 +1,4 @@
-use galvan_ast::{Expression, PrintAst, TypeElement};
+use galvan_ast::{Expression, TypeElement};
 use galvan_resolver::Scope;
 
 use crate::{
@@ -29,6 +29,10 @@ pub fn cast(
             (expected, actual) if expected.is_same(actual) || actual.is_infer() => {
                 expression.transpile(ctx, scope)
             }
+            (_, TypeElement::Never(_)) => expression.transpile(ctx, scope),
+            (TypeElement::Optional(some), actual) if some.inner.is_same(actual) => {
+                transpile!(ctx, scope, "Some({})", expression)
+            }
             (TypeElement::Result(res), actual) if res.success.is_same(actual) => {
                 transpile!(ctx, scope, "Ok({})", expression)
             }
@@ -40,6 +44,20 @@ pub fn cast(
             {
                 // TODO: This should not be autocast but instead require a "throw" keyword
                 transpile!(ctx, scope, "Err({})", expression)
+            }
+            (TypeElement::Result(_), actual) => {
+                println!(
+                    "cargo::warning=wrapping non-matching type {:?} in ok",
+                    actual
+                );
+                transpile!(ctx, scope, "Ok({})", expression)
+            }
+            (TypeElement::Optional(_), actual) => {
+                println!(
+                    "cargo::warning=wrapping non-matching type {:?} in some",
+                    actual
+                );
+                transpile!(ctx, scope, "Some({})", expression)
             }
             (_, _) => {
                 // Let Rust try to figure this out

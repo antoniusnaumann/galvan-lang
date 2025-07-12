@@ -132,7 +132,7 @@ impl IsSame for TupleTypeItem {
 
 impl IsSame for OptionalTypeItem {
     fn is_same(&self, other: &Self) -> bool {
-        self.some.is_same(&other.some)
+        self.inner.is_same(&other.inner)
     }
 }
 

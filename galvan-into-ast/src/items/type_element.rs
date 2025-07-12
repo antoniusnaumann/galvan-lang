@@ -85,7 +85,7 @@ impl ReadCursor for OptionalTypeItem {
 
         cursor.goto_parent();
 
-        Ok(Self { some, span })
+        Ok(Self { inner: some, span })
     }
 }
 

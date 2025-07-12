@@ -1,9 +1,9 @@
 use galvan_ast::{
     ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
-    Expression, Group, InfixExpression, InfixOperation, Literal, MemberOperator, NeverTypeItem,
-    OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem, PostfixExpression, SetLiteral,
-    SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent,
+    Expression, FunctionCall, Group, InfixExpression, InfixOperation, Literal, MemberOperator,
+    NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
+    PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -26,7 +26,7 @@ impl InferType for ElseExpression {
             (ty, Some(TypeElement::Never(_))) | (Some(TypeElement::Never(_)), ty) => ty,
             (Some(receiver_type), None) => Some(receiver_type),
             (Some(TypeElement::Optional(receiver_type)), Some(block_type)) => {
-                if receiver_type.some.is_same(&block_type) {
+                if receiver_type.inner.is_same(&block_type) {
                     Some(block_type)
                 } else {
                     todo!("TRANSPILER ERROR: Types of if and else expression don't match. (allow this when type unions are implemented)")
@@ -81,38 +81,7 @@ impl InferType for Expression {
             }
             Expression::ElseExpression(e) => e.infer_type(scope),
             Expression::CollectionLiteral(collection) => collection.infer_type(scope),
-            Expression::FunctionCall(call) => {
-                if call.identifier.as_str() == "if" {
-                    call.arguments.last().and_then(|last| {
-                        let Expression::Closure(ref closure) = last.expression else {
-                            panic!("'if' is missing body")
-                        };
-                        closure
-                            .block
-                            .body
-                            .statements
-                            .last()
-                            .and_then(|stmt| stmt.infer_type(scope))
-                            .map(|ty| {
-                                TypeElement::Optional(
-                                    OptionalTypeItem {
-                                        some: ty,
-                                        span: Span::default(),
-                                    }
-                                    .into(),
-                                )
-                            })
-                    })
-                } else {
-                    let func = scope.resolve_function(None, &call.identifier, &[]);
-
-                    if let Some(func) = func {
-                        func.signature.return_type.clone()
-                    } else {
-                        None
-                    }
-                }
-            }
+            Expression::FunctionCall(call) => call.infer_type(scope),
             Expression::ConstructorCall(constructor) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new(constructor.identifier.clone()),
@@ -129,6 +98,41 @@ impl InferType for Expression {
             Expression::Postfix(postfix) => postfix.infer_type(scope),
             Expression::Infix(operation) => operation.infer_type(scope),
             Expression::Group(Group { inner, span: _span }) => inner.infer_type(scope),
+        }
+    }
+}
+
+impl InferType for FunctionCall {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        if self.identifier.as_str() == "if" {
+            self.arguments.last().and_then(|last| {
+                let Expression::Closure(ref closure) = last.expression else {
+                    panic!("'if' is missing body")
+                };
+                closure
+                    .block
+                    .body
+                    .statements
+                    .last()
+                    .and_then(|stmt| stmt.infer_type(scope))
+                    .map(|ty| {
+                        TypeElement::Optional(
+                            OptionalTypeItem {
+                                inner: ty,
+                                span: Span::default(),
+                            }
+                            .into(),
+                        )
+                    })
+            })
+        } else {
+            let func = scope.resolve_function(None, &self.identifier, &[]);
+
+            if let Some(func) = func {
+                func.signature.return_type.clone()
+            } else {
+                None
+            }
         }
     }
 }
@@ -153,7 +157,7 @@ impl InferType for Literal {
             ),
             Literal::NoneLiteral(_) => Some(
                 Box::new(OptionalTypeItem {
-                    some: infer(),
+                    inner: infer(),
                     span: Span::default(),
                 })
                 .into(),
@@ -307,7 +311,7 @@ impl InferType for PostfixExpression {
                 // TODO: Check if return type is matching
                 match yeet.inner.infer_type(scope) {
                     Some(inner) => match inner {
-                        TypeElement::Optional(res) => Some(res.some),
+                        TypeElement::Optional(res) => Some(res.inner),
                         TypeElement::Result(res) => Some(res.success),
                         _ => todo!("TRANSPILER_ERROR: Yeet operator can only be used on result or optional types"),
                     },

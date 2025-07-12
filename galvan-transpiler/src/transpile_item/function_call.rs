@@ -5,7 +5,7 @@ use crate::transpile_item::closure::transpile_closure;
 use crate::transpile_item::statement::match_ident;
 use crate::type_inference::InferType;
 use crate::Transpile;
-use galvan_ast::TypeElement::Plain;
+use galvan_ast::TypeElement::{self, Plain};
 use galvan_ast::{
     ComparisonOperator, DeclModifier, Expression, FunctionCall, FunctionCallArg, InfixExpression,
     InfixOperation, Ownership,
@@ -27,9 +27,16 @@ impl Transpile for FunctionCall {
                 "println!(\"{{:?}}\", {})",
                 self.arguments.transpile(ctx, scope)
             ),
-            // TODO: Add an else branch here and handle an if that is part of an else expression in the else expression already
-            //    the else branch should produce "none" when the last expression of this if has a type
-            "if" => transpile_if(self, ctx, scope),
+            "if" => {
+                let ty = self.infer_type(scope);
+                match ty {
+                    Some(ty @ TypeElement::Optional(_)) => {
+                        let if_ = transpile_if(self, ctx, scope, Some(ty));
+                        format!("{if_} else {{ None }}")
+                    }
+                    ty => transpile_if(self, ctx, scope, ty),
+                }
+            }
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
@@ -112,7 +119,12 @@ impl Transpile for FunctionCall {
     }
 }
 
-pub fn transpile_if(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) -> String {
+pub fn transpile_if(
+    func: &FunctionCall,
+    ctx: &Context<'_>,
+    scope: &mut Scope<'_>,
+    ty: Option<TypeElement>,
+) -> String {
     debug_assert_eq!(func.identifier.as_str(), "if");
     assert_eq!(
         func.arguments.len(),
@@ -123,10 +135,13 @@ pub fn transpile_if(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_
     let Expression::Closure(body) = &func.arguments[1].expression else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
+    let condition = condition.transpile(ctx, scope);
+
+    let mut body_scope = Scope::child(scope);
+    body_scope.return_type = ty;
     format!(
-        "if {} {{ {} }}",
-        condition.transpile(ctx, scope),
-        body.block.transpile(ctx, scope)
+        "if {condition} {{ {} }}",
+        body.block.transpile(ctx, &mut body_scope)
     )
 }
 

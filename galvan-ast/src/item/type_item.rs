@@ -62,7 +62,7 @@ pub struct TupleTypeItem {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
 pub struct OptionalTypeItem {
-    pub some: TypeElement,
+    pub inner: TypeElement,
     pub span: Span,
 }
 

@@ -43,7 +43,8 @@ impl Transpile for ElseExpression {
         match self.receiver.deref() {
             // special handling for if-else as opposed to using else on an optional value
             Expression::FunctionCall(call) if call.identifier.as_str() == "if" => {
-                let if_ = transpile_if(call, ctx, scope);
+                // TODO: we should attach the expected type to expressions somehow and honor that here
+                let if_ = transpile_if(call, ctx, scope, None);
                 transpile!(ctx, scope, "{if_} else {{ {} }}", self.block)
             }
             _ => transpile!(

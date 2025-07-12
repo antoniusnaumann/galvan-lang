@@ -356,7 +356,7 @@ fn extension_name(ty: &TypeElement) -> String {
                 escaped_name(&ty.success),
                 ty.error.as_ref().map_or("".into(), escaped_name)
             ),
-            TypeElement::Optional(ty) => format!("Option_{}_Ext", escaped_name(&ty.some)),
+            TypeElement::Optional(ty) => format!("Option_{}_Ext", escaped_name(&ty.inner)),
             TypeElement::Dictionary(ty) => {
                 format!("Dict_{}_{}", escaped_name(&ty.key), escaped_name(&ty.value))
             }
