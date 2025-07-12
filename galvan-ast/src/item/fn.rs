@@ -1,10 +1,10 @@
 use galvan_ast_macro::AstNode;
 
-use crate::{Span, AstNode, PrintAst};
+use crate::{AstNode, PrintAst, Span};
 
 use super::*;
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct FnDecl {
     // pub annotations,
     pub signature: FnSignature,

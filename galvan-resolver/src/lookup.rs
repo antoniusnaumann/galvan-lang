@@ -1,8 +1,10 @@
-use galvan_ast::{FnDecl, Ident, MainDecl, SegmentedAsts, ToplevelItem, TypeDecl, TypeIdent};
+use galvan_ast::{
+    FnDecl, Ident, MainDecl, SegmentedAsts, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+};
 use std::collections::HashMap;
 use thiserror::Error;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct LookupContext<'a> {
     /// Types are resolved by their name
     pub types: HashMap<TypeIdent, &'a ToplevelItem<TypeDecl>>,
@@ -47,7 +49,18 @@ impl<'a> LookupContext<'a> {
     }
     pub fn add_from(&mut self, asts: &'a SegmentedAsts) -> Result<(), LookupError> {
         for func in &asts.functions {
-            let func_id = FunctionId::new(None, &func.signature.identifier, &[]);
+            let receiver = func.item.signature.parameters.params.first().and_then(|p| {
+                if p.identifier.as_str() == "self" {
+                    // TODO: We should allow implementing something on Vec, etc. as well
+                    match p.param_type {
+                        TypeElement::Plain(ref ty) => Some(&ty.ident),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            });
+            let func_id = FunctionId::new(receiver, &func.signature.identifier, &[]);
             if self.functions.insert(func_id, func).is_some() {
                 return Err(LookupError::DuplicateFunction);
             }
@@ -88,7 +101,7 @@ impl Lookup for LookupContext<'_> {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FunctionId(Box<str>);
 
 impl FunctionId {

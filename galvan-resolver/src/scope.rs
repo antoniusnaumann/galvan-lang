@@ -1,6 +1,7 @@
-use crate::{Lookup, LookupContext};
+use crate::{FunctionId, Lookup, LookupContext};
 use galvan_ast::{
-    DeclModifier, FnDecl, Ident, Ownership, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+    DeclModifier, FnDecl, FnSignature, Ident, Ownership, ToplevelItem, TypeDecl, TypeElement,
+    TypeIdent,
 };
 use std::collections::HashMap;
 
@@ -37,6 +38,24 @@ impl Scope<'_> {
 impl<'a> Scope<'a> {
     pub fn set_lookup(&mut self, lookup: LookupContext<'a>) {
         self.lookup = Some(lookup);
+    }
+
+    pub fn functions(&self) -> Vec<FunctionId> {
+        let mut functions = Vec::new();
+        let mut scope = self;
+
+        loop {
+            if let Some(ref lookup) = scope.lookup {
+                functions.extend(lookup.functions.keys().map(|v| v.to_owned()))
+            }
+
+            match scope.parent {
+                Some(s) => scope = s,
+                None => break,
+            }
+        }
+
+        functions
     }
 }
 

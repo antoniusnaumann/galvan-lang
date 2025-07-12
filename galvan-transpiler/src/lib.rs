@@ -3,7 +3,7 @@ use derive_more::{Deref, Display, From};
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
 use galvan_into_ast::{AstError, IntoAst, SegmentAst, SourceIntoAst};
-use galvan_resolver::{LookupError, Scope};
+use galvan_resolver::{LookupContext, LookupError, Scope};
 use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -59,6 +59,7 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     let predefined = predefined_from(&builtins);
     let lookup = Context::new(builtins).with(&predefined)?.with(&segmented)?;
     let mut scope = Scope::default();
+    scope.set_lookup(lookup.lookup.clone());
 
     transpile_segmented(&segmented, &lookup, &mut scope)
 }

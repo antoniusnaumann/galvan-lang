@@ -125,10 +125,7 @@ impl Transpile for Return {
 
 impl Transpile for Throw {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        format!(
-            "Err({})",
-            cast(&self.expression, &scope.return_type.clone(), ctx, scope)
-        )
+        transpile!(ctx, scope, "return Err({})", self.expression)
     }
 }
 

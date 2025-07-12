@@ -27,9 +27,9 @@ impl Transpile for FunctionCall {
                 "println!(\"{{:?}}\", {})",
                 self.arguments.transpile(ctx, scope)
             ),
-            "if" => {
-                format!("TODO: transpile if expression and cast last expression to expected type")
-            }
+            // TODO: Add an else branch here and handle an if that is part of an else expression in the else expression already
+            //    the else branch should produce "none" when the last expression of this if has a type
+            "if" => transpile_if(self, ctx, scope),
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
@@ -110,6 +110,24 @@ impl Transpile for FunctionCall {
             }
         }
     }
+}
+
+pub fn transpile_if(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) -> String {
+    debug_assert_eq!(func.identifier.as_str(), "if");
+    assert_eq!(
+        func.arguments.len(),
+        2,
+        "if should have two arguments: condition and body"
+    );
+    let condition = &func.arguments[0];
+    let Expression::Closure(body) = &func.arguments[1].expression else {
+        todo!("TRANSPILER ERROR: second argument of if needs to be a body")
+    };
+    format!(
+        "if {} {{ {} }}",
+        condition.transpile(ctx, scope),
+        body.block.transpile(ctx, scope)
+    )
 }
 
 impl Transpile for FunctionCallArg {

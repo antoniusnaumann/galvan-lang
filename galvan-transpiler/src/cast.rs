@@ -16,11 +16,11 @@ pub fn cast(
     ctx: &Context<'_>,
     scope: &mut Scope<'_>,
 ) -> String {
-    println!(
-        "cargo::warning=expected: {:#?}, a: {:#?}",
-        type_,
-        expression.infer_type(scope)
-    );
+    // println!(
+    //     "cargo::warning=expected: {:#?}, a: {:#?}",
+    //     type_,
+    //     expression.infer_type(scope)
+    // );
     if let Some(expected) = type_ {
         let Some(ref actual) = expression.infer_type(scope) else {
             return expression.transpile(ctx, scope);

@@ -1,11 +1,16 @@
+use std::ops::Deref;
+
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    AstNode, Block, Closure, ClosureArgument, DeclModifier, ElseExpression, Ownership, Param
+    AstNode, Block, Closure, ClosureArgument, DeclModifier, ElseExpression, Expression, Ownership,
+    Param,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
+
+use super::function_call::transpile_if;
 
 impl Transpile for Closure {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -32,8 +37,25 @@ pub(crate) fn transpile_closure(
 }
 
 impl_transpile!(Block, "{}", body);
-// TODO: Allow a second variant that takes an error as an argument
-impl_transpile!(ElseExpression, "({}).__or_else(|| {})", receiver, block);
+
+impl Transpile for ElseExpression {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        match self.receiver.deref() {
+            // special handling for if-else as opposed to using else on an optional value
+            Expression::FunctionCall(call) if call.identifier.as_str() == "if" => {
+                let if_ = transpile_if(call, ctx, scope);
+                transpile!(ctx, scope, "{if_} else {{ {} }}", self.block)
+            }
+            _ => transpile!(
+                ctx,
+                scope,
+                "({}).__or_else(|| {})",
+                self.receiver,
+                self.block
+            ),
+        }
+    }
+}
 
 impl Transpile for ClosureArgument {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {

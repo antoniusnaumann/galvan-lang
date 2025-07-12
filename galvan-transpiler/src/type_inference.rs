@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use galvan_ast::{
     ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
@@ -84,7 +82,6 @@ impl InferType for Expression {
             Expression::ElseExpression(e) => e.infer_type(scope),
             Expression::CollectionLiteral(collection) => collection.infer_type(scope),
             Expression::FunctionCall(call) => {
-                // todo!("Implement type inference for function call")
                 if call.identifier.as_str() == "if" {
                     call.arguments.last().and_then(|last| {
                         let Expression::Closure(ref closure) = last.expression else {
@@ -107,7 +104,13 @@ impl InferType for Expression {
                             })
                     })
                 } else {
-                    None
+                    let func = scope.resolve_function(None, &call.identifier, &[]);
+
+                    if let Some(func) = func {
+                        func.signature.return_type.clone()
+                    } else {
+                        None
+                    }
                 }
             }
             Expression::ConstructorCall(constructor) => Some(
@@ -118,7 +121,11 @@ impl InferType for Expression {
                 .into(),
             ),
             Expression::Literal(literal) => literal.infer_type(scope),
-            Expression::Ident(ident) => scope.get_variable(ident)?.ty.clone()?.into(),
+            Expression::Ident(ident) => {
+                let ty = scope.get_variable(ident)?.ty.clone();
+                // println!("cargo::warning=got {:?} named {}", ty, ident);
+                ty?.into()
+            }
             Expression::Postfix(postfix) => postfix.infer_type(scope),
             Expression::Infix(operation) => operation.infer_type(scope),
             Expression::Group(Group { inner, span: _span }) => inner.infer_type(scope),
@@ -223,7 +230,7 @@ impl InferType for InfixOperation<MemberOperator> {
         let Self {
             lhs,
             operator: _,
-            rhs: _,
+            rhs,
             span: _span,
         } = self;
 
@@ -233,23 +240,43 @@ impl InferType for InfixOperation<MemberOperator> {
             TypeElement::Plain(ty) => {
                 let ty = &scope.resolve_type(&ty.ident)?.item;
 
-                match ty {
-                    TypeDecl::Tuple(tuple) => {
-                        todo!("IMPLEMENT: Access member of tuple type")
+                // println!("cargo::warning=resolved: {:?}", ty);
+                match self.field_ident() {
+                    Some(field) => {
+                        // println!("cargo::warning=field: {:?}", field);
+
+                        match ty {
+                            TypeDecl::Tuple(tuple) => {
+                                todo!("IMPLEMENT: Access member of tuple type")
+                            }
+                            TypeDecl::Struct(st) => st
+                                .members
+                                .iter()
+                                .find(|member| member.ident == *field)
+                                .map(|member| member.r#type.clone()),
+                            TypeDecl::Alias(_) => {
+                                // TODO: Handle Inference for alias types
+                                None
+                            }
+                            TypeDecl::Empty(_) => {
+                                todo!("TRANSPILER ERROR: Cannot access member of empty type")
+                            }
+                        }
                     }
-                    TypeDecl::Struct(st) => {
-                        let field = self.field_ident()?;
-                        st.members
-                            .iter()
-                            .find(|member| member.ident == *field)
-                            .map(|member| member.r#type.clone())
-                    }
-                    TypeDecl::Alias(_) => {
-                        // TODO: Handle Inference for alias types
-                        None
-                    }
-                    TypeDecl::Empty(_) => {
-                        todo!("TRANSPILER ERROR: Cannot access member of empty type")
+                    None => {
+                        if let Expression::FunctionCall(call) = rhs {
+                            println!("cargo::warning=functions: {:?}", scope.functions());
+                            if let Some(func) =
+                                scope.resolve_function(Some(ty.ident()), &call.identifier, &[])
+                            {
+                                func.item.signature.return_type.clone()
+                            } else {
+                                println!("cargo::warning=Function '{}' not found", call.identifier);
+                                None
+                            }
+                        } else {
+                            None
+                        }
                     }
                 }
             }
