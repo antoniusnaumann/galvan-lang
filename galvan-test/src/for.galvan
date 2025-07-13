@@ -1,0 +1,13 @@
+test "for loop works" {
+    let numbers = [1, 2, 3, 4, 5]
+    mut i = 1
+    mut last = 0
+
+    for numbers |elem| {
+        assert elem == i
+        i += 1
+        last = elem
+    }
+
+    assert last == 5
+}

@@ -1,4 +1,4 @@
-use crate::builtins::BORROWED_ITERATOR_FNS;
+use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::transpile_item::closure::transpile_closure;
@@ -37,6 +37,7 @@ impl Transpile for FunctionCall {
                     ty => transpile_if(self, ctx, scope, ty),
                 }
             }
+            "for" => transpile_for(self, ctx, scope),
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
@@ -142,6 +143,50 @@ pub fn transpile_if(
         "if {condition} {{ {} }}",
         body.block.transpile(ctx, &mut body_scope)
     )
+}
+
+pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) -> String {
+    assert_eq!(
+        func.arguments.len(),
+        2,
+        "TRANSPILE ERROR: for loop needs two arguments: an iterator and a closure"
+    );
+    let iterator = &func.arguments[0];
+    let elem_ty = match iterator.expression.infer_type(scope) {
+        Some(ty) => match ty {
+            TypeElement::Array(ty) => Some(ty.elements),
+            TypeElement::Dictionary(_ty) => todo!("for loop on dict"),
+            TypeElement::OrderedDictionary(_ty) => todo!("for loop on ordered dict"),
+            TypeElement::Set(ty) => Some(ty.elements),
+            TypeElement::Tuple(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over tuple type"),
+            TypeElement::Optional(_ty) => todo!("for loop on optional"),
+            TypeElement::Result(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over result type"),
+            TypeElement::Plain(_ty) => todo!(),
+            TypeElement::Generic(_ty) => todo!(),
+            TypeElement::Never(_) => todo!(),
+        },
+        None => None,
+    };
+    let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
+        todo!("TRANSPILER ERROR: second argument of if needs to be a body")
+    };
+    let condition = iterator.transpile(ctx, scope);
+    // TODO: auto-unfold tuples into multiple arguments
+    assert_eq!(
+        body.arguments.len(),
+        1,
+        "TRANSPILER ERROR: for loop accepts exactly one argument"
+    );
+    let element = body.arguments[0].ident.transpile(ctx, scope);
+    let mut body_scope = Scope::child(scope);
+    // TODO: handle for loops with return types
+    let body = body.block.transpile(ctx, &mut body_scope);
+    if let Some(elem_ty) = elem_ty {
+        if ctx.mapping.is_copy_type(&elem_ty) {
+            return format!("for &{element} in {condition} {{ {body} }}");
+        }
+    }
+    format!("for {element} in {condition} {{ {body} }}")
 }
 
 impl Transpile for FunctionCallArg {

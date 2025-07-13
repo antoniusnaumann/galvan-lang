@@ -1,4 +1,4 @@
-use galvan_ast::TypeIdent;
+use galvan_ast::{TypeElement, TypeIdent};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -37,6 +37,24 @@ impl Mapping {
             .get(type_id)
             .map(|rust_type| rust_type.is_copy)
             .unwrap_or(false)
+    }
+
+    pub(crate) fn is_copy_type(&self, ty: &TypeElement) -> bool {
+        match ty {
+            TypeElement::Array(_) => false,
+            TypeElement::Dictionary(_) => false,
+            TypeElement::OrderedDictionary(_) => false,
+            TypeElement::Set(_) => false,
+            TypeElement::Tuple(_) => todo!(),
+            TypeElement::Optional(ty) => self.is_copy_type(&ty.inner),
+            TypeElement::Result(ty) => {
+                self.is_copy_type(&ty.success)
+                    && ty.error.as_ref().is_some_and(|ty| self.is_copy_type(ty))
+            }
+            TypeElement::Plain(ty) => self.is_copy(&ty.ident),
+            TypeElement::Generic(_) => todo!(),
+            TypeElement::Never(_) => false,
+        }
     }
 }
 
