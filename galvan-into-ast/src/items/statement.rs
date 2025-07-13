@@ -1,10 +1,12 @@
+use std::cell::RefCell;
+
 use crate::items::{read_free_function_call, read_trailing_closure_call};
 use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
-    Declaration, ElseExpression, Expression, FunctionCall, Group, Ident, InfixExpression, Literal,
-    PostfixExpression, Return, Span, Statement, Throw, TypeElement,
+    Declaration, ElseExpression, Expression, ExpressionKind, FunctionCall, Group, Ident,
+    InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement,
 };
 use galvan_parse::TreeCursor;
 
@@ -115,16 +117,17 @@ impl ReadCursor for AssignmentOperator {
 
 impl ReadCursor for Expression {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        cursor_expect!(cursor, "expression");
+        let node = cursor_expect!(cursor, "expression");
+        let span = Span::from_node(node);
 
         cursor.child();
 
-        let inner: Expression = match cursor.kind()? {
+        let kind: ExpressionKind = match cursor.kind()? {
             "else_expression" => ElseExpression::read_cursor(cursor, source)?.into(),
             "trailing_closure_expression" => read_trailing_closure_call(cursor, source)?.into(),
             "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),
             "postfix_expression" => {
-                Expression::Postfix(PostfixExpression::read_cursor(cursor, source)?.into())
+                ExpressionKind::Postfix(PostfixExpression::read_cursor(cursor, source)?.into())
             }
             "constructor_call" => ConstructorCall::read_cursor(cursor, source)?.into(),
             "collection_literal" => CollectionLiteral::read_cursor(cursor, source)?.into(),
@@ -132,11 +135,15 @@ impl ReadCursor for Expression {
             "ident" => Ident::read_cursor(cursor, source)?.into(),
             "closure" => Closure::read_cursor(cursor, source)?.into(),
             "group" => Group::read_cursor(cursor, source)?.into(),
-            _ => Expression::Infix(InfixExpression::read_cursor(cursor, source)?.into()),
+            _ => ExpressionKind::Infix(InfixExpression::read_cursor(cursor, source)?.into()),
         };
 
         cursor.goto_parent();
 
-        Ok(inner)
+        Ok(Expression {
+            kind,
+            span,
+            type_: RefCell::default(),
+        })
     }
 }

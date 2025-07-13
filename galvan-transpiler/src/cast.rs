@@ -1,4 +1,4 @@
-use galvan_ast::{Expression, TypeElement};
+use galvan_ast::{Expression, ExpressionKind, TypeElement};
 use galvan_resolver::Scope;
 
 use crate::{

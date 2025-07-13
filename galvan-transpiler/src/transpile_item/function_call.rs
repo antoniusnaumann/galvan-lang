@@ -7,8 +7,8 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::TypeElement::{self, Plain};
 use galvan_ast::{
-    ComparisonOperator, DeclModifier, Expression, FunctionCall, FunctionCallArg, InfixExpression,
-    InfixOperation, Ownership,
+    ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
+    InfixExpression, InfixOperation, Ownership,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -40,8 +40,12 @@ impl Transpile for FunctionCall {
             "assert" => match self.arguments.first() {
                 Some(FunctionCallArg {
                     modifier,
-                    expression: Expression::Infix(e),
-                    span,
+                    expression:
+                        Expression {
+                            kind: ExpressionKind::Infix(e),
+                            span,
+                            type_: _,
+                        },
                 }) if e.is_comparison() => {
                     if modifier.is_some() {
                         todo!("TRANSPILER ERROR: assert modifier is not allowed for comparison operations")
@@ -51,12 +55,7 @@ impl Transpile for FunctionCall {
                         unreachable!()
                     };
 
-                    let InfixOperation {
-                        lhs,
-                        operator,
-                        rhs,
-                        span,
-                    } = comp;
+                    let InfixOperation { lhs, operator, rhs } = comp;
                     let args = if self.arguments.len() > 1 {
                         &self.arguments[1..]
                     } else {
@@ -97,8 +96,8 @@ impl Transpile for FunctionCall {
                 let args = self
                     .arguments
                     .iter()
-                    .map(|a| match &a.expression {
-                        Expression::Closure(closure) => {
+                    .map(|a| match &a.expression.kind {
+                        ExpressionKind::Closure(closure) => {
                             assert!(
                             a.modifier.is_none(),
                             "TRANSPILER ERROR: closure modifier not allowed for iterator functions"
@@ -132,7 +131,7 @@ pub fn transpile_if(
         "if should have two arguments: condition and body"
     );
     let condition = &func.arguments[0];
-    let Expression::Closure(body) = &func.arguments[1].expression else {
+    let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
     let condition = condition.transpile(ctx, scope);
@@ -148,19 +147,18 @@ pub fn transpile_if(
 impl Transpile for FunctionCallArg {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         use DeclModifier as Mod;
-        use Expression as Exp;
+        use ExpressionKind as Exp;
         let Self {
             modifier,
             expression,
-            span,
         } = self;
-        match (modifier, expression) {
+        match (modifier, &expression.kind) {
             (Some(Mod::Let), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
             }
             (None, match_ident!(ident)) => {
                 match scope
-                    .get_variable(ident)
+                    .get_variable(&ident)
                     .unwrap_or_else(|| {
                         panic!(
                             "TODO: ERROR: undeclared variable {ident}, scope: {:#?}",

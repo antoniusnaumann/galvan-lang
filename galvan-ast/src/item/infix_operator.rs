@@ -1,13 +1,15 @@
 use derive_more::From;
-use galvan_ast_macro::AstNode;
+use galvan_ast_macro::{AstNode, PrintAst};
 
-use crate::{AstNode, Expression, Ident, PrintAst, Span};
+use crate::{Expression, Ident, PrintAst};
+
+use super::ExpressionKind;
 
 pub trait InfixOperator {
     fn symbol(&self) -> &str;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, From, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, From, PrintAst)]
 pub enum InfixExpression {
     Logical(InfixOperation<LogicalOperator>),
     Arithmetic(InfixOperation<ArithmeticOperator>),
@@ -28,15 +30,10 @@ pub struct InfixOperation<Op: InfixOperator> {
     pub lhs: Expression,
     pub operator: Op,
     pub rhs: Expression,
-    pub span: Span,
 }
 
-impl<T: InfixOperator> AstNode for InfixOperation<T> {
-    fn span(&self) -> Span {
-        self.span
-    }
-
-    fn print(&self, indent: usize) -> String {
+impl<T: InfixOperator> PrintAst for InfixOperation<T> {
+    fn print_ast(&self, indent: usize) -> String {
         let indent_str = " ".repeat(indent);
         let mut result = format!("{}{}\n", indent_str, stringify!(#struct_name));
 
@@ -59,8 +56,8 @@ impl<T: InfixOperator> AstNode for InfixOperation<T> {
 
 impl InfixOperation<MemberOperator> {
     pub fn is_field(&self) -> bool {
-        match self.rhs {
-            Expression::Ident(_) => true,
+        match self.rhs.kind {
+            ExpressionKind::Ident(_) => true,
             // TODO: Expression::Postfix(p) => match self p.without_postfix() {
             // Expression::Ident(_) => true, _ => false },
             _ => false,
@@ -68,8 +65,8 @@ impl InfixOperation<MemberOperator> {
     }
 
     pub fn field_ident(&self) -> Option<&Ident> {
-        match &self.rhs {
-            Expression::Ident(ident) => Some(ident),
+        match &self.rhs.kind {
+            ExpressionKind::Ident(ident) => Some(ident),
             _ => None,
         }
     }

@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate core;
 
-use std::{fmt::Display, ops::Deref};
+use std::{cell::RefCell, fmt::Display, ops::Deref};
 
 use galvan_files::Source;
 
@@ -69,6 +69,21 @@ impl PrintAst for bool {
     fn print_ast(&self, indent: usize) -> String {
         let indent_str = " ".repeat(indent);
         format!("{indent_str}{self}\n")
+    }
+}
+
+impl<T> PrintAst for RefCell<T>
+where
+    T: PrintAst,
+{
+    fn print_ast(&self, indent: usize) -> String {
+        self.borrow().print_ast(indent)
+    }
+}
+
+impl PrintAst for Box<Expression> {
+    fn print_ast(&self, indent: usize) -> String {
+        self.deref().print_ast(indent)
     }
 }
 

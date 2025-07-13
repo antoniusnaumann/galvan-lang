@@ -1,5 +1,6 @@
 use galvan_ast::{
-    AccessExpression, Block, Body, ElseExpression, Expression, PostfixExpression, Span, YeetExpression
+    AccessExpression, Block, Body, ElseExpression, Expression, ExpressionKind, PostfixExpression,
+    Span, YeetExpression,
 };
 use galvan_parse::TreeCursor;
 
@@ -48,9 +49,8 @@ impl ReadCursor for PostfixExpression {
 
 impl ReadCursor for ElseExpression {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "else_expression");
-        let span = Span::from_node(node);
-        
+        cursor_expect!(cursor, "else_expression");
+
         cursor.child();
         let receiver = Expression::read_cursor(cursor, source)?.into();
 
@@ -60,9 +60,12 @@ impl ReadCursor for ElseExpression {
         cursor.next();
         let body = Body::read_cursor(cursor, source)?;
         let body_span = body.span;
-        let block = Block { body, span: body_span };
+        let block = Block {
+            body,
+            span: body_span,
+        };
 
         cursor.goto_parent();
-        Ok(ElseExpression { receiver, block, span })
+        Ok(ElseExpression { receiver, block })
     }
 }

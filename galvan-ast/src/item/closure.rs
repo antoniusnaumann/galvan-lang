@@ -1,24 +1,21 @@
-use galvan_ast_macro::AstNode;
+use galvan_ast_macro::PrintAst;
 
-use crate::{AstNode, Block, Expression, Ident, PrintAst, Span, TypeElement};
+use crate::{Block, Expression, Ident, PrintAst, TypeElement};
 
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct Closure {
     pub arguments: Vec<ClosureArgument>,
     pub block: Block,
-    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ClosureArgument {
     pub ident: Ident,
     pub ty: Option<TypeElement>,
-    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ElseExpression {
     pub receiver: Box<Expression>,
     pub block: Block,
-    pub span: Span,
 }

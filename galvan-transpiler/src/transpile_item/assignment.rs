@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::Transpile;
-use galvan_ast::{Assignment, AssignmentOperator, Ownership, Expression};
+use galvan_ast::{Assignment, AssignmentOperator, ExpressionKind, Ownership};
 use galvan_resolver::Scope;
 
 impl Transpile for Assignment {
@@ -14,16 +14,18 @@ impl Transpile for Assignment {
             span: _span,
         } = self;
 
-        let prefix = match target {
-            Expression::Ident(ident) => scope.get_variable(ident).map_or("", |var| match var
-                .ownership
-            {
-                Ownership::Owned => "",
-                Ownership::Borrowed => todo!("Error: Cannot assign to borrowed variable"),
-                Ownership::MutBorrowed => "*",
-                Ownership::Copy => "",
-                Ownership::Ref => todo!("Handle assignment to ref variable"),
-            }),
+        let prefix = match &target.kind {
+            ExpressionKind::Ident(ident) => {
+                scope
+                    .get_variable(ident)
+                    .map_or("", |var| match var.ownership {
+                        Ownership::Owned => "",
+                        Ownership::Borrowed => todo!("Error: Cannot assign to borrowed variable"),
+                        Ownership::MutBorrowed => "*",
+                        Ownership::Copy => "",
+                        Ownership::Ref => todo!("Handle assignment to ref variable"),
+                    })
+            }
             _ => "",
         };
 

@@ -2,7 +2,8 @@ use crate::macros::impl_transpile_variants;
 use crate::Transpile;
 use crate::{context::Context, transpile};
 use galvan_ast::{
-    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression, InfixOperation, LogicalOperator
+    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
+    InfixOperation, LogicalOperator,
 };
 use galvan_resolver::Scope;
 
@@ -10,7 +11,7 @@ impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Compa
 
 impl Transpile for InfixOperation<LogicalOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { lhs, operator, rhs, span: _span } = self;
+        let Self { lhs, operator, rhs } = self;
         match operator {
             LogicalOperator::And => transpile!(ctx, scope, "{} && {}", lhs, rhs),
             LogicalOperator::Or => transpile!(ctx, scope, "{} || {}", lhs, rhs),
@@ -21,7 +22,7 @@ impl Transpile for InfixOperation<LogicalOperator> {
 
 impl Transpile for InfixOperation<ComparisonOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { lhs, operator, rhs, span: _span } = self;
+        let Self { lhs, operator, rhs } = self;
 
         match operator {
             ComparisonOperator::Equal => transpile!(ctx, scope, "{} == {}", lhs, rhs),
@@ -48,7 +49,7 @@ impl Transpile for InfixOperation<ComparisonOperator> {
 
 impl Transpile for InfixOperation<CollectionOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { lhs, operator, rhs, span: _span } = self;
+        let Self { lhs, operator, rhs } = self;
 
         match operator {
             CollectionOperator::Concat => {
@@ -71,7 +72,7 @@ impl Transpile for InfixOperation<CollectionOperator> {
 
 impl Transpile for InfixOperation<ArithmeticOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { lhs, operator, rhs, span: _span } = self;
+        let Self { lhs, operator, rhs } = self;
 
         match operator {
             ArithmeticOperator::Add => transpile!(ctx, scope, "{} + {}", lhs, rhs),

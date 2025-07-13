@@ -1,7 +1,9 @@
-use crate::{AstNode, Expression, PrintAst, Span};
+use crate::{AstNode, PrintAst, Span};
 use derive_more::From;
 use galvan_ast_macro::AstNode;
 use typeunion::type_union;
+
+use super::Expression;
 
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]

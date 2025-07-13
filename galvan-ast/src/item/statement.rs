@@ -1,3 +1,5 @@
+use std::cell::{Cell, RefCell};
+
 use galvan_ast_macro::{AstNode, PrintAst};
 use typeunion::type_union;
 
@@ -18,7 +20,7 @@ pub struct Block {
 }
 
 #[type_union]
-#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub type Statement = Assignment + Declaration + Expression + Return + Throw; // + Block;
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
@@ -46,9 +48,21 @@ pub struct Throw {
 type Infix = Box<InfixExpression>;
 type Postfix = Box<PostfixExpression>;
 
-#[type_union]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
+pub struct Group {
+    pub inner: Box<Expression>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
-pub type Expression = ElseExpression
+pub struct Expression {
+    pub kind: ExpressionKind,
+    pub span: Span,
+    pub type_: RefCell<Option<TypeElement>>,
+}
+
+#[type_union]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
+pub type ExpressionKind = ElseExpression
     + FunctionCall
     + Infix
     + Postfix
@@ -58,9 +72,3 @@ pub type Expression = ElseExpression
     + Ident
     + Closure
     + Group;
-
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
-pub struct Group {
-    pub inner: Box<Expression>,
-    pub span: Span,
-}

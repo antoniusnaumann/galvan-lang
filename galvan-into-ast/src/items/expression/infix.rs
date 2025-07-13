@@ -1,5 +1,7 @@
 use galvan_ast::{
-    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator, MemberOperator, Span
+    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, Expression,
+    ExpressionKind, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
+    MemberOperator, Span,
 };
 use galvan_parse::TreeCursor;
 
@@ -20,18 +22,24 @@ impl ReadCursor for InfixExpression {
             "logical_expression" => InfixExpression::Logical(
                 InfixOperation::<LogicalOperator>::read_cursor(cursor, source)?,
             ),
-            "arithmetic_expression" => InfixExpression::Arithmetic(
-                InfixOperation::<ArithmeticOperator>::read_cursor(cursor, source)?,
-            ),
-            "collection_expression" => InfixExpression::Collection(
-                InfixOperation::<CollectionOperator>::read_cursor(cursor, source)?,
-            ),
-            "comparison_expression" => InfixExpression::Comparison(
-                InfixOperation::<ComparisonOperator>::read_cursor(cursor, source)?,
-            ),
-            "custom_infix_expression" => InfixExpression::Custom(
-                InfixOperation::<CustomInfix>::read_cursor(cursor, source)?,
-            ),
+            "arithmetic_expression" => {
+                InfixExpression::Arithmetic(InfixOperation::<ArithmeticOperator>::read_cursor(
+                    cursor, source,
+                )?)
+            }
+            "collection_expression" => {
+                InfixExpression::Collection(InfixOperation::<CollectionOperator>::read_cursor(
+                    cursor, source,
+                )?)
+            }
+            "comparison_expression" => {
+                InfixExpression::Comparison(InfixOperation::<ComparisonOperator>::read_cursor(
+                    cursor, source,
+                )?)
+            }
+            "custom_infix_expression" => {
+                InfixExpression::Custom(InfixOperation::<CustomInfix>::read_cursor(cursor, source)?)
+            }
             unknown => unreachable!("Unknown expression kind: {unknown}"),
         };
 
@@ -39,11 +47,11 @@ impl ReadCursor for InfixExpression {
     }
 }
 
-impl <T> ReadCursor for InfixOperation<T> where T: InfixOperator + ReadCursor {
+impl<T> ReadCursor for InfixOperation<T>
+where
+    T: InfixOperator + ReadCursor,
+{
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor.curr()?;
-        let span = Span::from_node(node);
-
         cursor.child();
         let lhs = Expression::read_cursor(cursor, source)?;
         cursor.next();
@@ -52,7 +60,7 @@ impl <T> ReadCursor for InfixOperation<T> where T: InfixOperator + ReadCursor {
         let rhs = Expression::read_cursor(cursor, source)?;
         cursor.goto_parent();
 
-        let operation = InfixOperation{ lhs, operator, rhs, span };
+        let operation = InfixOperation { lhs, operator, rhs };
         Ok(operation)
     }
 }
@@ -95,7 +103,6 @@ impl ReadCursor for ArithmeticOperator {
         };
 
         Ok(op)
-
     }
 }
 
@@ -135,4 +142,3 @@ impl ReadCursor for CustomInfix {
         todo!()
     }
 }
-

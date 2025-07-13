@@ -6,10 +6,12 @@ use galvan_resolver::Scope;
 
 impl Transpile for InfixOperation<MemberOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let Self { lhs, operator, rhs, span: _span } = self;
+        let Self { lhs, operator, rhs } = self;
         match operator {
             MemberOperator::Dot => transpile!(ctx, scope, "{}.{}", lhs, rhs),
-            MemberOperator::SafeCall => transpile!(ctx, scope, "{}.map(|__elem__| {{ __elem__.{} }})", lhs, rhs),
+            MemberOperator::SafeCall => {
+                transpile!(ctx, scope, "{}.map(|__elem__| {{ __elem__.{} }})", lhs, rhs)
+            }
         }
     }
 }

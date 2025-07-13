@@ -1,7 +1,9 @@
+use std::cell::RefCell;
+
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg,
-    DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
-    TypeElement, TypeIdent,
+    DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident, Return, Span,
+    Statement, Throw, TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -9,8 +11,7 @@ use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for FunctionCall {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "function_call");
-        let span = Span::from_node(node);
+        cursor_expect!(cursor, "function_call");
 
         cursor.child();
         let identifier = Ident::read_cursor(cursor, source)?;
@@ -25,7 +26,6 @@ impl ReadCursor for FunctionCall {
         Ok(FunctionCall {
             identifier,
             arguments,
-            span,
         })
     }
 }
@@ -63,24 +63,25 @@ pub fn read_trailing_closure_call(
         span: body_span,
     };
 
-    // TODO: Insert correct span here that only goes from arguments to closure
     let closure = Closure {
         arguments: closure_arguments,
         block,
-        span,
     };
-    let closure_span = closure.span;
+    // TODO: Insert correct span here that only goes from arguments to closure
+    let closure_span = span;
     arguments.push(FunctionCallArg {
         modifier: None,
-        expression: closure.into(),
-        span: closure_span,
+        expression: Expression {
+            kind: closure.into(),
+            span: closure_span,
+            type_: RefCell::default(),
+        },
     });
 
     cursor.goto_parent();
     Ok(FunctionCall {
         identifier,
         arguments,
-        span,
     })
 }
 
@@ -117,14 +118,15 @@ pub fn read_free_function_call(
             let expression = arguments.into_iter().next().unwrap().expression;
             Statement::Throw(Throw { expression, span })
         }
-        _ => Statement::Expression(
-            FunctionCall {
+        _ => Statement::Expression(Expression {
+            kind: FunctionCall {
                 identifier,
                 arguments,
-                span,
             }
             .into(),
-        ),
+            span,
+            type_: RefCell::default(),
+        }),
     };
     Ok(call)
 }
@@ -150,8 +152,7 @@ fn read_arguments(
 
 impl ReadCursor for FunctionCallArg {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "function_call_arg");
-        let span = Span::from_node(node);
+        cursor_expect!(cursor, "function_call_arg");
 
         cursor.child();
         let modifier = if cursor.kind()? == "declaration_modifier" {
@@ -169,7 +170,6 @@ impl ReadCursor for FunctionCallArg {
         let arg = FunctionCallArg {
             modifier,
             expression,
-            span,
         };
         Ok(arg)
     }
@@ -217,18 +217,13 @@ impl ReadCursor for Closure {
         };
 
         cursor.goto_parent();
-        Ok(Closure {
-            arguments,
-            block,
-            span,
-        })
+        Ok(Closure { arguments, block })
     }
 }
 
 impl ReadCursor for ClosureArgument {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "closure_argument");
-        let span = Span::from_node(node);
+        cursor_expect!(cursor, "closure_argument");
 
         cursor.child();
         let ident = Ident::read_cursor(cursor, source)?;
@@ -242,14 +237,13 @@ impl ReadCursor for ClosureArgument {
         };
 
         cursor.goto_parent();
-        Ok(ClosureArgument { ident, ty, span })
+        Ok(ClosureArgument { ident, ty })
     }
 }
 
 impl ReadCursor for ConstructorCall {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "constructor_call");
-        let span = Span::from_node(node);
+        cursor_expect!(cursor, "constructor_call");
 
         cursor.child();
         let identifier = TypeIdent::read_cursor(cursor, source)?;
@@ -273,7 +267,6 @@ impl ReadCursor for ConstructorCall {
         let constructed = ConstructorCall {
             identifier,
             arguments,
-            span,
         };
         Ok(constructed)
     }
@@ -281,8 +274,7 @@ impl ReadCursor for ConstructorCall {
 
 impl ReadCursor for ConstructorCallArg {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "constructor_call_arg");
-        let span = Span::from_node(node);
+        cursor_expect!(cursor, "constructor_call_arg");
 
         cursor.child();
         let ident = Ident::read_cursor(cursor, source)?;
@@ -295,10 +287,6 @@ impl ReadCursor for ConstructorCallArg {
 
         cursor.goto_parent();
 
-        Ok(ConstructorCallArg {
-            ident,
-            expression,
-            span,
-        })
+        Ok(ConstructorCallArg { ident, expression })
     }
 }

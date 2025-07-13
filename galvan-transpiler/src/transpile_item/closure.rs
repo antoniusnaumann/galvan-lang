@@ -4,8 +4,8 @@ use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::Transpile;
 use galvan_ast::{
-    AstNode, Block, Closure, ClosureArgument, DeclModifier, ElseExpression, Expression, Ownership,
-    Param,
+    AstNode, Block, Closure, ClosureArgument, DeclModifier, ElseExpression, ExpressionKind,
+    Ownership, Param,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -40,11 +40,11 @@ impl_transpile!(Block, "{}", body);
 
 impl Transpile for ElseExpression {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        match self.receiver.deref() {
+        match &self.receiver.deref().kind {
             // special handling for if-else as opposed to using else on an optional value
-            Expression::FunctionCall(call) if call.identifier.as_str() == "if" => {
+            ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "if" => {
                 // TODO: we should attach the expected type to expressions somehow and honor that here
-                let if_ = transpile_if(call, ctx, scope, None);
+                let if_ = transpile_if(&call, ctx, scope, None);
                 transpile!(ctx, scope, "{if_} else {{ {} }}", self.block)
             }
             _ => transpile!(

@@ -1,31 +1,27 @@
-use crate::{AstNode, DeclModifier, Expression, Ident, PrintAst, Span, TypeIdent};
+use crate::{DeclModifier, Expression, Ident, PrintAst, TypeIdent};
 use derive_more::From;
-use galvan_ast_macro::AstNode;
+use galvan_ast_macro::PrintAst;
 
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct FunctionCall {
     pub identifier: Ident,
     pub arguments: Vec<FunctionCallArg>,
-    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct FunctionCallArg {
     pub modifier: Option<DeclModifier>,
     pub expression: Expression,
-    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ConstructorCall {
     pub identifier: TypeIdent,
     pub arguments: Vec<ConstructorCallArg>,
-    pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, From, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, From, PrintAst)]
 pub struct ConstructorCallArg {
     pub ident: Ident,
     pub expression: Expression,
-    pub span: Span,
 }

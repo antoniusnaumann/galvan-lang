@@ -1,8 +1,8 @@
 use galvan_ast::{
     ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
-    Expression, FunctionCall, Group, InfixExpression, InfixOperation, Literal, MemberOperator,
-    NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
+    Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
+    MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
     PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
@@ -74,30 +74,36 @@ impl InferType for Statement {
 
 impl InferType for Expression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
+        self.kind.infer_type(scope)
+    }
+}
+
+impl InferType for ExpressionKind {
+    fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            Expression::Closure(_) => {
+            ExpressionKind::Closure(_) => {
                 // todo!("Implement type inference for closure")
                 None
             }
-            Expression::ElseExpression(e) => e.infer_type(scope),
-            Expression::CollectionLiteral(collection) => collection.infer_type(scope),
-            Expression::FunctionCall(call) => call.infer_type(scope),
-            Expression::ConstructorCall(constructor) => Some(
+            ExpressionKind::ElseExpression(e) => e.infer_type(scope),
+            ExpressionKind::CollectionLiteral(collection) => collection.infer_type(scope),
+            ExpressionKind::FunctionCall(call) => call.infer_type(scope),
+            ExpressionKind::ConstructorCall(constructor) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new(constructor.identifier.clone()),
                     span: Span::default(),
                 }
                 .into(),
             ),
-            Expression::Literal(literal) => literal.infer_type(scope),
-            Expression::Ident(ident) => {
+            ExpressionKind::Literal(literal) => literal.infer_type(scope),
+            ExpressionKind::Ident(ident) => {
                 let ty = scope.get_variable(ident)?.ty.clone();
                 // println!("cargo::warning=got {:?} named {}", ty, ident);
                 ty?.into()
             }
-            Expression::Postfix(postfix) => postfix.infer_type(scope),
-            Expression::Infix(operation) => operation.infer_type(scope),
-            Expression::Group(Group { inner, span: _span }) => inner.infer_type(scope),
+            ExpressionKind::Postfix(postfix) => postfix.infer_type(scope),
+            ExpressionKind::Infix(operation) => operation.infer_type(scope),
+            ExpressionKind::Group(Group { inner }) => inner.infer_type(scope),
         }
     }
 }
@@ -106,7 +112,7 @@ impl InferType for FunctionCall {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         if self.identifier.as_str() == "if" {
             self.arguments.last().and_then(|last| {
-                let Expression::Closure(ref closure) = last.expression else {
+                let ExpressionKind::Closure(ref closure) = last.expression.kind else {
                     panic!("'if' is missing body")
                 };
                 closure
@@ -218,7 +224,6 @@ impl InferType for InfixOperation<CollectionOperator> {
             lhs,
             operator,
             rhs: _,
-            span: _span,
         } = self;
 
         match operator {
@@ -235,7 +240,6 @@ impl InferType for InfixOperation<MemberOperator> {
             lhs,
             operator: _,
             rhs,
-            span: _span,
         } = self;
 
         let receiver_type = lhs.infer_type(scope)?;
@@ -268,7 +272,7 @@ impl InferType for InfixOperation<MemberOperator> {
                         }
                     }
                     None => {
-                        if let Expression::FunctionCall(call) = rhs {
+                        if let ExpressionKind::FunctionCall(ref call) = rhs.kind {
                             println!("cargo::warning=functions: {:?}", scope.functions());
                             if let Some(func) =
                                 scope.resolve_function(Some(ty.ident()), &call.identifier, &[])

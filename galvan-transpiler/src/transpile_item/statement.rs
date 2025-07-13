@@ -6,8 +6,8 @@ use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    AstNode, DeclModifier, Declaration, Expression, Group, InfixExpression, Ownership,
-    PostfixExpression, Return, Statement, Throw, TypeElement,
+    AstNode, DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression,
+    Ownership, PostfixExpression, Return, Statement, Throw, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -99,7 +99,7 @@ impl Transpile for Declaration {
         // TODO: Clone inner type from ref types to non-ref types
         self.assignment
             .as_ref()
-            .map(|expr| transpile_assignment_expression(ctx, expr, scope))
+            .map(|expr| transpile_assignment_expression(ctx, &expr.kind, scope))
             .map(|expr| {
                 if matches!(self.decl_modifier, DeclModifier::Ref) {
                     format!("(&({expr})).__to_ref()")
@@ -131,21 +131,21 @@ impl Transpile for Throw {
 
 macro_rules! match_ident {
     ($p:pat) => {
-        Expression::Ident($p)
+        ExpressionKind::Ident($p)
     };
 }
 pub(crate) use match_ident;
 
 fn transpile_assignment_expression(
     ctx: &Context,
-    assigned: &Expression,
+    assigned: &ExpressionKind,
     scope: &mut Scope,
 ) -> String {
     match assigned {
         match_ident!(ident) => {
             transpile!(ctx, scope, "{}.to_owned()", ident)
         }
-        Expression::Infix(infix) => match infix.borrow() {
+        ExpressionKind::Infix(infix) => match infix.borrow() {
             InfixExpression::Member(access) if access.is_field() => {
                 transpile!(ctx, scope, "{}.to_owned()", access)
             }
@@ -155,7 +155,7 @@ fn transpile_assignment_expression(
     }
 }
 
-impl_transpile_variants! { Expression;
+impl_transpile_variants! { ExpressionKind;
     Ident,
     Infix,
     Postfix,
@@ -167,6 +167,8 @@ impl_transpile_variants! { Expression;
     Closure,
     Group,
 }
+
+impl_transpile!(Expression, "{}", kind);
 
 impl_transpile!(Group, "({})", inner);
 
