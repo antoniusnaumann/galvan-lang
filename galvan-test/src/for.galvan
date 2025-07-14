@@ -11,3 +11,12 @@ test "for loop works" {
 
     assert last == 5
 }
+
+test "zipping iterators" {
+    let num1 = [6, 5, 4, 3, 2, 1, 0]
+    let num2 = [0, 1, 2, 3, 4, 5, 6]
+
+    for num1.iter().zip(num2) |a, b| {
+        assert a + b == 6
+    }
+}

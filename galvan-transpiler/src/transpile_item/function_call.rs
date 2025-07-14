@@ -152,12 +152,13 @@ pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'
         "TRANSPILE ERROR: for loop needs two arguments: an iterator and a closure"
     );
     let iterator = &func.arguments[0];
-    let elem_ty = match iterator.expression.infer_type(scope) {
+    let iter_ty = iterator.expression.infer_type(scope);
+    let elem_ty = match &iter_ty {
         Some(ty) => match ty {
-            TypeElement::Array(ty) => Some(ty.elements),
+            TypeElement::Array(ty) => Some(&ty.elements),
             TypeElement::Dictionary(_ty) => todo!("for loop on dict"),
             TypeElement::OrderedDictionary(_ty) => todo!("for loop on ordered dict"),
-            TypeElement::Set(ty) => Some(ty.elements),
+            TypeElement::Set(ty) => Some(&ty.elements),
             TypeElement::Tuple(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over tuple type"),
             TypeElement::Optional(_ty) => todo!("for loop on optional"),
             TypeElement::Result(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over result type"),
@@ -172,13 +173,31 @@ pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'
     };
     let condition = iterator.transpile(ctx, scope);
     // TODO: auto-unfold tuples into multiple arguments
-    assert_eq!(
-        body.arguments.len(),
-        1,
-        "TRANSPILER ERROR: for loop accepts exactly one argument"
+    assert!(
+        body.arguments.len() > 0,
+        "TRANSPILER ERROR: for loop body at least one argument"
     );
-    let element = body.arguments[0].ident.transpile(ctx, scope);
+    let element = if body.arguments.len() == 1 {
+        body.arguments[0].ident.transpile(ctx, scope)
+    } else {
+        let elements = body
+            .arguments
+            .iter()
+            .map(|arg| arg.transpile(ctx, scope))
+            .join(", ");
+        format!("({elements})")
+    };
     let mut body_scope = Scope::child(scope);
+    // HACK: just assume we need to revert the auto-inserted & for unknown types
+    let condition = if iter_ty.is_none() {
+        condition
+            .strip_prefix("&(")
+            .unwrap_or(&condition)
+            .strip_suffix(")")
+            .unwrap_or(&condition)
+    } else {
+        &condition
+    };
     // TODO: handle for loops with return types
     let body = body.block.transpile(ctx, &mut body_scope);
     if let Some(elem_ty) = elem_ty {
