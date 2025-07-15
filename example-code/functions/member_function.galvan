@@ -3,7 +3,7 @@
 //#[derive(Clone, Debug, PartialEq)]
 //pub(crate) struct Dog;
 //impl Dog {
-//pub(crate) fn woof(&self) { }
+//pub(crate) fn woof(&self) { { }; }
 //}
 //"
 //@end

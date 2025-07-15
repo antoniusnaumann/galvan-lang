@@ -1,7 +1,6 @@
 use crate::{FunctionId, Lookup, LookupContext};
 use galvan_ast::{
-    DeclModifier, FnDecl, FnSignature, Ident, Ownership, ToplevelItem, TypeDecl, TypeElement,
-    TypeIdent,
+    DeclModifier, FnDecl, Ident, Ownership, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
 };
 use std::collections::HashMap;
 

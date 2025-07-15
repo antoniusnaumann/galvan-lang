@@ -12,7 +12,7 @@ impl Transpile for &(Cow<'_, str>, &TestDecl) {
         transpile!(
             ctx,
             scope,
-            "#[test]\nfn {}() {{\n{}\n}}",
+            "#[test]\nfn {}() {{\n{};\n}}",
             name,
             test_decl.body
         )

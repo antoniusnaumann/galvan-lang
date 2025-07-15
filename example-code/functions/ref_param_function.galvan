@@ -2,7 +2,7 @@
 //"
 //#[derive(Clone, Debug, PartialEq)]
 //pub(crate) struct Dog;
-//pub(crate) fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { }
+//pub(crate) fn bark(dog: std::sync::Arc<std::sync::Mutex<Dog>>) { { }; }
 //"
 //@end
 type Dog

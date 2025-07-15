@@ -13,7 +13,11 @@ impl Transpile for FnDecl {
 
         let signature = self.signature.transpile(ctx, scope);
         let block = self.body.transpile(ctx, scope);
-        transpile!(ctx, scope, "{} {}", signature, block)
+        if self.signature.return_type.is_some() {
+            transpile!(ctx, scope, "{} {}", signature, block)
+        } else {
+            transpile!(ctx, scope, "{} {{ {}; }}", signature, block)
+        }
     }
 }
 

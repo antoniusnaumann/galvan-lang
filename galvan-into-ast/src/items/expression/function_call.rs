@@ -2,8 +2,8 @@ use std::cell::RefCell;
 
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg,
-    DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident, Return, Span,
-    Statement, Throw, TypeElement, TypeIdent,
+    DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
+    TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 

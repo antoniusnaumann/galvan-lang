@@ -20,3 +20,19 @@ test "zipping iterators" {
         assert a + b == 6
     }
 }
+
+test "for expression" {
+    let numbers = [1, 4, 5, 7, 10]
+    let doubled = for numbers |num| {
+        num * 2
+    }
+
+    assert doubled.len() == 5
+
+    assert doubled[2] == 10
+    assert doubled[4] == 20
+
+    for numbers.iter().zip(doubled) |a, b| {
+        assert a * 2 == b * 1
+    }
+}

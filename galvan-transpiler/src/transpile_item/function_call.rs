@@ -1,4 +1,4 @@
-use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
+use crate::builtins::BORROWED_ITERATOR_FNS;
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::transpile_item::closure::transpile_closure;
@@ -7,8 +7,8 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::TypeElement::{self, Plain};
 use galvan_ast::{
-    ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
-    InfixExpression, InfixOperation, Ownership,
+    Assignment, ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall,
+    FunctionCallArg, Ident, InfixExpression, InfixOperation, Ownership,
 };
 use galvan_resolver::Scope;
 use itertools::Itertools;
@@ -168,26 +168,25 @@ pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'
         },
         None => None,
     };
-    let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
+    let ExpressionKind::Closure(closure) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
     let condition = iterator.transpile(ctx, scope);
     // TODO: auto-unfold tuples into multiple arguments
     assert!(
-        body.arguments.len() > 0,
+        closure.arguments.len() > 0,
         "TRANSPILER ERROR: for loop body at least one argument"
     );
-    let element = if body.arguments.len() == 1 {
-        body.arguments[0].ident.transpile(ctx, scope)
+    let element = if closure.arguments.len() == 1 {
+        closure.arguments[0].ident.transpile(ctx, scope)
     } else {
-        let elements = body
+        let elements = closure
             .arguments
             .iter()
             .map(|arg| arg.transpile(ctx, scope))
             .join(", ");
         format!("({elements})")
     };
-    let mut body_scope = Scope::child(scope);
     // HACK: just assume we need to revert the auto-inserted & for unknown types
     let condition = if iter_ty.is_none() {
         condition
@@ -198,14 +197,37 @@ pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'
     } else {
         &condition
     };
-    // TODO: handle for loops with return types
-    let body = body.block.transpile(ctx, &mut body_scope);
+    let mut prefix = "";
     if let Some(elem_ty) = elem_ty {
         if ctx.mapping.is_copy_type(&elem_ty) {
-            return format!("for &{element} in {condition} {{ {body} }}");
+            prefix = "&"
         }
     }
-    format!("for {element} in {condition} {{ {body} }}")
+    // TODO: try to figure out capacity and create vec with matching capacity
+    // TODO: only do this when the body returns a value
+    let mut body_scope = Scope::child(scope);
+    let mut block: Vec<_> = closure
+        .block
+        .body
+        .statements
+        .iter()
+        .map(|stmt| stmt.transpile(ctx, &mut body_scope))
+        .collect();
+    let len = block.len();
+    // This allows for loops that automatically collect values produced in each iteration
+    for (i, stmt) in block.iter_mut().enumerate() {
+        if i == len - 1 {
+            *stmt = format!("__result.push({stmt})")
+        }
+    }
+    let block = block.join(";\n");
+    format!(
+        "{{
+        let mut __result = Vec::new(); 
+        for {prefix}{element} in {condition} {{ {block} }}
+        __result
+        }}"
+    )
 }
 
 impl Transpile for FunctionCallArg {
