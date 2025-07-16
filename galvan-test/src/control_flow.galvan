@@ -34,3 +34,27 @@ test "Try expression" {
 
     assert result == 7
 }
+
+fn returns_result(ok: Bool) -> Int!Int {
+    if ok {
+        42
+    } else {
+        throw 21
+    }
+}
+
+test "Try expression on result" {
+    let result = returns_result(true)
+    try result |ok| {
+        assert ok == 42
+    } else {
+        panic "Result value was expected to be okay but was error"
+    }
+
+    let result = returns_result(false)
+    try result |ok| {
+        panic "Result value was expected to be error but was ok"
+    } else |err| {
+        assert err == 42
+    }
+}

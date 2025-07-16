@@ -499,7 +499,7 @@ punct!(
     Param,
     FunctionCallArg,
     ConstructorCallArg,
-    ClosureArgument,
+    ClosureParameter,
     DictLiteralElement
 );
 punct!(",\n", StructTypeMember);

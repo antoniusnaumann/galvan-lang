@@ -1,6 +1,6 @@
 use galvan_ast::{
-    AccessExpression, Block, Body, ElseExpression, Expression, ExpressionKind, PostfixExpression,
-    Span, YeetExpression,
+    AccessExpression, Block, Body, ClosureParameter, ElseExpression, Expression, ExpressionKind,
+    PostfixExpression, Span, YeetExpression,
 };
 use galvan_parse::TreeCursor;
 
@@ -58,6 +58,22 @@ impl ReadCursor for ElseExpression {
         cursor_expect!(cursor, "else_keyword");
 
         cursor.next();
+        let mut parameter = Vec::new();
+        if cursor.kind()? == "pipe" {
+            cursor_expect!(cursor, "pipe");
+            cursor.next();
+            while cursor.kind()? == "closure_argument" {
+                parameter.push(ClosureParameter::read_cursor(cursor, source)?);
+                cursor.next();
+                while cursor.kind()? == "," {
+                    cursor.next();
+                }
+            }
+
+            cursor_expect!(cursor, "pipe");
+        }
+
+        cursor.next();
         let body = Body::read_cursor(cursor, source)?;
         let body_span = body.span;
         let block = Block {
@@ -66,6 +82,10 @@ impl ReadCursor for ElseExpression {
         };
 
         cursor.goto_parent();
-        Ok(ElseExpression { receiver, block })
+        Ok(ElseExpression {
+            receiver,
+            block,
+            parameters: parameter,
+        })
     }
 }

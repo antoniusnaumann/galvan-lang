@@ -4,12 +4,12 @@ use crate::{Block, Expression, Ident, PrintAst, TypeElement};
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct Closure {
-    pub arguments: Vec<ClosureArgument>,
+    pub parameters: Vec<ClosureParameter>,
     pub block: Block,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
-pub struct ClosureArgument {
+pub struct ClosureParameter {
     pub ident: Ident,
     pub ty: Option<TypeElement>,
 }
@@ -17,5 +17,6 @@ pub struct ClosureArgument {
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ElseExpression {
     pub receiver: Box<Expression>,
+    pub parameters: Vec<ClosureParameter>,
     pub block: Block,
 }

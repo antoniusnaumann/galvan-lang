@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use galvan_ast::{
-    AstNode, Block, Body, Closure, ClosureArgument, ConstructorCall, ConstructorCallArg,
+    AstNode, Block, Body, Closure, ClosureParameter, ConstructorCall, ConstructorCallArg,
     DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
     TypeElement, TypeIdent,
 };
@@ -47,7 +47,7 @@ pub fn read_trailing_closure_call(
     if cursor.kind()? == "pipe" {
         cursor.next();
         while cursor.kind()? != "pipe" {
-            closure_arguments.push(ClosureArgument::read_cursor(cursor, source)?);
+            closure_arguments.push(ClosureParameter::read_cursor(cursor, source)?);
             cursor.next();
             while cursor.kind()? == "," {
                 cursor.next();
@@ -64,7 +64,7 @@ pub fn read_trailing_closure_call(
     };
 
     let closure = Closure {
-        arguments: closure_arguments,
+        parameters: closure_arguments,
         block,
     };
     // TODO: Insert correct span here that only goes from arguments to closure
@@ -185,7 +185,7 @@ impl ReadCursor for Closure {
         cursor.next();
         let mut arguments = Vec::new();
         while cursor.kind()? == "closure_argument" {
-            arguments.push(ClosureArgument::read_cursor(cursor, source)?);
+            arguments.push(ClosureParameter::read_cursor(cursor, source)?);
             cursor.next();
             while cursor.kind()? == "," {
                 cursor.next();
@@ -217,11 +217,14 @@ impl ReadCursor for Closure {
         };
 
         cursor.goto_parent();
-        Ok(Closure { arguments, block })
+        Ok(Closure {
+            parameters: arguments,
+            block,
+        })
     }
 }
 
-impl ReadCursor for ClosureArgument {
+impl ReadCursor for ClosureParameter {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         cursor_expect!(cursor, "closure_argument");
 
@@ -237,7 +240,7 @@ impl ReadCursor for ClosureArgument {
         };
 
         cursor.goto_parent();
-        Ok(ClosureArgument { ident, ty })
+        Ok(ClosureParameter { ident, ty })
     }
 }
 

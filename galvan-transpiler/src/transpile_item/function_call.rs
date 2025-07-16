@@ -174,14 +174,14 @@ pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'
     let condition = iterator.transpile(ctx, scope);
     // TODO: auto-unfold tuples into multiple arguments
     assert!(
-        closure.arguments.len() > 0,
+        closure.parameters.len() > 0,
         "TRANSPILER ERROR: for loop body at least one argument"
     );
-    let element = if closure.arguments.len() == 1 {
-        closure.arguments[0].ident.transpile(ctx, scope)
+    let element = if closure.parameters.len() == 1 {
+        closure.parameters[0].ident.transpile(ctx, scope)
     } else {
         let elements = closure
-            .arguments
+            .parameters
             .iter()
             .map(|arg| arg.transpile(ctx, scope))
             .join(", ");
