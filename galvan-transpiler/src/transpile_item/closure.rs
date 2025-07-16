@@ -84,8 +84,8 @@ fn transpile_try(
     };
     let cond_type = condition.expression.infer_type(scope);
     let condition = condition.transpile(ctx, scope);
-    let condition = if let Some(ref ty) = ty {
-        if ctx.mapping.is_copy_type(&ty) {
+    let condition = if let Some(ref cond_type) = cond_type {
+        if ctx.mapping.is_copy_type(&cond_type) {
             condition.strip_prefix("&").unwrap()
         } else {
             &condition
@@ -112,7 +112,7 @@ fn transpile_try(
             let else_ = else_
                 .map(|else_| else_.block.transpile(ctx, scope))
                 .unwrap_or("{}".into());
-            format!("match {condition} {{ Some({binding}) => {transpiled_body} }}, None => {else_}",)
+            format!("match {condition} {{ Some({binding}) => {transpiled_body}, None => {else_} }}",)
         }
         Some(TypeElement::Result(_)) => {
             let ok_binding = body.parameters[0].transpile(ctx, &mut body_scope);

@@ -55,6 +55,6 @@ test "Try expression on result" {
     try result |ok| {
         panic "Result value was expected to be error but was ok"
     } else |err| {
-        assert err == 42
+        assert err == 21
     }
 }
