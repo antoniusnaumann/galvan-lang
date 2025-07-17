@@ -7,7 +7,7 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::{
     AstNode, Block, Closure, ClosureParameter, DeclModifier, ElseExpression, Expression,
-    ExpressionKind, FunctionCall, OptionalTypeItem, Ownership, Param, Span, TypeElement,
+    ExpressionKind, FunctionCall, Ownership, Param, Span, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;

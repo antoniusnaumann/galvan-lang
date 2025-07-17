@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate core;
 
-use std::{cell::RefCell, fmt::Display, ops::Deref};
+use std::{cell::RefCell, ops::Deref};
 
 use galvan_files::Source;
 

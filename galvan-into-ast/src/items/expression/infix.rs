@@ -1,11 +1,10 @@
 use galvan_ast::{
-    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, Expression,
-    ExpressionKind, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
-    MemberOperator, Span,
+    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, Expression, Group,
+    InfixExpression, InfixOperation, InfixOperator, LogicalOperator, MemberOperator,
 };
 use galvan_parse::TreeCursor;
 
-use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
+use crate::{result::CursorUtil, AstError, ReadCursor};
 
 impl ReadCursor for Group {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {

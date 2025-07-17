@@ -1,5 +1,5 @@
 use derive_more::From;
-use galvan_ast_macro::{AstNode, PrintAst};
+use galvan_ast_macro::PrintAst;
 
 use crate::{Expression, Ident, PrintAst};
 

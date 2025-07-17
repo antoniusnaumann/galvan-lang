@@ -1,5 +1,5 @@
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, FnDecl, FnSignature, GenericTypeItem, Ident,
+    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, FnDecl, FnSignature, GenericTypeItem,
     OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ResultTypeItem, SetTypeItem,
     Span, TupleTypeItem, TypeElement, TypeIdent, Visibility,
 };

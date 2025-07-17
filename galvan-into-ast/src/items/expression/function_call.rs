@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureParameter, ConstructorCall, ConstructorCallArg,
     DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,

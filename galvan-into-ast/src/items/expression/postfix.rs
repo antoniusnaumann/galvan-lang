@@ -1,6 +1,6 @@
 use galvan_ast::{
-    AccessExpression, Block, Body, ClosureParameter, ElseExpression, Expression, ExpressionKind,
-    PostfixExpression, Span, YeetExpression,
+    AccessExpression, Block, Body, ClosureParameter, ElseExpression, Expression, PostfixExpression,
+    Span, YeetExpression,
 };
 use galvan_parse::TreeCursor;
 

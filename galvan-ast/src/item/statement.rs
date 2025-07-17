@@ -1,5 +1,3 @@
-use std::cell::{Cell, RefCell};
-
 use galvan_ast_macro::{AstNode, PrintAst};
 use typeunion::type_union;
 

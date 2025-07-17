@@ -7,8 +7,8 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::TypeElement::{self};
 use galvan_ast::{
-    BasicTypeItem, ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall,
-    FunctionCallArg, InfixExpression, InfixOperation, Ownership,
+    ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
+    InfixExpression, InfixOperation, Ownership,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;

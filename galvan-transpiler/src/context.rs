@@ -1,6 +1,6 @@
 use crate::mapping::Mapping;
 use galvan_ast::{
-    AstNode, EmptyTypeDecl, FnDecl, FnSignature, SegmentedAsts, ToplevelItem, TypeDecl, Visibility,
+    AstNode, EmptyTypeDecl, FnDecl, SegmentedAsts, ToplevelItem, TypeDecl, Visibility,
     VisibilityKind,
 };
 use galvan_files::Source;

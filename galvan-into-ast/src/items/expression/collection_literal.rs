@@ -1,5 +1,5 @@
 use galvan_ast::{
-    ArrayLiteral, CollectionLiteral, DictLiteral, DictLiteralElement, Expression, ExpressionKind,
+    ArrayLiteral, CollectionLiteral, DictLiteral, DictLiteralElement, Expression,
     OrderedDictLiteral, SetLiteral, Span,
 };
 use galvan_parse::TreeCursor;
