@@ -1,6 +1,7 @@
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, OptionalTypeItem,
-    OrderedDictionaryTypeItem, ResultTypeItem, SetTypeItem, TupleTypeItem, TypeElement,
+    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, FnDecl, FnSignature, GenericTypeItem, Ident,
+    OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ResultTypeItem, SetTypeItem,
+    Span, TupleTypeItem, TypeElement, TypeIdent, Visibility,
 };
 use itertools::Itertools;
 
@@ -38,6 +39,39 @@ pub fn builtins() -> Mapping {
         ("String" => "String", "str"),
         ("Char" => "char", copy),
     )
+}
+
+pub fn builtin_fns() -> Vec<FnDecl> {
+    vec![func(
+        "format",
+        Vec::new(),
+        Some(TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("String"),
+            span: Span::default(),
+        })),
+    )]
+}
+
+fn func(name: &str, parameters: Vec<TypeElement>, ret: Option<TypeElement>) -> FnDecl {
+    FnSignature {
+        visibility: Visibility::public(),
+        identifier: name.to_owned().into(),
+        parameters: ParamList {
+            params: parameters
+                .into_iter()
+                .map(|t| Param {
+                    decl_modifier: None,
+                    identifier: "_".to_owned().into(),
+                    param_type: t,
+                    span: Span::default(),
+                })
+                .collect(),
+            span: Span::default(),
+        },
+        return_type: ret,
+        span: Span::default(),
+    }
+    .into()
 }
 
 /// Lists all iterator functions that have a closure which borrows its argument, leading to a double iterator when called on .iter()

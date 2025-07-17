@@ -57,7 +57,6 @@ pub struct Group {
 pub struct Expression {
     pub kind: ExpressionKind,
     pub span: Span,
-    pub type_: RefCell<Option<TypeElement>>,
 }
 
 #[type_union]

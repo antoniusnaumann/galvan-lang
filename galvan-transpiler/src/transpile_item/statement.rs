@@ -7,7 +7,7 @@ use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
     AstNode, DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression,
-    Ownership, PostfixExpression, Return, Statement, Throw, TypeElement,
+    Ownership, PostfixExpression, Return, Statement, Throw,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -85,12 +85,13 @@ impl Transpile for Declaration {
             modifier: self.decl_modifier,
             ty: inferred_type.clone(),
             ownership: match self.decl_modifier {
-                DeclModifier::Let | DeclModifier::Mut => match inferred_type {
-                    Some(TypeElement::Plain(plain)) if ctx.mapping.is_copy(&plain.ident) => {
+                DeclModifier::Let | DeclModifier::Mut => {
+                    if inferred_type.is_some_and(|ty| ctx.mapping.is_copy(&ty)) {
                         Ownership::Copy
+                    } else {
+                        Ownership::Owned
                     }
-                    _ => Ownership::Owned,
-                },
+                }
                 DeclModifier::Ref => Ownership::Ref,
             },
         });

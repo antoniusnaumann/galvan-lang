@@ -140,10 +140,6 @@ impl ReadCursor for Expression {
 
         cursor.goto_parent();
 
-        Ok(Expression {
-            kind,
-            span,
-            type_: RefCell::default(),
-        })
+        Ok(Expression { kind, span })
     }
 }

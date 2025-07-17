@@ -12,6 +12,19 @@ pub struct FnDecl {
     pub span: Span,
 }
 
+impl From<FnSignature> for FnDecl {
+    fn from(value: FnSignature) -> Self {
+        Self {
+            signature: value,
+            body: Body {
+                statements: vec![],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct FnSignature {
     // pub asyncness: Async,

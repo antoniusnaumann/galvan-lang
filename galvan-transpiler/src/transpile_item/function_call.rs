@@ -5,12 +5,12 @@ use crate::transpile_item::closure::transpile_closure;
 use crate::transpile_item::statement::match_ident;
 use crate::type_inference::InferType;
 use crate::Transpile;
-use galvan_ast::TypeElement::{self, Plain};
+use galvan_ast::TypeElement::{self};
 use galvan_ast::{
-    Assignment, ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall,
-    FunctionCallArg, Ident, InfixExpression, InfixOperation, Ownership,
+    BasicTypeItem, ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall,
+    FunctionCallArg, InfixExpression, InfixOperation, Ownership,
 };
-use galvan_resolver::Scope;
+use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
 use std::borrow::Borrow;
 
@@ -45,7 +45,6 @@ impl Transpile for FunctionCall {
                         Expression {
                             kind: ExpressionKind::Infix(e),
                             span,
-                            type_: _,
                         },
                 }) if e.is_comparison() => {
                     if modifier.is_some() {
@@ -110,12 +109,45 @@ impl Transpile for FunctionCall {
                     .join(", ");
                 format!("{}({})", ident, args)
             }
-            _ => {
-                // TODO: Resolve function and check argument types + check if they should be submitted as &, &mut or Arc<Mutex>
-                let ident = self.identifier.transpile(ctx, scope);
-                format!("{}({})", ident, self.arguments.transpile(ctx, scope))
-            }
+            _ => transpile_fn_call(self, ctx, scope),
         }
+    }
+}
+
+fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope) -> String {
+    let func = ctx.lookup.resolve_function(None, &call.identifier, &[]);
+    let FunctionCall {
+        identifier,
+        arguments,
+    } = call;
+
+    if let Some(func) = func {
+        let args = &func
+            .signature
+            .parameters
+            .params
+            .iter()
+            .skip_while(|p| p.identifier.as_str() == "self")
+            .zip(arguments)
+            .map(|(param, arg)| {
+                let mut arg_scope = Scope::child(scope);
+                arg_scope.return_type = Some(param.param_type.clone());
+                arg.transpile(ctx, &mut arg_scope)
+            })
+            .join(", ");
+
+        format!("{}({})", identifier, args)
+    } else {
+        let args = arguments
+            .iter()
+            .map(|arg| {
+                let mut arg_scope = Scope::child(scope);
+                arg_scope.return_type = None;
+                arg.transpile(ctx, &mut arg_scope)
+            })
+            .join(", ");
+
+        format!("{}({})", identifier, args)
     }
 }
 
@@ -145,7 +177,7 @@ pub fn transpile_if(
     )
 }
 
-pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) -> String {
+fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) -> String {
     assert_eq!(
         func.arguments.len(),
         2,
@@ -199,7 +231,7 @@ pub fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'
     };
     let mut prefix = "";
     if let Some(elem_ty) = elem_ty {
-        if ctx.mapping.is_copy_type(&elem_ty) {
+        if ctx.mapping.is_copy(&elem_ty) {
             prefix = "&"
         }
     }
@@ -238,6 +270,8 @@ impl Transpile for FunctionCallArg {
             modifier,
             expression,
         } = self;
+        // TODO: typecheck expression and expected type
+
         match (modifier, &expression.kind) {
             (Some(Mod::Let), _) => {
                 todo!("TRANSPILER ERROR: Let modifier is not allowed for function call arguments")
@@ -268,14 +302,13 @@ impl Transpile for FunctionCallArg {
                 transpile!(ctx, scope, "{}", closure)
             }
             (None, expression) => {
-                let t = expression.infer_type(scope);
-                if t.is_some_and(|t| {
-                    if let Plain(plain) = t {
-                        ctx.mapping.is_copy(&plain.ident)
-                    } else {
-                        false
-                    }
-                }) {
+                let is_copy = scope
+                    .return_type
+                    .clone()
+                    .or_else(|| expression.infer_type(scope))
+                    .is_some_and(|t| ctx.mapping.is_copy(&t));
+
+                if is_copy {
                     transpile!(ctx, scope, "{}", expression)
                 } else {
                     transpile!(ctx, scope, "&({})", expression)

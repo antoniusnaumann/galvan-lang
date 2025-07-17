@@ -3,15 +3,18 @@ use galvan_ast::{
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
-    PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement, TypeIdent,
+    Ownership, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
+    TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
 
-use crate::builtins::IsSame;
+use crate::{builtins::IsSame, context::Context};
 
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement>;
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership;
 }
 
 impl InferType for ElseExpression {
@@ -20,10 +23,13 @@ impl InferType for ElseExpression {
         let block_type = self.block.infer_type(scope);
 
         match (receiver_type, block_type) {
+            (Some(TypeElement::Optional(receiver)), Some(TypeElement::Never(_))) => {
+                Some(receiver.inner)
+            }
+            (ty, Some(TypeElement::Never(_))) | (Some(TypeElement::Never(_)), ty) => ty,
             (Some(receiver_type), Some(block_type)) if receiver_type.is_same(&block_type) => {
                 Some(receiver_type)
             }
-            (ty, Some(TypeElement::Never(_))) | (Some(TypeElement::Never(_)), ty) => ty,
             (Some(receiver_type), None) => Some(receiver_type),
             (Some(TypeElement::Optional(receiver_type)), Some(block_type)) => {
                 if receiver_type.inner.is_same(&block_type) {
@@ -37,12 +43,20 @@ impl InferType for ElseExpression {
             (_, _) => todo!("TRANSPILER ERROR: Types of if and else expression don't match."),
         }
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        self.block.infer_owned(ctx, scope)
+    }
 }
 
 impl InferType for Block {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         // TODO: Block should have access to its inner scope
         self.body.infer_type(scope)
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        self.body.infer_owned(ctx, scope)
     }
 }
 
@@ -51,6 +65,13 @@ impl InferType for Body {
         self.statements
             .last()
             .and_then(|stmt| stmt.infer_type(scope))
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        self.statements
+            .last()
+            .map(|stmt| stmt.infer_owned(ctx, scope))
+            .unwrap_or_default()
     }
 }
 
@@ -70,11 +91,22 @@ impl InferType for Statement {
             Statement::Throw(throw) => Some(TypeElement::Never(NeverTypeItem { span: throw.span })), // Statement::Block(block) => block.infer_type(scope),
         }
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        match self {
+            Statement::Expression(expr) => expr.infer_owned(ctx, scope),
+            _ => Ownership::Owned,
+        }
+    }
 }
 
 impl InferType for Expression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         self.kind.infer_type(scope)
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        self.kind.infer_owned(ctx, scope)
     }
 }
 
@@ -104,6 +136,21 @@ impl InferType for ExpressionKind {
             ExpressionKind::Postfix(postfix) => postfix.infer_type(scope),
             ExpressionKind::Infix(operation) => operation.infer_type(scope),
             ExpressionKind::Group(Group { inner }) => inner.infer_type(scope),
+        }
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        match self {
+            ExpressionKind::ElseExpression(e) => todo!(),
+            ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope),
+            ExpressionKind::Infix(infix) => todo!(),
+            ExpressionKind::Postfix(postfix) => todo!(),
+            ExpressionKind::CollectionLiteral(collection) => todo!(),
+            ExpressionKind::ConstructorCall(constructor) => todo!(),
+            ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope),
+            ExpressionKind::Ident(ident) => todo!(),
+            ExpressionKind::Closure(closure) => todo!(),
+            ExpressionKind::Group(group) => todo!(),
         }
     }
 }
@@ -141,6 +188,43 @@ impl InferType for FunctionCall {
             }
         }
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        if self.identifier.as_str() == "if" {
+            self.arguments
+                .last()
+                .map(|last| {
+                    let ExpressionKind::Closure(ref closure) = last.expression.kind else {
+                        panic!("'if' is missing body")
+                    };
+                    closure
+                        .block
+                        .body
+                        .statements
+                        .last()
+                        .map(|stmt| stmt.infer_owned(ctx, scope))
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default()
+        } else {
+            let func = scope.resolve_function(None, &self.identifier, &[]);
+
+            if let Some(func) = func {
+                if func
+                    .signature
+                    .return_type
+                    .as_ref()
+                    .is_some_and(|ty| ctx.mapping.is_copy(&ty))
+                {
+                    Ownership::Copy
+                } else {
+                    Ownership::Owned
+                }
+            } else {
+                Ownership::default()
+            }
+        }
+    }
 }
 
 impl InferType for Literal {
@@ -168,6 +252,14 @@ impl InferType for Literal {
                 })
                 .into(),
             ),
+        }
+    }
+
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
+        match self {
+            Literal::StringLiteral(_) => Ownership::Owned,
+            Literal::NumberLiteral(_) | Literal::BooleanLiteral(_) => Ownership::Copy,
+            Literal::NoneLiteral(_) => Ownership::Owned,
         }
     }
 }
@@ -199,6 +291,10 @@ impl InferType for InfixExpression {
             InfixExpression::Custom(_) => todo!("Infer type for custom operators!"),
         }
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
+    }
 }
 
 impl InferType for InfixOperation<ArithmeticOperator> {
@@ -216,6 +312,10 @@ impl InferType for InfixOperation<ArithmeticOperator> {
 
         result
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
+    }
 }
 
 impl InferType for InfixOperation<CollectionOperator> {
@@ -231,6 +331,10 @@ impl InferType for InfixOperation<CollectionOperator> {
             CollectionOperator::Remove => lhs.infer_type(scope),
             CollectionOperator::Contains => Some(bool()),
         }
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
     }
 }
 
@@ -306,6 +410,10 @@ impl InferType for InfixOperation<MemberOperator> {
             }
         }
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
+    }
 }
 
 impl InferType for PostfixExpression {
@@ -336,6 +444,10 @@ impl InferType for PostfixExpression {
             },
         }
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
+    }
 }
 
 impl InferType for CollectionLiteral {
@@ -346,6 +458,10 @@ impl InferType for CollectionLiteral {
             CollectionLiteral::SetLiteral(set) => set.infer_type(scope),
             CollectionLiteral::OrderedDictLiteral(ordered_dict) => ordered_dict.infer_type(scope),
         }
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
     }
 }
 
@@ -360,6 +476,10 @@ impl InferType for ArrayLiteral {
             .into(),
         )
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
+    }
 }
 
 impl InferType for SetLiteral {
@@ -372,6 +492,10 @@ impl InferType for SetLiteral {
             })
             .into(),
         )
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
     }
 }
 
@@ -387,6 +511,10 @@ impl InferType for DictLiteral {
             .into(),
         )
     }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
+    }
 }
 
 impl InferType for OrderedDictLiteral {
@@ -400,6 +528,10 @@ impl InferType for OrderedDictLiteral {
             })
             .into(),
         )
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        todo!()
     }
 }
 

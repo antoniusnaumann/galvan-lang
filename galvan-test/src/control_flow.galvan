@@ -58,3 +58,13 @@ test "Try expression on result" {
         assert err == 21
     }
 }
+
+fn double_or_minus_one(maybe: Int?) -> Int {
+    let num = maybe else { return -1 }
+    num * 2
+}
+
+test "Return from else on optional" {
+    let result = double_or_minus_one(none)
+    assert result == -1
+}

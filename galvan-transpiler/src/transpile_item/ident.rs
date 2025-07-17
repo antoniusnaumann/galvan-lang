@@ -35,17 +35,28 @@ pub trait TranspileType {
 }
 
 impl TranspileType for TypeIdent {
-    fn transpile_type(&self, ctx: &Context, _scope: &mut Scope, ownership: TypeOwnership) -> String {
+    fn transpile_type(
+        &self,
+        ctx: &Context,
+        _scope: &mut Scope,
+        ownership: TypeOwnership,
+    ) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
             todo!("Handle type resolving errors. Type {} not found", self);
         };
         // TODO: Handle module path here and use fully qualified name
-        let name = match ownership {
-            TypeOwnership::Owned => ctx.mapping.get_owned(self),
+        let (prefix, name) = match ownership {
+            TypeOwnership::Owned => ("", ctx.mapping.get_owned(self)),
             TypeOwnership::MutOwned => todo!("Transpile mutable owned types"), // ctx.mapping.get_mut_owned(&self),
-            TypeOwnership::Borrowed => ctx.mapping.get_borrowed(self),
-            TypeOwnership::MutBorrowed => ctx.mapping.get_mut_borrowed(self),
+            TypeOwnership::Borrowed => {
+                debug_assert!(
+                    !ctx.mapping.is_copy_ident(self),
+                    "Tried to borrow a copy type!"
+                );
+                ("&", ctx.mapping.get_borrowed(self))
+            }
+            TypeOwnership::MutBorrowed => ("&mut ", ctx.mapping.get_mut_borrowed(self)),
         };
-        format!("{name}")
+        format!("{prefix}{name}")
     }
 }

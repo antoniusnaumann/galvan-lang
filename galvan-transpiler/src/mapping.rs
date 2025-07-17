@@ -32,29 +32,28 @@ impl Mapping {
             .unwrap_or_else(|| type_id.to_string().into())
     }
 
-    pub(crate) fn is_copy(&self, type_id: &TypeIdent) -> bool {
-        self.types
-            .get(type_id)
-            .map(|rust_type| rust_type.is_copy)
-            .unwrap_or(false)
-    }
-
-    pub(crate) fn is_copy_type(&self, ty: &TypeElement) -> bool {
+    pub(crate) fn is_copy(&self, ty: &TypeElement) -> bool {
         match ty {
             TypeElement::Array(_) => false,
             TypeElement::Dictionary(_) => false,
             TypeElement::OrderedDictionary(_) => false,
             TypeElement::Set(_) => false,
             TypeElement::Tuple(_) => todo!(),
-            TypeElement::Optional(ty) => self.is_copy_type(&ty.inner),
+            TypeElement::Optional(ty) => self.is_copy(&ty.inner),
             TypeElement::Result(ty) => {
-                self.is_copy_type(&ty.success)
-                    && ty.error.as_ref().is_some_and(|ty| self.is_copy_type(ty))
+                self.is_copy(&ty.success) && ty.error.as_ref().is_some_and(|ty| self.is_copy(ty))
             }
-            TypeElement::Plain(ty) => self.is_copy(&ty.ident),
+            TypeElement::Plain(ty) => self.is_copy_ident(&ty.ident),
             TypeElement::Generic(_) => todo!(),
             TypeElement::Never(_) => false,
         }
+    }
+
+    pub(crate) fn is_copy_ident(&self, type_id: &TypeIdent) -> bool {
+        self.types
+            .get(type_id)
+            .map(|rust_type| rust_type.is_copy)
+            .unwrap_or(false)
     }
 }
 

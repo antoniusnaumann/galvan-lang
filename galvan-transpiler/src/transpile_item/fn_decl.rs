@@ -46,49 +46,34 @@ impl Transpile for FnSignature {
 impl_transpile!(ParamList, "({})", params);
 
 macro_rules! transpile_type {
-    ($self:ident, $ctx:ident, $scope:ident, $ownership:path, $prefix:expr) => {{
+    ($self:ident, $ctx:ident, $scope:ident, $ownership:path) => {{
         use crate::transpile_item::ident::TranspileType;
         let ty = match &$self.param_type {
             TypeElement::Plain(plain) => plain.ident.transpile_type($ctx, $scope, $ownership),
             other => other.transpile($ctx, $scope),
         };
 
-        transpile!($ctx, $scope, "{}: {} {}", &$self.identifier, $prefix, ty)
-    }};
-
-    ($self:ident, $ctx:ident, $scope:ident, $ownership:path, $prefix:expr, $prefix_copy:expr) => {{
-        use crate::transpile_item::ident::TranspileType;
-        let (prefix, ty) = match &$self.param_type {
-            TypeElement::Plain(plain) => (
-                if $ctx.mapping.is_copy(&plain.ident) {
-                    $prefix_copy
-                } else {
-                    $prefix
-                },
-                plain.ident.transpile_type($ctx, $scope, $ownership),
-            ),
-            other => ($prefix, other.transpile($ctx, $scope)),
-        };
-
-        transpile!($ctx, $scope, "{}: {} {}", &$self.identifier, prefix, ty)
+        transpile!($ctx, $scope, "{}: {}", &$self.identifier, ty)
     }};
 }
 
 impl Transpile for Param {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
         let is_self = self.identifier.as_str() == "self";
+        let is_copy = ctx.mapping.is_copy(&self.param_type);
 
         scope.declare_variable(Variable {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier.unwrap_or(DeclModifier::Let),
             ty: Some(self.param_type.clone()),
             ownership: match self.decl_modifier {
-                Some(DeclModifier::Let) | None => match self.param_type {
-                    TypeElement::Plain(ref plain) if ctx.mapping.is_copy(&plain.ident) => {
+                Some(DeclModifier::Let) | None => {
+                    if is_copy {
                         Ownership::Copy
+                    } else {
+                        Ownership::Borrowed
                     }
-                    _ => Ownership::Borrowed,
-                },
+                }
                 Some(DeclModifier::Mut) => Ownership::MutBorrowed,
                 Some(DeclModifier::Ref) => Ownership::Ref,
             },
@@ -97,16 +82,26 @@ impl Transpile for Param {
         match self.decl_modifier {
             Some(DeclModifier::Let) | None => {
                 if is_self {
-                    "&self".into()
+                    if is_copy {
+                        "self".into()
+                    } else {
+                        "&self".into()
+                    }
                 } else {
-                    transpile_type!(self, ctx, scope, TypeOwnership::Borrowed, "&", "")
+                    let ownership = if is_copy {
+                        TypeOwnership::Owned
+                    } else {
+                        TypeOwnership::Borrowed
+                    };
+
+                    transpile_type!(self, ctx, scope, ownership)
                 }
             }
             Some(DeclModifier::Mut) => {
                 if is_self {
                     "&mut self".into()
                 } else {
-                    transpile_type!(self, ctx, scope, TypeOwnership::MutBorrowed, "&mut")
+                    transpile_type!(self, ctx, scope, TypeOwnership::MutBorrowed)
                 }
             }
             Some(DeclModifier::Ref) => {

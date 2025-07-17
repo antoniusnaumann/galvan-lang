@@ -1,3 +1,4 @@
+use builtins::builtin_fns;
 use convert_case::{Case, Casing};
 use derive_more::{Deref, Display, From};
 use galvan_ast::*;
@@ -56,7 +57,7 @@ fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Trans
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
     let segmented = asts.segmented()?;
     let builtins = builtins();
-    let predefined = predefined_from(&builtins);
+    let predefined = predefined_from(&builtins, builtin_fns());
     let lookup = Context::new(builtins).with(&predefined)?.with(&segmented)?;
     let mut scope = Scope::default();
     scope.set_lookup(lookup.lookup.clone());

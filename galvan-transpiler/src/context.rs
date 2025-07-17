@@ -1,5 +1,8 @@
 use crate::mapping::Mapping;
-use galvan_ast::{AstNode, EmptyTypeDecl, SegmentedAsts, ToplevelItem, TypeDecl, Visibility, VisibilityKind};
+use galvan_ast::{
+    AstNode, EmptyTypeDecl, FnDecl, FnSignature, SegmentedAsts, ToplevelItem, TypeDecl, Visibility,
+    VisibilityKind,
+};
 use galvan_files::Source;
 use galvan_resolver::{LookupContext, LookupError};
 
@@ -24,7 +27,7 @@ impl<'a> Context<'a> {
     }
 }
 
-pub fn predefined_from(mapping: &Mapping) -> SegmentedAsts {
+pub fn predefined_from(mapping: &Mapping, functions: Vec<FnDecl>) -> SegmentedAsts {
     let types = mapping
         .types
         .keys()
@@ -37,8 +40,14 @@ pub fn predefined_from(mapping: &Mapping) -> SegmentedAsts {
             source: Source::Missing,
         })
         .collect();
-    let functions = vec![];
     let tests = vec![];
+    let functions = functions
+        .into_iter()
+        .map(|f| ToplevelItem {
+            item: f,
+            source: Source::Builtin,
+        })
+        .collect();
     let main = None;
     SegmentedAsts {
         types,

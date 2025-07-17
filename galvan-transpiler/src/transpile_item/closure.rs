@@ -1,12 +1,13 @@
 use std::ops::Deref;
 
+use crate::cast::cast;
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::{
-    AstNode, Block, Closure, ClosureParameter, DeclModifier, ElseExpression, ExpressionKind,
-    FunctionCall, OptionalTypeItem, Ownership, Param, TypeElement,
+    AstNode, Block, Closure, ClosureParameter, DeclModifier, ElseExpression, Expression,
+    ExpressionKind, FunctionCall, OptionalTypeItem, Ownership, Param, Span, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -52,13 +53,32 @@ impl Transpile for ElseExpression {
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "try" => {
                 transpile_try(&call, ctx, scope, None, Some(self))
             }
-            _ => transpile!(
-                ctx,
-                scope,
-                "({}).__or_else(|| {})",
-                self.receiver,
-                self.block
-            ),
+            // transpile!(
+            //     ctx,
+            //     scope,
+            //     "({}).__or_else(|| {})",
+            //     self.receiver,
+            //     self.block
+            // ),
+            _ => {
+                let mut else_scope = Scope::child(scope);
+                let block = self.block.transpile(ctx, &mut else_scope);
+                transpile!(
+                    ctx,
+                    scope,
+                    "if let Some(__value) = {} {{ {} }} else {{ {block} }}",
+                    self.receiver,
+                    cast(
+                        &Expression {
+                            kind: ExpressionKind::Ident("__value".to_owned().into()),
+                            span: Span::default()
+                        },
+                        &scope.return_type.clone(),
+                        ctx,
+                        scope
+                    ),
+                )
+            }
         }
     }
 }
@@ -84,15 +104,15 @@ fn transpile_try(
     };
     let cond_type = condition.expression.infer_type(scope);
     let condition = condition.transpile(ctx, scope);
-    let condition = if let Some(ref cond_type) = cond_type {
-        if ctx.mapping.is_copy_type(&cond_type) {
-            condition.strip_prefix("&").unwrap()
-        } else {
-            &condition
-        }
-    } else {
-        &condition
-    };
+    // let condition = if let Some(ref cond_type) = cond_type {
+    //     if ctx.mapping.is_copy(&cond_type) {
+    //         condition.strip_prefix("&").unwrap()
+    //     } else {
+    //         &condition
+    //     }
+    // } else {
+    //     &condition
+    // };
 
     let mut body_scope = Scope::child(scope);
     body_scope.return_type = ty.clone();

@@ -74,7 +74,6 @@ pub fn read_trailing_closure_call(
         expression: Expression {
             kind: closure.into(),
             span: closure_span,
-            type_: RefCell::default(),
         },
     });
 
@@ -125,7 +124,6 @@ pub fn read_free_function_call(
             }
             .into(),
             span,
-            type_: RefCell::default(),
         }),
     };
     Ok(call)
