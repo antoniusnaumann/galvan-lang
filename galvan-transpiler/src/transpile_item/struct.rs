@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::{StructTypeMember, Transpile, TupleTypeMember, TypeDecl};
-use galvan_ast::DeclModifier;
+use galvan_ast::{DeclModifier, EnumAccess, EnumTypeMember};
 use galvan_resolver::Scope;
 
 static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
@@ -9,6 +9,7 @@ static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
 impl_transpile_match! { TypeDecl,
     Tuple(def) => ("{DERIVE} {} struct {}({});", def.visibility, def.ident, def.members),
     Struct(def) => ("{DERIVE} {} struct {} {{\n{}\n}}", def.visibility, def.ident, def.members),
+    Enum(def) => ("{DERIVE} {} enum {} {{\n{}\n}}", def.visibility, def.ident, def.members),
     Alias(def) => ("{} type {} = {};", def.visibility, def.ident, def.r#type),
     Empty(def) => ("{DERIVE} {} struct {};", def.visibility, def.ident),
 }
@@ -37,5 +38,18 @@ impl Transpile for StructTypeMember {
                 transpile!(ctx, scope, "pub(crate) {}: {}", self.ident, self.r#type)
             }
         }
+    }
+}
+
+impl Transpile for EnumTypeMember {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
+        format!("{}", self.ident)
+    }
+}
+
+impl Transpile for EnumAccess {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        // TODO: Fully qualified path
+        transpile!(ctx, scope, "{}::{}", self.target, self.case.as_str())
     }
 }

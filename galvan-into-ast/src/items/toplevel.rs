@@ -1,7 +1,7 @@
 use galvan_ast::{
-    AliasTypeDecl, Body, DeclModifier, EmptyTypeDecl, FnDecl, FnSignature, Ident, MainDecl, Param,
-    ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl, TestDecl, TupleTypeDecl,
-    TypeDecl, TypeElement, Visibility,
+    AliasTypeDecl, Body, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl, FnSignature, Ident,
+    MainDecl, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl, TestDecl,
+    TupleTypeDecl, TypeDecl, TypeElement, Visibility,
 };
 use galvan_parse::TreeCursor;
 
@@ -73,7 +73,7 @@ impl ReadCursor for TypeDecl {
         let decl = match cursor.kind()? {
             "struct" => StructTypeDecl::read_cursor(cursor, source)?.into(),
             "alias" => AliasTypeDecl::read_cursor(cursor, source)?.into(),
-            "enum_type" => todo!("Parse enum type"),
+            "enum" => EnumTypeDecl::read_cursor(cursor, source)?.into(),
             "tuple_struct" => TupleTypeDecl::read_cursor(cursor, source)?.into(),
             "empty_struct" => EmptyTypeDecl::read_cursor(cursor, source)?.into(),
             _ => unreachable!(),

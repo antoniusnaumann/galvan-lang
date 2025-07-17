@@ -65,7 +65,15 @@ pub type ExpressionKind = ElseExpression
     + Postfix
     + CollectionLiteral
     + ConstructorCall
+    + EnumAccess
     + Literal
     + Ident
     + Closure
     + Group;
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct EnumAccess {
+    pub target: TypeIdent,
+    pub case: TypeIdent,
+    pub span: Span,
+}

@@ -3,8 +3,8 @@ use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
-    Declaration, ElseExpression, Expression, ExpressionKind, FunctionCall, Group, Ident,
-    InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement,
+    Declaration, ElseExpression, EnumAccess, Expression, ExpressionKind, FunctionCall, Group,
+    Ident, InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement,
 };
 use galvan_parse::TreeCursor;
 
@@ -128,6 +128,7 @@ impl ReadCursor for Expression {
                 ExpressionKind::Postfix(PostfixExpression::read_cursor(cursor, source)?.into())
             }
             "constructor_call" => ConstructorCall::read_cursor(cursor, source)?.into(),
+            "enum_access" => EnumAccess::read_cursor(cursor, source)?.into(),
             "collection_literal" => CollectionLiteral::read_cursor(cursor, source)?.into(),
             "literal" => Literal::read_cursor(cursor, source)?.into(),
             "ident" => Ident::read_cursor(cursor, source)?.into(),

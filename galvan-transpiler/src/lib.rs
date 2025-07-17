@@ -504,7 +504,7 @@ punct!(
     ClosureParameter,
     DictLiteralElement
 );
-punct!(",\n", StructTypeMember);
+punct!(",\n", StructTypeMember, EnumTypeMember);
 punct!("\n\n", RootItem, FnDecl);
 punct!(";\n", Statement);
 

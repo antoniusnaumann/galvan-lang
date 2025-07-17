@@ -1,6 +1,7 @@
 use galvan_ast::{
-    AliasTypeDecl, DeclModifier, EmptyTypeDecl, Ident, Span, StructTypeDecl, StructTypeMember,
-    TupleTypeDecl, TupleTypeMember, TypeElement, TypeIdent, Visibility,
+    AliasTypeDecl, AstNode, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember, Ident, Span,
+    StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeElement, TypeIdent,
+    Visibility,
 };
 use galvan_parse::TreeCursor;
 
@@ -78,6 +79,48 @@ impl ReadCursor for StructTypeMember {
             decl_modifier,
             ident,
             r#type,
+            span,
+        })
+    }
+}
+
+impl ReadCursor for EnumTypeDecl {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let enum_decl = cursor_expect!(cursor, "enum");
+        let span = Span::from_node(enum_decl);
+
+        cursor.child();
+
+        let visibility = Visibility::read_cursor(cursor, source)?;
+        cursor_expect!(cursor, "type_keyword");
+
+        cursor.next();
+        let ident = TypeIdent::read_cursor(cursor, source)?;
+
+        cursor.next();
+        cursor_expect!(cursor, "brace_open");
+
+        cursor.next();
+        let mut members = vec![];
+        while cursor.kind()? == "type_ident" {
+            let case = TypeIdent::read_cursor(cursor, source)?;
+            let span = case.span();
+            members.push(EnumTypeMember { ident: case, span });
+
+            cursor.next();
+            while cursor.kind()? == "," || cursor.kind()? == ";" {
+                cursor.next();
+            }
+        }
+
+        cursor_expect!(cursor, "brace_close");
+
+        cursor.goto_parent();
+
+        Ok(EnumTypeDecl {
+            visibility,
+            ident,
+            members,
             span,
         })
     }

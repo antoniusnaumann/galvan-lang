@@ -1,14 +1,34 @@
 use galvan_ast::{
-    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, Expression, Group,
-    InfixExpression, InfixOperation, InfixOperator, LogicalOperator, MemberOperator,
+    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, EnumAccess,
+    Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
+    MemberOperator, Span, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
-use crate::{result::CursorUtil, AstError, ReadCursor};
+use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for Group {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         todo!()
+    }
+}
+
+impl ReadCursor for EnumAccess {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "enum_access");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+
+        let target = TypeIdent::read_cursor(cursor, source)?;
+        cursor.next();
+        cursor_expect!(cursor, "double_colon");
+        cursor.next();
+        let case = TypeIdent::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(EnumAccess { target, case, span })
     }
 }
 

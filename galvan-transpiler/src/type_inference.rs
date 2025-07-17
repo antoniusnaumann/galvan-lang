@@ -127,6 +127,10 @@ impl InferType for ExpressionKind {
                 }
                 .into(),
             ),
+            ExpressionKind::EnumAccess(access) => Some(TypeElement::Plain(BasicTypeItem {
+                ident: access.target.clone(),
+                span: Span::default(),
+            })),
             ExpressionKind::Literal(literal) => literal.infer_type(scope),
             ExpressionKind::Ident(ident) => {
                 let ty = scope.get_variable(ident)?.ty.clone();
@@ -147,6 +151,7 @@ impl InferType for ExpressionKind {
             ExpressionKind::Postfix(postfix) => todo!(),
             ExpressionKind::CollectionLiteral(collection) => todo!(),
             ExpressionKind::ConstructorCall(constructor) => todo!(),
+            ExpressionKind::EnumAccess(access) => todo!(),
             ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope),
             ExpressionKind::Ident(ident) => todo!(),
             ExpressionKind::Closure(closure) => todo!(),
@@ -366,6 +371,9 @@ impl InferType for InfixOperation<MemberOperator> {
                                 .iter()
                                 .find(|member| member.ident == *field)
                                 .map(|member| member.r#type.clone()),
+                            TypeDecl::Enum(_) => {
+                                todo!("TRANSPILER ERROR: Enum cases are access with ::")
+                            }
                             TypeDecl::Alias(_) => {
                                 // TODO: Handle Inference for alias types
                                 None

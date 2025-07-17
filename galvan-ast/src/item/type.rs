@@ -10,6 +10,7 @@ pub enum TypeDecl {
     Tuple(TupleTypeDecl),
     Struct(StructTypeDecl),
     Alias(AliasTypeDecl),
+    Enum(EnumTypeDecl),
     Empty(EmptyTypeDecl),
 }
 
@@ -20,6 +21,7 @@ impl TypeDecl {
             TypeDecl::Struct(s) => &s.ident,
             TypeDecl::Alias(a) => &a.ident,
             TypeDecl::Empty(e) => &e.ident,
+            TypeDecl::Enum(e) => &e.ident,
         }
     }
 }
@@ -61,6 +63,21 @@ pub struct AliasTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub r#type: TypeElement,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct EnumTypeDecl {
+    pub visibility: Visibility,
+    pub ident: TypeIdent,
+    pub members: Vec<EnumTypeMember>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct EnumTypeMember {
+    // pub visibility: Visibility,
+    pub ident: TypeIdent,
     pub span: Span,
 }
 

@@ -163,6 +163,7 @@ impl_transpile_variants! { ExpressionKind;
     CollectionLiteral,
     FunctionCall,
     ConstructorCall,
+    EnumAccess,
     ElseExpression,
     Literal,
     Closure,
