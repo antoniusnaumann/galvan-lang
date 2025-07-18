@@ -235,7 +235,7 @@ impl InferType for FunctionCall {
 impl InferType for Literal {
     fn infer_type(&self, _scope: &Scope) -> Option<TypeElement> {
         match self {
-            Literal::BooleanLiteral(_) => Some(bool()),
+            Literal::BooleanLiteral(_) => Some(TypeElement::bool()),
             Literal::StringLiteral(_) => Some(
                 BasicTypeItem {
                     ident: TypeIdent::new("String"),
@@ -252,7 +252,7 @@ impl InferType for Literal {
             ),
             Literal::NoneLiteral(_) => Some(
                 Box::new(OptionalTypeItem {
-                    inner: infer(),
+                    inner: TypeElement::infer(),
                     span: Span::default(),
                 })
                 .into(),
@@ -269,29 +269,13 @@ impl InferType for Literal {
     }
 }
 
-fn bool() -> TypeElement {
-    BasicTypeItem {
-        ident: TypeIdent::new("Bool"),
-        span: Span::default(),
-    }
-    .into()
-}
-
-fn infer() -> TypeElement {
-    BasicTypeItem {
-        ident: TypeIdent::new("__Infer"),
-        span: Span::default(),
-    }
-    .into()
-}
-
 impl InferType for InfixExpression {
     fn infer_type(&self, scope: &Scope) -> Option<TypeElement> {
         match self {
-            InfixExpression::Logical(_) => Some(bool()),
+            InfixExpression::Logical(_) => Some(TypeElement::bool()),
             InfixExpression::Arithmetic(e) => e.infer_type(scope),
             InfixExpression::Collection(e) => e.infer_type(scope),
-            InfixExpression::Comparison(_) => Some(bool()),
+            InfixExpression::Comparison(_) => Some(TypeElement::bool()),
             InfixExpression::Member(e) => e.infer_type(scope),
             InfixExpression::Custom(_) => todo!("Infer type for custom operators!"),
         }
@@ -334,7 +318,7 @@ impl InferType for InfixOperation<CollectionOperator> {
         match operator {
             CollectionOperator::Concat => lhs.infer_type(scope),
             CollectionOperator::Remove => lhs.infer_type(scope),
-            CollectionOperator::Contains => Some(bool()),
+            CollectionOperator::Contains => Some(TypeElement::bool()),
         }
     }
 
@@ -567,7 +551,7 @@ where
         .collect::<Vec<_>>();
 
     match inner.len() {
-        0 => infer(),
+        0 => TypeElement::infer(),
         1 => inner.into_iter().next().unwrap(),
         _ => todo!("TRANSPILE ERROR: Cannot infer type of array literal with multiple types"),
     }

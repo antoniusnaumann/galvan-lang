@@ -27,6 +27,24 @@ pub type TypeElement = Array
     + Generic
     + Never;
 
+impl TypeElement {
+    pub fn bool() -> Self {
+        BasicTypeItem {
+            ident: TypeIdent::new("Bool"),
+            span: Span::default(),
+        }
+        .into()
+    }
+
+    pub fn infer() -> Self {
+        BasicTypeItem {
+            ident: TypeIdent::new("__Infer"),
+            span: Span::default(),
+        }
+        .into()
+    }
+}
+
 // TODO: Add a marker trait to constrain this to only type decls
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
 pub struct ArrayTypeItem {

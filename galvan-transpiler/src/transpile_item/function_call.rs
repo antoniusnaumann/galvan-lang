@@ -167,7 +167,9 @@ pub fn transpile_if(
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
-    let condition = condition.transpile(ctx, scope);
+    let mut condition_scope = Scope::child(scope);
+    condition_scope.return_type = Some(TypeElement::bool());
+    let condition = condition.transpile(ctx, &mut condition_scope);
 
     let mut body_scope = Scope::child(scope);
     body_scope.return_type = ty;
