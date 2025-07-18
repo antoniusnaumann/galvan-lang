@@ -72,7 +72,7 @@ pub type Couple(Person, Person)
 
 Enums can have associated values, either for all variants or for specific variants. Enums are also declared using the `type` keyword:
 > [!WARNING]
-> Enums are not implemented yet
+> Associated values for enums are not implemented yet
 ```rust
 /// An enum type
 /// Enums can have general fields that are accessible to all enum variants
@@ -142,8 +142,6 @@ type FileOrIoErr = File!IoError
 ```
 The error variant is specified after the `!` symbol. If it is not given, a flexible error type is used.
 
-> [!WARNING]
-> `!` and `?` are not implemented yet
 ```rust
 fn open_file(path: String) -> File! {
     let file = File::open(path)!
@@ -276,7 +274,7 @@ print(i) // 15
 
 For loops are also supported:
 > [!WARNING]
-> For loops are not implemented yet
+> Ranges are not implemented yet
 ```rust
 for 0..<n {
     print(it)
@@ -335,8 +333,6 @@ This can be useful to pass the unwrapped value to a function, or to convert a Re
 
 #### Return and Throw
 Return values are implicit, however you can use the `return` keyword to return early:
-> [!WARNING]
-> Return keyword is not implemented yet
 ```rust 
 fn fib(n: Int) -> Int {
     if n <= 1 {
@@ -347,8 +343,6 @@ fn fib(n: Int) -> Int {
 ```
 
 Returning an error early is done using the `throw` keyword:
-> [!WARNING]
-> Throw keyword is not implemented yet
 ```rust
 fn checked_divide(a: Float, b: Float) -> Float! {
     if b == 0 {

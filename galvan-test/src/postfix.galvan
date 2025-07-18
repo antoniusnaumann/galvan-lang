@@ -11,3 +11,22 @@ fn func_with_result() -> Int!USize {
     let a = if true { 27 }
     a.ok_or(27)
 }
+
+fn double(self: Int) -> Int {
+    self * 2
+}
+
+test "Use safe-call operator '?.'" {
+    mut maybe: Int? = none
+    try maybe?.double() |i| {
+        panic "Expected optional to be none"
+    }
+
+    maybe = 5
+
+    try maybe?.double() |i| {
+        // assert i == 10
+    } else {
+        panic "Expected optional to have a value"
+    }
+}
