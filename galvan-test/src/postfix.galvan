@@ -25,7 +25,7 @@ test "Use safe-call operator '?.'" {
     maybe = 5
 
     try maybe?.double() |i| {
-        // assert i == 10
+        assert i == 10
     } else {
         panic "Expected optional to have a value"
     }

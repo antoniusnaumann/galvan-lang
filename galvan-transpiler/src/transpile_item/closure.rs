@@ -7,7 +7,7 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use galvan_ast::{
     AstNode, Block, Closure, ClosureParameter, DeclModifier, ElseExpression, Expression,
-    ExpressionKind, FunctionCall, Ownership, Param, Span, TypeElement,
+    ExpressionKind, FunctionCall, Ownership, Param, ResultTypeItem, Span, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
@@ -32,7 +32,7 @@ pub(crate) fn transpile_closure(
     let arguments = closure
         .parameters
         .iter()
-        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args))
+        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::Borrowed))
         .join(", ");
     let block = closure.block.transpile(ctx, scope);
     transpile!(ctx, scope, "|{}| {}", arguments, block)
@@ -53,13 +53,6 @@ impl Transpile for ElseExpression {
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "try" => {
                 transpile_try(&call, ctx, scope, None, Some(self))
             }
-            // transpile!(
-            //     ctx,
-            //     scope,
-            //     "({}).__or_else(|| {})",
-            //     self.receiver,
-            //     self.block
-            // ),
             _ => {
                 let mut else_scope = Scope::child(scope);
                 let block = self.block.transpile(ctx, &mut else_scope);
@@ -127,22 +120,67 @@ fn transpile_try(
                 1,
                 "'try' should have exactly one binding"
             );
-            let binding = body.parameters[0].transpile(ctx, &mut body_scope);
+            let is_copy = cond_type.is_some_and(|ty| ctx.mapping.is_copy(&ty));
+            let binding = {
+                let elements = body
+                    .parameters
+                    .iter()
+                    .map(|arg| {
+                        transpile_closure_argument(
+                            ctx,
+                            &mut body_scope,
+                            arg,
+                            false,
+                            // TODO: for tuple unpacking, we need to check this for each part of the tuple individually
+                            if is_copy {
+                                Ownership::Copy
+                            } else {
+                                Ownership::Borrowed
+                            },
+                        )
+                    })
+                    .join(", ");
+                format!("({elements})")
+            };
+
             let transpiled_body = body.block.transpile(ctx, &mut body_scope);
             let else_ = else_
-                .map(|else_| else_.block.transpile(ctx, scope))
+                .map(|else_| else_.block.transpile(ctx, &mut else_scope))
                 .unwrap_or("{}".into());
             format!("match {condition} {{ Some({binding}) => {transpiled_body}, None => {else_} }}",)
         }
-        Some(TypeElement::Result(_)) => {
-            let ok_binding = body.parameters[0].transpile(ctx, &mut body_scope);
+        Some(TypeElement::Result(res)) => {
+            let ResultTypeItem {
+                success,
+                error,
+                span: _,
+            } = *res;
+            let success_ownership = if ctx.mapping.is_copy(&success) {
+                Ownership::Copy
+            } else {
+                Ownership::Borrowed
+            };
+            let error_ownership = if error.is_some_and(|error| ctx.mapping.is_copy(&error)) {
+                Ownership::Copy
+            } else {
+                Ownership::Borrowed
+            };
+            let ok_binding = transpile_closure_argument(
+                ctx,
+                &mut body_scope,
+                &body.parameters[0],
+                false,
+                success_ownership,
+            );
             let err_binding = else_
                 .and_then(|else_| else_.parameters.get(0))
-                .map(|p| p.transpile(ctx, &mut else_scope))
+                .map(|p| {
+                    transpile_closure_argument(ctx, &mut else_scope, p, false, error_ownership)
+                })
                 .unwrap_or("_".into());
             let transpiled_body = body.block.transpile(ctx, &mut body_scope);
             let else_ = else_
-                .map(|else_| else_.block.transpile(ctx, scope))
+                .map(|else_| else_.block.transpile(ctx, &mut else_scope))
                 .unwrap_or("{}".into());
             format!(
                 "match {condition} {{ Ok({ok_binding}) => {transpiled_body}, Err({err_binding}) => {else_} }}"
@@ -154,22 +192,23 @@ fn transpile_try(
 
 impl Transpile for ClosureParameter {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        transpile_closure_argument(ctx, scope, self, false)
+        transpile_closure_argument(ctx, scope, self, false, Ownership::Borrowed)
     }
 }
 
-fn transpile_closure_argument(
+pub(crate) fn transpile_closure_argument(
     ctx: &Context,
     scope: &mut Scope,
     arg: &ClosureParameter,
     deref: bool,
+    ownership: Ownership,
 ) -> String {
     // TODO: Type inference
     scope.declare_variable(Variable {
         ident: arg.ident.clone(),
         modifier: DeclModifier::Let, // TODO: Closure arg modifiers self.modifier.clone(),
         ty: arg.ty.clone(),
-        ownership: Ownership::Borrowed,
+        ownership,
     });
 
     let prefix = if deref { "&" } else { "" };

@@ -1,7 +1,7 @@
 use crate::builtins::BORROWED_ITERATOR_FNS;
 use crate::context::Context;
 use crate::macros::transpile;
-use crate::transpile_item::closure::transpile_closure;
+use crate::transpile_item::closure::{transpile_closure, transpile_closure_argument};
 use crate::transpile_item::statement::match_ident;
 use crate::type_inference::InferType;
 use crate::Transpile;
@@ -61,6 +61,26 @@ impl Transpile for FunctionCall {
                     } else {
                         &[]
                     };
+
+                    let (lhs, rhs) =
+                        match (lhs.infer_owned(ctx, scope), rhs.infer_owned(ctx, scope)) {
+                            (
+                                Ownership::Owned | Ownership::Copy,
+                                Ownership::Borrowed | Ownership::MutBorrowed,
+                            ) => (
+                                transpile!(ctx, scope, "&({})", lhs),
+                                rhs.transpile(ctx, scope),
+                            ),
+                            (
+                                Ownership::Borrowed | Ownership::MutBorrowed,
+                                Ownership::Owned | Ownership::Copy,
+                            ) => (
+                                lhs.transpile(ctx, scope),
+                                transpile!(ctx, scope, "&({})", rhs),
+                            ),
+                            _ => (lhs.transpile(ctx, scope), rhs.transpile(ctx, scope)),
+                        };
+
                     match operator {
                         ComparisonOperator::Equal => {
                             transpile!(
@@ -211,13 +231,27 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
         closure.parameters.len() > 0,
         "TRANSPILER ERROR: for loop body at least one argument"
     );
-    let element = if closure.parameters.len() == 1 {
-        closure.parameters[0].ident.transpile(ctx, scope)
-    } else {
+
+    // TODO: try to figure out capacity and create vec with matching capacity
+    // TODO: only do this when the body returns a value
+    let mut body_scope = Scope::child(scope);
+    let element = {
         let elements = closure
             .parameters
             .iter()
-            .map(|arg| arg.transpile(ctx, scope))
+            .map(|arg| {
+                transpile_closure_argument(
+                    ctx,
+                    &mut body_scope,
+                    arg,
+                    false,
+                    if elem_ty.is_some_and(|ty| ctx.mapping.is_copy(ty)) {
+                        Ownership::Copy
+                    } else {
+                        Ownership::Borrowed
+                    },
+                )
+            })
             .join(", ");
         format!("({elements})")
     };
@@ -237,9 +271,6 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
             prefix = "&"
         }
     }
-    // TODO: try to figure out capacity and create vec with matching capacity
-    // TODO: only do this when the body returns a value
-    let mut body_scope = Scope::child(scope);
     let mut block: Vec<_> = closure
         .block
         .body

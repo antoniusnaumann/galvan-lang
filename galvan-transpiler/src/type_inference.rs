@@ -147,13 +147,22 @@ impl InferType for ExpressionKind {
         match self {
             ExpressionKind::ElseExpression(e) => todo!(),
             ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope),
-            ExpressionKind::Infix(infix) => todo!(),
-            ExpressionKind::Postfix(postfix) => todo!(),
-            ExpressionKind::CollectionLiteral(collection) => todo!(),
-            ExpressionKind::ConstructorCall(constructor) => todo!(),
-            ExpressionKind::EnumAccess(access) => todo!(),
+            ExpressionKind::Infix(infix) => infix.infer_owned(ctx, scope),
+            ExpressionKind::Postfix(postfix) => postfix.infer_owned(ctx, scope),
+            ExpressionKind::CollectionLiteral(_) => Ownership::Owned,
+            // TODO: this might be copy
+            ExpressionKind::ConstructorCall(_) => Ownership::Owned,
+            // TODO: this might be copy
+            ExpressionKind::EnumAccess(_) => Ownership::Owned,
             ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope),
-            ExpressionKind::Ident(ident) => todo!(),
+            ExpressionKind::Ident(ident) => {
+                let var = scope.get_variable(ident);
+                if let Some(var) = var {
+                    var.ownership
+                } else {
+                    todo!("TRANSPILER ERROR: No variable with name {ident} in scope")
+                }
+            }
             ExpressionKind::Closure(closure) => todo!(),
             ExpressionKind::Group(group) => todo!(),
         }
@@ -282,7 +291,20 @@ impl InferType for InfixExpression {
     }
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        todo!()
+        match self {
+            InfixExpression::Logical(_) => Ownership::Copy,
+            InfixExpression::Arithmetic(_) => {
+                // TODO: check the arguments, if they are owned, then this should not be copy
+                Ownership::Copy
+            }
+            InfixExpression::Collection(collection) => todo!(),
+            InfixExpression::Comparison(_) => Ownership::Copy,
+            InfixExpression::Member(mem) => {
+                // TODO: check if the field is copy to distinguish copy and owned here
+                mem.lhs.infer_owned(ctx, scope)
+            }
+            InfixExpression::Custom(custom) => todo!(),
+        }
     }
 }
 
@@ -438,7 +460,14 @@ impl InferType for PostfixExpression {
     }
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        todo!()
+        match self {
+            PostfixExpression::YeetExpression(yeet_expression) => {
+                yeet_expression.inner.infer_owned(ctx, scope)
+            }
+            PostfixExpression::AccessExpression(access_expression) => {
+                access_expression.base.infer_owned(ctx, scope)
+            }
+        }
     }
 }
 
