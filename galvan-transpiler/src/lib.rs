@@ -499,7 +499,6 @@ punct!(
     TypeElement,
     TupleTypeMember,
     Param,
-    FunctionCallArg,
     ConstructorCallArg,
     ClosureParameter,
     DictLiteralElement

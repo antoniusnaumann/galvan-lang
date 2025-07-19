@@ -16,8 +16,7 @@ impl Transpile for Assignment {
         } = self;
 
         let target_ty = target.infer_type(scope);
-        let mut scope = Scope::child(scope);
-        scope.return_type = target_ty;
+        let mut scope = Scope::child(scope).returns(target_ty);
         let scope = &mut scope;
 
         let prefix = match &target.kind {

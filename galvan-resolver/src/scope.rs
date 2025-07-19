@@ -39,6 +39,11 @@ impl<'a> Scope<'a> {
         self.lookup = Some(lookup);
     }
 
+    pub fn returns(mut self, ty: Option<TypeElement>) -> Scope<'a> {
+        self.return_type = ty;
+        self
+    }
+
     pub fn functions(&self) -> Vec<FunctionId> {
         let mut functions = Vec::new();
         let mut scope = self;

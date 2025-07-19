@@ -96,7 +96,10 @@ fn transpile_try(
         todo!("TRANSPILER ERROR: last argument of try needs to be a body")
     };
     let cond_type = condition.expression.infer_type(scope);
-    let condition = condition.transpile(ctx, scope);
+    let mut cond_scope = Scope::child(scope).returns(Some(
+        cond_type.clone().unwrap_or_else(|| TypeElement::infer()),
+    ));
+    let condition = condition.transpile(ctx, &mut cond_scope);
     // let condition = if let Some(ref cond_type) = cond_type {
     //     if ctx.mapping.is_copy(&cond_type) {
     //         condition.strip_prefix("&").unwrap()
@@ -107,10 +110,8 @@ fn transpile_try(
     //     &condition
     // };
 
-    let mut body_scope = Scope::child(scope);
-    body_scope.return_type = ty.clone();
-    let mut else_scope = Scope::child(scope);
-    else_scope.return_type = ty;
+    let mut body_scope = Scope::child(scope).returns(ty.clone());
+    let mut else_scope = Scope::child(scope).returns(ty);
 
     match cond_type {
         Some(TypeElement::Optional(_)) | None => {

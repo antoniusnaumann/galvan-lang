@@ -1,7 +1,8 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
+use crate::type_inference::InferType;
 use crate::Transpile;
-use galvan_ast::{ConstructorCall, ConstructorCallArg, InfixOperation, MemberOperator};
+use galvan_ast::{ConstructorCall, ConstructorCallArg, InfixOperation, MemberOperator, Ownership};
 use galvan_resolver::Scope;
 
 impl Transpile for InfixOperation<MemberOperator> {
@@ -17,4 +18,14 @@ impl Transpile for InfixOperation<MemberOperator> {
 }
 
 impl_transpile!(ConstructorCall, "{} {{ {} }}", identifier, arguments,);
-impl_transpile!(ConstructorCallArg, "{}: {}", ident, expression);
+
+impl crate::Transpile for ConstructorCallArg {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let is_owned = match self.expression.infer_owned(ctx, scope) {
+            Ownership::Owned | Ownership::Copy => true,
+            Ownership::Borrowed | Ownership::MutBorrowed | Ownership::Ref => false,
+        };
+        let postfix = if is_owned { "" } else { ".to_owned()" };
+        transpile!(ctx, scope, "{}: {}{postfix}", self.ident, self.expression)
+    }
+}

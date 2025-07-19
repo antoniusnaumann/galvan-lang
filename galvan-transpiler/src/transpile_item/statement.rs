@@ -7,15 +7,14 @@ use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
     AstNode, DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression,
-    Ownership, PostfixExpression, Return, Statement, Throw,
+    Ownership, PostfixExpression, Return, Statement, Throw, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
 
 impl Transpile for Body {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let mut body_scope = Scope::child(scope);
-        body_scope.return_type = scope.return_type.to_owned();
+        let mut body_scope = Scope::child(scope).returns(scope.return_type.to_owned());
         let scope = &mut body_scope;
 
         let last = match self.statements.last() {
@@ -86,7 +85,10 @@ impl Transpile for Declaration {
             ty: inferred_type.clone(),
             ownership: match self.decl_modifier {
                 DeclModifier::Let | DeclModifier::Mut => {
-                    if inferred_type.is_some_and(|ty| ctx.mapping.is_copy(&ty)) {
+                    if inferred_type
+                        .as_ref()
+                        .is_some_and(|ty| ctx.mapping.is_copy(ty))
+                    {
                         Ownership::Copy
                     } else {
                         Ownership::Owned
@@ -96,11 +98,13 @@ impl Transpile for Declaration {
             },
         });
 
+        let mut scope = Scope::child(scope)
+            .returns(Some(inferred_type.unwrap_or_else(|| TypeElement::infer())));
         // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
         // TODO: Clone inner type from ref types to non-ref types
         self.assignment
             .as_ref()
-            .map(|expr| transpile_assignment_expression(ctx, &expr.kind, scope))
+            .map(|expr| transpile_assignment_expression(ctx, &expr.kind, &mut scope))
             .map(|expr| {
                 if matches!(self.decl_modifier, DeclModifier::Ref) {
                     format!("(&({expr})).__to_ref()")

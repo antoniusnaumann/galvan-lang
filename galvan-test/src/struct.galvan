@@ -33,3 +33,13 @@ test "Mutate struct" {
     dog.name = "Bello"
     assert dog.name == "Bello"
 }
+
+fn new_dog(name: String) -> Dog {
+    Dog(name: name, age: 0)
+}
+
+test "Construct from borrowed parameters" {
+    let dog = new_dog("Hasso")
+    assert dog.name == "Hasso"
+    assert dog.age == 0
+}

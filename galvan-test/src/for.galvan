@@ -36,3 +36,15 @@ test "for expression" {
         assert a * 2 == b * 1
     }
 }
+
+fn doubled(self: [Int]) -> [Int]? {
+    for self |elem| {
+        elem * 2
+    }
+}
+
+test "autowrap for when optional is expected" {
+    let numbers = [1, 2, 3, 4, 5]
+
+    let doubled = numbers.doubled()
+}

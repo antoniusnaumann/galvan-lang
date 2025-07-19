@@ -192,6 +192,15 @@ impl InferType for FunctionCall {
                         )
                     })
             })
+        } else if self.identifier.as_str() == "for" {
+            // TODO: infer type of last statement
+            Some(
+                Box::new(ArrayTypeItem {
+                    elements: TypeElement::infer(),
+                    span: Span::default(),
+                })
+                .into(),
+            )
         } else {
             let func = scope.resolve_function(None, &self.identifier, &[]);
 
