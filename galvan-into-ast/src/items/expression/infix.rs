@@ -1,7 +1,7 @@
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, EnumAccess,
     Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
-    MemberOperator, Span, TypeIdent,
+    MemberOperator, Span, TypeIdent, UnwrapOperator,
 };
 use galvan_parse::TreeCursor;
 
@@ -56,6 +56,9 @@ impl ReadCursor for InfixExpression {
                     cursor, source,
                 )?)
             }
+            "unwrap_expression" => InfixExpression::Unwrap(
+                InfixOperation::<UnwrapOperator>::read_cursor(cursor, source)?,
+            ),
             "custom_infix_expression" => {
                 InfixExpression::Custom(InfixOperation::<CustomInfix>::read_cursor(cursor, source)?)
             }
@@ -110,7 +113,7 @@ impl ReadCursor for LogicalOperator {
 }
 
 impl ReadCursor for ArithmeticOperator {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         let op = match cursor.kind()? {
             "plus" => Self::Add,
             "minus" => Self::Sub,
@@ -126,7 +129,7 @@ impl ReadCursor for ArithmeticOperator {
 }
 
 impl ReadCursor for CollectionOperator {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         let op = match cursor.kind()? {
             "concat" => Self::Concat,
             "remove" => Self::Remove,
@@ -139,7 +142,7 @@ impl ReadCursor for CollectionOperator {
 }
 
 impl ReadCursor for ComparisonOperator {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         let op = match cursor.kind()? {
             "equal" => Self::Equal,
             "not_equal" => Self::NotEqual,
@@ -156,8 +159,16 @@ impl ReadCursor for ComparisonOperator {
     }
 }
 
+impl ReadCursor for UnwrapOperator {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
+        cursor_expect!(cursor, "unwrap");
+
+        Ok(UnwrapOperator)
+    }
+}
+
 impl ReadCursor for CustomInfix {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         todo!()
     }
 }

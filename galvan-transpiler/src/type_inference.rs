@@ -4,7 +4,7 @@ use galvan_ast::{
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
     Ownership, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
-    TypeIdent,
+    TypeIdent, UnwrapOperator,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -282,6 +282,7 @@ impl InferType for InfixExpression {
             InfixExpression::Collection(e) => e.infer_type(scope),
             InfixExpression::Comparison(_) => TypeElement::bool(),
             InfixExpression::Member(e) => e.infer_type(scope),
+            InfixExpression::Unwrap(u) => u.infer_type(scope),
             InfixExpression::Custom(_) => todo!("Infer type for custom operators!"),
         }
     }
@@ -299,6 +300,7 @@ impl InferType for InfixExpression {
                 // TODO: check if the field is copy to distinguish copy and owned here
                 mem.lhs.infer_owned(ctx, scope)
             }
+            InfixExpression::Unwrap(u) => u.infer_owned(ctx, scope),
             InfixExpression::Custom(custom) => todo!(),
         }
     }
@@ -428,6 +430,39 @@ impl InferType for InfixOperation<MemberOperator> {
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
         todo!()
+    }
+}
+
+impl InferType for InfixOperation<UnwrapOperator> {
+    fn infer_type(&self, scope: &Scope) -> TypeElement {
+        let ty = self.rhs.infer_type(scope);
+
+        match ty {
+            TypeElement::Plain(_) if ty.is_number() => (),
+            TypeElement::Infer(_) | TypeElement::Never(_) => (),
+            _ => return ty,
+        };
+
+        match self.lhs.infer_type(scope) {
+            TypeElement::Optional(opt) => opt.inner.clone(),
+            TypeElement::Result(res) => res.success.clone(),
+            ty @ TypeElement::Infer(_) => ty.clone(),
+            _ => todo!("TRANSPILER ERROR: can only use '?' operator on result or optional"),
+        }
+    }
+
+    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+        match (
+            self.rhs.infer_owned(ctx, scope),
+            self.lhs.infer_owned(ctx, scope),
+        ) {
+            (lhs, rhs) if rhs == lhs => rhs,
+            (Ownership::Owned | Ownership::Copy, Ownership::Owned | Ownership::Copy) => {
+                Ownership::Owned
+            }
+            (Ownership::Borrowed, _) | (_, Ownership::Borrowed) => Ownership::Borrowed,
+            _ => todo!("TRANSPILER ERROR: incompatible ownership types in '?' operator"),
+        }
     }
 }
 

@@ -16,6 +16,7 @@ pub enum InfixExpression {
     Collection(InfixOperation<CollectionOperator>),
     Comparison(InfixOperation<ComparisonOperator>),
     Member(InfixOperation<MemberOperator>),
+    Unwrap(InfixOperation<UnwrapOperator>),
     Custom(InfixOperation<CustomInfix>),
 }
 
@@ -168,6 +169,15 @@ impl InfixOperator for MemberOperator {
             MemberOperator::Dot => ".",
             MemberOperator::SafeCall => "?.",
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct UnwrapOperator;
+
+impl InfixOperator for UnwrapOperator {
+    fn symbol(&self) -> &str {
+        "?"
     }
 }
 

@@ -9,13 +9,7 @@ test "Auto-wrap ok on assign" {
 }
 
 fn echo_or_default(arg: Int?) -> Int {
-    // TODO: use null coalescing operator here
-    // arg ?? 42
-    try arg |arg| {
-        arg
-    } else {
-        42
-    }
+    arg ? 42
 }
 
 test "Auto-wrap some on function call" {

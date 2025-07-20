@@ -1,0 +1,15 @@
+test "Arithmetic vs. Comparison precedence" {
+    assert 5 + 3 == 8
+    assert 4 * 10 == 40
+    assert 5 - 5 == 0
+    assert 10 / 2 == 5
+}
+
+test "Unwrap operator" {
+    mut maybe: Int? = none
+    assert maybe ? 5 == 5
+
+    maybe = 17
+
+    assert maybe ? 5 == 17
+}

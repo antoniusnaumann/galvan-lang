@@ -3,11 +3,11 @@ use crate::Transpile;
 use crate::{context::Context, transpile};
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
-    InfixOperation, LogicalOperator,
+    InfixOperation, LogicalOperator, UnwrapOperator,
 };
 use galvan_resolver::Scope;
 
-impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Comparison, Custom, Member);
+impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Comparison, Unwrap, Custom, Member);
 
 impl Transpile for InfixOperation<LogicalOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -82,6 +82,19 @@ impl Transpile for InfixOperation<ArithmeticOperator> {
             ArithmeticOperator::Rem => transpile!(ctx, scope, "{} % {}", lhs, rhs),
             ArithmeticOperator::Exp => transpile!(ctx, scope, "{}.pow({})", lhs, rhs),
         }
+    }
+}
+
+impl Transpile for InfixOperation<UnwrapOperator> {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+        let Self {
+            lhs,
+            operator: _,
+            rhs,
+        } = self;
+
+        // TODO: this should be a match expression instead to allow return from the left arm and so on
+        transpile!(ctx, scope, "({}).unwrap_or_else(|| {})", lhs, rhs)
     }
 }
 
