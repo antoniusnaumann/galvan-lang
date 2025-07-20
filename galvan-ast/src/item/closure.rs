@@ -11,7 +11,7 @@ pub struct Closure {
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ClosureParameter {
     pub ident: Ident,
-    pub ty: Option<TypeElement>,
+    pub ty: TypeElement,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]

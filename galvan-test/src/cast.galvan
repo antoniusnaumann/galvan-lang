@@ -1,0 +1,23 @@
+test "Auto-wrap some on assign" {
+    let a: Int? = 5
+    assert a == 5
+}
+
+test "Auto-wrap ok on assign" {
+    let a: Int!String = 7
+    assert a == 7
+}
+
+fn echo_or_default(arg: Int?) -> Int {
+    // TODO: use null coalescing operator here
+    // arg ?? 42
+    try arg |arg| {
+        arg
+    } else {
+        42
+    }
+}
+
+test "Auto-wrap some on function call" {
+    assert echo_or_default(21) == 21
+}

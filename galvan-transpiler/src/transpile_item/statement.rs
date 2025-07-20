@@ -6,11 +6,10 @@ use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 use galvan_ast::{
-    AstNode, DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression,
-    Ownership, PostfixExpression, Return, Statement, Throw, TypeElement,
+    DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression, Ownership,
+    PostfixExpression, Return, Statement, Throw,
 };
 use galvan_resolver::{Scope, Variable};
-use itertools::Itertools;
 
 impl Transpile for Body {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -22,29 +21,7 @@ impl Transpile for Body {
             _ => "",
         };
 
-        let len = self.statements.len();
-
-        format!(
-            "{{\n{}\n}}",
-            self.statements
-                .iter()
-                .enumerate()
-                .map(|(i, stmt)| {
-                    if i == len - 1 {
-                        if let Statement::Expression(expression) = stmt {
-                            return Return {
-                                expression: expression.to_owned(),
-                                is_explicit: false,
-                                span: expression.span(),
-                            }
-                            .transpile(ctx, scope);
-                        }
-                    };
-                    stmt.transpile(ctx, scope)
-                })
-                .join(";\n")
-                + last
-        )
+        transpile!(ctx, scope, "{{\n{}{last}\n}}", self.statements,)
     }
 }
 
@@ -59,36 +36,27 @@ impl Transpile for Declaration {
 
         let identifier = self.identifier.transpile(ctx, scope);
 
-        let inferred_type = self.type_annotation.clone().or_else(|| {
-            self.assignment
-                .as_ref()
-                .and_then(|expr| expr.infer_type(scope))
-        });
+        let inferred_type = self
+            .type_annotation
+            .clone()
+            .or_else(|| self.assignment.as_ref().map(|expr| expr.infer_type(scope)))
+            .expect("variables either need a type annotation or an assignment that can be used to infer the type");
 
-        let ty = inferred_type
-            .as_ref()
-            .map(|ty| transpile!(ctx, scope, "{}", ty));
+        let ty = transpile!(ctx, scope, "{}", inferred_type);
         let ty = match self.decl_modifier {
-            DeclModifier::Let | DeclModifier::Mut => ty.map_or("".into(), |ty| format!(": {ty}")),
+            DeclModifier::Let | DeclModifier::Mut => format!(": {ty}"),
             DeclModifier::Ref => {
-                format!(
-                    ": std::sync::Arc<std::sync::Mutex<{}>>",
-                    ty.unwrap_or("_".into()),
-                )
+                format!(": std::sync::Arc<std::sync::Mutex<{}>>", ty)
             }
         };
 
-        // TODO: Infer type here
         scope.declare_variable(Variable {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier,
             ty: inferred_type.clone(),
             ownership: match self.decl_modifier {
                 DeclModifier::Let | DeclModifier::Mut => {
-                    if inferred_type
-                        .as_ref()
-                        .is_some_and(|ty| ctx.mapping.is_copy(ty))
-                    {
+                    if ctx.mapping.is_copy(&inferred_type) {
                         Ownership::Copy
                     } else {
                         Ownership::Owned
@@ -98,13 +66,12 @@ impl Transpile for Declaration {
             },
         });
 
-        let mut scope = Scope::child(scope)
-            .returns(Some(inferred_type.unwrap_or_else(|| TypeElement::infer())));
+        let mut scope = Scope::child(scope).returns(inferred_type);
         // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
         // TODO: Clone inner type from ref types to non-ref types
         self.assignment
             .as_ref()
-            .map(|expr| transpile_assignment_expression(ctx, &expr.kind, &mut scope))
+            .map(|expr| transpile_assignment_expression(ctx, &expr, &mut scope))
             .map(|expr| {
                 if matches!(self.decl_modifier, DeclModifier::Ref) {
                     format!("(&({expr})).__to_ref()")
@@ -143,21 +110,22 @@ pub(crate) use match_ident;
 
 fn transpile_assignment_expression(
     ctx: &Context,
-    assigned: &ExpressionKind,
+    assigned: &Expression,
     scope: &mut Scope,
 ) -> String {
-    match assigned {
-        match_ident!(ident) => {
-            transpile!(ctx, scope, "{}.to_owned()", ident)
-        }
+    // TODO: Don't do this, it does not work with implicit ok-wrapping
+    match &assigned.kind {
+        match_ident!(ident) => return transpile!(ctx, scope, "{}.to_owned()", ident),
         ExpressionKind::Infix(infix) => match infix.borrow() {
             InfixExpression::Member(access) if access.is_field() => {
-                transpile!(ctx, scope, "{}.to_owned()", access)
+                return transpile!(ctx, scope, "{}.to_owned()", access)
             }
-            expr => expr.transpile(ctx, scope),
+            _ => (),
         },
-        expr => expr.transpile(ctx, scope),
-    }
+        _ => (),
+    };
+
+    cast(assigned, &scope.return_type.clone(), ctx, scope)
 }
 
 impl_transpile_variants! { ExpressionKind;

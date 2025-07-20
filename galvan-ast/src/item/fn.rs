@@ -32,7 +32,7 @@ pub struct FnSignature {
     pub visibility: Visibility,
     pub identifier: Ident,
     pub parameters: ParamList,
-    pub return_type: Option<TypeElement>,
+    pub return_type: TypeElement,
     pub span: Span,
 }
 

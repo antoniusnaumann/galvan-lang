@@ -370,6 +370,8 @@ fn extension_name(ty: &TypeElement) -> String {
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
             TypeElement::Generic(ty) => todo!("Generics are not supported yet!"),
+            TypeElement::Void(_) => format!("Void"),
+            TypeElement::Infer(_) => format!("Infer"),
             TypeElement::Never(_) => format!("Never"),
         }
     }
@@ -418,8 +420,8 @@ mod macros {
     macro_rules! impl_transpile {
         ($ty:ty, $string:expr, $($field:tt),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
-                    crate::macros::transpile!(ctx, scope, $string, $(self.$field),*)
+                fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope) -> String {
+                    crate::macros::transpile!(_ctx, _scope, $string, $(self.$field),*)
                 }
             }
         };

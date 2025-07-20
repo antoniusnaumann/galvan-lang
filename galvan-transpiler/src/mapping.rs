@@ -45,6 +45,8 @@ impl Mapping {
             }
             TypeElement::Plain(ty) => self.is_copy_ident(&ty.ident),
             TypeElement::Generic(_) => todo!(),
+            TypeElement::Void(_) => true,
+            TypeElement::Infer(_) => false,
             TypeElement::Never(_) => false,
         }
     }

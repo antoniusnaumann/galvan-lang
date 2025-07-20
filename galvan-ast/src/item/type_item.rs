@@ -12,6 +12,8 @@ type Optional = Box<OptionalTypeItem>;
 type Result = Box<ResultTypeItem>;
 type Plain = BasicTypeItem;
 type Generic = GenericTypeItem;
+type Void = VoidTypeItem;
+type Infer = InferTypeItem;
 type Never = NeverTypeItem;
 
 #[type_union]
@@ -25,6 +27,8 @@ pub type TypeElement = Array
     + Result
     + Plain
     + Generic
+    + Infer
+    + Void
     + Never;
 
 impl TypeElement {
@@ -37,11 +41,17 @@ impl TypeElement {
     }
 
     pub fn infer() -> Self {
-        BasicTypeItem {
-            ident: TypeIdent::new("__Infer"),
-            span: Span::default(),
-        }
-        .into()
+        InferTypeItem::default().into()
+    }
+
+    pub fn void() -> Self {
+        VoidTypeItem::default().into()
+    }
+}
+
+impl Default for TypeElement {
+    fn default() -> Self {
+        Self::infer()
     }
 }
 
@@ -103,7 +113,17 @@ pub struct GenericTypeItem {
     pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, AstNode)]
 pub struct NeverTypeItem {
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, AstNode)]
+pub struct VoidTypeItem {
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, AstNode)]
+pub struct InferTypeItem {
     pub span: Span,
 }

@@ -14,8 +14,6 @@ pub fn builtins() -> Mapping {
 
         // Hack to explicitly enable rusts inference for number literals
         ("__Number" => "_", copy),
-        // Symbolic type name for partial inference
-        ("__Infer" => "_"),
 
         ("I8" => "i8", copy),
         ("I16" => "i16", copy),
@@ -45,14 +43,14 @@ pub fn builtin_fns() -> Vec<FnDecl> {
     vec![func(
         "format",
         Vec::new(),
-        Some(TypeElement::Plain(BasicTypeItem {
+        TypeElement::Plain(BasicTypeItem {
             ident: TypeIdent::new("String"),
             span: Span::default(),
-        })),
+        }),
     )]
 }
 
-fn func(name: &str, parameters: Vec<TypeElement>, ret: Option<TypeElement>) -> FnDecl {
+fn func(name: &str, parameters: Vec<TypeElement>, ret: TypeElement) -> FnDecl {
     FnSignature {
         visibility: Visibility::public(),
         identifier: name.to_owned().into(),
@@ -92,6 +90,8 @@ pub(crate) const BORROWED_ITERATOR_FNS: [&str; 12] = [
 
 pub trait CheckBuiltins {
     fn is_infer(&self) -> bool;
+    fn is_number(&self) -> bool;
+    fn is_void(&self) -> bool;
 }
 
 pub trait IsSame {
@@ -100,11 +100,18 @@ pub trait IsSame {
 
 impl CheckBuiltins for TypeElement {
     fn is_infer(&self) -> bool {
-        let TypeElement::Plain(plain) = self else {
-            return false;
-        };
+        matches!(self, Self::Infer(_))
+    }
 
-        plain.ident.as_str() == "__Infer"
+    fn is_number(&self) -> bool {
+        match self {
+            TypeElement::Plain(plain) if plain.ident.as_str() == "__Number" => true,
+            _ => false,
+        }
+    }
+
+    fn is_void(&self) -> bool {
+        matches!(self, Self::Void(_))
     }
 }
 

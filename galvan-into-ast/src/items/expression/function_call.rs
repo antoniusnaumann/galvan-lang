@@ -230,9 +230,9 @@ impl ReadCursor for ClosureParameter {
 
         let ty = if cursor.kind()? == "colon" {
             cursor.next();
-            Some(TypeElement::read_cursor(cursor, source)?)
+            TypeElement::read_cursor(cursor, source)?
         } else {
-            None
+            TypeElement::infer()
         };
 
         cursor.goto_parent();

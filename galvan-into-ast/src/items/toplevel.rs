@@ -150,11 +150,11 @@ impl ReadCursor for FnSignature {
             cursor.child();
             cursor_expect!(cursor, "single_arrow");
             cursor.next();
-            let ty = Some(TypeElement::read_cursor(cursor, source)?);
+            let ty = TypeElement::read_cursor(cursor, source)?;
             cursor.goto_parent();
             ty
         } else {
-            None
+            TypeElement::void()
         };
 
         cursor.goto_parent();

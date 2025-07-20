@@ -18,6 +18,9 @@ impl_transpile!(SetTypeItem, "::std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
 impl_transpile!(OptionalTypeItem, "Option<{}>", inner);
 impl_transpile!(BasicTypeItem, "{}", ident);
+impl_transpile!(VoidTypeItem, "()",);
+impl_transpile!(InferTypeItem, "_",);
+impl_transpile!(NeverTypeItem, "!",);
 
 impl Transpile for ResultTypeItem {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -40,8 +43,6 @@ impl Transpile for GenericTypeItem {
     }
 }
 
-impl_transpile!(NeverTypeItem, "!",);
-
 impl_transpile_variants! { TypeElement;
     Plain
     Array
@@ -52,5 +53,7 @@ impl_transpile_variants! { TypeElement;
     Optional
     Result
     Generic
+    Void
+    Infer
     Never
 }

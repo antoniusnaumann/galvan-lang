@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::cast::cast;
+use crate::cast::{cast, unify};
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::type_inference::InferType;
@@ -32,7 +32,7 @@ pub(crate) fn transpile_closure(
     let arguments = closure
         .parameters
         .iter()
-        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::Borrowed))
+        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::Borrowed, false))
         .join(", ");
     let block = closure.block.transpile(ctx, scope);
     transpile!(ctx, scope, "|{}| {}", arguments, block)
@@ -45,13 +45,14 @@ impl Transpile for ElseExpression {
         match &self.receiver.deref().kind {
             // special handling for if-else as opposed to using else on an optional value
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "if" => {
-                // TODO: we should attach the expected type to expressions somehow and honor that here
-                let if_ = transpile_if(&call, ctx, scope, None);
-                transpile!(ctx, scope, "{if_} else {{ {} }}", self.block)
+                let (cond, if_, if_ty) = transpile_if(&call, ctx, scope, scope.return_type.clone());
+                let else_ = self.block.transpile(ctx, scope);
+                let (if_, else_) = unify(&if_, &else_, &if_ty, &self.block.infer_type(scope));
+                format!("{cond} {{ {if_} }} else {{ {else_} }}")
             }
             // special handling for try-else
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "try" => {
-                transpile_try(&call, ctx, scope, None, Some(self))
+                transpile_try(&call, ctx, scope, TypeElement::default(), Some(self))
             }
             _ => {
                 let mut else_scope = Scope::child(scope);
@@ -80,7 +81,7 @@ fn transpile_try(
     func: &FunctionCall,
     ctx: &Context<'_>,
     scope: &mut Scope,
-    ty: Option<TypeElement>,
+    ty: TypeElement,
     else_: Option<&ElseExpression>,
 ) -> String {
     debug_assert_eq!(func.identifier.as_str(), "try");
@@ -96,9 +97,7 @@ fn transpile_try(
         todo!("TRANSPILER ERROR: last argument of try needs to be a body")
     };
     let cond_type = condition.expression.infer_type(scope);
-    let mut cond_scope = Scope::child(scope).returns(Some(
-        cond_type.clone().unwrap_or_else(|| TypeElement::infer()),
-    ));
+    let mut cond_scope = Scope::child(scope).returns(cond_type.clone());
     let condition = condition.transpile(ctx, &mut cond_scope);
     // let condition = if let Some(ref cond_type) = cond_type {
     //     if ctx.mapping.is_copy(&cond_type) {
@@ -114,14 +113,14 @@ fn transpile_try(
     let mut else_scope = Scope::child(scope).returns(ty);
 
     match cond_type {
-        Some(TypeElement::Optional(_)) | None => {
+        TypeElement::Optional(_) | TypeElement::Infer(_) => {
             // TODO: allow more arguments for automatic tuple unpacking
             assert_eq!(
                 body.parameters.len(),
                 1,
                 "'try' should have exactly one binding"
             );
-            let is_copy = cond_type.is_some_and(|ty| ctx.mapping.is_copy(&ty));
+            let is_copy = ctx.mapping.is_copy(&cond_type);
             let binding = {
                 let elements = body
                     .parameters
@@ -138,6 +137,7 @@ fn transpile_try(
                             } else {
                                 Ownership::Borrowed
                             },
+                            true,
                         )
                     })
                     .join(", ");
@@ -150,7 +150,7 @@ fn transpile_try(
                 .unwrap_or("{}".into());
             format!("match {condition} {{ Some({binding}) => {transpiled_body}, None => {else_} }}",)
         }
-        Some(TypeElement::Result(res)) => {
+        TypeElement::Result(res) => {
             let ResultTypeItem {
                 success,
                 error,
@@ -172,11 +172,19 @@ fn transpile_try(
                 &body.parameters[0],
                 false,
                 success_ownership,
+                true,
             );
             let err_binding = else_
                 .and_then(|else_| else_.parameters.get(0))
                 .map(|p| {
-                    transpile_closure_argument(ctx, &mut else_scope, p, false, error_ownership)
+                    transpile_closure_argument(
+                        ctx,
+                        &mut else_scope,
+                        p,
+                        false,
+                        error_ownership,
+                        true,
+                    )
                 })
                 .unwrap_or("_".into());
             let transpiled_body = body.block.transpile(ctx, &mut body_scope);
@@ -193,7 +201,7 @@ fn transpile_try(
 
 impl Transpile for ClosureParameter {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        transpile_closure_argument(ctx, scope, self, false, Ownership::Borrowed)
+        transpile_closure_argument(ctx, scope, self, false, Ownership::Borrowed, false)
     }
 }
 
@@ -203,6 +211,7 @@ pub(crate) fn transpile_closure_argument(
     arg: &ClosureParameter,
     deref: bool,
     ownership: Ownership,
+    omit_type: bool,
 ) -> String {
     // TODO: Type inference
     scope.declare_variable(Variable {
@@ -213,16 +222,15 @@ pub(crate) fn transpile_closure_argument(
     });
 
     let prefix = if deref { "&" } else { "" };
-    if let Some(ty) = &arg.ty {
+    if omit_type {
+        transpile!(ctx, scope, "{prefix}{}", arg.ident)
+    } else {
         let param = Param {
             identifier: arg.ident.clone(),
             decl_modifier: None,
-            param_type: ty.clone(),
-            span: ty.span(),
+            param_type: arg.ty.clone(),
+            span: arg.ty.span(),
         };
         transpile!(ctx, scope, "{prefix}{}", param)
-    } else {
-        // TODO: Handle refs and mut here as well
-        transpile!(ctx, scope, "{prefix}{}", arg.ident)
     }
 }

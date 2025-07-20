@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub struct Scope<'a> {
     pub parent: Option<&'a Scope<'a>>,
     pub variables: HashMap<Ident, Variable>,
-    pub return_type: Option<TypeElement>,
+    pub return_type: TypeElement,
 
     lookup: Option<LookupContext<'a>>,
 }
@@ -19,7 +19,7 @@ impl Scope<'_> {
             parent: Some(parent),
             variables: HashMap::new(),
             lookup: None,
-            return_type: None,
+            return_type: TypeElement::void(),
         }
     }
 
@@ -39,7 +39,7 @@ impl<'a> Scope<'a> {
         self.lookup = Some(lookup);
     }
 
-    pub fn returns(mut self, ty: Option<TypeElement>) -> Scope<'a> {
+    pub fn returns(mut self, ty: TypeElement) -> Scope<'a> {
         self.return_type = ty;
         self
     }
@@ -91,8 +91,7 @@ impl Lookup for Scope<'_> {
 pub struct Variable {
     pub ident: Ident,
     pub modifier: DeclModifier,
-    /// If the variable type cannot be identified, this is `None` and type inference will be delegated to Rust
-    pub ty: Option<TypeElement>,
+    pub ty: TypeElement,
     pub ownership: Ownership,
 }
 

@@ -1,8 +1,9 @@
+use crate::builtins::CheckBuiltins;
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::transpile_item::ident::TypeOwnership;
 use crate::{FnDecl, FnSignature, Param, ParamList, Transpile};
-use galvan_ast::{DeclModifier, Ownership, TypeElement};
+use galvan_ast::{AstNode, DeclModifier, Ownership, Return, Statement, TypeElement};
 use galvan_resolver::{Scope, Variable};
 
 impl Transpile for FnDecl {
@@ -11,8 +12,22 @@ impl Transpile for FnDecl {
         let scope = &mut function_scope;
 
         let signature = self.signature.transpile(ctx, scope);
-        let block = self.body.transpile(ctx, scope);
-        if self.signature.return_type.is_some() {
+
+        let mut body = self.body.clone();
+        {
+            if let Some(stmt) = body.statements.last_mut() {
+                if let Statement::Expression(ref expression) = stmt {
+                    *stmt = Statement::Return(Return {
+                        expression: expression.to_owned(),
+                        is_explicit: false,
+                        span: expression.span(),
+                    })
+                }
+            }
+        };
+
+        let block = body.transpile(ctx, scope);
+        if !self.signature.return_type.is_void() {
             transpile!(ctx, scope, "{} {}", signature, block)
         } else {
             transpile!(ctx, scope, "{} {{ {}; }}", signature, block)
@@ -25,20 +40,14 @@ impl Transpile for FnSignature {
         let visibility = self.visibility.transpile(ctx, scope);
         let identifier = self.identifier.transpile(ctx, scope);
         let parameters = self.parameters.transpile(ctx, scope);
-        format!(
-            "{} fn {}{}{}",
-            visibility,
-            identifier,
-            parameters,
-            self.return_type
-                .as_ref()
-                .map_or("".into(), |return_type| transpile!(
-                    ctx,
-                    scope,
-                    " -> {}",
-                    return_type
-                ))
-        )
+
+        let return_type = match &self.return_type {
+            TypeElement::Infer(_) => todo!("TRANSPILER ERROR: Cannot infer function return types"),
+            TypeElement::Void(_) => format!(""),
+            ty => transpile!(ctx, scope, " -> {}", ty),
+        };
+
+        format!("{visibility} fn {identifier}{parameters}{return_type}",)
     }
 }
 
@@ -64,7 +73,7 @@ impl Transpile for Param {
         scope.declare_variable(Variable {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier.unwrap_or(DeclModifier::Let),
-            ty: Some(self.param_type.clone()),
+            ty: self.param_type.clone(),
             ownership: match self.decl_modifier {
                 Some(DeclModifier::Let) | None => {
                     if is_copy {

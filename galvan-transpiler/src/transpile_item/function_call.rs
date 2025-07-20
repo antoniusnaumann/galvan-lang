@@ -1,5 +1,5 @@
 use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
-use crate::cast::cast;
+use crate::cast::{cast, transpile_unified, unify};
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::transpile_item::closure::{transpile_closure, transpile_closure_argument};
@@ -13,7 +13,7 @@ use galvan_ast::{
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
@@ -31,11 +31,15 @@ impl Transpile for FunctionCall {
             "if" => {
                 let ty = self.infer_type(scope);
                 match ty {
-                    Some(ty @ TypeElement::Optional(_)) => {
-                        let if_ = transpile_if(self, ctx, scope, Some(ty));
-                        format!("{if_} else {{ None }}")
+                    ty @ TypeElement::Optional(_) => {
+                        let (cond, if_, if_ty) = transpile_if(self, ctx, scope, ty.clone());
+                        let (if_, _) = unify(&if_, "", &if_ty, &ty);
+                        format!("{cond} {{ {if_} }} else {{ None }}")
                     }
-                    ty => transpile_if(self, ctx, scope, ty),
+                    ty => {
+                        let (cond, if_, _) = transpile_if(self, ctx, scope, ty);
+                        format!("{cond} {{ {if_} }}")
+                    }
                 }
             }
             "for" => transpile_for(self, ctx, scope),
@@ -45,7 +49,7 @@ impl Transpile for FunctionCall {
                     expression:
                         Expression {
                             kind: ExpressionKind::Infix(e),
-                            span,
+                            span: _,
                         },
                 }) if e.is_comparison() => {
                     if modifier.is_some() {
@@ -63,45 +67,37 @@ impl Transpile for FunctionCall {
                         &[]
                     };
 
-                    let (lhs, rhs) =
-                        match (lhs.infer_owned(ctx, scope), rhs.infer_owned(ctx, scope)) {
-                            (
-                                Ownership::Owned | Ownership::Copy,
-                                Ownership::Borrowed | Ownership::MutBorrowed,
-                            ) => (
-                                transpile!(ctx, scope, "&({})", lhs),
-                                rhs.transpile(ctx, scope),
-                            ),
-                            (
-                                Ownership::Borrowed | Ownership::MutBorrowed,
-                                Ownership::Owned | Ownership::Copy,
-                            ) => (
-                                lhs.transpile(ctx, scope),
-                                transpile!(ctx, scope, "&({})", rhs),
-                            ),
-                            _ => (lhs.transpile(ctx, scope), rhs.transpile(ctx, scope)),
-                        };
+                    let mut lhs_scope = Scope::child(scope);
+                    let mut rhs_scope = Scope::child(scope);
+                    let lhs_scope = &mut lhs_scope;
+                    let rhs_scope = &mut rhs_scope;
+                    let (lhs, rhs) = match (
+                        lhs.infer_owned(ctx, &lhs_scope),
+                        rhs.infer_owned(ctx, &rhs_scope),
+                    ) {
+                        (
+                            Ownership::Owned | Ownership::Copy,
+                            Ownership::Borrowed | Ownership::MutBorrowed,
+                        ) => {
+                            let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx);
+                            (format!("&({})", lhs), rhs)
+                        }
+                        (
+                            Ownership::Borrowed | Ownership::MutBorrowed,
+                            Ownership::Owned | Ownership::Copy,
+                        ) => {
+                            let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx);
+                            (lhs, format!("&({})", rhs))
+                        }
+                        _ => transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx),
+                    };
 
                     match operator {
                         ComparisonOperator::Equal => {
-                            transpile!(
-                                ctx,
-                                scope,
-                                "assert_eq!({}, {}, {})",
-                                lhs,
-                                rhs,
-                                args.transpile(ctx, scope)
-                            )
+                            format!("assert_eq!({lhs}, {rhs}, {})", args.transpile(ctx, scope))
                         }
                         ComparisonOperator::NotEqual => {
-                            transpile!(
-                                ctx,
-                                scope,
-                                "assert_ne!({}, {}, {})",
-                                lhs,
-                                rhs,
-                                args.transpile(ctx, scope)
-                            )
+                            format!("assert_ne!({lhs}, {rhs}, {})", args.transpile(ctx, scope))
                         }
                         _ => format!("assert!({})", self.arguments.transpile(ctx, scope)),
                     }
@@ -118,7 +114,7 @@ impl Transpile for FunctionCall {
                     .arguments
                     .iter()
                     .map(|a| {
-                        let mut scope = Scope::child(scope).returns(Some(TypeElement::infer()));
+                        let mut scope = Scope::child(scope).returns(TypeElement::infer());
                         match &a.expression.kind {
                             ExpressionKind::Closure(closure) => {
                                 assert!(
@@ -154,22 +150,22 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope) 
             .skip_while(|p| p.identifier.as_str() == "self")
             .zip(arguments)
             .map(|(param, arg)| {
-                let mut arg_scope = Scope::child(scope).returns(Some(param.param_type.clone()));
+                let mut arg_scope = Scope::child(scope).returns(param.param_type.clone());
                 arg.transpile(ctx, &mut arg_scope)
             })
             .join(", ");
 
-        format!("{}({})", identifier, args)
+        format!("{}({})", identifier.transpile(ctx, scope), args)
     } else {
         let args = arguments
             .iter()
             .map(|arg| {
-                let mut arg_scope = Scope::child(scope).returns(Some(TypeElement::infer()));
+                let mut arg_scope = Scope::child(scope).returns(TypeElement::infer());
                 arg.transpile(ctx, &mut arg_scope)
             })
             .join(", ");
 
-        format!("{}({})", identifier, args)
+        format!("{}({})", identifier.transpile(ctx, scope), args)
     }
 }
 
@@ -177,8 +173,8 @@ pub fn transpile_if(
     func: &FunctionCall,
     ctx: &Context<'_>,
     scope: &mut Scope<'_>,
-    ty: Option<TypeElement>,
-) -> String {
+    ty: TypeElement,
+) -> (String, String, TypeElement) {
     debug_assert_eq!(func.identifier.as_str(), "if");
     assert_eq!(
         func.arguments.len(),
@@ -189,13 +185,14 @@ pub fn transpile_if(
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
-    let mut condition_scope = Scope::child(scope).returns(Some(TypeElement::bool()));
+    let mut condition_scope = Scope::child(scope).returns(TypeElement::bool());
     let condition = condition.transpile(ctx, &mut condition_scope);
 
     let mut body_scope = Scope::child(scope).returns(ty);
-    format!(
-        "if {condition} {{ {} }}",
-        body.block.transpile(ctx, &mut body_scope)
+    (
+        format!("if {condition}"),
+        format!("{}", body.block.transpile(ctx, &mut body_scope)),
+        body.block.infer_type(&body_scope),
     )
 }
 
@@ -208,26 +205,23 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     let iterator = &func.arguments[0];
     let iter_ty = iterator.expression.infer_type(scope);
     let elem_ty = match &iter_ty {
-        Some(ty) => match ty {
-            TypeElement::Array(ty) => Some(&ty.elements),
-            TypeElement::Dictionary(_ty) => todo!("for loop on dict"),
-            TypeElement::OrderedDictionary(_ty) => todo!("for loop on ordered dict"),
-            TypeElement::Set(ty) => Some(&ty.elements),
-            TypeElement::Tuple(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over tuple type"),
-            TypeElement::Optional(_ty) => todo!("for loop on optional"),
-            TypeElement::Result(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over result type"),
-            TypeElement::Plain(_ty) => todo!(),
-            TypeElement::Generic(_ty) => todo!(),
-            TypeElement::Never(_) => todo!(),
-        },
-        None => None,
+        TypeElement::Array(ty) => &ty.elements,
+        TypeElement::Dictionary(_ty) => todo!("for loop on dict"),
+        TypeElement::OrderedDictionary(_ty) => todo!("for loop on ordered dict"),
+        TypeElement::Set(ty) => &ty.elements,
+        TypeElement::Tuple(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over tuple type"),
+        TypeElement::Optional(_ty) => todo!("for loop on optional"),
+        TypeElement::Result(_ty) => todo!("TRANSPILE ERROR: Cannot iterate over result type"),
+        TypeElement::Plain(_ty) => todo!(),
+        TypeElement::Generic(_ty) => todo!(),
+        TypeElement::Void(_) => &iter_ty,
+        TypeElement::Infer(_) => &iter_ty,
+        TypeElement::Never(_) => todo!(),
     };
     let ExpressionKind::Closure(closure) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
-    let mut iter_scope = Scope::child(scope).returns(Some(
-        iter_ty.clone().unwrap_or_else(|| TypeElement::infer()),
-    ));
+    let mut iter_scope = Scope::child(scope).returns(iter_ty.clone());
     let condition = iterator.transpile(ctx, &mut iter_scope);
     // TODO: auto-unfold tuples into multiple arguments
     assert!(
@@ -244,17 +238,14 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
             TypeElement::Optional(opt) => get_iteration_type(&opt.inner),
             TypeElement::Result(res) => get_iteration_type(&res.success),
             TypeElement::Never(never) => TypeElement::Never(never.clone()),
-            TypeElement::Plain(_) if parent.is_infer() => TypeElement::infer(),
+            TypeElement::Infer(_) => TypeElement::infer(),
+            TypeElement::Void(_) => TypeElement::void(),
             _ => todo!("TRANSPILER ERROR: can only collect for loops into vec"),
         }
     }
 
     // TODO: try to figure out capacity and create vec with matching capacity
-    let iteration_return = if let Some(ref ret) = scope.return_type {
-        Some(get_iteration_type(ret))
-    } else {
-        None
-    };
+    let iteration_return = get_iteration_type(&scope.return_type);
 
     let mut body_scope = Scope::child(scope).returns(iteration_return);
     let element = {
@@ -267,18 +258,19 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
                     &mut body_scope,
                     arg,
                     false,
-                    if elem_ty.is_some_and(|ty| ctx.mapping.is_copy(ty)) {
+                    if ctx.mapping.is_copy(elem_ty) {
                         Ownership::Copy
                     } else {
                         Ownership::Borrowed
                     },
+                    true,
                 )
             })
             .join(", ");
         format!("({elements})")
     };
     // HACK: just assume we need to revert the auto-inserted & for unknown types
-    let condition = if iter_ty.is_none() {
+    let condition = if iter_ty.is_infer() {
         condition
             .strip_prefix("&(")
             .unwrap_or(&condition)
@@ -287,12 +279,12 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     } else {
         &condition
     };
-    let mut prefix = "";
-    if let Some(elem_ty) = elem_ty {
-        if ctx.mapping.is_copy(&elem_ty) {
-            prefix = "&"
-        }
-    }
+    let prefix = if ctx.mapping.is_copy(&elem_ty) {
+        "&"
+    } else {
+        ""
+    };
+
     let mut block: Vec<_> = closure
         .block
         .body
@@ -301,7 +293,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
         .map(|stmt| stmt.transpile(ctx, &mut body_scope))
         .collect();
 
-    if scope.return_type.is_some() {
+    if !scope.return_type.is_void() {
         let len = block.len();
         // This allows for loops that automatically collect values produced in each iteration
         for (i, stmt) in block.iter_mut().enumerate() {
@@ -312,15 +304,16 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     }
     let block = block.join(";\n");
 
-    if scope.return_type.is_none() {
-        format!("for {prefix}{element} in {condition} {{ {block} }}")
+    if scope.return_type.is_void() {
+        format!("for {prefix}{element} in {condition} {{ {block}; }}")
     } else {
         format!(
             "{{
-        let mut __result = Vec::new(); 
-        for {prefix}{element} in {condition} {{ {block} }}
-        __result
-        }}"
+                let mut __result: ::std::vec::Vec<{}> = ::std::vec::Vec::new(); 
+                for {prefix}{element} in {condition} {{ {block} }}
+                __result
+            }}",
+            body_scope.return_type.transpile(ctx, scope)
         )
     }
 }
@@ -330,7 +323,7 @@ impl Transpile for [FunctionCallArg] {
         self.iter()
             .map(|arg| {
                 // TODO: use type informations here somehow
-                let mut scope = Scope::child(scope).returns(Some(TypeElement::infer()));
+                let mut scope = Scope::child(scope).returns(TypeElement::infer());
                 arg.transpile(ctx, &mut scope)
             })
             .join(", ")
@@ -376,21 +369,15 @@ impl Transpile for FunctionCallArg {
             (None, Exp::Closure(closure)) => {
                 transpile!(ctx, scope, "{}", closure)
             }
-            (None, expression) => {
-                let return_type = scope
-                    .return_type
-                    .as_ref()
-                    .expect("function arguments must have a scope return type");
+            (None, expr) => {
+                let ref return_type = scope.return_type;
                 let return_type = if return_type.is_infer() {
-                    if let Some(ty) = expression.infer_type(scope) {
-                        Cow::Owned(ty)
-                    } else {
-                        Cow::Borrowed(return_type)
-                    }
+                    expr.infer_type(scope)
                 } else {
-                    Cow::Borrowed(return_type)
+                    return_type.clone()
                 };
                 let is_copy = ctx.mapping.is_copy(&return_type);
+                let expression = cast(expression, &return_type, ctx, scope);
 
                 if is_copy {
                     transpile!(ctx, scope, "{}", expression)
