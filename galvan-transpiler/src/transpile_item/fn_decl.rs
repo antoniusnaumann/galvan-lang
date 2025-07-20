@@ -56,12 +56,19 @@ impl_transpile!(ParamList, "({})", params);
 macro_rules! transpile_type {
     ($self:ident, $ctx:ident, $scope:ident, $ownership:path) => {{
         use crate::transpile_item::ident::TranspileType;
+        let mut prefix = "";
         let ty = match &$self.param_type {
             TypeElement::Plain(plain) => plain.ident.transpile_type($ctx, $scope, $ownership),
-            other => other.transpile($ctx, $scope),
+            other => {
+                match $ownership {
+                    TypeOwnership::Borrowed => prefix = "&",
+                    _ => (),
+                }
+                other.transpile($ctx, $scope)
+            }
         };
 
-        transpile!($ctx, $scope, "{}: {}", &$self.identifier, ty)
+        transpile!($ctx, $scope, "{}: {}{}", &$self.identifier, prefix, ty)
     }};
 }
 

@@ -143,7 +143,16 @@ impl InferType for ExpressionKind {
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
         match self {
-            ExpressionKind::ElseExpression(e) => todo!(),
+            ExpressionKind::ElseExpression(e) => {
+                let if_owned = e.receiver.infer_owned(ctx, scope);
+                let else_owned = e.block.infer_owned(ctx, scope);
+
+                match (if_owned, else_owned) {
+                    // TODO: is this correct?
+                    (a, b) if a == b => a,
+                    _ => Ownership::Borrowed,
+                }
+            }
             ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope),
             ExpressionKind::Infix(infix) => infix.infer_owned(ctx, scope),
             ExpressionKind::Postfix(postfix) => postfix.infer_owned(ctx, scope),
@@ -415,7 +424,7 @@ impl InferType for InfixOperation<MemberOperator> {
                 TypeElement::infer()
             }
             other => {
-                if self.is_field() {
+                if self.is_field() && !other.is_infer() {
                     todo!(
                         "TRANSPILER ERROR: Cannot access member of type {:#?}",
                         other

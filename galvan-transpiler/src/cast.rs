@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use galvan_ast::{BasicTypeItem, Expression, TypeElement};
+use galvan_ast::{BasicTypeItem, Expression, Ownership, TypeElement};
 use galvan_resolver::Scope;
 
 use crate::{
@@ -106,10 +106,19 @@ pub fn cast(
         }
         (TypeElement::Void(_) | TypeElement::Infer(_), _) => expression.transpile(ctx, scope),
         (TypeElement::Optional(some), actual) if some.inner.is_same(actual) => {
-            transpile!(ctx, scope, "Some({})", expression)
+            let postfix = match expression.infer_owned(ctx, scope) {
+                // TODO: we want to distinguish between Owned and SharedOwned, the latter needs to be cloned
+                Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
+                _ => ".to_owned()",
+            };
+            transpile!(ctx, scope, "Some({}{postfix})", expression)
         }
         (TypeElement::Result(res), actual) if res.success.is_same(actual) => {
-            transpile!(ctx, scope, "Ok({})", expression)
+            let postfix = match expression.infer_owned(ctx, scope) {
+                Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
+                _ => ".to_owned()",
+            };
+            transpile!(ctx, scope, "Ok({}{postfix})", expression)
         }
         (TypeElement::Result(res), actual)
             if res
@@ -125,7 +134,11 @@ pub fn cast(
                 "cargo::warning=wrapping non-matching type {:?} in ok",
                 actual
             );
-            transpile!(ctx, scope, "/*non-matching*/Ok({})", expression)
+            let postfix = match expression.infer_owned(ctx, scope) {
+                Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
+                _ => ".to_owned()",
+            };
+            transpile!(ctx, scope, "/*non-matching*/Ok({}{postfix})", expression)
         }
         (TypeElement::Optional(_), TypeElement::Optional(_)) => {
             println!(
@@ -139,7 +152,11 @@ pub fn cast(
                 "cargo::warning=wrapping non-matching type {:?} in some",
                 actual
             );
-            transpile!(ctx, scope, "/*non-matching*/Some({})", expression)
+            let postfix = match expression.infer_owned(ctx, scope) {
+                Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
+                _ => ".to_owned()",
+            };
+            transpile!(ctx, scope, "/*non-matching*/Some({}{postfix})", expression)
         }
         // TODO: only allow this for expected number types
         (_, TypeElement::Plain(BasicTypeItem { ident, span: _ }))

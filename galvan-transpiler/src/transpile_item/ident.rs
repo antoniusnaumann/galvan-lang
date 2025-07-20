@@ -14,7 +14,11 @@ impl Transpile for Ident {
 impl Transpile for TypeIdent {
     fn transpile(&self, ctx: &Context, _scope: &mut Scope) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
-            todo!("Handle type resolving errors. Type {} not found", self);
+            println!(
+                "cargo::warning=type resolving error: Type {} not found",
+                self
+            );
+            return format!("{self}");
         };
         // TODO: Handle module path here and use fully qualified name
         let name = ctx.mapping.get_owned(self);
@@ -42,7 +46,17 @@ impl TranspileType for TypeIdent {
         ownership: TypeOwnership,
     ) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
-            todo!("Handle type resolving errors. Type {} not found", self);
+            println!(
+                "cargo::warning=type resolving error: Type {} not found",
+                self
+            );
+            let prefix = match ownership {
+                TypeOwnership::Owned => "",
+                TypeOwnership::MutOwned => todo!("Transpile mutable owned types"),
+                TypeOwnership::Borrowed => "&",
+                TypeOwnership::MutBorrowed => "&mut",
+            };
+            return format!("{prefix}{self}");
         };
         // TODO: Handle module path here and use fully qualified name
         let (prefix, name) = match ownership {
