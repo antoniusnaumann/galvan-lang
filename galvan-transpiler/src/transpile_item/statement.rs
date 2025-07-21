@@ -57,9 +57,9 @@ impl Transpile for Declaration {
             ownership: match self.decl_modifier {
                 DeclModifier::Let | DeclModifier::Mut => {
                     if ctx.mapping.is_copy(&inferred_type) {
-                        Ownership::Copy
+                        Ownership::UniqueOwned
                     } else {
-                        Ownership::Owned
+                        Ownership::SharedOwned
                     }
                 }
                 DeclModifier::Ref => Ownership::Ref,

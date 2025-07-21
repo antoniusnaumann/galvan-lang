@@ -76,7 +76,7 @@ impl Transpile for FunctionCall {
                         rhs.infer_owned(ctx, &rhs_scope),
                     ) {
                         (
-                            Ownership::Owned | Ownership::Copy,
+                            Ownership::SharedOwned | Ownership::UniqueOwned,
                             Ownership::Borrowed | Ownership::MutBorrowed,
                         ) => {
                             let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx);
@@ -84,7 +84,7 @@ impl Transpile for FunctionCall {
                         }
                         (
                             Ownership::Borrowed | Ownership::MutBorrowed,
-                            Ownership::Owned | Ownership::Copy,
+                            Ownership::SharedOwned | Ownership::UniqueOwned,
                         ) => {
                             let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx);
                             (lhs, format!("&({})", rhs))
@@ -259,7 +259,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
                     arg,
                     false,
                     if ctx.mapping.is_copy(elem_ty) {
-                        Ownership::Copy
+                        Ownership::UniqueOwned
                     } else {
                         Ownership::Borrowed
                     },
@@ -355,10 +355,10 @@ impl Transpile for FunctionCallArg {
                     })
                     .ownership
                 {
-                    Ownership::Owned => {
+                    Ownership::SharedOwned => {
                         transpile!(ctx, scope, "&{}", ident)
                     }
-                    Ownership::Borrowed | Ownership::MutBorrowed | Ownership::Copy => {
+                    Ownership::Borrowed | Ownership::MutBorrowed | Ownership::UniqueOwned => {
                         transpile!(ctx, scope, "{}", ident)
                     }
                     Ownership::Ref => {

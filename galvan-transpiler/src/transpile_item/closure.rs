@@ -133,7 +133,7 @@ fn transpile_try(
                             false,
                             // TODO: for tuple unpacking, we need to check this for each part of the tuple individually
                             if is_copy {
-                                Ownership::Copy
+                                Ownership::UniqueOwned
                             } else {
                                 Ownership::Borrowed
                             },
@@ -157,12 +157,12 @@ fn transpile_try(
                 span: _,
             } = *res;
             let success_ownership = if ctx.mapping.is_copy(&success) {
-                Ownership::Copy
+                Ownership::UniqueOwned
             } else {
                 Ownership::Borrowed
             };
             let error_ownership = if error.is_some_and(|error| ctx.mapping.is_copy(&error)) {
-                Ownership::Copy
+                Ownership::UniqueOwned
             } else {
                 Ownership::Borrowed
             };

@@ -24,10 +24,10 @@ impl Transpile for Assignment {
                 scope
                     .get_variable(ident)
                     .map_or("", |var| match var.ownership {
-                        Ownership::Owned => "",
+                        Ownership::SharedOwned => "",
                         Ownership::Borrowed => todo!("Error: Cannot assign to borrowed variable"),
                         Ownership::MutBorrowed => "*",
-                        Ownership::Copy => "",
+                        Ownership::UniqueOwned => "",
                         Ownership::Ref => todo!("Handle assignment to ref variable"),
                     })
             }

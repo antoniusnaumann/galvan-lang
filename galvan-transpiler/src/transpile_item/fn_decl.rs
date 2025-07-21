@@ -84,7 +84,7 @@ impl Transpile for Param {
             ownership: match self.decl_modifier {
                 Some(DeclModifier::Let) | None => {
                     if is_copy {
-                        Ownership::Copy
+                        Ownership::UniqueOwned
                     } else {
                         Ownership::Borrowed
                     }

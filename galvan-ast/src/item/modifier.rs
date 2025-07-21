@@ -70,10 +70,10 @@ pub enum VisibilityKind {
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Ownership {
     #[default]
-    Owned,
+    SharedOwned,
     Borrowed,
     MutBorrowed,
-    Copy,
+    UniqueOwned,
     Ref,
 }
 

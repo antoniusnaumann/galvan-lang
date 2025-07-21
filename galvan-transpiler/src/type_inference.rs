@@ -93,7 +93,7 @@ impl InferType for Statement {
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
         match self {
             Statement::Expression(expr) => expr.infer_owned(ctx, scope),
-            _ => Ownership::Owned,
+            _ => Ownership::SharedOwned,
         }
     }
 }
@@ -156,11 +156,11 @@ impl InferType for ExpressionKind {
             ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope),
             ExpressionKind::Infix(infix) => infix.infer_owned(ctx, scope),
             ExpressionKind::Postfix(postfix) => postfix.infer_owned(ctx, scope),
-            ExpressionKind::CollectionLiteral(_) => Ownership::Owned,
+            ExpressionKind::CollectionLiteral(_) => Ownership::SharedOwned,
             // TODO: this might be copy
-            ExpressionKind::ConstructorCall(_) => Ownership::Owned,
+            ExpressionKind::ConstructorCall(_) => Ownership::SharedOwned,
             // TODO: this might be copy
-            ExpressionKind::EnumAccess(_) => Ownership::Owned,
+            ExpressionKind::EnumAccess(_) => Ownership::SharedOwned,
             ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope),
             ExpressionKind::Ident(ident) => {
                 let var = scope.get_variable(ident);
@@ -241,9 +241,9 @@ impl InferType for FunctionCall {
 
             if let Some(func) = func {
                 if ctx.mapping.is_copy(&func.signature.return_type) {
-                    Ownership::Copy
+                    Ownership::UniqueOwned
                 } else {
-                    Ownership::Owned
+                    Ownership::SharedOwned
                 }
             } else {
                 Ownership::default()
@@ -276,9 +276,9 @@ impl InferType for Literal {
 
     fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         match self {
-            Literal::StringLiteral(_) => Ownership::Owned,
-            Literal::NumberLiteral(_) | Literal::BooleanLiteral(_) => Ownership::Copy,
-            Literal::NoneLiteral(_) => Ownership::Owned,
+            Literal::StringLiteral(_) => Ownership::SharedOwned,
+            Literal::NumberLiteral(_) | Literal::BooleanLiteral(_) => Ownership::UniqueOwned,
+            Literal::NoneLiteral(_) => Ownership::SharedOwned,
         }
     }
 }
@@ -298,13 +298,13 @@ impl InferType for InfixExpression {
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
         match self {
-            InfixExpression::Logical(_) => Ownership::Copy,
+            InfixExpression::Logical(_) => Ownership::UniqueOwned,
             InfixExpression::Arithmetic(_) => {
                 // TODO: check the arguments, if they are owned, then this should not be copy
-                Ownership::Copy
+                Ownership::UniqueOwned
             }
             InfixExpression::Collection(collection) => todo!(),
-            InfixExpression::Comparison(_) => Ownership::Copy,
+            InfixExpression::Comparison(_) => Ownership::UniqueOwned,
             InfixExpression::Member(mem) => {
                 // TODO: check if the field is copy to distinguish copy and owned here
                 mem.lhs.infer_owned(ctx, scope)
@@ -466,9 +466,10 @@ impl InferType for InfixOperation<UnwrapOperator> {
             self.lhs.infer_owned(ctx, scope),
         ) {
             (lhs, rhs) if rhs == lhs => rhs,
-            (Ownership::Owned | Ownership::Copy, Ownership::Owned | Ownership::Copy) => {
-                Ownership::Owned
-            }
+            (
+                Ownership::SharedOwned | Ownership::UniqueOwned,
+                Ownership::SharedOwned | Ownership::UniqueOwned,
+            ) => Ownership::SharedOwned,
             (Ownership::Borrowed, _) | (_, Ownership::Borrowed) => Ownership::Borrowed,
             _ => todo!("TRANSPILER ERROR: incompatible ownership types in '?' operator"),
         }
