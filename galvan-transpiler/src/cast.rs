@@ -88,6 +88,7 @@ pub fn unify<'a, 'b>(
 pub fn cast(
     expression: &Expression,
     expected: &TypeElement,
+    ownership: Ownership,
     ctx: &Context<'_>,
     scope: &mut Scope<'_>,
 ) -> String {
@@ -100,10 +101,33 @@ pub fn cast(
     // );
 
     match (expected, actual) {
-        (expected, actual) if expected.is_same(actual) => expression.transpile(ctx, scope),
-        (_, TypeElement::Never(_) | TypeElement::Infer(_) | TypeElement::Void(_)) => {
-            expression.transpile(ctx, scope)
+        (expected, actual) if expected.is_same(actual) => {
+            match (ownership, expression.infer_owned(ctx, scope)) {
+                (
+                    Ownership::SharedOwned | Ownership::UniqueOwned,
+                    Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
+                ) => {
+                    transpile!(ctx, scope, "{}.to_owned()", expression)
+                }
+                (Ownership::Borrowed, Ownership::UniqueOwned | Ownership::SharedOwned) => {
+                    transpile!(ctx, scope, "&{}", expression)
+                }
+                _ => expression.transpile(ctx, scope),
+            }
         }
+        (_, TypeElement::Infer(_)) => match (ownership, expression.infer_owned(ctx, scope)) {
+            (
+                Ownership::SharedOwned | Ownership::UniqueOwned,
+                Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
+            ) => {
+                transpile!(ctx, scope, "{}.to_owned()", expression)
+            }
+            (Ownership::Borrowed, Ownership::UniqueOwned | Ownership::SharedOwned) => {
+                transpile!(ctx, scope, "&{}", expression)
+            }
+            _ => expression.transpile(ctx, scope),
+        },
+        (_, TypeElement::Never(_) | TypeElement::Void(_)) => expression.transpile(ctx, scope),
         (TypeElement::Void(_) | TypeElement::Infer(_), _) => expression.transpile(ctx, scope),
         (TypeElement::Optional(some), actual) if some.inner.is_same(actual) => {
             let postfix = match expression.infer_owned(ctx, scope) {
@@ -166,6 +190,10 @@ pub fn cast(
         }
         (_, _) => {
             // Let Rust try to figure this out
+            println!(
+                "cargo::warning=Trying to cast type {:?} to {:?}",
+                actual, expected
+            );
             transpile!(ctx, scope, "{}.into()", expression)
         }
     }

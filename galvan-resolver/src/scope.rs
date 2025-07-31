@@ -8,7 +8,11 @@ use std::collections::HashMap;
 pub struct Scope<'a> {
     pub parent: Option<&'a Scope<'a>>,
     pub variables: HashMap<Ident, Variable>,
+    /// expected type of this scopes return value
     pub return_type: TypeElement,
+    /// expected ownership of this scopes return value
+    pub ownership: Ownership,
+    pub fn_return: TypeElement,
 
     lookup: Option<LookupContext<'a>>,
 }
@@ -20,6 +24,8 @@ impl Scope<'_> {
             variables: HashMap::new(),
             lookup: None,
             return_type: TypeElement::void(),
+            ownership: Ownership::UniqueOwned,
+            fn_return: parent.fn_return.clone(),
         }
     }
 
@@ -39,8 +45,9 @@ impl<'a> Scope<'a> {
         self.lookup = Some(lookup);
     }
 
-    pub fn returns(mut self, ty: TypeElement) -> Scope<'a> {
+    pub fn returns(mut self, ty: TypeElement, ownership: Ownership) -> Scope<'a> {
         self.return_type = ty;
+        self.ownership = ownership;
         self
     }
 

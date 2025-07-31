@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::cast::{cast, unify};
+use crate::cast::{self, cast, unify};
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::type_inference::InferType;
@@ -32,7 +32,7 @@ pub(crate) fn transpile_closure(
     let arguments = closure
         .parameters
         .iter()
-        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::Borrowed, false))
+        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::default(), true))
         .join(", ");
     let block = closure.block.transpile(ctx, scope);
     transpile!(ctx, scope, "|{}| {}", arguments, block)
@@ -68,6 +68,7 @@ impl Transpile for ElseExpression {
                             span: Span::default()
                         },
                         &scope.return_type.clone(),
+                        scope.ownership,
                         ctx,
                         scope
                     ),
@@ -97,8 +98,15 @@ fn transpile_try(
         todo!("TRANSPILER ERROR: last argument of try needs to be a body")
     };
     let cond_type = condition.expression.infer_type(scope);
-    let mut cond_scope = Scope::child(scope).returns(cond_type.clone());
-    let condition = condition.transpile(ctx, &mut cond_scope);
+    let mut cond_scope = Scope::child(scope).returns(cond_type.clone(), Ownership::Borrowed);
+    let condition = cast(
+        &condition.expression,
+        &cond_type,
+        // TODO: handle copy types appropriately
+        Ownership::Borrowed,
+        ctx,
+        &mut cond_scope,
+    );
     // let condition = if let Some(ref cond_type) = cond_type {
     //     if ctx.mapping.is_copy(&cond_type) {
     //         condition.strip_prefix("&").unwrap()
@@ -109,8 +117,8 @@ fn transpile_try(
     //     &condition
     // };
 
-    let mut body_scope = Scope::child(scope).returns(ty.clone());
-    let mut else_scope = Scope::child(scope).returns(ty);
+    let mut body_scope = Scope::child(scope).returns(ty.clone(), scope.ownership);
+    let mut else_scope = Scope::child(scope).returns(ty, scope.ownership);
 
     match cond_type {
         TypeElement::Optional(_) | TypeElement::Infer(_) => {

@@ -114,7 +114,8 @@ impl Transpile for FunctionCall {
                     .arguments
                     .iter()
                     .map(|a| {
-                        let mut scope = Scope::child(scope).returns(TypeElement::infer());
+                        let mut scope = Scope::child(scope)
+                            .returns(TypeElement::infer(), Ownership::UniqueOwned);
                         match &a.expression.kind {
                             ExpressionKind::Closure(closure) => {
                                 assert!(
@@ -150,7 +151,16 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope) 
             .skip_while(|p| p.identifier.as_str() == "self")
             .zip(arguments)
             .map(|(param, arg)| {
-                let mut arg_scope = Scope::child(scope).returns(param.param_type.clone());
+                let ownership = match param.decl_modifier {
+                    Some(m) => match m {
+                        DeclModifier::Let => todo!(),
+                        DeclModifier::Mut => Ownership::MutBorrowed,
+                        DeclModifier::Ref => todo!(),
+                    },
+                    None => Ownership::Borrowed,
+                };
+                let mut arg_scope =
+                    Scope::child(scope).returns(param.param_type.clone(), ownership);
                 arg.transpile(ctx, &mut arg_scope)
             })
             .join(", ");
@@ -160,7 +170,8 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope) 
         let args = arguments
             .iter()
             .map(|arg| {
-                let mut arg_scope = Scope::child(scope).returns(TypeElement::infer());
+                let mut arg_scope =
+                    Scope::child(scope).returns(TypeElement::infer(), Ownership::Borrowed);
                 arg.transpile(ctx, &mut arg_scope)
             })
             .join(", ");
@@ -185,10 +196,11 @@ pub fn transpile_if(
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
-    let mut condition_scope = Scope::child(scope).returns(TypeElement::bool());
+    let mut condition_scope =
+        Scope::child(scope).returns(TypeElement::bool(), Ownership::UniqueOwned);
     let condition = condition.transpile(ctx, &mut condition_scope);
 
-    let mut body_scope = Scope::child(scope).returns(ty);
+    let mut body_scope = Scope::child(scope).returns(ty, scope.ownership);
     (
         format!("if {condition}"),
         format!("{}", body.block.transpile(ctx, &mut body_scope)),
@@ -221,7 +233,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     let ExpressionKind::Closure(closure) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
-    let mut iter_scope = Scope::child(scope).returns(iter_ty.clone());
+    let mut iter_scope = Scope::child(scope).returns(iter_ty.clone(), Ownership::Borrowed);
     let condition = iterator.transpile(ctx, &mut iter_scope);
     // TODO: auto-unfold tuples into multiple arguments
     assert!(
@@ -247,7 +259,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     // TODO: try to figure out capacity and create vec with matching capacity
     let iteration_return = get_iteration_type(&scope.return_type);
 
-    let mut body_scope = Scope::child(scope).returns(iteration_return);
+    let mut body_scope = Scope::child(scope).returns(iteration_return, Ownership::UniqueOwned);
     let element = {
         let elements = closure
             .parameters
@@ -273,8 +285,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     let condition = if iter_ty.is_infer() {
         condition
             .strip_prefix("&(")
-            .unwrap_or(&condition)
-            .strip_suffix(")")
+            .and_then(|s| s.strip_suffix(")"))
             .unwrap_or(&condition)
     } else {
         &condition
@@ -323,7 +334,8 @@ impl Transpile for [FunctionCallArg] {
         self.iter()
             .map(|arg| {
                 // TODO: use type informations here somehow
-                let mut scope = Scope::child(scope).returns(TypeElement::infer());
+                let mut scope =
+                    Scope::child(scope).returns(TypeElement::infer(), Ownership::default());
                 arg.transpile(ctx, &mut scope)
             })
             .join(", ")
@@ -377,13 +389,19 @@ impl Transpile for FunctionCallArg {
                     return_type.clone()
                 };
                 let is_copy = ctx.mapping.is_copy(&return_type);
-                let expression = cast(expression, &return_type, ctx, scope);
+                let expression = cast(
+                    expression,
+                    &return_type,
+                    if is_copy {
+                        Ownership::UniqueOwned
+                    } else {
+                        Ownership::Borrowed
+                    },
+                    ctx,
+                    scope,
+                );
 
-                if is_copy {
-                    transpile!(ctx, scope, "{}", expression)
-                } else {
-                    transpile!(ctx, scope, "&({})", expression)
-                }
+                transpile!(ctx, scope, "{}", expression)
             }
             // TODO: Check if the infix expression is a member field access
             (Some(Mod::Mut), expr @ Exp::Infix(_) | expr @ match_ident!(_)) => {

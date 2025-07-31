@@ -8,7 +8,9 @@ use galvan_resolver::{Scope, Variable};
 
 impl Transpile for FnDecl {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let mut function_scope = Scope::child(scope).returns(self.signature.return_type.clone());
+        let mut function_scope =
+            Scope::child(scope).returns(self.signature.return_type.clone(), Ownership::UniqueOwned);
+        function_scope.fn_return = self.signature.return_type.clone();
         let scope = &mut function_scope;
 
         let signature = self.signature.transpile(ctx, scope);

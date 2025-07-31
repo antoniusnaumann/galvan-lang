@@ -156,9 +156,9 @@ impl InferType for ExpressionKind {
             ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope),
             ExpressionKind::Infix(infix) => infix.infer_owned(ctx, scope),
             ExpressionKind::Postfix(postfix) => postfix.infer_owned(ctx, scope),
-            ExpressionKind::CollectionLiteral(_) => Ownership::SharedOwned,
+            ExpressionKind::CollectionLiteral(_) => Ownership::UniqueOwned,
             // TODO: this might be copy
-            ExpressionKind::ConstructorCall(_) => Ownership::SharedOwned,
+            ExpressionKind::ConstructorCall(_) => Ownership::UniqueOwned,
             // TODO: this might be copy
             ExpressionKind::EnumAccess(_) => Ownership::SharedOwned,
             ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope),
@@ -192,13 +192,17 @@ impl InferType for FunctionCall {
                         .last()
                         .map(|stmt| stmt.infer_type(scope))
                         .unwrap_or_default();
-                    TypeElement::Optional(
-                        OptionalTypeItem {
-                            inner: ty,
-                            span: Span::default(),
-                        }
-                        .into(),
-                    )
+
+                    match ty {
+                        TypeElement::Never(_) | TypeElement::Void(_) => ty,
+                        ty => TypeElement::Optional(
+                            OptionalTypeItem {
+                                inner: ty,
+                                span: Span::default(),
+                            }
+                            .into(),
+                        ),
+                    }
                 })
                 .unwrap_or_default()
         } else if self.identifier.as_str() == "for" {
@@ -239,14 +243,12 @@ impl InferType for FunctionCall {
         } else {
             let func = scope.resolve_function(None, &self.identifier, &[]);
 
-            if let Some(func) = func {
-                if ctx.mapping.is_copy(&func.signature.return_type) {
-                    Ownership::UniqueOwned
-                } else {
-                    Ownership::SharedOwned
-                }
+            if let Some(_func) = func {
+                // TODO: lookup function, some Rust functions return borrowed values
+                Ownership::UniqueOwned
             } else {
-                Ownership::default()
+                // In galvan, function return values are always owned and since they would be dropped if not consumed, they are considered "unique", that is, never require cloning
+                Ownership::UniqueOwned
             }
         }
     }
@@ -261,11 +263,19 @@ impl InferType for Literal {
                 span: Span::default(),
             }
             .into(),
-            Literal::NumberLiteral(_) => BasicTypeItem {
-                ident: TypeIdent::new("__Number"),
-                span: Span::default(),
-            }
-            .into(),
+            Literal::NumberLiteral(n) => match n.value.parse::<i64>() {
+                // TODO: make this more sophisticated, parse into the smallest integer possible
+                Ok(_) => BasicTypeItem {
+                    ident: TypeIdent::new("Int"),
+                    span: Span::default(),
+                }
+                .into(),
+                Err(_) => BasicTypeItem {
+                    ident: TypeIdent::new("__Number"),
+                    span: Span::default(),
+                }
+                .into(),
+            },
             Literal::NoneLiteral(_) => Box::new(OptionalTypeItem {
                 inner: TypeElement::infer(),
                 span: Span::default(),
@@ -276,9 +286,9 @@ impl InferType for Literal {
 
     fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         match self {
-            Literal::StringLiteral(_) => Ownership::SharedOwned,
+            Literal::StringLiteral(_) => Ownership::UniqueOwned,
             Literal::NumberLiteral(_) | Literal::BooleanLiteral(_) => Ownership::UniqueOwned,
-            Literal::NoneLiteral(_) => Ownership::SharedOwned,
+            Literal::NoneLiteral(_) => Ownership::UniqueOwned,
         }
     }
 }
@@ -303,7 +313,7 @@ impl InferType for InfixExpression {
                 // TODO: check the arguments, if they are owned, then this should not be copy
                 Ownership::UniqueOwned
             }
-            InfixExpression::Collection(collection) => todo!(),
+            InfixExpression::Collection(collection) => collection.infer_owned(ctx, scope),
             InfixExpression::Comparison(_) => Ownership::UniqueOwned,
             InfixExpression::Member(mem) => {
                 // TODO: check if the field is copy to distinguish copy and owned here
@@ -351,8 +361,12 @@ impl InferType for InfixOperation<CollectionOperator> {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        todo!()
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
+        match self.operator {
+            CollectionOperator::Concat
+            | CollectionOperator::Remove
+            | CollectionOperator::Contains => Ownership::UniqueOwned,
+        }
     }
 }
 

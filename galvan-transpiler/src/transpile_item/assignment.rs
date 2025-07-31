@@ -16,7 +16,8 @@ impl Transpile for Assignment {
         } = self;
 
         let target_ty = target.infer_type(scope);
-        let mut scope = Scope::child(scope).returns(target_ty);
+        let ownership = target.infer_owned(ctx, scope);
+        let mut scope = Scope::child(scope).returns(target_ty, ownership);
         let scope = &mut scope;
 
         let prefix = match &target.kind {
@@ -34,7 +35,7 @@ impl Transpile for Assignment {
             _ => "",
         };
 
-        let exp = cast(exp, &scope.return_type.clone(), ctx, scope);
+        let exp = cast(exp, &scope.return_type.clone(), ownership, ctx, scope);
 
         match operator {
             AssignmentOperator::Assign => {
