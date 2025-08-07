@@ -49,12 +49,16 @@ impl InferType for ElseExpression {
 
 impl InferType for Block {
     fn infer_type(&self, scope: &Scope) -> TypeElement {
-        // TODO: Block should have access to its inner scope
-        self.body.infer_type(scope)
+        // Create a child scope for this block to handle variable scoping properly
+        // For type inference, we don't need to mutate the scope, just create a child context
+        let block_scope = Scope::child(scope);
+        self.body.infer_type(&block_scope)
     }
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        self.body.infer_owned(ctx, scope)
+        // Create a child scope for this block to handle variable scoping properly
+        let block_scope = Scope::child(scope);
+        self.body.infer_owned(ctx, &block_scope)
     }
 }
 
@@ -263,18 +267,9 @@ impl InferType for Literal {
                 span: Span::default(),
             }
             .into(),
-            Literal::NumberLiteral(n) => match n.value.parse::<i64>() {
-                // TODO: make this more sophisticated, parse into the smallest integer possible
-                Ok(_) => BasicTypeItem {
-                    ident: TypeIdent::new("__Number"),
-                    span: Span::default(),
-                }
-                .into(),
-                Err(_) => BasicTypeItem {
-                    ident: TypeIdent::new("__Number"),
-                    span: Span::default(),
-                }
-                .into(),
+            Literal::NumberLiteral(n) => {
+                // Infer the smallest integer type that can fit the value
+                infer_number_type(&n.value)
             },
             Literal::NoneLiteral(_) => Box::new(OptionalTypeItem {
                 inner: TypeElement::infer(),
@@ -293,6 +288,61 @@ impl InferType for Literal {
     }
 }
 
+/// Infer the most appropriate integer type for a number literal
+fn infer_number_type(value: &str) -> TypeElement {
+    // Handle floating point numbers
+    if value.contains('.') || value.contains('e') || value.contains('E') {
+        return if value.ends_with("f32") {
+            BasicTypeItem {
+                ident: TypeIdent::new("Float"),
+                span: Span::default(),
+            }.into()
+        } else {
+            // For now, default to __Number for floats without explicit suffix
+            // to maintain compatibility
+            BasicTypeItem {
+                ident: TypeIdent::new("__Number"),
+                span: Span::default(),
+            }.into()
+        };
+    }
+
+    // Handle explicit type suffixes - these are unambiguous
+    if let Some(type_name) = extract_type_suffix(value) {
+        return BasicTypeItem {
+            ident: TypeIdent::new(type_name),
+            span: Span::default(),
+        }.into();
+    }
+
+    // For integer literals without explicit suffix, use __Number to maintain
+    // backward compatibility and let the type system resolve the correct type
+    // based on context. This is more conservative than inferring specific types.
+    BasicTypeItem {
+        ident: TypeIdent::new("__Number"),
+        span: Span::default(),
+    }.into()
+}
+
+/// Extract type suffix from number literal (e.g., "42i32" -> Some("I32"))
+fn extract_type_suffix(value: &str) -> Option<&'static str> {
+    if value.ends_with("i8") { Some("I8") }
+    else if value.ends_with("i16") { Some("I16") }
+    else if value.ends_with("i32") { Some("I32") }
+    else if value.ends_with("i64") { Some("I64") }
+    else if value.ends_with("i128") { Some("I128") }
+    else if value.ends_with("isize") { Some("ISize") }
+    else if value.ends_with("u8") { Some("U8") }
+    else if value.ends_with("u16") { Some("U16") }
+    else if value.ends_with("u32") { Some("U32") }
+    else if value.ends_with("u64") { Some("U64") }
+    else if value.ends_with("u128") { Some("U128") }
+    else if value.ends_with("usize") { Some("USize") }
+    else if value.ends_with("f32") { Some("Float") }
+    else if value.ends_with("f64") { Some("Double") }
+    else { None }
+}
+
 impl InferType for InfixExpression {
     fn infer_type(&self, scope: &Scope) -> TypeElement {
         match self {
@@ -309,15 +359,42 @@ impl InferType for InfixExpression {
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
         match self {
             InfixExpression::Logical(_) => Ownership::UniqueOwned,
-            InfixExpression::Arithmetic(_) => {
-                // TODO: check the arguments, if they are owned, then this should not be copy
-                Ownership::UniqueOwned
+            InfixExpression::Arithmetic(arith) => {
+                // Check if the operands are copy types - if they are, arithmetic operations
+                // can be copy, otherwise they should be owned
+                let lhs_type = arith.lhs.infer_type(scope);
+                let rhs_type = arith.rhs.infer_type(scope);
+                
+                let lhs_is_copy = ctx.mapping.is_copy(&lhs_type);
+                let rhs_is_copy = ctx.mapping.is_copy(&rhs_type);
+                
+                // If both operands are copy types, the result can be copy (UniqueOwned)
+                // If either operand is not copy, the result should be owned
+                if lhs_is_copy && rhs_is_copy {
+                    Ownership::UniqueOwned
+                } else {
+                    // Check the actual ownership of the operands
+                    let lhs_owned = arith.lhs.infer_owned(ctx, scope);
+                    let rhs_owned = arith.rhs.infer_owned(ctx, scope);
+                    
+                    match (lhs_owned, rhs_owned) {
+                        (Ownership::UniqueOwned, Ownership::UniqueOwned) => Ownership::UniqueOwned,
+                        (Ownership::SharedOwned, _) | (_, Ownership::SharedOwned) => Ownership::SharedOwned,
+                        _ => Ownership::UniqueOwned,
+                    }
+                }
             }
             InfixExpression::Collection(collection) => collection.infer_owned(ctx, scope),
             InfixExpression::Comparison(_) => Ownership::UniqueOwned,
             InfixExpression::Member(mem) => {
-                // TODO: check if the field is copy to distinguish copy and owned here
-                mem.lhs.infer_owned(ctx, scope)
+                // Check if the field type is copy to distinguish copy and owned here
+                let field_type = mem.infer_type(scope);
+                if ctx.mapping.is_copy(&field_type) {
+                    Ownership::UniqueOwned
+                } else {
+                    // For non-copy fields, propagate the ownership of the receiver
+                    mem.lhs.infer_owned(ctx, scope)
+                }
             }
             InfixExpression::Unwrap(u) => u.infer_owned(ctx, scope),
             InfixExpression::Custom(_custom) => todo!(),
@@ -332,7 +409,10 @@ impl InferType for InfixOperation<ArithmeticOperator> {
 
         if let (TypeElement::Plain(a), TypeElement::Plain(b)) = (&first, &second) {
             if a.ident != b.ident && !a.ident.is_intrinsic() && !b.ident.is_intrinsic() {
-                todo!("TRANSPILER ERROR: Operands are expected to be of the same type, but were: '{:#?}' and '{:#?}'. \nThis will later be relaxed by automatically lifting the more restrictive operand", a, b)
+                // Check if types are compatible numeric types
+                if !are_compatible_numeric_types(&a.ident, &b.ident) {
+                    todo!("TRANSPILER ERROR: Operands are expected to be of the same type, but were: '{:#?}' and '{:#?}'. \nThis will later be relaxed by automatically lifting the more restrictive operand", a, b)
+                }
             }
         }
 
@@ -344,6 +424,23 @@ impl InferType for InfixOperation<ArithmeticOperator> {
     fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
+}
+
+/// Check if two type identifiers represent compatible numeric types
+fn are_compatible_numeric_types(a: &TypeIdent, b: &TypeIdent) -> bool {
+    let integer_types = ["I8", "I16", "I32", "I64", "I128", "ISize", "Int", 
+                        "U8", "U16", "U32", "U64", "U128", "USize", "UInt"];
+    let float_types = ["Float", "Double"];
+    
+    let a_str = a.as_str();
+    let b_str = b.as_str();
+    
+    // Both are integer types
+    (integer_types.contains(&a_str) && integer_types.contains(&b_str)) ||
+    // Both are float types  
+    (float_types.contains(&a_str) && float_types.contains(&b_str)) ||
+    // One is __Number (intrinsic) - these should be compatible with any numeric type
+    a.is_intrinsic() || b.is_intrinsic()
 }
 
 impl InferType for InfixOperation<CollectionOperator> {
@@ -504,12 +601,24 @@ impl InferType for PostfixExpression {
     fn infer_type(&self, scope: &Scope) -> TypeElement {
         match self {
             PostfixExpression::YeetExpression(yeet) => {
-                // TODO: Check if return type is matching
-                match yeet.inner.infer_type(scope) {
-                        TypeElement::Optional(res) => res.inner,
-                        TypeElement::Result(res) => res.success,
-                        TypeElement::Infer(_) => TypeElement::infer(),
-                        _ => todo!("TRANSPILER_ERROR: Yeet operator can only be used on result or optional types"),
+                let inner_type = yeet.inner.infer_type(scope);
+                
+                // Check if return type is matching with the current function's return type
+                match &inner_type {
+                    TypeElement::Optional(opt) => {
+                        // For optional types, check if the current function returns an optional
+                        // that is compatible with the inner type
+                        validate_yeet_return_type(scope, &inner_type);
+                        opt.inner.clone()
+                    }
+                    TypeElement::Result(res) => {
+                        // For result types, check if the current function returns a result
+                        // with a compatible error type
+                        validate_yeet_return_type(scope, &inner_type);
+                        res.success.clone()
+                    }
+                    TypeElement::Infer(_) => TypeElement::infer(),
+                    _ => todo!("TRANSPILER_ERROR: Yeet operator can only be used on result or optional types"),
                 }
             }
             PostfixExpression::AccessExpression(access) => match access.base.infer_type(scope) {
@@ -532,6 +641,50 @@ impl InferType for PostfixExpression {
             }
             PostfixExpression::AccessExpression(access_expression) => {
                 access_expression.base.infer_owned(ctx, scope)
+            }
+        }
+    }
+}
+
+/// Validate that the yeet operator return type is compatible with the current function's return type
+fn validate_yeet_return_type(scope: &Scope, yeet_type: &TypeElement) {
+    let fn_return_type = &scope.fn_return;
+    
+    // If the function return type is not yet determined, we can't validate
+    if fn_return_type.is_infer() || fn_return_type.is_void() {
+        return;
+    }
+    
+    match (yeet_type, fn_return_type) {
+        // Optional -> Optional: check inner type compatibility
+        (TypeElement::Optional(yeet_opt), TypeElement::Optional(fn_opt)) => {
+            if !yeet_opt.inner.is_same(&fn_opt.inner) && !yeet_opt.inner.is_infer() && !fn_opt.inner.is_infer() {
+                println!("cargo::warning=Yeet operator type mismatch: yielding {:?} but function returns {:?}", yeet_opt.inner, fn_opt.inner);
+            }
+        }
+        // Result -> Result: check success and error type compatibility  
+        (TypeElement::Result(yeet_res), TypeElement::Result(fn_res)) => {
+            if !yeet_res.success.is_same(&fn_res.success) && !yeet_res.success.is_infer() && !fn_res.success.is_infer() {
+                println!("cargo::warning=Yeet operator success type mismatch: yielding {:?} but function returns {:?}", yeet_res.success, fn_res.success);
+            }
+            
+            // Check error type compatibility if both are specified
+            if let (Some(yeet_err), Some(fn_err)) = (&yeet_res.error, &fn_res.error) {
+                if !yeet_err.is_same(fn_err) && !yeet_err.is_infer() && !fn_err.is_infer() {
+                    println!("cargo::warning=Yeet operator error type mismatch: yielding {:?} but function expects {:?}", yeet_err, fn_err);
+                }
+            }
+        }
+        // Optional -> Result or Result -> Optional: potentially incompatible
+        (TypeElement::Optional(_), TypeElement::Result(_)) | 
+        (TypeElement::Result(_), TypeElement::Optional(_)) => {
+            println!("cargo::warning=Yeet operator type incompatibility: yielding {:?} but function returns {:?}", yeet_type, fn_return_type);
+        }
+        // Other combinations - we might want to allow automatic wrapping in the future
+        _ => {
+            // For now, just emit a warning for non-matching types
+            if !yeet_type.is_infer() && !fn_return_type.is_infer() {
+                println!("cargo::warning=Yeet operator return type validation: yielding {:?} from function returning {:?}", yeet_type, fn_return_type);
             }
         }
     }

@@ -1,16 +1,17 @@
 use std::borrow::Borrow;
 
+use galvan_ast::{
+    DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression, Ownership,
+    PostfixExpression, Return, Statement, Throw, TypeElement,
+};
+use galvan_resolver::{Scope, Variable};
+
 use crate::builtins::CheckBuiltins;
 use crate::cast::cast;
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
-use galvan_ast::{
-    DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression, Ownership,
-    PostfixExpression, Return, Statement, Throw, TypeElement,
-};
-use galvan_resolver::{Scope, Variable};
 
 impl Transpile for Body {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {

@@ -1,16 +1,18 @@
-use builtins::builtin_fns;
-use convert_case::{Case, Casing};
-use derive_more::{Deref, Display, From};
-use galvan_ast::*;
-use galvan_files::{FileError, Source};
-use galvan_into_ast::SegmentAst;
-use galvan_into_ast::{AstError, SourceIntoAst};
-use galvan_resolver::{LookupError, Scope};
-use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter;
+
+use convert_case::{Case, Casing};
+use derive_more::{Deref, Display, From};
+use itertools::Itertools;
 use thiserror::Error;
+
+use galvan_ast::*;
+use galvan_files::{FileError, Source};
+use galvan_into_ast::{AstError, SegmentAst, SourceIntoAst};
+use galvan_resolver::{LookupError, Scope};
+
+use builtins::builtin_fns;
 
 static SUPPRESS_WARNINGS: &str = "#![allow(warnings, unused)]";
 
@@ -490,10 +492,10 @@ mod macros {
         transpile,
     };
 }
+
 use crate::builtins::builtins;
 use crate::context::{predefined_from, Context};
 use crate::macros::transpile;
-
 use crate::sanitize::sanitize_name;
 use macros::punct;
 

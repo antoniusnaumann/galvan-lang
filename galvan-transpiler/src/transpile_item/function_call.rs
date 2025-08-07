@@ -1,3 +1,13 @@
+use std::borrow::Borrow;
+
+use galvan_ast::TypeElement::{self};
+use galvan_ast::{
+    ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
+    InfixExpression, InfixOperation, Ownership,
+};
+use galvan_resolver::{Lookup, Scope};
+use itertools::Itertools;
+
 use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
 use crate::cast::{cast, transpile_unified, unify};
 use crate::context::Context;
@@ -6,14 +16,6 @@ use crate::transpile_item::closure::{transpile_closure, transpile_closure_argume
 use crate::transpile_item::statement::match_ident;
 use crate::type_inference::InferType;
 use crate::Transpile;
-use galvan_ast::TypeElement::{self};
-use galvan_ast::{
-    ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
-    InfixExpression, InfixOperation, Ownership,
-};
-use galvan_resolver::{Lookup, Scope};
-use itertools::Itertools;
-use std::borrow::Borrow;
 
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {

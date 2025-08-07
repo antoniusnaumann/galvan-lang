@@ -4,11 +4,11 @@ extern crate core;
 use std::{cell::RefCell, ops::Deref};
 
 use galvan_files::Source;
+use itertools::Itertools;
 
 mod item;
 
 pub use item::*;
-use itertools::Itertools;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Ast {

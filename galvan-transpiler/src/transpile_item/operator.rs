@@ -1,11 +1,12 @@
-use crate::macros::impl_transpile_variants;
-use crate::Transpile;
-use crate::{context::Context, transpile};
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
     InfixOperation, LogicalOperator, UnwrapOperator,
 };
 use galvan_resolver::Scope;
+
+use crate::macros::impl_transpile_variants;
+use crate::{context::Context, transpile};
+use crate::Transpile;
 
 impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Comparison, Unwrap, Custom, Member);
 

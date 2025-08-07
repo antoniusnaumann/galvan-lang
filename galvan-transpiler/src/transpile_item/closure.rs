@@ -1,16 +1,17 @@
 use std::ops::Deref;
 
-use crate::cast::{cast, unify};
-use crate::context::Context;
-use crate::macros::{impl_transpile, transpile};
-use crate::type_inference::InferType;
-use crate::Transpile;
 use galvan_ast::{
     AstNode, Block, Closure, ClosureParameter, DeclModifier, ElseExpression, Expression,
     ExpressionKind, FunctionCall, Ownership, Param, ResultTypeItem, Span, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
+
+use crate::cast::{cast, unify};
+use crate::context::Context;
+use crate::macros::{impl_transpile, transpile};
+use crate::type_inference::InferType;
+use crate::Transpile;
 
 use super::function_call::transpile_if;
 

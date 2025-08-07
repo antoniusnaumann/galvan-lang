@@ -1,4 +1,3 @@
-use derive_more::From;
 use thiserror::Error;
 
 use galvan_parse::{Node, ParseError, TreeCursor};
@@ -7,16 +6,16 @@ use crate::Ast;
 
 pub type AstResult = Result<Ast, AstError>;
 
-#[derive(Debug, Error, From)]
+#[derive(Debug, Error)]
 pub enum AstError {
     #[error("Error when converting parsed code to AST")]
     ConversionError,
-    #[error("Error when parsing code")]
-    ParseError(ParseError),
     #[error("Error when parsing item")]
     NodeError,
     #[error("Duplicate main function")]
     DuplicateMain,
+    #[error(transparent)]
+    Parse(#[from] ParseError),
 }
 
 pub trait TreeSitterError: Sized {

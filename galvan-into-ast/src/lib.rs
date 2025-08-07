@@ -2,15 +2,13 @@ use galvan_ast::{Ast, Point, RootItem, SegmentedAsts, Span, ToplevelItem};
 use galvan_files::Source;
 use galvan_parse::*;
 
+mod cursor_macro;
+mod items;
+mod modifiers;
 mod result;
+
 use result::CursorUtil;
 pub use result::{AstError, AstResult};
-
-mod modifiers;
-
-mod items;
-
-mod cursor_macro;
 
 pub trait IntoAst {
     fn try_into_ast(self, source: Source) -> AstResult;

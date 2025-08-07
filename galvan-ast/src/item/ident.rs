@@ -2,7 +2,7 @@ use derive_more::{Display, From};
 
 use crate::{AstNode, Span};
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, From, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Display, From)]
 pub struct Ident(String);
 
 impl Ident {
@@ -26,7 +26,7 @@ impl AstNode for Ident {
     }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Display)]
 pub struct TypeIdent(String);
 
 impl TypeIdent {
