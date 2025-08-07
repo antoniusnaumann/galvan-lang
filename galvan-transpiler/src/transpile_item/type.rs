@@ -38,7 +38,7 @@ impl Transpile for ResultTypeItem {
 }
 
 impl Transpile for GenericTypeItem {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
         todo!("Transpile generic type parameters!")
     }
 }

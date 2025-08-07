@@ -174,7 +174,7 @@ impl ReadCursor for FunctionCallArg {
 impl ReadCursor for Closure {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let node = cursor_expect!(cursor, "closure");
-        let span = Span::from_node(node);
+        let _span = Span::from_node(node);
 
         cursor.child();
         cursor_expect!(cursor, "pipe");

@@ -10,7 +10,7 @@ use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 impl ReadCursor for TypeElement {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let type_item = cursor_expect!(cursor, "type_item");
-        let span = Span::from_node(type_item);
+        let _span = Span::from_node(type_item);
 
         cursor.child();
 
@@ -188,13 +188,13 @@ impl ReadCursor for SetTypeItem {
 }
 
 impl ReadCursor for TupleTypeItem {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         todo!()
     }
 }
 
 impl ReadCursor for GenericTypeItem {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         todo!()
     }
 }

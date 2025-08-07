@@ -8,7 +8,7 @@ use galvan_parse::TreeCursor;
 use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for Group {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         todo!()
     }
 }
@@ -168,7 +168,7 @@ impl ReadCursor for UnwrapOperator {
 }
 
 impl ReadCursor for CustomInfix {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
+    fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         todo!()
     }
 }

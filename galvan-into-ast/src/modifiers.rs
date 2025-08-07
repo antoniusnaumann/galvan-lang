@@ -5,7 +5,7 @@ use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor};
 
 impl ReadCursor for Visibility {
-    fn read_cursor(cursor: &mut TreeCursor, source: &str) -> Result<Visibility, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor, _source: &str) -> Result<Visibility, AstError> {
         let kind = if cursor.kind()? == "visibility" {
             cursor.child();
             let vis = match cursor.kind()? {
@@ -29,7 +29,7 @@ impl ReadCursor for Visibility {
 }
 
 impl ReadCursor for DeclModifier {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         cursor_expect!(cursor, "declaration_modifier");
 
         cursor.child();

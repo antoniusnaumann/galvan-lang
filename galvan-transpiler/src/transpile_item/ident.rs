@@ -27,6 +27,7 @@ impl Transpile for TypeIdent {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum TypeOwnership {
     Owned,
     MutOwned,

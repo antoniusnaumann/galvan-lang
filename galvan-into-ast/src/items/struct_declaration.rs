@@ -56,7 +56,7 @@ impl ReadCursor for StructTypeMember {
 
         cursor.child();
 
-        let visibility = Visibility::read_cursor(cursor, source)?;
+        let _visibility = Visibility::read_cursor(cursor, source)?;
         let decl_modifier = if cursor.kind()? == "declaration_modifier" {
             let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
             cursor.next();
@@ -175,8 +175,8 @@ impl ReadCursor for TupleTypeMember {
         cursor.child();
 
         // TODO: Implement field visibility and declaration modifier
-        let visibility = Visibility::read_cursor(cursor, source)?;
-        let decl_modifier = if cursor.kind()? == "declaration_modifier" {
+        let _visibility = Visibility::read_cursor(cursor, source)?;
+        let _decl_modifier = if cursor.kind()? == "declaration_modifier" {
             let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
             cursor.next();
             modifier

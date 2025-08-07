@@ -57,7 +57,7 @@ impl AstNode for TypeIdent {
 
     }
 
-    fn print(&self, indent: usize) -> String {
+    fn print(&self, _indent: usize) -> String {
         self.0.clone()
     }
 }

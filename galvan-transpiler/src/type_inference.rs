@@ -170,8 +170,8 @@ impl InferType for ExpressionKind {
                     todo!("TRANSPILER ERROR: No variable with name {ident} in scope")
                 }
             }
-            ExpressionKind::Closure(closure) => todo!(),
-            ExpressionKind::Group(group) => todo!(),
+            ExpressionKind::Closure(_closure) => todo!(),
+            ExpressionKind::Group(_group) => todo!(),
         }
     }
 }
@@ -320,7 +320,7 @@ impl InferType for InfixExpression {
                 mem.lhs.infer_owned(ctx, scope)
             }
             InfixExpression::Unwrap(u) => u.infer_owned(ctx, scope),
-            InfixExpression::Custom(custom) => todo!(),
+            InfixExpression::Custom(_custom) => todo!(),
         }
     }
 }
@@ -341,7 +341,7 @@ impl InferType for InfixOperation<ArithmeticOperator> {
         result
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
 }
@@ -393,7 +393,7 @@ impl InferType for InfixOperation<MemberOperator> {
                         // println!("cargo::warning=field: {:?}", field);
 
                         match ty {
-                            TypeDecl::Tuple(tuple) => {
+                            TypeDecl::Tuple(_tuple) => {
                                 todo!("IMPLEMENT: Access member of tuple type")
                             }
                             TypeDecl::Struct(st) => st
@@ -547,7 +547,7 @@ impl InferType for CollectionLiteral {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
 }
@@ -562,7 +562,7 @@ impl InferType for ArrayLiteral {
         .into()
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
 }
@@ -577,7 +577,7 @@ impl InferType for SetLiteral {
         .into()
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
 }
@@ -593,7 +593,7 @@ impl InferType for DictLiteral {
         .into()
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
 }
@@ -609,7 +609,7 @@ impl InferType for OrderedDictLiteral {
         .into()
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
         todo!()
     }
 }

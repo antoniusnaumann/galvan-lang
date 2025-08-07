@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::cast::{self, cast, unify};
+use crate::cast::{cast, unify};
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::type_inference::InferType;

@@ -42,7 +42,7 @@ impl ReadCursor for MainDecl {
 impl ReadCursor for TestDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let test = cursor_expect!(cursor, "test");
-        let span = Span::from_node(test);
+        let _span = Span::from_node(test);
         cursor.child();
         cursor_expect!(cursor, "test_keyword");
 
@@ -66,7 +66,7 @@ impl ReadCursor for TestDecl {
 
 impl ReadCursor for TypeDecl {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let ty = cursor_expect!(cursor, "type_declaration");
+        let _ty = cursor_expect!(cursor, "type_declaration");
         cursor.child();
 
         // TODO  Parse type declaration variatns
