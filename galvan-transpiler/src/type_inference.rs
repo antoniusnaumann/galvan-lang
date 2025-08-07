@@ -454,7 +454,15 @@ impl InferType for InfixOperation<MemberOperator> {
     }
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        todo!()
+        let Self {
+            lhs,
+            operator: _,
+            rhs: _,
+        } = self;
+        
+        // Member access propagates the ownership of the receiver
+        // If the receiver is borrowed, the member is also borrowed
+        lhs.infer_owned(ctx, scope)
     }
 }
 

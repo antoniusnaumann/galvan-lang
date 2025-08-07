@@ -119,15 +119,22 @@ fn transpile_try(
         todo!("TRANSPILER ERROR: last argument of try needs to be a body")
     };
     let cond_type = condition.expression.infer_type(scope);
-    let mut cond_scope = Scope::child(scope).returns(cond_type.clone(), Ownership::Borrowed);
+    let cond_ownership = condition.expression.infer_owned(ctx, scope);
+    let mut cond_scope = Scope::child(scope).returns(cond_type.clone(), cond_ownership);
     let condition = cast(
         &condition.expression,
         &cond_type,
-        // TODO: handle copy types appropriately
-        Ownership::Borrowed,
+        cond_ownership,
         ctx,
         &mut cond_scope,
     );
+    
+    // For borrowed conditions in match expressions, we need to explicitly add &
+    let condition = if cond_ownership == Ownership::Borrowed && matches!(cond_type, TypeElement::Optional(_) | TypeElement::Result(_)) {
+        format!("&{}", condition)
+    } else {
+        condition
+    };
     // let condition = if let Some(ref cond_type) = cond_type {
     //     if ctx.mapping.is_copy(&cond_type) {
     //         condition.strip_prefix("&").unwrap()
@@ -149,23 +156,34 @@ fn transpile_try(
                 1,
                 "'try' should have exactly one binding"
             );
-            let is_copy = ctx.mapping.is_copy(&cond_type);
+            let is_copy = match &cond_type {
+                TypeElement::Optional(opt) => ctx.mapping.is_copy(&opt.inner),
+                TypeElement::Infer(_) => {
+                    // For Infer types in Optional context, we can't determine the exact inner type,
+                    // but we can make a reasonable assumption: if this is a try on an optional value
+                    // that will be pattern matched, the bound variable should typically be owned
+                    // rather than borrowed, especially for primitive types.
+                    true
+                }
+                _ => ctx.mapping.is_copy(&cond_type),
+            };
             let binding = {
                 let elements = body
                     .parameters
                     .iter()
                     .map(|arg| {
+                        // TODO: for tuple unpacking, we need to check this for each part of the tuple individually
+                        let determined_ownership = if is_copy {
+                            Ownership::UniqueOwned
+                        } else {
+                            Ownership::Borrowed
+                        };
                         transpile_closure_argument(
                             ctx,
                             &mut body_scope,
                             arg,
                             false,
-                            // TODO: for tuple unpacking, we need to check this for each part of the tuple individually
-                            if is_copy {
-                                Ownership::UniqueOwned
-                            } else {
-                                Ownership::Borrowed
-                            },
+                            determined_ownership,
                             true,
                         )
                     })

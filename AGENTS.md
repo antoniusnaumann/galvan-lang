@@ -1,5 +1,10 @@
 # Agent Instructions for Galvan Codebase
 
+## IMPORTANT
+- NEVER edit, delete or uncomment tests to resolve failing tests. Exception: you can modify tests you added during your session.
+- AVOID redundant comments: Do not add comments that merely explain what the code does, instead use comments only when further context is needed
+- ALWAYS run all workspace tests after finishing an edit session to verify that no regression was introduced
+
 ## Build/Test/Lint Commands
 - `cargo check --workspace` - Type check entire workspace
 - `cargo build --workspace` - Build entire workspace  

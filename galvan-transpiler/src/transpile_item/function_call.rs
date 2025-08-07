@@ -114,21 +114,14 @@ impl Transpile for FunctionCall {
                                 let lhs_ownership = lhs.infer_owned(ctx, &lhs_scope);
                                 let rhs_ownership = rhs.infer_owned(ctx, &rhs_scope);
                                 
-                                // Special case: pattern match variables like 'ok', 'err' are often borrowed but
-                                // not correctly detected by ownership inference
+                                // Handle reference vs value mismatches based on actual ownership inference
                                 let lhs_needs_deref = match (lhs_ownership, &lhs.kind) {
                                     (Ownership::Borrowed | Ownership::MutBorrowed, ExpressionKind::Ident(_)) => true,
-                                    // Special case for common pattern match variable names that are usually &T
-                                    (_, ExpressionKind::Ident(_)) if (lhs_trans == "ok" || lhs_trans == "err" || lhs_trans == "i") 
-                                         && rhs_type.is_number() => true,
                                     _ => false
                                 };
                                 
                                 let rhs_needs_deref = match (rhs_ownership, &rhs.kind) {
                                     (Ownership::Borrowed | Ownership::MutBorrowed, ExpressionKind::Ident(_)) => true,
-                                    // Special case for common pattern match variable names that are usually &T  
-                                    (_, ExpressionKind::Ident(_)) if (rhs_trans == "ok" || rhs_trans == "err" || rhs_trans == "i")
-                                         && lhs_type.is_number() => true,
                                     _ => false
                                 };
                                 

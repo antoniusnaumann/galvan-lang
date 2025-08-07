@@ -48,3 +48,13 @@ test "autowrap for when optional is expected" {
 
     let doubled = numbers.doubled()
 }
+
+test "ownership for iterators" {
+    let dogs = [Dog(name: "Bello", age: 4), Dog(name: "Hasso", age: 7)]
+
+    for dogs.iter() |dog| {
+        pet(dog)
+    }
+}
+
+fn pet(dog: Dog) {}

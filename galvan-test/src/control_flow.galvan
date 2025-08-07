@@ -51,6 +51,15 @@ test "Try expression on member does not move" {
     try maybe.a |s| { assert s == "Something" } else { panic "Expected some string" }
 }
 
+test "Try expression on borrowed member does not move" {
+    let maybe = HasOpt(a: "Something")
+    try_on_borrow(maybe)
+}
+
+fn try_on_borrow(maybe: HasOpt) {
+    try maybe.a |s| { assert s == "Something" } else { panic "Expected some string" }
+}
+
 fn returns_result(ok: Bool) -> Int!Int {
     if ok {
         42
