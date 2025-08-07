@@ -21,11 +21,11 @@ impl_transpile!(ConstructorCall, "{} {{ {} }}", identifier, arguments,);
 
 impl crate::Transpile for ConstructorCallArg {
     fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let is_owned = match self.expression.infer_owned(ctx, scope) {
-            Ownership::SharedOwned | Ownership::UniqueOwned => true,
-            Ownership::Borrowed | Ownership::MutBorrowed | Ownership::Ref => false,
+        let postfix = match self.expression.infer_owned(ctx, scope) {
+            Ownership::SharedOwned => ".clone()",
+            Ownership::UniqueOwned => "",
+            Ownership::Borrowed | Ownership::MutBorrowed | Ownership::Ref => ".to_owned()",
         };
-        let postfix = if is_owned { "" } else { ".to_owned()" };
         transpile!(ctx, scope, "{}: {}{postfix}", self.ident, self.expression)
     }
 }

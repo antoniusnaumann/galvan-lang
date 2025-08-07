@@ -116,18 +116,18 @@ impl Transpile for FunctionCall {
                                 
                                 // Special case: pattern match variables like 'ok', 'err' are often borrowed but
                                 // not correctly detected by ownership inference
-                                let lhs_needs_deref = match lhs_ownership {
-                                    Ownership::Borrowed | Ownership::MutBorrowed => true,
+                                let lhs_needs_deref = match (lhs_ownership, &lhs.kind) {
+                                    (Ownership::Borrowed | Ownership::MutBorrowed, ExpressionKind::Ident(_)) => true,
                                     // Special case for common pattern match variable names that are usually &T
-                                    _ if (lhs_trans == "ok" || lhs_trans == "err" || lhs_trans == "i") 
+                                    (_, ExpressionKind::Ident(_)) if (lhs_trans == "ok" || lhs_trans == "err" || lhs_trans == "i") 
                                          && rhs_type.is_number() => true,
                                     _ => false
                                 };
                                 
-                                let rhs_needs_deref = match rhs_ownership {
-                                    Ownership::Borrowed | Ownership::MutBorrowed => true,
+                                let rhs_needs_deref = match (rhs_ownership, &rhs.kind) {
+                                    (Ownership::Borrowed | Ownership::MutBorrowed, ExpressionKind::Ident(_)) => true,
                                     // Special case for common pattern match variable names that are usually &T  
-                                    _ if (rhs_trans == "ok" || rhs_trans == "err" || rhs_trans == "i")
+                                    (_, ExpressionKind::Ident(_)) if (rhs_trans == "ok" || rhs_trans == "err" || rhs_trans == "i")
                                          && lhs_type.is_number() => true,
                                     _ => false
                                 };

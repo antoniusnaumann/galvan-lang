@@ -1,0 +1,29 @@
+type Vec2 {
+    x: Float
+    y: Float
+}
+
+type Vec3 {
+    x: Float
+    y: Float
+    z: Float
+}
+
+test "Construct from literals" {
+    let v = Vec2(x: 2.0, y: 3.0)
+    assert v.x == 2.0
+    assert v.y == 3.0
+}
+
+type Person {
+    name: String
+}
+
+test "Clone when passing as constructor parameter" {
+    let name = "Max"
+    let p1 = Person(name: name)
+    let p2 = Person(name: name)
+
+    assert p1.name == name
+    assert p2.name == name
+}

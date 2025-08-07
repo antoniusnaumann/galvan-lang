@@ -35,6 +35,12 @@ test "Try expression" {
     assert result == 7
 }
 
+test "Try expression does not own the value" {
+    let dog: Dog? = Dog(name: "Bello", age: 4)
+    try dog |bello| { assert bello.age == 4 } else { panic "Expected that dog is some" }
+    try dog |bello| { assert bello.name == "Bello" } else { panic "Expected that dog is some" }
+}
+
 fn returns_result(ok: Bool) -> Int!Int {
     if ok {
         42
