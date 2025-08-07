@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 
+use crate::builtins::CheckBuiltins;
 use crate::cast::cast;
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
@@ -62,10 +63,68 @@ impl Transpile for Declaration {
 
         let identifier = self.identifier.transpile(ctx, scope);
 
+        // IMPORTANT: Evaluate the assignment expression BEFORE adding the variable to scope
+        // This ensures that the assignment expression sees the outer scope, not the new variable
+        let assignment_result = self.assignment.as_ref().map(|expr| {
+            // Create a child scope for evaluating the assignment expression
+            let mut assignment_scope = Scope::child(scope);
+            
+            // If we have a type annotation, set up the scope to expect that type for casting
+            if let Some(ref type_annotation) = self.type_annotation {
+                assignment_scope.return_type = type_annotation.clone();
+                assignment_scope.ownership = match self.decl_modifier {
+                    DeclModifier::Let | DeclModifier::Mut => {
+                        if ctx.mapping.is_copy(type_annotation) {
+                            Ownership::UniqueOwned
+                        } else {
+                            Ownership::SharedOwned
+                        }
+                    }
+                    DeclModifier::Ref => Ownership::Ref,
+                };
+            } else {
+                // No type annotation - need to infer from expression
+                let inferred_type = expr.infer_type(scope);
+                
+                // Special handling for for expressions that might infer as just "Infer" 
+                // instead of "Array(Infer)" due to type inference issues
+                let corrected_type = if let ExpressionKind::FunctionCall(func) = &expr.kind {
+                    if func.identifier.as_str() == "for" && inferred_type.is_infer() {
+                        // Force for expressions to be treated as Array(Infer) when they incorrectly infer as just Infer
+                        TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+                            elements: TypeElement::infer(),
+                            span: galvan_ast::Span::default(),
+                        }))
+                    } else {
+                        inferred_type.clone()
+                    }
+                } else {
+                    inferred_type.clone()
+                };
+                
+                assignment_scope.return_type = corrected_type.clone();
+                assignment_scope.ownership = match self.decl_modifier {
+                    DeclModifier::Let | DeclModifier::Mut => {
+                        if ctx.mapping.is_copy(&corrected_type) {
+                            Ownership::UniqueOwned
+                        } else {
+                            Ownership::SharedOwned
+                        }
+                    }
+                    DeclModifier::Ref => Ownership::Ref,
+                };
+            }
+            
+            let assignment_expr = transpile_assignment_expression(ctx, expr, &mut assignment_scope);
+            let assignment_type = expr.infer_type(scope); // Use outer scope for type inference
+            (assignment_expr, assignment_type)
+        });
+
+        // Now determine the inferred type, preferring assignment type over annotation
         let inferred_type = self
             .type_annotation
             .clone()
-            .or_else(|| self.assignment.as_ref().map(|expr| expr.infer_type(scope)))
+            .or_else(|| assignment_result.as_ref().map(|(_, ty)| ty.clone()))
             .expect("variables either need a type annotation or an assignment that can be used to infer the type");
 
         let ty = transpile!(ctx, scope, "{}", inferred_type);
@@ -86,6 +145,8 @@ impl Transpile for Declaration {
             }
             DeclModifier::Ref => Ownership::Ref,
         };
+
+        // NOW add the variable to scope, after evaluating the assignment
         scope.declare_variable(Variable {
             ident: self.identifier.clone(),
             modifier: self.decl_modifier,
@@ -93,20 +154,16 @@ impl Transpile for Declaration {
             ownership,
         });
 
-        let mut scope = Scope::child(scope).returns(inferred_type, ownership);
-        // TODO: Wrap non-ref types in Arc<Mutex<>> when assigned to a ref type, clone ref types
-        // TODO: Clone inner type from ref types to non-ref types
-        self.assignment
-            .as_ref()
-            .map(|expr| transpile_assignment_expression(ctx, &expr, &mut scope))
-            .map(|expr| {
-                if matches!(self.decl_modifier, DeclModifier::Ref) {
+        // Format the final declaration
+        assignment_result
+            .map(|(expr, _)| {
+                let final_expr = if matches!(self.decl_modifier, DeclModifier::Ref) {
                     format!("(&({expr})).__to_ref()")
                 } else {
                     expr
-                }
+                };
+                format!("{keyword} {identifier}{ty} = {final_expr}")
             })
-            .map(|expr| format!("{keyword} {identifier}{ty} = {expr}"))
             .unwrap_or_else(|| format!("{keyword} {identifier}{ty}"))
     }
 }

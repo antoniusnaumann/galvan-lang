@@ -401,7 +401,9 @@ impl InferType for InfixOperation<MemberOperator> {
                                 .iter()
                                 .find(|member| member.ident == *field)
                                 .map(|member| member.r#type.clone())
-                                .expect("TRANSPILER ERROR: struct does not have this field"),
+                                .expect(&format!(
+                                    "TRANSPILER ERROR: struct does not have this field: {field}. Has: {:#?}", lhs
+                                )),
                             TypeDecl::Enum(_) => {
                                 todo!("TRANSPILER ERROR: Enum cases are access with ::")
                             }

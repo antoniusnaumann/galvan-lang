@@ -27,3 +27,25 @@ test "Clone when passing as constructor parameter" {
     assert p1.name == name
     assert p2.name == name
 }
+
+type Line {
+    start: Vec2
+    end: Vec2
+}
+
+test "Construct from inner values" {
+    let a = Line(start: Vec2(x: 0.0, y: 0.0), end: Vec2(x: 1.0, y: 1.0))
+    let b = Line(start: Vec2(x: 2.0, y: 2.5), end: Vec2(x: 1.3, y: 1.0))
+
+    let c = Vec2(x: a.end.x - a.start.x, y: a.end.y - a.start.y)
+    let d = Vec2(x: b.end.x - b.start.x, y: b.end.y - b.start.y)
+}
+
+test "Shadow value with new type" {
+    let a = Line(start: Vec2(x: 0.0, y: 0.0), end: Vec2(x: 1.0, y: 1.0))
+    let b = Line(start: Vec2(x: 2.0, y: 2.5), end: Vec2(x: 1.3, y: 1.0))
+
+    let a = Vec2(x: a.end.x - a.start.x, y: a.end.y - a.start.y)
+    let b = Vec2(x: b.end.x - b.start.x, y: b.end.y - b.start.y)
+}
+
