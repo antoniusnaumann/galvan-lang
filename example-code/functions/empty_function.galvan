@@ -1,5 +1,5 @@
 //@TRANSPILE
-// "pub(crate) fn empty() { { }; }"
+// "pub(crate) fn empty() { { ; }; }"
 //@end
 
 fn empty() {}

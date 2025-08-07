@@ -266,7 +266,7 @@ impl InferType for Literal {
             Literal::NumberLiteral(n) => match n.value.parse::<i64>() {
                 // TODO: make this more sophisticated, parse into the smallest integer possible
                 Ok(_) => BasicTypeItem {
-                    ident: TypeIdent::new("Int"),
+                    ident: TypeIdent::new("__Number"),
                     span: Span::default(),
                 }
                 .into(),

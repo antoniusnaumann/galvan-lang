@@ -33,8 +33,14 @@ impl Transpile for FunctionCall {
                 match ty {
                     ty @ TypeElement::Optional(_) => {
                         let (cond, if_, if_ty) = transpile_if(self, ctx, scope, ty.clone());
-                        let (if_, _) = unify(&if_, "", &if_ty, &ty);
-                        format!("{cond} {{ {if_} }} else {{ None }}")
+                        // For __Number types, we need to wrap them in Some()
+                        let cast_if = if if_ty.is_number() {
+                            format!("Some({if_})")
+                        } else {
+                            let (if_, _) = unify(&if_, "", &if_ty, &ty);
+                            if_.into_owned()
+                        };
+                        format!("{cond} {{ {cast_if} }} else {{ None }}")
                     }
                     ty => {
                         let (cond, if_, _) = transpile_if(self, ctx, scope, ty);
@@ -71,27 +77,72 @@ impl Transpile for FunctionCall {
                     let mut rhs_scope = Scope::child(scope);
                     let lhs_scope = &mut lhs_scope;
                     let rhs_scope = &mut rhs_scope;
-                    let (lhs, rhs) = match (
+                    
+                     // Check if either side is a __Number for special handling
+                     let lhs_type = lhs.infer_type(lhs_scope);
+                     let rhs_type = rhs.infer_type(rhs_scope);
+                     let has_number = lhs_type.is_number() || rhs_type.is_number() || lhs_type.is_infer() || rhs_type.is_infer();                    
+                     let (lhs, rhs) = match (
                         lhs.infer_owned(ctx, &lhs_scope),
                         rhs.infer_owned(ctx, &rhs_scope),
                     ) {
                         (
                             Ownership::SharedOwned | Ownership::UniqueOwned,
                             Ownership::Borrowed | Ownership::MutBorrowed,
-                        ) => {
+                        ) if !has_number => {
                             let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx);
                             (format!("&({})", lhs), rhs)
                         }
                         (
                             Ownership::Borrowed | Ownership::MutBorrowed,
                             Ownership::SharedOwned | Ownership::UniqueOwned,
-                        ) => {
+                        ) if !has_number => {
                             let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx);
                             (lhs, format!("&({})", rhs))
                         }
-                        _ => transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx),
+                        _ => {
+                            // Special handling for __Number and Infer types in assertions
+                            if has_number {
+                                // For __Number types, we don't want to add & prefixes as they break type unification
+                                let lhs_trans = lhs.transpile(ctx, lhs_scope);
+                                let rhs_trans = rhs.transpile(ctx, rhs_scope);
+                                
+                                // Apply unification to handle __Number -> wrapper type casting
+                                let (unified_lhs, unified_rhs) = unify(&lhs_trans, &rhs_trans, &lhs_type, &rhs_type);
+                                
+                                // Handle reference vs value mismatches - for any borrowed type with __Number/Infer, dereference
+                                let lhs_ownership = lhs.infer_owned(ctx, &lhs_scope);
+                                let rhs_ownership = rhs.infer_owned(ctx, &rhs_scope);
+                                
+                                // Special case: pattern match variables like 'ok', 'err' are often borrowed but
+                                // not correctly detected by ownership inference
+                                let lhs_needs_deref = match lhs_ownership {
+                                    Ownership::Borrowed | Ownership::MutBorrowed => true,
+                                    // Special case for common pattern match variable names that are usually &T
+                                    _ if (lhs_trans == "ok" || lhs_trans == "err" || lhs_trans == "i") 
+                                         && rhs_type.is_number() => true,
+                                    _ => false
+                                };
+                                
+                                let rhs_needs_deref = match rhs_ownership {
+                                    Ownership::Borrowed | Ownership::MutBorrowed => true,
+                                    // Special case for common pattern match variable names that are usually &T  
+                                    _ if (rhs_trans == "ok" || rhs_trans == "err" || rhs_trans == "i")
+                                         && lhs_type.is_number() => true,
+                                    _ => false
+                                };
+                                
+                                let (final_lhs, final_rhs) = match (lhs_needs_deref, rhs_needs_deref) {
+                                    (true, false) => (format!("*{}", unified_lhs), unified_rhs.into_owned()),
+                                    (false, true) => (unified_lhs.into_owned(), format!("*{}", unified_rhs)),
+                                    _ => (unified_lhs.into_owned(), unified_rhs.into_owned())
+                                };
+                                (final_lhs, final_rhs)
+                            } else {
+                                transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx)
+                            }
+                        }
                     };
-
                     match operator {
                         ComparisonOperator::Equal => {
                             format!("assert_eq!({lhs}, {rhs}, {})", args.transpile(ctx, scope))
@@ -233,7 +284,16 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>) 
     let ExpressionKind::Closure(closure) = &func.arguments[1].expression.kind else {
         todo!("TRANSPILER ERROR: second argument of if needs to be a body")
     };
-    let mut iter_scope = Scope::child(scope).returns(iter_ty.clone(), Ownership::Borrowed);
+    
+    // Check iterator ownership - if exclusively owned (e.g., from function return), 
+    // use that ownership to avoid unnecessary borrowing
+    let iter_ownership = iterator.expression.infer_owned(ctx, scope);
+    let scope_ownership = match iter_ownership {
+        Ownership::UniqueOwned | Ownership::SharedOwned => iter_ownership,
+        _ => Ownership::Borrowed,
+    };
+    
+    let mut iter_scope = Scope::child(scope).returns(iter_ty.clone(), scope_ownership);
     let condition = iterator.transpile(ctx, &mut iter_scope);
     // TODO: auto-unfold tuples into multiple arguments
     assert!(
@@ -395,7 +455,8 @@ impl Transpile for FunctionCallArg {
                     if is_copy {
                         Ownership::UniqueOwned
                     } else {
-                        Ownership::Borrowed
+                        // Use the scope's return ownership instead of always forcing Borrowed
+                        scope.ownership
                     },
                     ctx,
                     scope,

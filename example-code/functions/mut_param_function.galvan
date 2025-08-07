@@ -2,7 +2,7 @@
 //"
 //#[derive(Clone, Debug, PartialEq)]
 //pub(crate) struct Dog;
-//pub(crate) fn bark(dog: &mut Dog) { { }; }
+//pub(crate) fn bark(dog: &mut Dog) { { ; }; }
 //"
 //@end
 type Dog

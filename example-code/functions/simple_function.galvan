@@ -1,7 +1,7 @@
 //@TRANSPILE
-//"pub fn add(a: i64, b: i64) -> i64 { }"
+//"pub fn add(a: i64, b: i64) -> i64 { ; a + b }"
 //@end
 
 pub fn add(a: Int, b: Int) -> Int {
-    // a + b
+    a + b
 }

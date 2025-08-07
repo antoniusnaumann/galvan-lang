@@ -57,21 +57,42 @@ impl Transpile for ElseExpression {
             _ => {
                 let mut else_scope = Scope::child(scope);
                 let block = self.block.transpile(ctx, &mut else_scope);
+                
+                // Determine the inner type of the optional for __value
+                let receiver_type = self.receiver.infer_type(scope);
+                let inner_type = match &receiver_type {
+                    TypeElement::Optional(opt) => opt.inner.clone(),
+                    _ => receiver_type, // fallback for non-optional types
+                };
+                
+                // Create a child scope for the Some arm to declare __value
+                let mut some_scope = Scope::child(scope);
+                
+                // Declare __value variable in the Some arm scope
+                some_scope.declare_variable(Variable {
+                    ident: "__value".to_owned().into(),
+                    modifier: DeclModifier::Let,
+                    ty: inner_type,
+                    ownership: Ownership::Borrowed, // pattern match creates a borrowed reference
+                });
+                
+                let cast_result = cast(
+                    &Expression {
+                        kind: ExpressionKind::Ident("__value".to_owned().into()),
+                        span: Span::default()
+                    },
+                    &scope.return_type.clone(),
+                    scope.ownership,
+                    ctx,
+                    &mut some_scope
+                );
+                
                 transpile!(
                     ctx,
                     scope,
                     "if let Some(__value) = {} {{ {} }} else {{ {block} }}",
                     self.receiver,
-                    cast(
-                        &Expression {
-                            kind: ExpressionKind::Ident("__value".to_owned().into()),
-                            span: Span::default()
-                        },
-                        &scope.return_type.clone(),
-                        scope.ownership,
-                        ctx,
-                        scope
-                    ),
+                    cast_result
                 )
             }
         }

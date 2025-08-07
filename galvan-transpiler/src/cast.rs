@@ -43,8 +43,8 @@ pub fn unify<'a, 'b>(
         (_, TypeElement::Never(_) | TypeElement::Infer(_))
         | (TypeElement::Never(_) | TypeElement::Infer(_), _) => (a.into(), b.into()),
         (expected, actual) if expected.is_same(actual) => (a.into(), b.into()),
+        // Handle Optional and Result wrapping for __Number types
         (a_ty, TypeElement::Optional(opt))
-            // TODO: instead, try to unify the inner types
             if opt.inner.is_same(a_ty)
                 || a_ty.is_infer()
                 || a_ty.is_number()
@@ -80,6 +80,10 @@ pub fn unify<'a, 'b>(
         {
             (a.into(), format!("Ok({b})").into())
         }
+        // Handle __Number comparisons - when one side is __Number, let Rust infer the type
+        // This comes AFTER Optional/Result handling so wrapping takes priority
+        (_, b_ty) if b_ty.is_number() => (a.into(), b.into()),
+        (a_ty, _) if a_ty.is_number() => (a.into(), b.into()),
         _ => (a.into(), b.into()),
     }
 }
@@ -129,20 +133,28 @@ pub fn cast(
         },
         (_, TypeElement::Never(_) | TypeElement::Void(_)) => expression.transpile(ctx, scope),
         (TypeElement::Void(_) | TypeElement::Infer(_), _) => expression.transpile(ctx, scope),
-        (TypeElement::Optional(some), actual) if some.inner.is_same(actual) => {
+        (TypeElement::Optional(some), actual) if some.inner.is_same(actual) || actual.is_number() => {
             let postfix = match expression.infer_owned(ctx, scope) {
                 // TODO: we want to distinguish between Owned and SharedOwned, the latter needs to be cloned
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
-                _ => ".to_owned()",
+                _ => if actual.is_number() { "" } else { ".to_owned()" },
             };
             transpile!(ctx, scope, "Some({}{postfix})", expression)
         }
-        (TypeElement::Result(res), actual) if res.success.is_same(actual) => {
+        // Handle __Number type being cast to Optional
+        (TypeElement::Optional(_), actual) if actual.is_number() => {
+            transpile!(ctx, scope, "Some({})", expression)
+        }
+        (TypeElement::Result(res), actual) if res.success.is_same(actual) || actual.is_number() => {
             let postfix = match expression.infer_owned(ctx, scope) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
-                _ => ".to_owned()",
+                _ => if actual.is_number() { "" } else { ".to_owned()" },
             };
             transpile!(ctx, scope, "Ok({}{postfix})", expression)
+        }
+        // Handle __Number type being cast to Result
+        (TypeElement::Result(_), actual) if actual.is_number() => {
+            transpile!(ctx, scope, "Ok({})", expression)
         }
         (TypeElement::Result(res), actual)
             if res
