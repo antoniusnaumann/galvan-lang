@@ -12,12 +12,53 @@ use itertools::Itertools;
 use crate::{
     builtins::{CheckBuiltins, IsSame},
     context::Context,
+    error::{ErrorCollector, TranspilerError},
 };
 
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope) -> TypeElement;
 
     fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership;
+}
+
+/// Safe wrapper for type inference that collects errors instead of panicking
+pub(crate) fn safe_infer_type_with_errors<T: InferType>(
+    item: &T, 
+    scope: &Scope, 
+    errors: &mut ErrorCollector
+) -> TypeElement {
+    // For now, just use the existing implementation
+    // Later we can add error handling logic here
+    item.infer_type(scope)
+}
+
+/// Safe helper for type mismatches in ElseExpression
+fn handle_else_type_mismatch(
+    receiver_type: &TypeElement, 
+    block_type: &TypeElement,
+    errors: &mut ErrorCollector
+) -> TypeElement {
+    errors.error(TranspilerError::TypeMismatch {
+        expected: "matching types for if and else expressions".to_string(),
+        found: format!("if: {:?}, else: {:?}", receiver_type, block_type),
+    });
+    TypeElement::infer()
+}
+
+/// Safe helper for unknown identifiers
+fn handle_unknown_identifier(
+    ident: &str,
+    scope: &Scope,
+    errors: &mut ErrorCollector
+) -> TypeElement {
+    // Get available variable names for suggestions
+    let available_vars = scope.variables
+        .keys()
+        .map(|name| name.to_string())
+        .collect::<Vec<_>>();
+    
+    errors.suggest_similar_identifier(ident, &available_vars, None);
+    TypeElement::infer()
 }
 
 impl InferType for ElseExpression {

@@ -30,6 +30,7 @@ macro_rules! galvan_module {
 }
 
 mod builtins;
+mod error;
 #[cfg(feature = "exec")]
 pub mod exec;
 
@@ -37,6 +38,8 @@ mod cast;
 mod context;
 mod mapping;
 mod sanitize;
+
+pub use error::{ErrorCollector, TranspilerError, Diagnostic, DiagnosticSeverity, Span};
 
 #[derive(Debug, Error)]
 pub enum TranspileError {
