@@ -696,9 +696,9 @@ impl InferType for InfixOperation<MemberOperator> {
                             } else {
                                 errors.warning(
                                     format!(
-                                        "Function '{}' not found. Available functions: {:?}",
+                                        "Function '{}' not found. Available functions: {}",
                                         call.identifier,
-                                        scope.functions()
+                                        scope.functions().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ")
                                     ),
                                     None,
                                 );
