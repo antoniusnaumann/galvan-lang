@@ -23,22 +23,22 @@ impl_transpile!(InferTypeItem, "_",);
 impl_transpile!(NeverTypeItem, "!",);
 
 impl Transpile for ResultTypeItem {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut crate::ErrorCollector) -> String {
         let ResultTypeItem {
             success,
             error,
             span: _span,
         } = self;
         if let Some(error) = error {
-            transpile!(ctx, scope, "Result<{}, {}>", success, error)
+            transpile!(ctx, scope, errors, "Result<{}, {}>", success, error)
         } else {
-            transpile!(ctx, scope, "::galvan::std::FlexResult<{}>", success)
+            transpile!(ctx, scope, errors, "::galvan::std::FlexResult<{}>", success)
         }
     }
 }
 
 impl Transpile for GenericTypeItem {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut crate::ErrorCollector) -> String {
         todo!("Transpile generic type parameters!")
     }
 }

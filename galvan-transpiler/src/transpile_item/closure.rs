@@ -9,6 +9,7 @@ use itertools::Itertools;
 
 use crate::cast::{cast, unify};
 use crate::context::Context;
+use crate::error::ErrorCollector;
 use crate::macros::{impl_transpile, transpile};
 use crate::type_inference::InferType;
 use crate::Transpile;
@@ -16,8 +17,8 @@ use crate::Transpile;
 use super::function_call::transpile_if;
 
 impl Transpile for Closure {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        transpile_closure(ctx, scope, self, false)
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        transpile_closure(ctx, scope, self, false, errors)
     }
 }
 
@@ -26,6 +27,7 @@ pub(crate) fn transpile_closure(
     scope: &mut Scope,
     closure: &Closure,
     deref_args: bool,
+    errors: &mut ErrorCollector,
 ) -> String {
     let mut closure_scope = Scope::child(scope);
     let scope = &mut closure_scope;
@@ -33,34 +35,35 @@ pub(crate) fn transpile_closure(
     let arguments = closure
         .parameters
         .iter()
-        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::default(), true))
+        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::default(), true, errors))
         .join(", ");
-    let block = closure.block.transpile(ctx, scope);
-    transpile!(ctx, scope, "|{}| {}", arguments, block)
+    let block = closure.block.transpile(ctx, scope, errors);
+    transpile!(ctx, scope, errors, "|{}| {}", arguments, block)
 }
 
 impl_transpile!(Block, "{}", body);
 
 impl Transpile for ElseExpression {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         match &self.receiver.deref().kind {
             // special handling for if-else as opposed to using else on an optional value
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "if" => {
-                let (cond, if_, if_ty) = transpile_if(&call, ctx, scope, scope.return_type.clone());
-                let else_ = self.block.transpile(ctx, scope);
-                let (if_, else_) = unify(&if_, &else_, &if_ty, &self.block.infer_type(scope));
+                let (cond, if_, if_ty) = transpile_if(&call, ctx, scope, scope.return_type.clone(), errors);
+                let else_ = self.block.transpile(ctx, scope, errors);
+                let block_type = self.block.infer_type(scope, errors);
+                let (if_, else_) = unify(&if_, &else_, &if_ty, &block_type);
                 format!("{cond} {{ {if_} }} else {{ {else_} }}")
             }
             // special handling for try-else
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "try" => {
-                transpile_try(&call, ctx, scope, TypeElement::default(), Some(self))
+                transpile_try(&call, ctx, scope, TypeElement::default(), Some(self), errors)
             }
             _ => {
                 let mut else_scope = Scope::child(scope);
-                let block = self.block.transpile(ctx, &mut else_scope);
+                let block = self.block.transpile(ctx, &mut else_scope, errors);
                 
                 // Determine the inner type of the optional for __value
-                let receiver_type = self.receiver.infer_type(scope);
+                let receiver_type = self.receiver.infer_type(scope, errors);
                 let inner_type = match &receiver_type {
                     TypeElement::Optional(opt) => opt.inner.clone(),
                     _ => receiver_type, // fallback for non-optional types
@@ -85,12 +88,14 @@ impl Transpile for ElseExpression {
                     &scope.return_type.clone(),
                     scope.ownership,
                     ctx,
-                    &mut some_scope
+                    &mut some_scope,
+                    errors
                 );
                 
                 transpile!(
                     ctx,
                     scope,
+                    errors,
                     "if let Some(__value) = {} {{ {} }} else {{ {block} }}",
                     self.receiver,
                     cast_result
@@ -106,6 +111,7 @@ fn transpile_try(
     scope: &mut Scope,
     ty: TypeElement,
     else_: Option<&ElseExpression>,
+    errors: &mut ErrorCollector,
 ) -> String {
     debug_assert_eq!(func.identifier.as_str(), "try");
     // TODO: allow more arguments for automatic tuple unpacking
@@ -117,9 +123,10 @@ fn transpile_try(
     let condition = &func.arguments[0];
     // TODO: relax this to 'last argument' for automatic tuple unpacking
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
-        todo!("TRANSPILER ERROR: last argument of try needs to be a body")
+        // TODO: Add proper error handling for invalid try body argument
+        return String::new();
     };
-    let cond_type = condition.expression.infer_type(scope);
+    let cond_type = condition.expression.infer_type(scope, errors);
     let cond_ownership = condition.expression.infer_owned(ctx, scope);
     let mut cond_scope = Scope::child(scope).returns(cond_type.clone(), cond_ownership);
     let condition = cast(
@@ -128,6 +135,7 @@ fn transpile_try(
         cond_ownership,
         ctx,
         &mut cond_scope,
+        errors
     );
     
     // For borrowed conditions in match expressions, we need to explicitly add &
@@ -186,15 +194,16 @@ fn transpile_try(
                             false,
                             determined_ownership,
                             true,
+                            errors,
                         )
                     })
                     .join(", ");
                 format!("({elements})")
             };
 
-            let transpiled_body = body.block.transpile(ctx, &mut body_scope);
+            let transpiled_body = body.block.transpile(ctx, &mut body_scope, errors);
             let else_ = else_
-                .map(|else_| else_.block.transpile(ctx, &mut else_scope))
+                .map(|else_| else_.block.transpile(ctx, &mut else_scope, errors))
                 .unwrap_or("{}".into());
             format!("match {condition} {{ Some({binding}) => {transpiled_body}, None => {else_} }}",)
         }
@@ -221,6 +230,7 @@ fn transpile_try(
                 false,
                 success_ownership,
                 true,
+                errors,
             );
             let err_binding = else_
                 .and_then(|else_| else_.parameters.get(0))
@@ -232,24 +242,28 @@ fn transpile_try(
                         false,
                         error_ownership,
                         true,
+                        errors,
                     )
                 })
                 .unwrap_or("_".into());
-            let transpiled_body = body.block.transpile(ctx, &mut body_scope);
+            let transpiled_body = body.block.transpile(ctx, &mut body_scope, errors);
             let else_ = else_
-                .map(|else_| else_.block.transpile(ctx, &mut else_scope))
+                .map(|else_| else_.block.transpile(ctx, &mut else_scope, errors))
                 .unwrap_or("{}".into());
             format!(
                 "match {condition} {{ Ok({ok_binding}) => {transpiled_body}, Err({err_binding}) => {else_} }}"
             )
         }
-        _ => todo!("TRANSPILER ERROR: can only call 'try' on optionals or results"),
+        _ => {
+            // TODO: Add proper error handling for invalid try condition type
+            String::new()
+        }
     }
 }
 
 impl Transpile for ClosureParameter {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        transpile_closure_argument(ctx, scope, self, false, Ownership::Borrowed, false)
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        transpile_closure_argument(ctx, scope, self, false, Ownership::Borrowed, false, errors)
     }
 }
 
@@ -260,6 +274,7 @@ pub(crate) fn transpile_closure_argument(
     deref: bool,
     ownership: Ownership,
     omit_type: bool,
+    errors: &mut ErrorCollector,
 ) -> String {
     // TODO: Type inference
     scope.declare_variable(Variable {
@@ -271,7 +286,7 @@ pub(crate) fn transpile_closure_argument(
 
     let prefix = if deref { "&" } else { "" };
     if omit_type {
-        transpile!(ctx, scope, "{prefix}{}", arg.ident)
+        transpile!(ctx, scope, errors, "{prefix}{}", arg.ident)
     } else {
         let param = Param {
             identifier: arg.ident.clone(),
@@ -279,6 +294,6 @@ pub(crate) fn transpile_closure_argument(
             param_type: arg.ty.clone(),
             span: arg.ty.span(),
         };
-        transpile!(ctx, scope, "{prefix}{}", param)
+        transpile!(ctx, scope, errors, "{prefix}{}", param)
     }
 }

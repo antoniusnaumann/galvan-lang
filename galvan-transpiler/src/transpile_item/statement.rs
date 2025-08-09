@@ -9,12 +9,13 @@ use galvan_resolver::{Scope, Variable};
 use crate::builtins::CheckBuiltins;
 use crate::cast::cast;
 use crate::context::Context;
+use crate::error::ErrorCollector;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
 use crate::type_inference::InferType;
 use crate::{Body, Transpile};
 
 impl Transpile for Body {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let mut body_scope =
             Scope::child(scope).returns(scope.return_type.to_owned(), scope.ownership);
         let scope = &mut body_scope;
@@ -23,46 +24,46 @@ impl Transpile for Body {
             Some(Statement::Expression(expression)) => {
                 let len = self.statements.len();
                 let last_index = if len > 0 { len - 1 } else { len };
-                let statements = transpile!(ctx, scope, "{}", self.statements[0..last_index],);
-                let expr = transpile!(ctx, scope, "{}", expression,);
+                let statements = transpile!(ctx, scope, errors, "{}", self.statements[0..last_index],);
+                let expr = transpile!(ctx, scope, errors, "{}", expression,);
                 format!("{{\n{statements};\n{expr}\n}}")
             }
             Some(Statement::Return(expression)) => {
                 let len = self.statements.len();
                 let last_index = if len > 0 { len - 1 } else { len };
-                let statements = transpile!(ctx, scope, "{}", self.statements[0..last_index],);
-                let expr = transpile!(ctx, scope, "{}", expression,);
+                let statements = transpile!(ctx, scope, errors, "{}", self.statements[0..last_index],);
+                let expr = transpile!(ctx, scope, errors, "{}", expression,);
                 format!("{{\n{statements};\n{expr}\n}}")
             }
-            _ => transpile!(ctx, scope, "{{\n{};\n}}", self.statements,),
+            _ => transpile!(ctx, scope, errors, "{{\n{};\n}}", self.statements,),
         }
     }
 }
 
 impl crate::Transpile for Statement {
-    fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
+    fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope, errors: &mut ErrorCollector) -> String {
         match self {
-            Statement::Assignment(inner) => inner.transpile(ctx, scope),
+            Statement::Assignment(inner) => inner.transpile(ctx, scope, errors),
             Statement::Expression(inner) => {
                 let mut inner_scope =
                     Scope::child(scope).returns(TypeElement::void(), Ownership::UniqueOwned);
-                inner.transpile(ctx, &mut inner_scope)
+                inner.transpile(ctx, &mut inner_scope, errors)
             }
-            Statement::Declaration(inner) => inner.transpile(ctx, scope),
-            Statement::Return(inner) => inner.transpile(ctx, scope),
-            Statement::Throw(inner) => inner.transpile(ctx, scope),
+            Statement::Declaration(inner) => inner.transpile(ctx, scope, errors),
+            Statement::Return(inner) => inner.transpile(ctx, scope, errors),
+            Statement::Throw(inner) => inner.transpile(ctx, scope, errors),
         }
     }
 }
 
 impl Transpile for Declaration {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let keyword = match self.decl_modifier {
             DeclModifier::Let | DeclModifier::Ref => "let",
             DeclModifier::Mut => "let mut",
         };
 
-        let identifier = self.identifier.transpile(ctx, scope);
+        let identifier = self.identifier.transpile(ctx, scope, errors);
 
         // IMPORTANT: Evaluate the assignment expression BEFORE adding the variable to scope
         // This ensures that the assignment expression sees the outer scope, not the new variable
@@ -85,7 +86,7 @@ impl Transpile for Declaration {
                 };
             } else {
                 // No type annotation - need to infer from expression
-                let inferred_type = expr.infer_type(scope);
+                let inferred_type = expr.infer_type(scope, errors);
                 
                 // Special handling for for expressions that might infer as just "Infer" 
                 // instead of "Array(Infer)" due to type inference issues
@@ -116,8 +117,8 @@ impl Transpile for Declaration {
                 };
             }
             
-            let assignment_expr = transpile_assignment_expression(ctx, expr, &mut assignment_scope);
-            let assignment_type = expr.infer_type(scope); // Use outer scope for type inference
+            let assignment_expr = transpile_assignment_expression(ctx, expr, &mut assignment_scope, errors);
+            let assignment_type = expr.infer_type(scope, errors); // Use outer scope for type inference
             (assignment_expr, assignment_type)
         });
 
@@ -128,7 +129,7 @@ impl Transpile for Declaration {
             .or_else(|| assignment_result.as_ref().map(|(_, ty)| ty.clone()))
             .expect("variables either need a type annotation or an assignment that can be used to infer the type");
 
-        let ty = transpile!(ctx, scope, "{}", inferred_type);
+        let ty = transpile!(ctx, scope, errors, "{}", inferred_type);
         let ty = match self.decl_modifier {
             DeclModifier::Let | DeclModifier::Mut => format!(": {ty}"),
             DeclModifier::Ref => {
@@ -170,7 +171,7 @@ impl Transpile for Declaration {
 }
 
 impl Transpile for Return {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let prefix = if self.is_explicit { "return " } else { "" };
 
         format!(
@@ -181,14 +182,15 @@ impl Transpile for Return {
                 Ownership::UniqueOwned,
                 ctx,
                 scope,
+                errors
             )
         )
     }
 }
 
 impl Transpile for Throw {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        transpile!(ctx, scope, "return Err({})", self.expression)
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        transpile!(ctx, scope, errors, "return Err({})", self.expression)
     }
 }
 
@@ -203,13 +205,14 @@ fn transpile_assignment_expression(
     ctx: &Context,
     assigned: &Expression,
     scope: &mut Scope,
+    errors: &mut ErrorCollector,
 ) -> String {
     // TODO: Don't do this, it does not work with implicit ok-wrapping
     match &assigned.kind {
-        match_ident!(ident) => return transpile!(ctx, scope, "{}.to_owned()", ident),
+        match_ident!(ident) => return transpile!(ctx, scope, errors, "{}.to_owned()", ident),
         ExpressionKind::Infix(infix) => match infix.borrow() {
             InfixExpression::Member(access) if access.is_field() => {
-                return transpile!(ctx, scope, "{}.to_owned()", access)
+                return transpile!(ctx, scope, errors, "{}.to_owned()", access)
             }
             _ => (),
         },
@@ -222,6 +225,7 @@ fn transpile_assignment_expression(
         scope.ownership,
         ctx,
         scope,
+        errors
     )
 }
 

@@ -6,6 +6,7 @@ use galvan_resolver::Scope;
 use crate::{
     builtins::{CheckBuiltins, IsSame},
     context::Context,
+    error::ErrorCollector,
     transpile,
     type_inference::InferType,
     Transpile,
@@ -17,12 +18,13 @@ pub fn transpile_unified(
     a_scope: &mut Scope,
     b_scope: &mut Scope,
     ctx: &Context<'_>,
+    errors: &mut ErrorCollector,
 ) -> (String, String) {
-    let a_ty = a.infer_type(a_scope);
-    let b_ty = b.infer_type(b_scope);
+    let a_ty = a.infer_type(a_scope, errors);
+    let b_ty = b.infer_type(b_scope, errors);
 
-    let a = a.transpile(ctx, a_scope);
-    let b = b.transpile(ctx, b_scope);
+    let a = a.transpile(ctx, a_scope, errors);
+    let b = b.transpile(ctx, b_scope, errors);
 
     let (a, b) = unify(&a, &b, &a_ty, &b_ty);
     (a.into_owned(), b.into_owned())
@@ -95,8 +97,20 @@ pub fn cast(
     ownership: Ownership,
     ctx: &Context<'_>,
     scope: &mut Scope<'_>,
+    errors: &mut ErrorCollector,
 ) -> String {
-    let ref actual = expression.infer_type(scope);
+    cast_with_errors(expression, expected, ownership, ctx, scope, errors)
+}
+
+pub fn cast_with_errors(
+    expression: &Expression,
+    expected: &TypeElement,
+    ownership: Ownership,
+    ctx: &Context<'_>,
+    scope: &mut Scope<'_>,
+    errors: &mut ErrorCollector,
+) -> String {
+    let ref actual = expression.infer_type(scope, errors);
 
     // println!(
     //     "cargo::warning=Casting from {:#?} to {:#?}",
@@ -111,12 +125,12 @@ pub fn cast(
                     Ownership::SharedOwned | Ownership::UniqueOwned,
                     Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
                 ) => {
-                    transpile!(ctx, scope, "{}.to_owned()", expression)
+                    transpile!(ctx, scope, errors, "{}.to_owned()", expression)
                 }
                 (Ownership::Borrowed, Ownership::UniqueOwned | Ownership::SharedOwned) => {
-                    transpile!(ctx, scope, "&{}", expression)
+                    transpile!(ctx, scope, errors, "&{}", expression)
                 }
-                _ => expression.transpile(ctx, scope),
+                _ => expression.transpile(ctx, scope, errors),
             }
         }
         (_, TypeElement::Infer(_)) => match (ownership, expression.infer_owned(ctx, scope)) {
@@ -124,37 +138,55 @@ pub fn cast(
                 Ownership::SharedOwned | Ownership::UniqueOwned,
                 Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
             ) => {
-                transpile!(ctx, scope, "{}.to_owned()", expression)
+                transpile!(ctx, scope, errors, "{}.to_owned()", expression)
             }
             (Ownership::Borrowed, Ownership::UniqueOwned | Ownership::SharedOwned) => {
-                transpile!(ctx, scope, "&{}", expression)
+                transpile!(ctx, scope, errors, "&{}", expression)
             }
-            _ => expression.transpile(ctx, scope),
+            _ => expression.transpile(ctx, scope, errors),
         },
-        (_, TypeElement::Never(_) | TypeElement::Void(_)) => expression.transpile(ctx, scope),
-        (TypeElement::Void(_) | TypeElement::Infer(_), _) => expression.transpile(ctx, scope),
-        (TypeElement::Optional(some), actual) if some.inner.is_same(actual) || actual.is_number() => {
+        (_, TypeElement::Never(_) | TypeElement::Void(_)) => {
+            expression.transpile(ctx, scope, errors)
+        }
+        (TypeElement::Void(_) | TypeElement::Infer(_), _) => {
+            expression.transpile(ctx, scope, errors)
+        }
+        (TypeElement::Optional(some), actual)
+            if some.inner.is_same(actual) || actual.is_number() =>
+        {
             let postfix = match expression.infer_owned(ctx, scope) {
                 // TODO: we want to distinguish between Owned and SharedOwned, the latter needs to be cloned
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
-                _ => if actual.is_number() { "" } else { ".to_owned()" },
+                _ => {
+                    if actual.is_number() {
+                        ""
+                    } else {
+                        ".to_owned()"
+                    }
+                }
             };
-            transpile!(ctx, scope, "Some({}{postfix})", expression)
+            transpile!(ctx, scope, errors, "Some({}{postfix})", expression)
         }
         // Handle __Number type being cast to Optional
         (TypeElement::Optional(_), actual) if actual.is_number() => {
-            transpile!(ctx, scope, "Some({})", expression)
+            transpile!(ctx, scope, errors, "Some({})", expression)
         }
         (TypeElement::Result(res), actual) if res.success.is_same(actual) || actual.is_number() => {
             let postfix = match expression.infer_owned(ctx, scope) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
-                _ => if actual.is_number() { "" } else { ".to_owned()" },
+                _ => {
+                    if actual.is_number() {
+                        ""
+                    } else {
+                        ".to_owned()"
+                    }
+                }
             };
-            transpile!(ctx, scope, "Ok({}{postfix})", expression)
+            transpile!(ctx, scope, errors, "Ok({}{postfix})", expression)
         }
         // Handle __Number type being cast to Result
         (TypeElement::Result(_), actual) if actual.is_number() => {
-            transpile!(ctx, scope, "Ok({})", expression)
+            transpile!(ctx, scope, errors, "Ok({})", expression)
         }
         (TypeElement::Result(res), actual)
             if res
@@ -163,7 +195,7 @@ pub fn cast(
                 .is_some_and(|inner| inner.is_same(actual)) =>
         {
             // TODO: This should not be autocast but instead require a "throw" keyword
-            transpile!(ctx, scope, "Err({})", expression)
+            transpile!(ctx, scope, errors, "Err({})", expression)
         }
         (TypeElement::Result(_), actual) => {
             println!(
@@ -174,14 +206,20 @@ pub fn cast(
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => ".to_owned()",
             };
-            transpile!(ctx, scope, "/*non-matching*/Ok({}{postfix})", expression)
+            transpile!(
+                ctx,
+                scope,
+                errors,
+                "/*non-matching*/Ok({}{postfix})",
+                expression
+            )
         }
         (TypeElement::Optional(_), TypeElement::Optional(_)) => {
             println!(
                 "cargo::warning=wrapping non-matching type {:?} in some",
                 actual
             );
-            transpile!(ctx, scope, "/*non-matching*/{}", expression)
+            transpile!(ctx, scope, errors, "/*non-matching*/{}", expression)
         }
         (TypeElement::Optional(_), actual) => {
             println!(
@@ -192,13 +230,19 @@ pub fn cast(
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => ".to_owned()",
             };
-            transpile!(ctx, scope, "/*non-matching*/Some({}{postfix})", expression)
+            transpile!(
+                ctx,
+                scope,
+                errors,
+                "/*non-matching*/Some({}{postfix})",
+                expression
+            )
         }
         // TODO: only allow this for expected number types
         (_, TypeElement::Plain(BasicTypeItem { ident, span: _ }))
             if ident.as_str() == "__Number" =>
         {
-            expression.transpile(ctx, scope)
+            expression.transpile(ctx, scope, errors)
         }
         (_, _) => {
             // Let Rust try to figure this out
@@ -206,7 +250,7 @@ pub fn cast(
                 "cargo::warning=Trying to cast type {:?} to {:?}",
                 actual, expected
             );
-            transpile!(ctx, scope, "{}.into()", expression)
+            transpile!(ctx, scope, errors, "{}.into()", expression)
         }
     }
 }

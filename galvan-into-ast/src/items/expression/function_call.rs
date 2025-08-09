@@ -99,8 +99,8 @@ pub fn read_free_function_call(
         "return" => {
             // TODO: Allow return without argument
             if arguments.len() > 1 {
-                todo!("TRANSPILER ERROR: Return needs exactly one argument")
-            };
+                return Err(AstError::ConversionError);
+            }
             let expression = arguments.into_iter().next().unwrap().expression;
             Statement::Return(Return {
                 expression,
@@ -110,8 +110,8 @@ pub fn read_free_function_call(
         }
         "throw" => {
             if arguments.len() > 1 {
-                todo!("TRANSPILER ERROR: Throw needs exactly one argument")
-            };
+                return Err(AstError::ConversionError);
+            }
             let expression = arguments.into_iter().next().unwrap().expression;
             Statement::Throw(Throw { expression, span })
         }

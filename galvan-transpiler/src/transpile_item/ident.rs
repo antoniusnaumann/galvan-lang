@@ -1,10 +1,11 @@
 use crate::context::Context;
+use crate::error::ErrorCollector;
 use crate::sanitize::sanitize_name;
 use crate::{Ident, Transpile, TypeIdent};
 use galvan_resolver::Scope;
 
 impl Transpile for Ident {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
         // TODO: Escape ident when name has collision with rust keyword
         // TODO: Use lookup to insert fully qualified name
         sanitize_name(self.as_str()).into()
@@ -12,7 +13,7 @@ impl Transpile for Ident {
 }
 
 impl Transpile for TypeIdent {
-    fn transpile(&self, ctx: &Context, _scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
             println!(
                 "cargo::warning=type resolving error: Type {} not found",

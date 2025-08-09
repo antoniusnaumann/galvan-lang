@@ -2,8 +2,6 @@ use std::fmt;
 
 use thiserror::Error;
 
-use galvan_ast::*;
-
 /// Represents the severity of a diagnostic message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
@@ -61,6 +59,24 @@ pub enum TranspilerError {
 
     #[error("Circular dependency detected")]
     CircularDependency,
+
+    #[error("Invalid modifier: {modifier} is not allowed for {context}")]
+    InvalidModifier { modifier: String, context: String },
+
+    #[error("Missing argument: {operation} requires a {argument_type}")]
+    MissingArgument { operation: String, argument_type: String },
+
+    #[error("Invalid operation: {operation} can only be used on {allowed_types}")]
+    InvalidOperationOnType { operation: String, allowed_types: String },
+
+    #[error("Enum access error: {message}")]
+    EnumAccessError { message: String },
+
+    #[error("Member access error: {message}")]
+    MemberAccessError { message: String },
+
+    #[error("Incompatible ownership types: {message}")]
+    IncompatibleOwnership { message: String },
 }
 
 /// Collects errors and warnings during compilation
@@ -154,6 +170,13 @@ impl ErrorCollector {
         self.diagnostics.iter().filter(|d| d.severity == DiagnosticSeverity::Warning)
     }
 
+    /// Merge another ErrorCollector into this one
+    pub fn merge(&mut self, other: ErrorCollector) {
+        self.diagnostics.extend(other.diagnostics);
+        self.error_count += other.error_count;
+        self.warning_count += other.warning_count;
+    }
+
     /// Create a Result type that fails if errors were collected
     pub fn into_result<T>(self, value: T) -> Result<T, Vec<Diagnostic>> {
         if self.has_errors() {
@@ -193,50 +216,6 @@ impl ErrorCollector {
                 span,
             );
         }
-    }
-}
-
-/// Utility functions for safe error handling during transpilation
-pub mod safe_transpile {
-    use super::*;
-    use galvan_resolver::Scope as ResolverScope;
-    use crate::type_inference::InferType;
-
-    /// Handle cases where todo!() is called due to unimplemented features
-    pub fn handle_unimplemented_feature(
-        feature: &str, 
-        errors: &mut ErrorCollector, 
-        fallback: TypeElement
-    ) -> TypeElement {
-        errors.error(TranspilerError::Unimplemented { 
-            feature: feature.to_string() 
-        });
-        fallback
-    }
-
-    /// Handle type mismatches gracefully
-    pub fn handle_type_mismatch(
-        expected: &str,
-        found: &str,
-        errors: &mut ErrorCollector,
-        fallback: TypeElement
-    ) -> TypeElement {
-        errors.error(TranspilerError::TypeMismatch {
-            expected: expected.to_string(),
-            found: found.to_string(),
-        });
-        fallback
-    }
-
-    /// Handle unknown identifier errors
-    pub fn handle_unknown_identifier(
-        name: &str,
-        available_vars: &[String],
-        errors: &mut ErrorCollector,
-        fallback: TypeElement
-    ) -> TypeElement {
-        errors.suggest_similar_identifier(name, available_vars, None);
-        fallback
     }
 }
 

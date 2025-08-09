@@ -86,6 +86,7 @@ fn transpile_segmented(
     ctx: &Context,
     scope: &mut Scope,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
+    let mut main_errors = ErrorCollector::new();
     #[derive(Hash, PartialEq, Eq, Deref, From, Display)]
     struct ModuleName(Box<str>);
     fn module_name(ident: &TypeIdent) -> ModuleName {
@@ -154,12 +155,12 @@ fn transpile_segmented(
     let type_files = type_files;
     let toplevel_functions = toplevel_functions
         .iter()
-        .map(|func| func.transpile(ctx, scope))
+        .map(|func| func.transpile(ctx, scope, &mut main_errors))
         .collect::<Vec<_>>()
         .join("\n\n");
     let toplevel_functions = toplevel_functions.trim();
 
-    let tests = transpile_tests(segmented, ctx, scope);
+    let tests = transpile_tests(segmented, ctx, scope, &mut main_errors);
 
     let modules = type_files
         .keys()
@@ -173,7 +174,10 @@ fn transpile_segmented(
     let main = segmented
         .main
         .as_ref()
-        .map(|main| transpile!(ctx, scope, "pub(crate) fn __main__() {}", main.body))
+        .map(|main| {
+            let main_errors_ref = &mut main_errors;
+            transpile!(ctx, scope, main_errors_ref, "pub(crate) fn __main__() {}", main.body)
+        })
         .unwrap_or_default();
 
     let lib = TranspileOutput {
@@ -193,8 +197,8 @@ fn transpile_segmented(
             file_name: format!("{k}.rs").into(),
             content: [
                 "use crate::*;",
-                &v.ty.transpile(ctx, scope),
-                &transpile_member_functions(v.ty.ident(), &v.fns, ctx, scope),
+                &v.ty.transpile(ctx, scope, &mut main_errors),
+                &transpile_member_functions(v.ty.ident(), &v.fns, ctx, scope, &mut main_errors),
             ]
             .join("\n\n")
             .trim()
@@ -206,21 +210,31 @@ fn transpile_segmented(
         file_name: format!("{k}.rs").into(),
         content: [
             "use crate::*;",
-            &transpile_extension_functions(v.elem, &v.fns, ctx, scope),
+            &transpile_extension_functions(v.elem, &v.fns, ctx, scope, &mut main_errors),
         ]
         .join("\n\n")
         .trim()
         .into(),
-    });
+    }).collect_vec();
+
+    // Output any collected warnings
+    for diagnostic in main_errors.diagnostics() {
+        match diagnostic.severity {
+            crate::error::DiagnosticSeverity::Error | crate::error::DiagnosticSeverity::Warning => {
+                println!("cargo:warning={}", diagnostic.message);
+            }
+            _ => {}
+        }
+    }
 
     Ok(type_files
         .into_iter()
-        .chain(extension_files)
+        .chain(extension_files.into_iter())
         .chain(iter::once(lib))
         .collect())
 }
 
-fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context, scope: &mut Scope) -> String {
+fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
     fn test_name<'a>(desc: &Option<StringLiteral>) -> Cow<'a, str> {
         desc.as_ref().map_or("test".into(), |desc| {
             let snake = desc
@@ -273,7 +287,7 @@ fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context, scope: &mut Sc
     let test_mod = "#[cfg(test)]\nmod tests {\nuse crate::*;\n".to_owned()
         + resolved_tests
             .iter()
-            .map(|t| t.transpile(ctx, scope))
+            .map(|t| t.transpile(ctx, scope, errors))
             .collect::<Vec<_>>()
             .join("\n\n")
             .as_str()
@@ -287,6 +301,7 @@ fn transpile_member_functions(
     fns: &[&FnDecl],
     ctx: &Context,
     scope: &mut Scope,
+    errors: &mut ErrorCollector,
 ) -> String {
     if fns.is_empty() {
         return "".into();
@@ -294,10 +309,10 @@ fn transpile_member_functions(
 
     let transpiled_fns = fns
         .iter()
-        .map(|f| f.transpile(ctx, scope))
+        .map(|f| f.transpile(ctx, scope, errors))
         .collect::<Vec<_>>()
         .join("\n\n");
-    transpile!(ctx, scope, "impl {} {{\n{transpiled_fns}\n}}", ty)
+    transpile!(ctx, scope, errors, "impl {} {{\n{transpiled_fns}\n}}", ty)
 }
 
 fn transpile_extension_functions(
@@ -305,6 +320,7 @@ fn transpile_extension_functions(
     fns: &[&FnDecl],
     ctx: &Context,
     scope: &mut Scope,
+    errors: &mut ErrorCollector,
 ) -> String {
     debug_assert_ne!(fns.len(), 0, "Extension functions should not be empty");
     if fns
@@ -312,7 +328,8 @@ fn transpile_extension_functions(
         .find(|f| f.signature.visibility.kind != VisibilityKind::Inherited)
         .is_some()
     {
-        todo!("TRANSPILER ERROR: Member functions for types declared outside of galvan module must have default visibility!");
+        // TODO: Add proper error handling for invalid member function visibility
+        return String::new();
     }
 
     let trait_name = extension_name(&ty);
@@ -322,18 +339,18 @@ fn transpile_extension_functions(
             visibility: Visibility::private(),
             ..f.signature.clone()
         })
-        .map(|s| s.transpile(ctx, scope))
+        .map(|s| s.transpile(ctx, scope, errors))
         .collect::<Vec<_>>()
         .join(";\n")
         + ";";
     let transpiled_fns = fns
         .iter()
-        .map(|f| f.transpile(ctx, scope))
+        .map(|f| f.transpile(ctx, scope, errors))
         .map(|s| s.strip_prefix("pub(crate) ").unwrap().to_owned())
         .collect::<Vec<_>>()
         .join("\n\n");
 
-    transpile! {ctx, scope,
+    transpile! {ctx, scope, errors,
         "
         pub trait {trait_name} {{
             {fn_signatures}
@@ -408,7 +425,7 @@ mod transpile_item;
 mod type_inference;
 
 trait Transpile {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String;
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String;
 }
 
 trait Punctuated {
@@ -417,16 +434,33 @@ trait Punctuated {
 
 mod macros {
     macro_rules! transpile {
+        ($ctx:ident, $scope:ident, $errors:ident, $string:expr, $($items:expr),*$(,)?) => {
+            format!($string, $(($items).transpile($ctx, $scope, $errors)),*)
+        };
+        
+        // Temporary backward compatibility - creates a local temp ErrorCollector
         ($ctx:ident, $scope:ident, $string:expr, $($items:expr),*$(,)?) => {
-            format!($string, $(($items).transpile($ctx, $scope)),*)
+            {
+                let mut _temp_errors = crate::ErrorCollector::new();
+                format!($string, $(($items).transpile($ctx, $scope, &mut _temp_errors)),*)
+            }
         };
     }
 
     macro_rules! impl_transpile {
         ($ty:ty, $string:expr, $($field:tt),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope) -> String {
-                    crate::macros::transpile!(_ctx, _scope, $string, $(self.$field),*)
+                fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope, _errors: &mut crate::ErrorCollector) -> String {
+                    crate::macros::transpile!(_ctx, _scope, _errors, $string, $(self.$field),*)
+                }
+            }
+        };
+        
+        // Temporary backward compatibility 
+        ($ty:ty, $old_signature:expr, $string:expr, $($field:tt),*$(,)?) => {
+            impl crate::Transpile for $ty {
+                fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope, _errors: &mut crate::ErrorCollector) -> String {
+                    crate::macros::transpile!(_ctx, _scope, _errors, $string, $(self.$field),*)
                 }
             }
         };
@@ -449,10 +483,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
+                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope, errors: &mut crate::ErrorCollector) -> String {
                     use $ty::*;
                     match self {
-                        $($case => crate::macros::transpile!(ctx, scope, $($args),+),)+
+                        $($case => crate::macros::transpile!(ctx, scope, errors, $($args),+),)+
                     }
                 }
             }
@@ -465,10 +499,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
+                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope, errors: &mut crate::ErrorCollector) -> String {
                     use $ty::*;
                     match self {
-                        $($case(inner) => inner.transpile(ctx, scope),)+
+                        $($case(inner) => inner.transpile(ctx, scope, errors),)+
                     }
                 }
             }
@@ -519,8 +553,8 @@ impl<T> Transpile for Vec<T>
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        self.as_slice().transpile(ctx, scope)
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        self.as_slice().transpile(ctx, scope, errors)
     }
 }
 
@@ -528,10 +562,10 @@ impl<T> Transpile for [T]
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let punct = T::punctuation();
         self.iter()
-            .map(|e| e.transpile(ctx, scope))
+            .map(|e| e.transpile(ctx, scope, errors))
             .reduce(|acc, e| format!("{acc}{punct}{e}"))
             .unwrap_or_else(String::new)
     }
@@ -541,20 +575,20 @@ impl<T> Transpile for Option<Vec<T>>
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         self.as_ref()
-            .map_or_else(String::new, |v| v.transpile(ctx, scope))
+            .map_or_else(String::new, |v| v.transpile(ctx, scope, errors))
     }
 }
 
 impl Transpile for &str {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
         self.to_string()
     }
 }
 
 impl Transpile for String {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
         self.to_owned()
     }
 }
@@ -563,7 +597,7 @@ impl<T> Transpile for Box<T>
 where
     T: Transpile,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        self.as_ref().transpile(ctx, scope)
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        self.as_ref().transpile(ctx, scope, errors)
     }
 }

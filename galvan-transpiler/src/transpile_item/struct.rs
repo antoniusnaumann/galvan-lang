@@ -17,7 +17,7 @@ impl_transpile_match! { TypeDecl,
 impl_transpile!(TupleTypeMember, "{}", r#type);
 
 impl Transpile for StructTypeMember {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut crate::ErrorCollector) -> String {
         match self.decl_modifier {
             Some(DeclModifier::Let) => {
                 todo!("Decide if let should be allowed on struct fields (and what it should mean")
@@ -29,27 +29,28 @@ impl Transpile for StructTypeMember {
                 transpile!(
                     ctx,
                     scope,
+                    errors,
                     "pub(crate) {}: std::sync::Arc<std::sync::Mutex<{}>>",
                     self.ident,
                     self.r#type
                 )
             }
             None => {
-                transpile!(ctx, scope, "pub(crate) {}: {}", self.ident, self.r#type)
+                transpile!(ctx, scope, errors, "pub(crate) {}: {}", self.ident, self.r#type)
             }
         }
     }
 }
 
 impl Transpile for EnumTypeMember {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope) -> String {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut crate::ErrorCollector) -> String {
         format!("{}", self.ident)
     }
 }
 
 impl Transpile for EnumAccess {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut crate::ErrorCollector) -> String {
         // TODO: Fully qualified path
-        transpile!(ctx, scope, "{}::{}", self.target, self.case.as_str())
+        transpile!(ctx, scope, errors, "{}::{}", self.target, self.case.as_str())
     }
 }

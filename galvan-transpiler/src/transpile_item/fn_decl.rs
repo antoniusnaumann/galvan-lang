@@ -1,5 +1,6 @@
 use crate::builtins::CheckBuiltins;
 use crate::context::Context;
+use crate::error::ErrorCollector;
 use crate::macros::{impl_transpile, transpile};
 use crate::transpile_item::ident::TypeOwnership;
 use crate::{FnDecl, FnSignature, Param, ParamList, Transpile};
@@ -7,13 +8,13 @@ use galvan_ast::{AstNode, DeclModifier, Ownership, Return, Statement, TypeElemen
 use galvan_resolver::{Scope, Variable};
 
 impl Transpile for FnDecl {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let mut function_scope =
             Scope::child(scope).returns(self.signature.return_type.clone(), Ownership::UniqueOwned);
         function_scope.fn_return = self.signature.return_type.clone();
         let scope = &mut function_scope;
 
-        let signature = self.signature.transpile(ctx, scope);
+        let signature = self.signature.transpile(ctx, scope, errors);
 
         let mut body = self.body.clone();
         {
@@ -28,25 +29,28 @@ impl Transpile for FnDecl {
             }
         };
 
-        let block = body.transpile(ctx, scope);
+        let block = body.transpile(ctx, scope, errors);
         if !self.signature.return_type.is_void() {
-            transpile!(ctx, scope, "{} {}", signature, block)
+            transpile!(ctx, scope, errors, "{} {}", signature, block)
         } else {
-            transpile!(ctx, scope, "{} {{ {}; }}", signature, block)
+            transpile!(ctx, scope, errors, "{} {{ {}; }}", signature, block)
         }
     }
 }
 
 impl Transpile for FnSignature {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
-        let visibility = self.visibility.transpile(ctx, scope);
-        let identifier = self.identifier.transpile(ctx, scope);
-        let parameters = self.parameters.transpile(ctx, scope);
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        let visibility = self.visibility.transpile(ctx, scope, errors);
+        let identifier = self.identifier.transpile(ctx, scope, errors);
+        let parameters = self.parameters.transpile(ctx, scope, errors);
 
         let return_type = match &self.return_type {
-            TypeElement::Infer(_) => todo!("TRANSPILER ERROR: Cannot infer function return types"),
+            TypeElement::Infer(_) => {
+                // TODO: Add proper error handling for function return type inference
+                format!("")
+            }
             TypeElement::Void(_) => format!(""),
-            ty => transpile!(ctx, scope, " -> {}", ty),
+            ty => transpile!(ctx, scope, errors, " -> {}", ty),
         };
 
         format!("{visibility} fn {identifier}{parameters}{return_type}",)
@@ -56,7 +60,7 @@ impl Transpile for FnSignature {
 impl_transpile!(ParamList, "({})", params);
 
 macro_rules! transpile_type {
-    ($self:ident, $ctx:ident, $scope:ident, $ownership:path) => {{
+    ($self:ident, $ctx:ident, $scope:ident, $errors:ident, $ownership:path) => {{
         use crate::transpile_item::ident::TranspileType;
         let mut prefix = "";
         let ty = match &$self.param_type {
@@ -66,16 +70,16 @@ macro_rules! transpile_type {
                     TypeOwnership::Borrowed => prefix = "&",
                     _ => (),
                 }
-                other.transpile($ctx, $scope)
+                other.transpile($ctx, $scope, $errors)
             }
         };
 
-        transpile!($ctx, $scope, "{}: {}{}", &$self.identifier, prefix, ty)
+        transpile!($ctx, $scope, $errors, "{}: {}{}", &$self.identifier, prefix, ty)
     }};
 }
 
 impl Transpile for Param {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope) -> String {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let is_self = self.identifier.as_str() == "self";
         let is_copy = ctx.mapping.is_copy(&self.param_type);
 
@@ -111,14 +115,14 @@ impl Transpile for Param {
                         TypeOwnership::Borrowed
                     };
 
-                    transpile_type!(self, ctx, scope, ownership)
+                    transpile_type!(self, ctx, scope, errors, ownership)
                 }
             }
             Some(DeclModifier::Mut) => {
                 if is_self {
                     "&mut self".into()
                 } else {
-                    transpile_type!(self, ctx, scope, TypeOwnership::MutBorrowed)
+                    transpile_type!(self, ctx, scope, errors, TypeOwnership::MutBorrowed)
                 }
             }
             Some(DeclModifier::Ref) => {
@@ -129,6 +133,7 @@ impl Transpile for Param {
                 transpile!(
                     ctx,
                     scope,
+                    errors,
                     "{}: std::sync::Arc<std::sync::Mutex<{}>>",
                     self.identifier,
                     self.param_type
