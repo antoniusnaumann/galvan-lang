@@ -39,7 +39,7 @@ mod context;
 mod mapping;
 mod sanitize;
 
-pub use error::{ErrorCollector, TranspilerError, Diagnostic, DiagnosticSeverity, Span};
+pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, Span, TranspilerError};
 
 #[derive(Debug, Error)]
 pub enum TranspileError {
@@ -176,7 +176,13 @@ fn transpile_segmented(
         .as_ref()
         .map(|main| {
             let main_errors_ref = &mut main_errors;
-            transpile!(ctx, scope, main_errors_ref, "pub(crate) fn __main__() {}", main.body)
+            transpile!(
+                ctx,
+                scope,
+                main_errors_ref,
+                "pub(crate) fn __main__() {}",
+                main.body
+            )
         })
         .unwrap_or_default();
 
@@ -206,22 +212,28 @@ fn transpile_segmented(
         })
         .collect_vec();
 
-    let extension_files = extensions.iter().map(|(k, v)| TranspileOutput {
-        file_name: format!("{k}.rs").into(),
-        content: [
-            "use crate::*;",
-            &transpile_extension_functions(v.elem, &v.fns, ctx, scope, &mut main_errors),
-        ]
-        .join("\n\n")
-        .trim()
-        .into(),
-    }).collect_vec();
+    let extension_files = extensions
+        .iter()
+        .map(|(k, v)| TranspileOutput {
+            file_name: format!("{k}.rs").into(),
+            content: [
+                "use crate::*;",
+                &transpile_extension_functions(v.elem, &v.fns, ctx, scope, &mut main_errors),
+            ]
+            .join("\n\n")
+            .trim()
+            .into(),
+        })
+        .collect_vec();
 
     // Output any collected warnings
     for diagnostic in main_errors.diagnostics() {
         match diagnostic.severity {
-            crate::error::DiagnosticSeverity::Error | crate::error::DiagnosticSeverity::Warning => {
-                println!("cargo:warning={}", diagnostic.message);
+            DiagnosticSeverity::Error => {
+                println!("cargo::error={}", diagnostic.message);
+            }
+            DiagnosticSeverity::Warning => {
+                println!("cargo::warning={}", diagnostic.message);
             }
             _ => {}
         }
@@ -234,7 +246,12 @@ fn transpile_segmented(
         .collect())
 }
 
-fn transpile_tests(segmented_asts: &SegmentedAsts, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+fn transpile_tests(
+    segmented_asts: &SegmentedAsts,
+    ctx: &Context,
+    scope: &mut Scope,
+    errors: &mut ErrorCollector,
+) -> String {
     fn test_name<'a>(desc: &Option<StringLiteral>) -> Cow<'a, str> {
         desc.as_ref().map_or("test".into(), |desc| {
             let snake = desc
@@ -437,7 +454,7 @@ mod macros {
         ($ctx:ident, $scope:ident, $errors:ident, $string:expr, $($items:expr),*$(,)?) => {
             format!($string, $(($items).transpile($ctx, $scope, $errors)),*)
         };
-        
+
         // Temporary backward compatibility - creates a local temp ErrorCollector
         ($ctx:ident, $scope:ident, $string:expr, $($items:expr),*$(,)?) => {
             {
@@ -455,8 +472,8 @@ mod macros {
                 }
             }
         };
-        
-        // Temporary backward compatibility 
+
+        // Temporary backward compatibility
         ($ty:ty, $old_signature:expr, $string:expr, $($field:tt),*$(,)?) => {
             impl crate::Transpile for $ty {
                 fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope, _errors: &mut crate::ErrorCollector) -> String {
@@ -525,8 +542,7 @@ mod macros {
     }
 
     pub(crate) use {
-        impl_transpile, impl_transpile_match, impl_transpile_variants, punct,
-        transpile,
+        impl_transpile, impl_transpile_match, impl_transpile_variants, punct, transpile,
     };
 }
 
@@ -582,13 +598,23 @@ where
 }
 
 impl Transpile for &str {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+    fn transpile(
+        &self,
+        _ctx: &Context,
+        _scope: &mut Scope,
+        _errors: &mut ErrorCollector,
+    ) -> String {
         self.to_string()
     }
 }
 
 impl Transpile for String {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+    fn transpile(
+        &self,
+        _ctx: &Context,
+        _scope: &mut Scope,
+        _errors: &mut ErrorCollector,
+    ) -> String {
         self.to_owned()
     }
 }
