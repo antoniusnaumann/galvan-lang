@@ -231,6 +231,7 @@ fn transpile_segmented(
         match diagnostic.severity {
             DiagnosticSeverity::Error => {
                 println!("cargo::error={}", diagnostic.message);
+                std::process::exit(1);
             }
             DiagnosticSeverity::Warning => {
                 println!("cargo::warning={}", diagnostic.message);
