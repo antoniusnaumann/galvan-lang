@@ -13,11 +13,11 @@ impl Transpile for Ident {
 }
 
 impl Transpile for TypeIdent {
-    fn transpile(&self, ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+    fn transpile(&self, ctx: &Context, _scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
-            println!(
-                "cargo::warning=type resolving error: Type {} not found",
-                self
+            errors.warning(
+                format!("Type resolving error: Type {} not found", self),
+                None
             );
             return format!("{self}");
         };
@@ -37,7 +37,7 @@ pub enum TypeOwnership {
 }
 
 pub trait TranspileType {
-    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: TypeOwnership) -> String;
+    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: TypeOwnership, errors: &mut ErrorCollector) -> String;
 }
 
 impl TranspileType for TypeIdent {
@@ -46,11 +46,12 @@ impl TranspileType for TypeIdent {
         ctx: &Context,
         _scope: &mut Scope,
         ownership: TypeOwnership,
+        errors: &mut ErrorCollector,
     ) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
-            println!(
-                "cargo::warning=type resolving error: Type {} not found",
-                self
+            errors.warning(
+                format!("Type resolving error: Type {} not found", self),
+                None
             );
             let prefix = match ownership {
                 TypeOwnership::Owned => "",

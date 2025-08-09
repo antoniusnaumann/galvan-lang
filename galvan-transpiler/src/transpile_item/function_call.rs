@@ -86,8 +86,8 @@ impl Transpile for FunctionCall {
                      let lhs_type = lhs.infer_type(lhs_scope, errors);
                      let rhs_type = rhs.infer_type(rhs_scope, errors);
                      let has_number = lhs_type.is_number() || rhs_type.is_number() || lhs_type.is_infer() || rhs_type.is_infer();                    let (lhs, rhs) = match (
-                        lhs.infer_owned(ctx, &lhs_scope),
-                        rhs.infer_owned(ctx, &rhs_scope),
+                        lhs.infer_owned(ctx, &lhs_scope, errors),
+                        rhs.infer_owned(ctx, &rhs_scope, errors),
                     ) {
                         (
                             Ownership::SharedOwned | Ownership::UniqueOwned,
@@ -114,8 +114,8 @@ impl Transpile for FunctionCall {
                                 let (unified_lhs, unified_rhs) = unify(&lhs_trans, &rhs_trans, &lhs_type, &rhs_type);
                                 
                                 // Handle reference vs value mismatches - for any borrowed type with __Number/Infer, dereference
-                                let lhs_ownership = lhs.infer_owned(ctx, &lhs_scope);
-                                let rhs_ownership = rhs.infer_owned(ctx, &rhs_scope);
+                                let lhs_ownership = lhs.infer_owned(ctx, &lhs_scope, errors);
+                                let rhs_ownership = rhs.infer_owned(ctx, &rhs_scope, errors);
                                 
                                 // Handle reference vs value mismatches based on actual ownership inference
                                 let lhs_needs_deref = match (lhs_ownership, &lhs.kind) {
@@ -201,12 +201,18 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
                 let ownership = match param.decl_modifier {
                     Some(m) => match m {
                         DeclModifier::Let => {
-                            eprintln!("TRANSPILER WARNING: Let modifier not yet implemented");
+                            errors.warning(
+                                "Let modifier not yet implemented".to_string(),
+                                None
+                            );
                             Ownership::Borrowed
                         }
                         DeclModifier::Mut => Ownership::MutBorrowed,
                         DeclModifier::Ref => {
-                            eprintln!("TRANSPILER WARNING: Ref modifier not yet implemented");
+                            errors.warning(
+                                "Ref modifier not yet implemented".to_string(),
+                                None
+                            );
                             Ownership::Borrowed
                         }
                     },
@@ -274,11 +280,17 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
     let elem_ty = match &iter_ty {
         TypeElement::Array(ty) => &ty.elements,
         TypeElement::Dictionary(_ty) => {
-            eprintln!("TRANSPILER WARNING: for loop on dict not yet implemented");
+            errors.warning(
+                "For loop on dictionary not yet implemented".to_string(),
+                None
+            );
             &TypeElement::infer()
         }
         TypeElement::OrderedDictionary(_ty) => {
-            eprintln!("TRANSPILER WARNING: for loop on ordered dict not yet implemented");
+            errors.warning(
+                "For loop on ordered dictionary not yet implemented".to_string(),
+                None
+            );
             &TypeElement::infer()
         }
         TypeElement::Set(ty) => &ty.elements,
@@ -295,17 +307,26 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
             &TypeElement::infer()
         }
         TypeElement::Plain(_ty) => {
-            eprintln!("TRANSPILER WARNING: for loop on plain type not yet implemented");
+            errors.warning(
+                "For loop on plain type not yet implemented".to_string(),
+                None
+            );
             &TypeElement::infer()
         }
         TypeElement::Generic(_ty) => {
-            eprintln!("TRANSPILER WARNING: for loop on generic type not yet implemented");
+            errors.warning(
+                "For loop on generic type not yet implemented".to_string(),
+                None
+            );
             &TypeElement::infer()
         }
         TypeElement::Void(_) => &iter_ty,
         TypeElement::Infer(_) => &iter_ty,
         TypeElement::Never(_) => {
-            eprintln!("TRANSPILER WARNING: for loop on never type not yet implemented");
+            errors.warning(
+                "For loop on never type not yet implemented".to_string(),
+                None
+            );
             &TypeElement::infer()
         }
     };
@@ -316,7 +337,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
     
     // Check iterator ownership - if exclusively owned (e.g., from function return), 
     // use that ownership to avoid unnecessary borrowing
-    let iter_ownership = iterator.expression.infer_owned(ctx, scope);
+    let iter_ownership = iterator.expression.infer_owned(ctx, scope, errors);
     let scope_ownership = match iter_ownership {
         Ownership::UniqueOwned | Ownership::SharedOwned => iter_ownership,
         _ => Ownership::Borrowed,
@@ -330,23 +351,32 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
         return String::new();
     }
 
-    fn get_iteration_type(parent: &TypeElement) -> TypeElement {
+    fn get_iteration_type(parent: &TypeElement, errors: &mut ErrorCollector) -> TypeElement {
         match parent {
             TypeElement::Array(array) => array.elements.clone(),
             TypeElement::Dictionary(_) => {
-                eprintln!("TRANSPILER WARNING: collecting into dict not yet implemented");
+                errors.warning(
+                    "Collecting into dictionary not yet implemented".to_string(),
+                    None
+                );
                 TypeElement::infer()
             }
             TypeElement::OrderedDictionary(_) => {
-                eprintln!("TRANSPILER WARNING: collecting into ordered dict not yet implemented");
+                errors.warning(
+                    "Collecting into ordered dictionary not yet implemented".to_string(),
+                    None
+                );
                 TypeElement::infer()
             }
             TypeElement::Set(_) => {
-                eprintln!("TRANSPILER WARNING: collecting into set not yet implemented");
+                errors.warning(
+                    "Collecting into set not yet implemented".to_string(),
+                    None
+                );
                 TypeElement::infer()
             }
-            TypeElement::Optional(opt) => get_iteration_type(&opt.inner),
-            TypeElement::Result(res) => get_iteration_type(&res.success),
+            TypeElement::Optional(opt) => get_iteration_type(&opt.inner, errors),
+            TypeElement::Result(res) => get_iteration_type(&res.success, errors),
             TypeElement::Never(never) => TypeElement::Never(never.clone()),
             TypeElement::Infer(_) => TypeElement::infer(),
             TypeElement::Void(_) => TypeElement::void(),
@@ -358,7 +388,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
     }
 
     // TODO: try to figure out capacity and create vec with matching capacity
-    let iteration_return = get_iteration_type(&scope.return_type);
+    let iteration_return = get_iteration_type(&scope.return_type, errors);
 
     let mut body_scope = Scope::child(scope).returns(iteration_return, Ownership::UniqueOwned);
     let element = {

@@ -127,7 +127,7 @@ fn transpile_try(
         return String::new();
     };
     let cond_type = condition.expression.infer_type(scope, errors);
-    let cond_ownership = condition.expression.infer_owned(ctx, scope);
+    let cond_ownership = condition.expression.infer_owned(ctx, scope, errors);
     let mut cond_scope = Scope::child(scope).returns(cond_type.clone(), cond_ownership);
     let condition = cast(
         &condition.expression,

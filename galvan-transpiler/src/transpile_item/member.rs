@@ -71,7 +71,7 @@ impl Transpile for ConstructorCall {
 
 impl crate::Transpile for ConstructorCallArg {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        let postfix = match self.expression.infer_owned(ctx, scope) {
+        let postfix = match self.expression.infer_owned(ctx, scope, errors) {
             Ownership::SharedOwned => ".clone()",
             Ownership::UniqueOwned => "",
             Ownership::Borrowed | Ownership::MutBorrowed | Ownership::Ref => ".to_owned()",

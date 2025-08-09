@@ -64,7 +64,7 @@ macro_rules! transpile_type {
         use crate::transpile_item::ident::TranspileType;
         let mut prefix = "";
         let ty = match &$self.param_type {
-            TypeElement::Plain(plain) => plain.ident.transpile_type($ctx, $scope, $ownership),
+            TypeElement::Plain(plain) => plain.ident.transpile_type($ctx, $scope, $ownership, $errors),
             other => {
                 match $ownership {
                     TypeOwnership::Borrowed => prefix = "&",

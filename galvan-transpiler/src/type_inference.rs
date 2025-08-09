@@ -18,15 +18,19 @@ use crate::{
 pub(crate) trait InferType {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement;
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership;
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership;
 }
-
 
 /// Safe helper for type mismatches in ElseExpression
 fn handle_else_type_mismatch(
-    receiver_type: &TypeElement, 
+    receiver_type: &TypeElement,
     block_type: &TypeElement,
-    errors: &mut ErrorCollector
+    errors: &mut ErrorCollector,
 ) -> TypeElement {
     errors.error(TranspilerError::TypeMismatch {
         expected: "matching types for if and else expressions".to_string(),
@@ -39,14 +43,15 @@ fn handle_else_type_mismatch(
 fn handle_unknown_identifier(
     ident: &str,
     scope: &Scope,
-    errors: &mut ErrorCollector
+    errors: &mut ErrorCollector,
 ) -> TypeElement {
     // Get available variable names for suggestions
-    let available_vars = scope.variables
+    let available_vars = scope
+        .variables
         .keys()
         .map(|name| name.to_string())
         .collect::<Vec<_>>();
-    
+
     errors.suggest_similar_identifier(ident, &available_vars, None);
     TypeElement::infer()
 }
@@ -78,8 +83,13 @@ impl InferType for ElseExpression {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        self.block.infer_owned(ctx, scope)
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        self.block.infer_owned(ctx, scope, errors)
     }
 }
 
@@ -91,24 +101,35 @@ impl InferType for Block {
         self.body.infer_type(&block_scope, errors)
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         // Create a child scope for this block to handle variable scoping properly
         let block_scope = Scope::child(scope);
-        self.body.infer_owned(ctx, &block_scope)
+        self.body.infer_owned(ctx, &block_scope, errors)
     }
 }
 
 impl InferType for Body {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
-        self.statements
-            .last()
-            .map_or_else(|| TypeElement::void(), |stmt| stmt.infer_type(scope, errors))
+        self.statements.last().map_or_else(
+            || TypeElement::void(),
+            |stmt| stmt.infer_type(scope, errors),
+        )
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         self.statements
             .last()
-            .map(|stmt| stmt.infer_owned(ctx, scope))
+            .map(|stmt| stmt.infer_owned(ctx, scope, errors))
             .unwrap_or_default()
     }
 }
@@ -130,9 +151,14 @@ impl InferType for Statement {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         match self {
-            Statement::Expression(expr) => expr.infer_owned(ctx, scope),
+            Statement::Expression(expr) => expr.infer_owned(ctx, scope, errors),
             _ => Ownership::SharedOwned,
         }
     }
@@ -143,8 +169,13 @@ impl InferType for Expression {
         self.kind.infer_type(scope, errors)
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
-        self.kind.infer_owned(ctx, scope)
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        self.kind.infer_owned(ctx, scope, errors)
     }
 }
 
@@ -182,11 +213,16 @@ impl InferType for ExpressionKind {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         match self {
             ExpressionKind::ElseExpression(e) => {
-                let if_owned = e.receiver.infer_owned(ctx, scope);
-                let else_owned = e.block.infer_owned(ctx, scope);
+                let if_owned = e.receiver.infer_owned(ctx, scope, errors);
+                let else_owned = e.block.infer_owned(ctx, scope, errors);
 
                 match (if_owned, else_owned) {
                     // TODO: is this correct?
@@ -194,15 +230,15 @@ impl InferType for ExpressionKind {
                     _ => Ownership::Borrowed,
                 }
             }
-            ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope),
-            ExpressionKind::Infix(infix) => infix.infer_owned(ctx, scope),
-            ExpressionKind::Postfix(postfix) => postfix.infer_owned(ctx, scope),
+            ExpressionKind::FunctionCall(call) => call.infer_owned(ctx, scope, errors),
+            ExpressionKind::Infix(infix) => infix.infer_owned(ctx, scope, errors),
+            ExpressionKind::Postfix(postfix) => postfix.infer_owned(ctx, scope, errors),
             ExpressionKind::CollectionLiteral(_) => Ownership::UniqueOwned,
             // TODO: this might be copy
             ExpressionKind::ConstructorCall(_) => Ownership::UniqueOwned,
             // TODO: this might be copy
             ExpressionKind::EnumAccess(_) => Ownership::SharedOwned,
-            ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope),
+            ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope, errors),
             ExpressionKind::Ident(ident) => {
                 let var = scope.get_variable(ident);
                 if let Some(var) = var {
@@ -213,11 +249,19 @@ impl InferType for ExpressionKind {
                 }
             }
             ExpressionKind::Closure(_closure) => {
-                eprintln!("TRANSPILER WARNING: Ownership inference for closures not yet implemented");
+                errors.warning(
+                    "OWNERSHIP WARNING: Ownership inference for closures not yet implemented"
+                        .to_string(),
+                    None,
+                );
                 Ownership::Borrowed
             }
             ExpressionKind::Group(_group) => {
-                eprintln!("TRANSPILER WARNING: Ownership inference for groups not yet implemented");
+                errors.warning(
+                    "OWNERSHIP WARNING: Ownership inference for groups not yet implemented"
+                        .to_string(),
+                    None,
+                );
                 Ownership::Borrowed
             }
         }
@@ -271,7 +315,12 @@ impl InferType for FunctionCall {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         if self.identifier.as_str() == "if" {
             self.arguments
                 .last()
@@ -284,7 +333,7 @@ impl InferType for FunctionCall {
                         .body
                         .statements
                         .last()
-                        .map(|stmt| stmt.infer_owned(ctx, scope))
+                        .map(|stmt| stmt.infer_owned(ctx, scope, errors))
                         .unwrap_or_default()
                 })
                 .unwrap_or_default()
@@ -314,7 +363,7 @@ impl InferType for Literal {
             Literal::NumberLiteral(n) => {
                 // Infer the smallest integer type that can fit the value
                 infer_number_type(&n.value)
-            },
+            }
             Literal::NoneLiteral(_) => Box::new(OptionalTypeItem {
                 inner: TypeElement::infer(),
                 span: Span::default(),
@@ -323,7 +372,12 @@ impl InferType for Literal {
         }
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        _errors: &mut ErrorCollector,
+    ) -> Ownership {
         match self {
             Literal::StringLiteral(_) => Ownership::UniqueOwned,
             Literal::NumberLiteral(_) | Literal::BooleanLiteral(_) => Ownership::UniqueOwned,
@@ -340,14 +394,16 @@ fn infer_number_type(value: &str) -> TypeElement {
             BasicTypeItem {
                 ident: TypeIdent::new("Float"),
                 span: Span::default(),
-            }.into()
+            }
+            .into()
         } else {
             // For now, default to __Number for floats without explicit suffix
             // to maintain compatibility
             BasicTypeItem {
                 ident: TypeIdent::new("__Number"),
                 span: Span::default(),
-            }.into()
+            }
+            .into()
         };
     }
 
@@ -356,7 +412,8 @@ fn infer_number_type(value: &str) -> TypeElement {
         return BasicTypeItem {
             ident: TypeIdent::new(type_name),
             span: Span::default(),
-        }.into();
+        }
+        .into();
     }
 
     // For integer literals without explicit suffix, use __Number to maintain
@@ -365,26 +422,43 @@ fn infer_number_type(value: &str) -> TypeElement {
     BasicTypeItem {
         ident: TypeIdent::new("__Number"),
         span: Span::default(),
-    }.into()
+    }
+    .into()
 }
 
 /// Extract type suffix from number literal (e.g., "42i32" -> Some("I32"))
 fn extract_type_suffix(value: &str) -> Option<&'static str> {
-    if value.ends_with("i8") { Some("I8") }
-    else if value.ends_with("i16") { Some("I16") }
-    else if value.ends_with("i32") { Some("I32") }
-    else if value.ends_with("i64") { Some("I64") }
-    else if value.ends_with("i128") { Some("I128") }
-    else if value.ends_with("isize") { Some("ISize") }
-    else if value.ends_with("u8") { Some("U8") }
-    else if value.ends_with("u16") { Some("U16") }
-    else if value.ends_with("u32") { Some("U32") }
-    else if value.ends_with("u64") { Some("U64") }
-    else if value.ends_with("u128") { Some("U128") }
-    else if value.ends_with("usize") { Some("USize") }
-    else if value.ends_with("f32") { Some("Float") }
-    else if value.ends_with("f64") { Some("Double") }
-    else { None }
+    if value.ends_with("i8") {
+        Some("I8")
+    } else if value.ends_with("i16") {
+        Some("I16")
+    } else if value.ends_with("i32") {
+        Some("I32")
+    } else if value.ends_with("i64") {
+        Some("I64")
+    } else if value.ends_with("i128") {
+        Some("I128")
+    } else if value.ends_with("isize") {
+        Some("ISize")
+    } else if value.ends_with("u8") {
+        Some("U8")
+    } else if value.ends_with("u16") {
+        Some("U16")
+    } else if value.ends_with("u32") {
+        Some("U32")
+    } else if value.ends_with("u64") {
+        Some("U64")
+    } else if value.ends_with("u128") {
+        Some("U128")
+    } else if value.ends_with("usize") {
+        Some("USize")
+    } else if value.ends_with("f32") {
+        Some("Float")
+    } else if value.ends_with("f64") {
+        Some("Double")
+    } else {
+        None
+    }
 }
 
 impl InferType for InfixExpression {
@@ -397,13 +471,21 @@ impl InferType for InfixExpression {
             InfixExpression::Member(e) => e.infer_type(scope, errors),
             InfixExpression::Unwrap(u) => u.infer_type(scope, errors),
             InfixExpression::Custom(_) => {
-                errors.warning("Type inference for custom operators not yet implemented".to_string(), None);
+                errors.warning(
+                    "Type inference for custom operators not yet implemented".to_string(),
+                    None,
+                );
                 TypeElement::infer()
             }
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         match self {
             InfixExpression::Logical(_) => Ownership::UniqueOwned,
             InfixExpression::Arithmetic(arith) => {
@@ -412,47 +494,49 @@ impl InferType for InfixExpression {
                 let mut temp_errors = ErrorCollector::new();
                 let lhs_type = arith.lhs.infer_type(scope, &mut temp_errors);
                 let rhs_type = arith.rhs.infer_type(scope, &mut temp_errors);
-                
+
                 // Note: We don't emit warnings here as this is internal type checking
                 // The actual error reporting will happen at a higher level
-                
+
                 let lhs_is_copy = ctx.mapping.is_copy(&lhs_type);
                 let rhs_is_copy = ctx.mapping.is_copy(&rhs_type);
-                
+
                 // If both operands are copy types, the result can be copy (UniqueOwned)
                 // If either operand is not copy, the result should be owned
                 if lhs_is_copy && rhs_is_copy {
                     Ownership::UniqueOwned
                 } else {
                     // Check the actual ownership of the operands
-                    let lhs_owned = arith.lhs.infer_owned(ctx, scope);
-                    let rhs_owned = arith.rhs.infer_owned(ctx, scope);
-                    
+                    let lhs_owned = arith.lhs.infer_owned(ctx, scope, errors);
+                    let rhs_owned = arith.rhs.infer_owned(ctx, scope, errors);
+
                     match (lhs_owned, rhs_owned) {
                         (Ownership::UniqueOwned, Ownership::UniqueOwned) => Ownership::UniqueOwned,
-                        (Ownership::SharedOwned, _) | (_, Ownership::SharedOwned) => Ownership::SharedOwned,
+                        (Ownership::SharedOwned, _) | (_, Ownership::SharedOwned) => {
+                            Ownership::SharedOwned
+                        }
                         _ => Ownership::UniqueOwned,
                     }
                 }
             }
-            InfixExpression::Collection(collection) => collection.infer_owned(ctx, scope),
+            InfixExpression::Collection(collection) => collection.infer_owned(ctx, scope, errors),
             InfixExpression::Comparison(_) => Ownership::UniqueOwned,
             InfixExpression::Member(mem) => {
                 // Check if the field type is copy to distinguish copy and owned here
                 let mut temp_errors = ErrorCollector::new();
                 let field_type = mem.infer_type(scope, &mut temp_errors);
-                
+
                 // Note: We don't emit warnings here as this is internal type checking
                 if ctx.mapping.is_copy(&field_type) {
                     Ownership::UniqueOwned
                 } else {
                     // For non-copy fields, propagate the ownership of the receiver
-                    mem.lhs.infer_owned(ctx, scope)
+                    mem.lhs.infer_owned(ctx, scope, errors)
                 }
             }
-            InfixExpression::Unwrap(u) => u.infer_owned(ctx, scope),
+            InfixExpression::Unwrap(u) => u.infer_owned(ctx, scope, errors),
             InfixExpression::Custom(_custom) => {
-                eprintln!("TRANSPILER WARNING: Ownership inference for custom operators not yet implemented");
+                errors.warning("OWNERSHIP WARNING: Ownership inference for custom operators not yet implemented".to_string(), None);
                 Ownership::Borrowed
             }
         }
@@ -465,14 +549,15 @@ impl InferType for InfixOperation<ArithmeticOperator> {
         let second = self.rhs.infer_type(scope, errors);
 
         if let (TypeElement::Plain(a), TypeElement::Plain(b)) = (&first, &second) {
-            if a.ident != b.ident && !a.ident.is_intrinsic() && !b.ident.is_intrinsic() {
-                // Check if types are compatible numeric types
-                if !are_compatible_numeric_types(&a.ident, &b.ident) {
-                    errors.error(TranspilerError::TypeMismatch {
-                        expected: format!("compatible types for arithmetic operation"),
-                        found: format!("'{:#?}' and '{:#?}'", a, b),
-                    });
-                    return TypeElement::infer();
+            if !are_compatible_numeric_types(&a.ident, &b.ident) {
+                if !first.is_infer() && !second.is_infer() {
+                    errors.warning(
+                        format!(
+                            "Type mismatch in arithmetic operation: {} {:?} {}",
+                            first, self.operator, second
+                        ),
+                        None,
+                    );
                 }
             }
         }
@@ -482,21 +567,30 @@ impl InferType for InfixOperation<ArithmeticOperator> {
         result
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
-        eprintln!("TRANSPILER WARNING: Ownership inference for arithmetic operations not yet implemented");
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        errors.warning(
+            "OWNERSHIP WARNING: Ownership inference for arithmetic operations not yet implemented"
+                .to_string(),
+            None,
+        );
         Ownership::UniqueOwned
     }
 }
-
-/// Check if two type identifiers represent compatible numeric types
 fn are_compatible_numeric_types(a: &TypeIdent, b: &TypeIdent) -> bool {
-    let integer_types = ["I8", "I16", "I32", "I64", "I128", "ISize", "Int", 
-                        "U8", "U16", "U32", "U64", "U128", "USize", "UInt"];
+    let integer_types = [
+        "I8", "I16", "I32", "I64", "I128", "ISize", "Int", "U8", "U16", "U32", "U64", "U128",
+        "USize", "UInt",
+    ];
     let float_types = ["Float", "Double"];
-    
+
     let a_str = a.as_str();
     let b_str = b.as_str();
-    
+
     // Both are integer types
     (integer_types.contains(&a_str) && integer_types.contains(&b_str)) ||
     // Both are float types  
@@ -520,7 +614,12 @@ impl InferType for InfixOperation<CollectionOperator> {
         }
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        _errors: &mut ErrorCollector,
+    ) -> Ownership {
         match self.operator {
             CollectionOperator::Concat
             | CollectionOperator::Remove
@@ -553,7 +652,10 @@ impl InferType for InfixOperation<MemberOperator> {
 
                         match ty {
                             TypeDecl::Tuple(_tuple) => {
-                                errors.warning("Tuple member access not yet implemented".to_string(), None);
+                                errors.warning(
+                                    "Tuple member access not yet implemented".to_string(),
+                                    None,
+                                );
                                 TypeElement::infer()
                             }
                             TypeDecl::Struct(st) => st
@@ -587,18 +689,25 @@ impl InferType for InfixOperation<MemberOperator> {
                     }
                     None => {
                         if let ExpressionKind::FunctionCall(ref call) = rhs.kind {
-                            println!("cargo::warning=functions: {:?}", scope.functions());
                             if let Some(func) =
                                 scope.resolve_function(Some(ty.ident()), &call.identifier, &[])
                             {
                                 func.item.signature.return_type.clone()
                             } else {
-                                println!("cargo::warning=Function '{}' not found", call.identifier);
+                                errors.warning(
+                                    format!(
+                                        "Function '{}' not found. Available functions: {:?}",
+                                        call.identifier,
+                                        scope.functions()
+                                    ),
+                                    None,
+                                );
                                 TypeElement::infer()
                             }
                         } else {
                             errors.error(TranspilerError::MemberAccessError {
-                                message: "Member operator can only be used with function calls".to_string(),
+                                message: "Member operator can only be used with function calls"
+                                    .to_string(),
                             });
                             TypeElement::infer()
                         }
@@ -625,16 +734,21 @@ impl InferType for InfixOperation<MemberOperator> {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         let Self {
             lhs,
             operator: _,
             rhs: _,
         } = self;
-        
+
         // Member access propagates the ownership of the receiver
         // If the receiver is borrowed, the member is also borrowed
-        lhs.infer_owned(ctx, scope)
+        lhs.infer_owned(ctx, scope, errors)
     }
 }
 
@@ -662,21 +776,33 @@ impl InferType for InfixOperation<UnwrapOperator> {
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         match (
-            self.rhs.infer_owned(ctx, scope),
-            self.lhs.infer_owned(ctx, scope),
+            self.rhs.infer_owned(ctx, scope, errors),
+            self.lhs.infer_owned(ctx, scope, errors),
         ) {
             (lhs, rhs) if rhs == lhs => rhs,
             (
                 Ownership::SharedOwned | Ownership::UniqueOwned,
                 Ownership::SharedOwned | Ownership::UniqueOwned,
-            ) => Ownership::SharedOwned,
-            (Ownership::Borrowed, _) | (_, Ownership::Borrowed) => Ownership::Borrowed,
-            _ => {
-                // Fallback for incompatible ownership types in '?' operator
-                Ownership::Borrowed
+            ) => {
+                // Both are owned variants, prioritize UniqueOwned if one is unique
+                match (
+                    self.rhs.infer_owned(ctx, scope, errors),
+                    self.lhs.infer_owned(ctx, scope, errors),
+                ) {
+                    (Ownership::UniqueOwned, _) | (_, Ownership::UniqueOwned) => {
+                        Ownership::UniqueOwned
+                    }
+                    _ => Ownership::SharedOwned,
+                }
             }
+            _ => Ownership::Borrowed,
         }
     }
 }
@@ -686,19 +812,19 @@ impl InferType for PostfixExpression {
         match self {
             PostfixExpression::YeetExpression(yeet) => {
                 let inner_type = yeet.inner.infer_type(scope, errors);
-                
+
                 // Check if return type is matching with the current function's return type
                 match &inner_type {
                     TypeElement::Optional(opt) => {
                         // For optional types, check if the current function returns an optional
                         // that is compatible with the inner type
-                        validate_yeet_return_type(scope, &inner_type);
+                        validate_yeet_return_type(scope, &inner_type, errors);
                         opt.inner.clone()
                     }
                     TypeElement::Result(res) => {
                         // For result types, check if the current function returns a result
-                        // with a compatible error type
-                        validate_yeet_return_type(scope, &inner_type);
+                        // that is compatible with the success/error types
+                        validate_yeet_return_type(scope, &inner_type, errors);
                         res.success.clone()
                     }
                     TypeElement::Infer(_) => TypeElement::infer(),
@@ -711,74 +837,111 @@ impl InferType for PostfixExpression {
                     }
                 }
             }
-            PostfixExpression::AccessExpression(access) => match access.base.infer_type(scope, errors) {
-                TypeElement::Array(array) => array.elements,
-                TypeElement::Dictionary(dict) => dict.value,
-                TypeElement::OrderedDictionary(dict) => dict.value,
-                TypeElement::Set(set) => set.elements,
-                TypeElement::Infer(_) => TypeElement::infer(),
-                _ => {
-                    errors.error(TranspilerError::InvalidOperationOnType {
-                        operation: "Access operator".to_string(),
-                        allowed_types: "collection types".to_string(),
-                    });
-                    TypeElement::infer()
+            PostfixExpression::AccessExpression(access) => {
+                match access.base.infer_type(scope, errors) {
+                    TypeElement::Array(array) => array.elements,
+                    TypeElement::Dictionary(dict) => dict.value,
+                    TypeElement::OrderedDictionary(dict) => dict.value,
+                    TypeElement::Set(set) => set.elements,
+                    TypeElement::Infer(_) => TypeElement::infer(),
+                    _ => {
+                        errors.error(TranspilerError::InvalidOperationOnType {
+                            operation: "Access operator".to_string(),
+                            allowed_types: "collection types".to_string(),
+                        });
+                        TypeElement::infer()
+                    }
                 }
-            },
+            }
         }
     }
 
-    fn infer_owned(&self, ctx: &Context<'_>, scope: &Scope) -> Ownership {
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
         match self {
             PostfixExpression::YeetExpression(yeet_expression) => {
-                yeet_expression.inner.infer_owned(ctx, scope)
+                yeet_expression.inner.infer_owned(ctx, scope, errors)
             }
             PostfixExpression::AccessExpression(access_expression) => {
-                access_expression.base.infer_owned(ctx, scope)
+                access_expression.base.infer_owned(ctx, scope, errors)
             }
         }
     }
 }
 
 /// Validate that the yeet operator return type is compatible with the current function's return type
-fn validate_yeet_return_type(scope: &Scope, yeet_type: &TypeElement) {
+fn validate_yeet_return_type(scope: &Scope, yeet_type: &TypeElement, errors: &mut ErrorCollector) {
     let fn_return_type = &scope.fn_return;
-    
+
     // If the function return type is not yet determined, we can't validate
     if fn_return_type.is_infer() || fn_return_type.is_void() {
         return;
     }
-    
+
     match (yeet_type, fn_return_type) {
         // Optional -> Optional: check inner type compatibility
         (TypeElement::Optional(yeet_opt), TypeElement::Optional(fn_opt)) => {
-            if !yeet_opt.inner.is_same(&fn_opt.inner) && !yeet_opt.inner.is_infer() && !fn_opt.inner.is_infer() {
-                println!("cargo::warning=Yeet operator type mismatch: yielding {:?} but function returns {:?}", yeet_opt.inner, fn_opt.inner);
+            if !yeet_opt.inner.is_same(&fn_opt.inner)
+                && !yeet_opt.inner.is_infer()
+                && !fn_opt.inner.is_infer()
+            {
+                errors.warning(
+                    format!(
+                        "Yeet operator type mismatch: yielding {} but function returns {}",
+                        yeet_opt.inner, fn_opt.inner
+                    ),
+                    None,
+                );
             }
         }
-        // Result -> Result: check success and error type compatibility  
+        // Result -> Result: check success and error type compatibility
         (TypeElement::Result(yeet_res), TypeElement::Result(fn_res)) => {
-            if !yeet_res.success.is_same(&fn_res.success) && !yeet_res.success.is_infer() && !fn_res.success.is_infer() {
-                println!("cargo::warning=Yeet operator success type mismatch: yielding {:?} but function returns {:?}", yeet_res.success, fn_res.success);
+            if !yeet_res.success.is_same(&fn_res.success)
+                && !yeet_res.success.is_infer()
+                && !fn_res.success.is_infer()
+            {
+                errors.warning(
+                    format!(
+                        "Yeet operator success type mismatch: yielding {} but function returns {}",
+                        yeet_res.success, fn_res.success
+                    ),
+                    None,
+                );
             }
-            
+
             // Check error type compatibility if both are specified
             if let (Some(yeet_err), Some(fn_err)) = (&yeet_res.error, &fn_res.error) {
                 if !yeet_err.is_same(fn_err) && !yeet_err.is_infer() && !fn_err.is_infer() {
-                    println!("cargo::warning=Yeet operator error type mismatch: yielding {:?} but function expects {:?}", yeet_err, fn_err);
+                    errors.warning(
+                        format!("Yeet operator error type mismatch: yielding {} but function expects {}", yeet_err, fn_err),
+                        None
+                    );
                 }
             }
         }
         // Optional -> Result or Result -> Optional: potentially incompatible
-        (TypeElement::Optional(_), TypeElement::Result(_)) | 
-        (TypeElement::Result(_), TypeElement::Optional(_)) => {
-            println!("cargo::warning=Yeet operator type incompatibility: yielding {:?} but function returns {:?}", yeet_type, fn_return_type);
+        (TypeElement::Optional(_), TypeElement::Result(_))
+        | (TypeElement::Result(_), TypeElement::Optional(_)) => {
+            errors.warning(
+                format!(
+                    "Yeet operator type incompatibility: yielding {} but function returns {}",
+                    yeet_type, fn_return_type
+                ),
+                None,
+            );
         }
         // Other combinations - we might want to allow automatic wrapping in the future
         _ => {
             // For now, just emit a warning for non-matching types
             if !yeet_type.is_infer() && !fn_return_type.is_infer() {
-                println!("cargo::warning=Yeet operator return type validation: yielding {:?} from function returning {:?}", yeet_type, fn_return_type);
+                errors.warning(
+                    format!("Yeet operator return type validation: yielding {} from function returning {}", yeet_type, fn_return_type),
+                    None
+                );
             }
         }
     }
@@ -790,12 +953,23 @@ impl InferType for CollectionLiteral {
             CollectionLiteral::ArrayLiteral(array) => array.infer_type(scope, errors),
             CollectionLiteral::DictLiteral(dict) => dict.infer_type(scope, errors),
             CollectionLiteral::SetLiteral(set) => set.infer_type(scope, errors),
-            CollectionLiteral::OrderedDictLiteral(ordered_dict) => ordered_dict.infer_type(scope, errors),
+            CollectionLiteral::OrderedDictLiteral(ordered_dict) => {
+                ordered_dict.infer_type(scope, errors)
+            }
         }
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
-        eprintln!("TRANSPILER WARNING: Ownership inference for arithmetic operations not yet implemented");
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        errors.warning(
+            "OWNERSHIP WARNING: Ownership inference for arithmetic operations not yet implemented"
+                .to_string(),
+            None,
+        );
         Ownership::UniqueOwned
     }
 }
@@ -810,8 +984,17 @@ impl InferType for ArrayLiteral {
         .into()
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
-        eprintln!("TRANSPILER WARNING: Ownership inference for arithmetic operations not yet implemented");
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        errors.warning(
+            "OWNERSHIP WARNING: Ownership inference for arithmetic operations not yet implemented"
+                .to_string(),
+            None,
+        );
         Ownership::UniqueOwned
     }
 }
@@ -826,8 +1009,17 @@ impl InferType for SetLiteral {
         .into()
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
-        eprintln!("TRANSPILER WARNING: Ownership inference for arithmetic operations not yet implemented");
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        errors.warning(
+            "OWNERSHIP WARNING: Ownership inference for arithmetic operations not yet implemented"
+                .to_string(),
+            None,
+        );
         Ownership::UniqueOwned
     }
 }
@@ -843,8 +1035,17 @@ impl InferType for DictLiteral {
         .into()
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
-        eprintln!("TRANSPILER WARNING: Ownership inference for arithmetic operations not yet implemented");
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        errors.warning(
+            "OWNERSHIP WARNING: Ownership inference for arithmetic operations not yet implemented"
+                .to_string(),
+            None,
+        );
         Ownership::UniqueOwned
     }
 }
@@ -860,8 +1061,17 @@ impl InferType for OrderedDictLiteral {
         .into()
     }
 
-    fn infer_owned(&self, _ctx: &Context<'_>, _scope: &Scope) -> Ownership {
-        eprintln!("TRANSPILER WARNING: Ownership inference for arithmetic operations not yet implemented");
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        errors.warning(
+            "OWNERSHIP WARNING: Ownership inference for arithmetic operations not yet implemented"
+                .to_string(),
+            None,
+        );
         Ownership::UniqueOwned
     }
 }
@@ -880,7 +1090,11 @@ fn infer_dict_elements(
     (key, value)
 }
 
-fn infer_from_elements<'a, I>(elements: I, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement
+fn infer_from_elements<'a, I>(
+    elements: I,
+    scope: &Scope,
+    errors: &mut ErrorCollector,
+) -> TypeElement
 where
     I: IntoIterator<Item = &'a Expression>,
 {

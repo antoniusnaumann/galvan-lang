@@ -120,7 +120,7 @@ pub fn cast_with_errors(
 
     match (expected, actual) {
         (expected, actual) if expected.is_same(actual) => {
-            match (ownership, expression.infer_owned(ctx, scope)) {
+            match (ownership, expression.infer_owned(ctx, scope, errors)) {
                 (
                     Ownership::SharedOwned | Ownership::UniqueOwned,
                     Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
@@ -133,7 +133,7 @@ pub fn cast_with_errors(
                 _ => expression.transpile(ctx, scope, errors),
             }
         }
-        (_, TypeElement::Infer(_)) => match (ownership, expression.infer_owned(ctx, scope)) {
+        (_, TypeElement::Infer(_)) => match (ownership, expression.infer_owned(ctx, scope, errors)) {
             (
                 Ownership::SharedOwned | Ownership::UniqueOwned,
                 Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
@@ -154,7 +154,7 @@ pub fn cast_with_errors(
         (TypeElement::Optional(some), actual)
             if some.inner.is_same(actual) || actual.is_number() =>
         {
-            let postfix = match expression.infer_owned(ctx, scope) {
+            let postfix = match expression.infer_owned(ctx, scope, errors) {
                 // TODO: we want to distinguish between Owned and SharedOwned, the latter needs to be cloned
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => {
@@ -172,7 +172,7 @@ pub fn cast_with_errors(
             transpile!(ctx, scope, errors, "Some({})", expression)
         }
         (TypeElement::Result(res), actual) if res.success.is_same(actual) || actual.is_number() => {
-            let postfix = match expression.infer_owned(ctx, scope) {
+            let postfix = match expression.infer_owned(ctx, scope, errors) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => {
                     if actual.is_number() {
@@ -198,11 +198,11 @@ pub fn cast_with_errors(
             transpile!(ctx, scope, errors, "Err({})", expression)
         }
         (TypeElement::Result(_), actual) => {
-            println!(
-                "cargo::warning=wrapping non-matching type {:?} in ok",
-                actual
+            errors.warning(
+                format!("Wrapping non-matching type {} in Ok", actual),
+                None
             );
-            let postfix = match expression.infer_owned(ctx, scope) {
+            let postfix = match expression.infer_owned(ctx, scope, errors) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => ".to_owned()",
             };
@@ -215,18 +215,18 @@ pub fn cast_with_errors(
             )
         }
         (TypeElement::Optional(_), TypeElement::Optional(_)) => {
-            println!(
-                "cargo::warning=wrapping non-matching type {:?} in some",
-                actual
+            errors.warning(
+                format!("Wrapping non-matching type {} in Some", actual),
+                None
             );
             transpile!(ctx, scope, errors, "/*non-matching*/{}", expression)
         }
         (TypeElement::Optional(_), actual) => {
-            println!(
-                "cargo::warning=wrapping non-matching type {:?} in some",
-                actual
+            errors.warning(
+                format!("Wrapping non-matching type {} in Some", actual),
+                None
             );
-            let postfix = match expression.infer_owned(ctx, scope) {
+            let postfix = match expression.infer_owned(ctx, scope, errors) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => ".to_owned()",
             };
@@ -246,9 +246,9 @@ pub fn cast_with_errors(
         }
         (_, _) => {
             // Let Rust try to figure this out
-            println!(
-                "cargo::warning=Trying to cast type {:?} to {:?}",
-                actual, expected
+            errors.warning(
+                format!("Trying to cast type {} to {}", actual, expected),
+                None
             );
             transpile!(ctx, scope, errors, "{}.into()", expression)
         }

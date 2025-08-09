@@ -17,7 +17,7 @@ impl Transpile for Assignment {
         } = self;
 
         let target_ty = target.infer_type(scope, errors);
-        let ownership = target.infer_owned(ctx, scope);
+        let ownership = target.infer_owned(ctx, scope, errors);
         let mut scope = Scope::child(scope).returns(target_ty, ownership);
         let scope = &mut scope;
 

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use galvan_ast_macro::AstNode;
 use typeunion::type_union;
 
@@ -126,4 +128,33 @@ pub struct VoidTypeItem {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, AstNode)]
 pub struct InferTypeItem {
     pub span: Span,
+}
+
+impl fmt::Display for TypeElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeElement::Array(arr) => write!(f, "[{}]", arr.elements),
+            TypeElement::Dictionary(dict) => write!(f, "[{}: {}]", dict.key, dict.value),
+            TypeElement::OrderedDictionary(dict) => write!(f, "[{}: {}]", dict.key, dict.value),
+            TypeElement::Set(set) => write!(f, "{{{}}}", set.elements),
+            TypeElement::Tuple(tuple) => {
+                write!(f, "(")?;
+                for (i, elem) in tuple.elements.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", elem)?;
+                }
+                write!(f, ")")
+            },
+            TypeElement::Optional(opt) => write!(f, "{}?", opt.inner),
+            TypeElement::Result(res) => match &res.error {
+                Some(err) => write!(f, "Result<{}, {}>", res.success, err),
+                None => write!(f, "Result<{}>", res.success),
+            },
+            TypeElement::Plain(basic) => write!(f, "{}", basic.ident),
+            TypeElement::Generic(gen) => write!(f, "{}", gen.ident),
+            TypeElement::Void(_) => write!(f, "Void"),
+            TypeElement::Infer(_) => write!(f, "_"),
+            TypeElement::Never(_) => write!(f, "!"),
+        }
+    }
 }
