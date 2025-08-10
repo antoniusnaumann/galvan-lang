@@ -106,6 +106,7 @@ impl ReadCursor for AssignmentOperator {
             "pow_assign" => Self::PowAssign,
             "div_assign" => Self::DivAssign,
             "rem_assign" => Self::RemAssign,
+            "concat_assign" => Self::ConcatAssign,
             unknown => unreachable!("Unknown assignment operator: {unknown}"),
         };
 

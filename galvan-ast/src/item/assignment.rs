@@ -21,6 +21,7 @@ pub enum AssignmentOperator {
     DivAssign,
     RemAssign,
     PowAssign,
+    ConcatAssign,
 }
 
 impl PrintAst for AssignmentOperator {
@@ -34,6 +35,7 @@ impl PrintAst for AssignmentOperator {
             AssignmentOperator::DivAssign => "/=",
             AssignmentOperator::RemAssign => "%=",
             AssignmentOperator::PowAssign => "**=",
+            AssignmentOperator::ConcatAssign => "++=",
         };
 
         format!("{indent_str}{op}")

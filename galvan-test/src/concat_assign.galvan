@@ -1,0 +1,88 @@
+test "Concat assign with vector extends another vector" {
+    mut vec1 = [1, 2, 3]
+    let vec2 = [4, 5, 6]
+    vec1 ++= vec2
+    
+    assert vec1 == [1, 2, 3, 4, 5, 6]
+}
+
+test "Concat assign with element pushes to vector" {
+    mut vec = [1, 2, 3]
+    vec ++= 4
+    
+    assert vec == [1, 2, 3, 4]
+}
+
+test "Concat assign defaults to extend when types unclear" {
+    mut vec = [1]
+    vec ++= [2, 3]  // Defaults to extend (consistent with ++ operator)
+    vec ++= 4       // Clear element type, uses push
+    
+    assert vec == [1, 2, 3, 4]
+}
+
+test "Concat assign with empty vector" {
+    mut vec = [1, 2, 3]
+    let empty_int = [4, 5]  // Use a normal vector instead
+    vec ++= empty_int
+    
+    assert vec == [1, 2, 3, 4, 5]
+}
+
+test "Concat assign to empty vector with vector" {
+    mut vec = [1]  // Start with one element
+    vec ++= [2, 3]
+    
+    assert vec == [1, 2, 3]
+}
+
+test "Concat assign to empty vector with element" {
+    mut vec = [1]  // Start with one element 
+    vec ++= 2
+    
+    assert vec == [1, 2]
+}
+
+test "Concat assign multiple elements sequentially" {
+    mut vec = [1]
+    vec ++= 2
+    vec ++= 3
+    vec ++= 4
+    
+    assert vec == [1, 2, 3, 4]
+}
+
+test "Concat assign multiple vectors sequentially" {
+    mut vec = [1]
+    vec ++= [2, 3]
+    vec ++= [4, 5]
+    vec ++= [6]
+    
+    assert vec == [1, 2, 3, 4, 5, 6]
+}
+
+test "Concat assign mixed elements and vectors" {
+    mut vec = [1]
+    vec ++= 2           // Element push
+    vec ++= [3, 4]      // Vector extend
+    vec ++= 5           // Element push
+    vec ++= [6, 7, 8]   // Vector extend
+    
+    assert vec == [1, 2, 3, 4, 5, 6, 7, 8]
+}
+
+test "Concat assign preserves source vector" {
+    mut vec1 = [1, 2]
+    let vec2 = [3, 4]
+    vec1 ++= vec2
+    
+    assert vec1 == [1, 2, 3, 4]
+    assert vec2 == [3, 4]  // Original unchanged
+}
+
+test "Concat assign with single element vector" {
+    mut vec = [1, 2]
+    vec ++= [3]  // Single element vector - treated as vector concat
+    
+    assert vec == [1, 2, 3]
+}

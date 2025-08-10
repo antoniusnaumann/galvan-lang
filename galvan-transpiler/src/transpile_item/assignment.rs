@@ -1,9 +1,10 @@
 use crate::cast::cast;
 use crate::error::ErrorCollector;
 use crate::macros::transpile;
+use crate::type_inference::InferType;
 use crate::Transpile;
-use crate::{context::Context, type_inference::InferType};
-use galvan_ast::{Assignment, AssignmentOperator, ExpressionKind, Ownership};
+use crate::context::Context;
+use galvan_ast::{Assignment, AssignmentOperator, ExpressionKind, Ownership, TypeElement};
 use galvan_resolver::Scope;
 
 impl Transpile for Assignment {
@@ -62,6 +63,31 @@ impl Transpile for Assignment {
             }
             AssignmentOperator::PowAssign => {
                 transpile!(ctx, scope, errors, "{prefix}{} = {}.pow({})", target, target, exp)
+            }
+            AssignmentOperator::ConcatAssign => {
+                // Determine if RHS is a collection (use extend) or element (use push)
+                // Default to extend behavior to be consistent with ++ operator
+                let target_type = target.infer_type(scope, errors);
+                let rhs_type = self.expression.infer_type(scope, errors);
+                
+                // Check if target is an array/vector type
+                match &target_type {
+                    TypeElement::Array(array_type) => {
+                        // If RHS type exactly matches the element type, use push
+                        // Otherwise, default to extend (consistent with ++ operator behavior)
+                        if rhs_type == array_type.elements {
+                            transpile!(ctx, scope, errors, "{prefix}{}.push({})", target, exp)
+                        } else {
+                            // Default to extend behavior (consistent with ++ operator)
+                            transpile!(ctx, scope, errors, "{prefix}{}.extend({})", target, exp)
+                        }
+                    }
+                    _ => {
+                        // Target is not an array, default to extend behavior 
+                        // (consistent with ++ operator which assumes collections)
+                        transpile!(ctx, scope, errors, "{prefix}{}.extend({})", target, exp)
+                    }
+                }
             }
         }
     }

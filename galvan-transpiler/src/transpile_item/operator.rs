@@ -1,12 +1,13 @@
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
-    InfixOperation, LogicalOperator, UnwrapOperator,
+    InfixOperation, LogicalOperator, UnwrapOperator, TypeElement,
 };
 use galvan_resolver::Scope;
 
 use crate::error::ErrorCollector;
 use crate::macros::impl_transpile_variants;
 use crate::{context::Context, transpile};
+use crate::type_inference::InferType;
 use crate::Transpile;
 
 impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Comparison, Unwrap, Custom, Member);
@@ -55,15 +56,51 @@ impl Transpile for InfixOperation<CollectionOperator> {
 
         match operator {
             CollectionOperator::Concat => {
-                // TODO: Check if underlying expression is already owned or copy
-                transpile!(
-                    ctx,
-                    scope,
-                    errors,
-                    "[({}).to_owned(), ({}).to_owned()].concat()",
-                    lhs,
-                    rhs
-                )
+                // Determine if RHS is a collection (use concat) or element (use single-element append)
+                // Default to concat behavior to be consistent with ++= operator
+                let lhs_type = lhs.infer_type(scope, errors);
+                let rhs_type = rhs.infer_type(scope, errors);
+                
+                // Check if LHS is an array/vector type
+                match &lhs_type {
+                    TypeElement::Array(array_type) => {
+                        // If RHS type exactly matches the element type, append as single element
+                        // Otherwise, default to concat (consistent with ++= operator behavior)
+                        if rhs_type == array_type.elements {
+                            // Single element append: create a new vector with the element added
+                            transpile!(
+                                ctx,
+                                scope,
+                                errors,
+                                "{{ let mut temp = ({}).to_owned(); temp.push({}); temp }}",
+                                lhs,
+                                rhs
+                            )
+                        } else {
+                            // Default to concat behavior (consistent with ++= operator)
+                            transpile!(
+                                ctx,
+                                scope,
+                                errors,
+                                "[({}).to_owned(), ({}).to_owned()].concat()",
+                                lhs,
+                                rhs
+                            )
+                        }
+                    }
+                    _ => {
+                        // LHS is not an array, default to concat behavior 
+                        // (consistent with ++= operator which assumes collections)
+                        transpile!(
+                            ctx,
+                            scope,
+                            errors,
+                            "[({}).to_owned(), ({}).to_owned()].concat()",
+                            lhs,
+                            rhs
+                        )
+                    }
+                }
             }
             CollectionOperator::Remove => todo!("Implement remove operator"),
             CollectionOperator::Contains => {
