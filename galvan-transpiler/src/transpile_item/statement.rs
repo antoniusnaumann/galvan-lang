@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
 use galvan_ast::{
-    DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression, Ownership,
+    Break, Continue, DeclModifier, Declaration, Expression, ExpressionKind, Group, InfixExpression, Ownership,
     PostfixExpression, Return, Statement, Throw, TypeElement,
 };
 use galvan_resolver::{Scope, Variable};
@@ -52,6 +52,8 @@ impl crate::Transpile for Statement {
             Statement::Declaration(inner) => inner.transpile(ctx, scope, errors),
             Statement::Return(inner) => inner.transpile(ctx, scope, errors),
             Statement::Throw(inner) => inner.transpile(ctx, scope, errors),
+            Statement::Break(inner) => inner.transpile(ctx, scope, errors),
+            Statement::Continue(inner) => inner.transpile(ctx, scope, errors),
         }
     }
 }
@@ -191,6 +193,18 @@ impl Transpile for Return {
 impl Transpile for Throw {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         transpile!(ctx, scope, errors, "return Err({})", self.expression)
+    }
+}
+
+impl Transpile for Break {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+        "break".to_string()
+    }
+}
+
+impl Transpile for Continue {
+    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+        "continue".to_string()
     }
 }
 

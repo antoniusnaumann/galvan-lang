@@ -2,7 +2,7 @@ use crate::items::{read_free_function_call, read_trailing_closure_call};
 use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
-    Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
+    Assignment, AssignmentOperator, Break, Closure, CollectionLiteral, ConstructorCall, Continue, DeclModifier,
     Declaration, ElseExpression, EnumAccess, Expression, ExpressionKind, FunctionCall, Group,
     Ident, InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement,
 };
@@ -18,6 +18,16 @@ impl ReadCursor for Statement {
             "declaration" => Statement::Declaration(Declaration::read_cursor(cursor, source)?),
             "expression" => Statement::Expression(Expression::read_cursor(cursor, source)?),
             "free_function" => read_free_function_call(cursor, source)?,
+            "break_statement" => {
+                let node = cursor.node();
+                let span = Span::from_node(node);
+                Statement::Break(galvan_ast::Break { span })
+            }
+            "continue_statement" => {
+                let node = cursor.node();
+                let span = Span::from_node(node);
+                Statement::Continue(galvan_ast::Continue { span })
+            }
             _ => unreachable!("Unknown statement kind: {:?}", cursor.kind()?),
         };
 

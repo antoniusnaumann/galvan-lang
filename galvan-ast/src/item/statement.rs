@@ -19,7 +19,7 @@ pub struct Block {
 
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
-pub type Statement = Assignment + Declaration + Expression + Return + Throw; // + Block;
+pub type Statement = Assignment + Declaration + Expression + Return + Throw + Break + Continue; // + Block;
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Declaration {
@@ -40,6 +40,16 @@ pub struct Return {
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Throw {
     pub expression: Expression,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct Break {
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct Continue {
     pub span: Span,
 }
 

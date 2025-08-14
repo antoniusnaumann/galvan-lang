@@ -58,3 +58,21 @@ test "ownership for iterators" {
 }
 
 fn pet(dog: Dog) {}
+
+test "break works" {
+    let numbers = [1, 2, 3, 4]
+
+    for numbers |num| {
+        if num == 3 { break }
+        assert num < 3
+    }
+}
+
+test "continue works" {
+    let numbers = [1, 2, 3, 4]
+
+    for numbers |num| {
+        if num % 2 == 1 { continue }
+        assert num % 2 == 0
+    }
+}

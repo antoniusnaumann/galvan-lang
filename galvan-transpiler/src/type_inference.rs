@@ -1,6 +1,6 @@
 use galvan_ast::{
-    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
-    CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
+    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, Break, CollectionLiteral,
+    CollectionOperator, Continue, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
     Ownership, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
@@ -147,7 +147,10 @@ impl InferType for Statement {
                     ret.expression.infer_type(scope, errors)
                 }
             }
-            Statement::Throw(throw) => TypeElement::Never(NeverTypeItem { span: throw.span }), // Statement::Block(block) => block.infer_type(scope),
+            Statement::Throw(throw) => TypeElement::Never(NeverTypeItem { span: throw.span }),
+            Statement::Break(brk) => TypeElement::Never(NeverTypeItem { span: brk.span }),
+            Statement::Continue(cont) => TypeElement::Never(NeverTypeItem { span: cont.span }),
+            // Statement::Block(block) => block.infer_type(scope),
         }
     }
 
