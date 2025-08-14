@@ -1,6 +1,6 @@
 use galvan_ast::{
-    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, Break, CollectionLiteral,
-    CollectionOperator, Continue, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
+    ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
+    CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
     Ownership, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
@@ -259,13 +259,8 @@ impl InferType for ExpressionKind {
                 );
                 Ownership::Borrowed
             }
-            ExpressionKind::Group(_group) => {
-                errors.warning(
-                    "OWNERSHIP WARNING: Ownership inference for groups not yet implemented"
-                        .to_string(),
-                    None,
-                );
-                Ownership::Borrowed
+            ExpressionKind::Group(group) => {
+                group.inner.infer_owned(ctx, scope, errors)
             }
         }
     }

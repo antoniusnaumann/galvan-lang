@@ -47,6 +47,15 @@ test "Precedence: Addition, Multiplication" {
     assert d == 7
 }
 
+test "Groups override precedence" {
+    let a = 1
+    let b = 2
+    let c = 3
+    let d = (a + b) * c
+
+    assert d == 9
+}
+
 test "Exponentiation" {
     let a: U32 = 2
     let b: U32 = 3

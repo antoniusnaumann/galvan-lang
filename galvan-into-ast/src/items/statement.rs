@@ -2,7 +2,7 @@ use crate::items::{read_free_function_call, read_trailing_closure_call};
 use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
-    Assignment, AssignmentOperator, Break, Closure, CollectionLiteral, ConstructorCall, Continue, DeclModifier,
+    Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
     Declaration, ElseExpression, EnumAccess, Expression, ExpressionKind, FunctionCall, Group,
     Ident, InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement,
 };
