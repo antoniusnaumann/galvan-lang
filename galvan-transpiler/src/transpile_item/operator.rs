@@ -1,6 +1,6 @@
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
-    InfixOperation, LogicalOperator, UnwrapOperator, TypeElement,
+    InfixOperation, LogicalOperator, Ownership, UnwrapOperator, TypeElement,
 };
 use galvan_resolver::Scope;
 
@@ -133,8 +133,18 @@ impl Transpile for InfixOperation<UnwrapOperator> {
             rhs,
         } = self;
 
+        // Check ownership of the right-hand side to determine if we need to clone
+        let rhs_ownership = rhs.infer_owned(ctx, scope, errors);
+        
+        // For SharedOwned, Borrowed, or MutBorrowed ownership, we need to clone to avoid move issues
+        let rhs_clone_suffix = match rhs_ownership {
+            Ownership::SharedOwned => ".clone()",
+            Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
+            Ownership::UniqueOwned | Ownership::Ref => "",
+        };
+
         // TODO: this should be a match expression instead to allow return from the left arm and so on
-        transpile!(ctx, scope, errors, "({}).unwrap_or_else(|| {})", lhs, rhs)
+        transpile!(ctx, scope, errors, "({}).unwrap_or_else(|| {}{})", lhs, rhs, rhs_clone_suffix)
     }
 }
 

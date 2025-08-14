@@ -13,3 +13,11 @@ test "Unwrap operator" {
 
     assert maybe ? 5 == 17
 }
+
+test "? operator clones/borrows correctly" {
+    let bello: Dog? = none
+    let hasso = Dog(name: "Hasso", age: 6)
+
+    let good_boy = bello ? hasso
+    let again_hasso = hasso
+}
