@@ -4,8 +4,8 @@ test "Basic character literals" {
     let digit = '9'
     let space = ' '
     
-    assert(a != z)
-    assert(digit != a)
+    assert a != z
+    assert digit != a
 }
 
 test "Character escape sequences" {
@@ -14,8 +14,8 @@ test "Character escape sequences" {
     let backslash = '\\'
     let quote = '\''
     
-    assert(newline != tab)
-    assert(backslash != quote)
+    assert newline != tab
+    assert backslash != quote
 }
 
 test "String concatenation with char using ++" {
@@ -23,7 +23,7 @@ test "String concatenation with char using ++" {
     let char = 'w'
     let result = str ++ char
     
-    assert(result == "hellow")
+    assert result == "hellow"
 }
 
 test "String concatenation assignment with char using ++=" {
@@ -31,12 +31,12 @@ test "String concatenation assignment with char using ++=" {
     let char = '!'
     str ++= char
     
-    assert(str == "hello!")
+    assert str == "hello!"
 }
 
 test "Multiple char concatenations" {
     let base = "test"
     let result = base ++ 'A' ++ 'B' ++ 'C'
     
-    assert(result == "testABC")
+    assert result == "testABC"
 }
