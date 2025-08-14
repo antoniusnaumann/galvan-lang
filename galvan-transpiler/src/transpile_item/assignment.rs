@@ -86,11 +86,14 @@ impl Transpile for Assignment {
                         // String concatenation: append to existing string
                         // Check if RHS is also a string type or other
                         if let TypeElement::Plain(rhs_basic) = &rhs_type {
-                            if rhs_basic.ident.as_str() == "String" {
-                                // String + String: use push_str
+                            if rhs_basic.ident.as_str() == "Char" {
+                                // String += char: use push method
+                                transpile!(ctx, scope, errors, "{prefix}{}.push({})", target, exp)
+                            } else if rhs_basic.ident.as_str() == "String" {
+                                // String += String: use push_str
                                 transpile!(ctx, scope, errors, "{prefix}{}.push_str(&{})", target, exp)
                             } else {
-                                // String + other (likely char): use push_str with conversion
+                                // String += other (likely char): use push_str with conversion
                                 transpile!(ctx, scope, errors, "{prefix}{}.push_str(&{}.to_string())", target, exp)
                             }
                         } else {

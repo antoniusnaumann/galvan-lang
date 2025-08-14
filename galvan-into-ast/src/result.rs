@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use galvan_ast::Span;
 use galvan_parse::{Node, ParseError, TreeCursor};
 
 use crate::Ast;
@@ -14,6 +15,8 @@ pub enum AstError {
     NodeError,
     #[error("Duplicate main function")]
     DuplicateMain,
+    #[error("Invalid character literal at {0:?}")]
+    InvalidCharacterLiteral(Span),
     #[error(transparent)]
     Parse(#[from] ParseError),
 }

@@ -372,6 +372,11 @@ impl InferType for Literal {
                 span: Span::default(),
             })
             .into(),
+            Literal::CharLiteral(_) => BasicTypeItem {
+                ident: TypeIdent::new("Char"),
+                span: Span::default(),
+            }
+            .into(),
         }
     }
 
@@ -385,6 +390,7 @@ impl InferType for Literal {
             Literal::StringLiteral(_) => Ownership::UniqueOwned,
             Literal::NumberLiteral(_) | Literal::BooleanLiteral(_) => Ownership::UniqueOwned,
             Literal::NoneLiteral(_) => Ownership::UniqueOwned,
+            Literal::CharLiteral(_) => Ownership::UniqueOwned,
         }
     }
 }

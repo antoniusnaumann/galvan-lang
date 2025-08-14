@@ -7,7 +7,7 @@ use crate::{AstNode, Span};
 
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
-pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral;
+pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral + CharLiteral;
 
 #[derive(Clone, Debug, PartialEq, Eq, From)]
 pub struct StringLiteral {
@@ -92,5 +92,27 @@ impl AstNode for NoneLiteral {
 
     fn print(&self, indent: usize) -> String {
         format!("{}None", " ".repeat(indent))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CharLiteral {
+    pub value: char,
+    pub span: Span,
+}
+
+impl AstNode for CharLiteral {
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn print(&self, indent: usize) -> String {
+        format!("{}'{}'", " ".repeat(indent), self.value)
+    }
+}
+
+impl CharLiteral {
+    pub fn as_char(&self) -> char {
+        self.value
     }
 }

@@ -89,15 +89,50 @@ impl Transpile for InfixOperation<CollectionOperator> {
                         }
                     }
                     TypeElement::Plain(basic_type) if basic_type.ident.as_str() == "String" => {
-                        // String concatenation: create new string
-                        transpile!(
-                            ctx,
-                            scope,
-                            errors,
-                            "format!(\"{{}}{{}}\" , {}, {})",
-                            lhs,
-                            rhs
-                        )
+                        // Check if RHS is a char
+                        if let TypeElement::Plain(rhs_basic) = &rhs_type {
+                            if rhs_basic.ident.as_str() == "Char" {
+                                // String + char: use push method
+                                transpile!(
+                                    ctx,
+                                    scope,
+                                    errors,
+                                    "{{ let mut temp = ({}).to_owned(); temp.push({}); temp }}",
+                                    lhs,
+                                    rhs
+                                )
+                            } else if rhs_basic.ident.as_str() == "String" {
+                                // String + String: existing logic
+                                transpile!(
+                                    ctx,
+                                    scope,
+                                    errors,
+                                    "format!(\"{{}}{{}}\" , {}, {})",
+                                    lhs,
+                                    rhs
+                                )
+                            } else {
+                                // String + other: existing conversion logic
+                                transpile!(
+                                    ctx,
+                                    scope,
+                                    errors,
+                                    "format!(\"{{}}{{}}\" , {}, {})",
+                                    lhs,
+                                    rhs
+                                )
+                            }
+                        } else {
+                            // String + complex type: existing default logic
+                            transpile!(
+                                ctx,
+                                scope,
+                                errors,
+                                "format!(\"{{}}{{}}\" , {}, {})",
+                                lhs,
+                                rhs
+                            )
+                        }
                     }
                     _ => {
                         // LHS is not an array or string, default to concat behavior 

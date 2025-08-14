@@ -1,0 +1,42 @@
+test "Basic character literals" {
+    let a = 'a'
+    let z = 'Z'
+    let digit = '9'
+    let space = ' '
+    
+    assert(a != z)
+    assert(digit != a)
+}
+
+test "Character escape sequences" {
+    let newline = '\n'
+    let tab = '\t'
+    let backslash = '\\'
+    let quote = '\''
+    
+    assert(newline != tab)
+    assert(backslash != quote)
+}
+
+test "String concatenation with char using ++" {
+    let str = "hello"
+    let char = 'w'
+    let result = str ++ char
+    
+    assert(result == "hellow")
+}
+
+test "String concatenation assignment with char using ++=" {
+    let mut str = "hello"
+    let char = '!'
+    str ++= char
+    
+    assert(str == "hello!")
+}
+
+test "Multiple char concatenations" {
+    let base = "test"
+    let result = base ++ 'A' ++ 'B' ++ 'C'
+    
+    assert(result == "testABC")
+}
