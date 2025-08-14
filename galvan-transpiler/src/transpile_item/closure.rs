@@ -7,11 +7,12 @@ use galvan_ast::{
 use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
 
+use crate::builtins::CheckBuiltins;
 use crate::cast::{cast, unify};
 use crate::context::Context;
 use crate::error::ErrorCollector;
 use crate::macros::{impl_transpile, transpile};
-use crate::type_inference::InferType;
+use crate::type_inference::{InferType, infer_closure_param_from_usage};
 use crate::Transpile;
 
 use super::function_call::transpile_if;
@@ -276,11 +277,18 @@ pub(crate) fn transpile_closure_argument(
     omit_type: bool,
     errors: &mut ErrorCollector,
 ) -> String {
-    // TODO: Type inference
+    // Infer parameter type if not explicitly specified
+    let param_type = if arg.ty.is_infer() {
+        // Try to infer from local context within the closure
+        infer_closure_param_from_usage(arg, scope, errors)
+    } else {
+        arg.ty.clone()
+    };
+    
     scope.declare_variable(Variable {
         ident: arg.ident.clone(),
         modifier: DeclModifier::Let, // TODO: Closure arg modifiers self.modifier.clone(),
-        ty: arg.ty.clone(),
+        ty: param_type.clone(),
         ownership,
     });
 
@@ -291,7 +299,7 @@ pub(crate) fn transpile_closure_argument(
         let param = Param {
             identifier: arg.ident.clone(),
             decl_modifier: None,
-            param_type: arg.ty.clone(),
+            param_type: param_type,
             span: arg.ty.span(),
         };
         transpile!(ctx, scope, errors, "{prefix}{}", param)

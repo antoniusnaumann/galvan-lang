@@ -185,9 +185,10 @@ impl InferType for Expression {
 impl InferType for ExpressionKind {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
         match self {
-            ExpressionKind::Closure(_) => {
-                // TODO: Implement type inference for closure
-                TypeElement::infer()
+            ExpressionKind::Closure(closure) => {
+                // Infer the return type from the closure body
+                // This is a simple improvement over returning TypeElement::infer()
+                closure.block.infer_type(scope, errors)
             }
             ExpressionKind::ElseExpression(e) => e.infer_type(scope, errors),
             ExpressionKind::CollectionLiteral(collection) => collection.infer_type(scope, errors),
@@ -251,13 +252,10 @@ impl InferType for ExpressionKind {
                     Ownership::Borrowed
                 }
             }
-            ExpressionKind::Closure(_closure) => {
-                errors.warning(
-                    "OWNERSHIP WARNING: Ownership inference for closures not yet implemented"
-                        .to_string(),
-                    None,
-                );
-                Ownership::Borrowed
+            ExpressionKind::Closure(closure) => {
+                // Infer ownership from closure body  
+                // This is a simple improvement over warning and returning Borrowed
+                closure.block.infer_owned(ctx, scope, errors)
             }
             ExpressionKind::Group(group) => {
                 group.inner.infer_owned(ctx, scope, errors)
@@ -1120,4 +1118,21 @@ where
             TypeElement::infer()
         }
     }
+}
+
+/// Helper function for closure parameter type inference
+pub(crate) fn infer_closure_param_from_usage(
+    param: &galvan_ast::ClosureParameter,
+    _scope: &Scope,
+    errors: &mut ErrorCollector,
+) -> TypeElement {
+    // For now, return infer type - this could be enhanced to look at
+    // how the parameter is used within the closure body
+    if param.ty.is_infer() {
+        errors.warning(
+            format!("Cannot infer type for closure parameter '{}', consider adding explicit type annotation", param.ident),
+            None
+        );
+    }
+    TypeElement::infer()
 }

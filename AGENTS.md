@@ -4,6 +4,7 @@
 - NEVER edit, delete or uncomment tests to resolve failing tests. Exception: you can modify tests you added during your session.
 - AVOID redundant comments: Do not add comments that merely explain what the code does, instead use comments only when further context is needed
 - ALWAYS run all workspace tests after finishing an edit session to verify that no regression was introduced
+- UPDATE todo.md regularly to reflect current state of TODOs in the codebase - remove completed items and add new ones discovered during development
 
 ## Build/Test/Lint Commands
 - `cargo check --workspace` - Type check entire workspace

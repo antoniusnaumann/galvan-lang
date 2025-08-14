@@ -27,7 +27,7 @@ test "String concatenation with char using ++" {
 }
 
 test "String concatenation assignment with char using ++=" {
-    let mut str = "hello"
+    mut str = "hello"
     let char = '!'
     str ++= char
     
