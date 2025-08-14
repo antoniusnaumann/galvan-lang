@@ -21,3 +21,62 @@ test "? operator clones/borrows correctly" {
     let good_boy = bello ? hasso
     let again_hasso = hasso
 }
+
+test "? operator clones borrowed value" {
+    let bello: Dog? = none
+    let hasso = Dog(name: "Hasso", age: 6)
+
+    let good_boy = select_good_boy(bello, hasso)
+    let again_hasso = hasso
+}
+
+fn select_good_boy(a: Dog?, b: Dog) -> Dog {
+    a ? b
+}
+
+test "++ operator on strings" {
+    let a = "Hello"
+    let b = "World!"
+
+    let c = a ++ " " ++ b
+
+    assert c == "Hello World!"
+}
+
+test "++= operator on strings" {
+    mut a = "Hello"
+    a ++= " "
+    a ++= "World!"
+
+    assert a == "Hello World!"
+}
+
+test "++ operator on lists" {
+    let a = [1, 2]
+    let b = [5, 6]
+
+    let c = a ++ b
+
+    assert c == [1, 2, 5, 6]
+}
+
+test "++= operator on lists" {
+    mut a = [1, 2]
+    a ++= [5, 6]
+
+    assert a == [1, 2, 5, 6]
+}
+
+test "++ operator with list element" {
+    let a = [1, 2]
+    let b = a ++ 3
+
+    assert b == [1, 2, 3]
+}
+
+test "++= operator with list element" {
+    mut a = [1, 2]
+    a ++= 3
+
+    assert a == [1, 2, 3]
+}

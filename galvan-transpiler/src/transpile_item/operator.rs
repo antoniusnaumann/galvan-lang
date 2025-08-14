@@ -88,8 +88,19 @@ impl Transpile for InfixOperation<CollectionOperator> {
                             )
                         }
                     }
+                    TypeElement::Plain(basic_type) if basic_type.ident.as_str() == "String" => {
+                        // String concatenation: create new string
+                        transpile!(
+                            ctx,
+                            scope,
+                            errors,
+                            "format!(\"{{}}{{}}\" , {}, {})",
+                            lhs,
+                            rhs
+                        )
+                    }
                     _ => {
-                        // LHS is not an array, default to concat behavior 
+                        // LHS is not an array or string, default to concat behavior 
                         // (consistent with ++= operator which assumes collections)
                         transpile!(
                             ctx,
@@ -133,10 +144,18 @@ impl Transpile for InfixOperation<UnwrapOperator> {
             rhs,
         } = self;
 
-        // Check ownership of the right-hand side to determine if we need to clone
+        // Check ownership of both sides to determine if we need to clone
+        let lhs_ownership = lhs.infer_owned(ctx, scope, errors);
         let rhs_ownership = rhs.infer_owned(ctx, scope, errors);
         
-        // For SharedOwned, Borrowed, or MutBorrowed ownership, we need to clone to avoid move issues
+        // For the left-hand side (receiver), we need to clone if it's borrowed to avoid move issues
+        let lhs_clone_suffix = match lhs_ownership {
+            Ownership::SharedOwned => ".clone()",
+            Ownership::Borrowed | Ownership::MutBorrowed => ".clone()",
+            Ownership::UniqueOwned | Ownership::Ref => "",
+        };
+        
+        // For the right-hand side, we need to clone to avoid move issues when captured in closure
         let rhs_clone_suffix = match rhs_ownership {
             Ownership::SharedOwned => ".clone()",
             Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
@@ -144,7 +163,7 @@ impl Transpile for InfixOperation<UnwrapOperator> {
         };
 
         // TODO: this should be a match expression instead to allow return from the left arm and so on
-        transpile!(ctx, scope, errors, "({}).unwrap_or_else(|| {}{})", lhs, rhs, rhs_clone_suffix)
+        transpile!(ctx, scope, errors, "({}{}).unwrap_or_else(|| {}{})", lhs, lhs_clone_suffix, rhs, rhs_clone_suffix)
     }
 }
 
