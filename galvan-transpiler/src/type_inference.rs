@@ -3,7 +3,7 @@ use galvan_ast::{
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
-    Ownership, PostfixExpression, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
+    Ownership, PostfixExpression, RangeOperator, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
     TypeIdent, UnwrapOperator,
 };
 use galvan_resolver::{Lookup, Scope};
@@ -469,6 +469,7 @@ impl InferType for InfixExpression {
             InfixExpression::Logical(_) => TypeElement::bool(),
             InfixExpression::Arithmetic(e) => e.infer_type(scope, errors),
             InfixExpression::Collection(e) => e.infer_type(scope, errors),
+            InfixExpression::Range(e) => e.infer_type(scope, errors),
             InfixExpression::Comparison(_) => TypeElement::bool(),
             InfixExpression::Member(e) => e.infer_type(scope, errors),
             InfixExpression::Unwrap(u) => u.infer_type(scope, errors),
@@ -522,6 +523,7 @@ impl InferType for InfixExpression {
                 }
             }
             InfixExpression::Collection(collection) => collection.infer_owned(ctx, scope, errors),
+            InfixExpression::Range(_) => Ownership::UniqueOwned, // Ranges are iterators, typically owned
             InfixExpression::Comparison(_) => Ownership::UniqueOwned,
             InfixExpression::Member(mem) => {
                 // Check if the field type is copy to distinguish copy and owned here
@@ -627,6 +629,33 @@ impl InferType for InfixOperation<CollectionOperator> {
             | CollectionOperator::Remove
             | CollectionOperator::Contains => Ownership::UniqueOwned,
         }
+    }
+}
+
+impl InferType for InfixOperation<RangeOperator> {
+    fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
+        let Self { lhs, operator: _, rhs: _ } = self;
+        
+        // Range expressions return iterators over the element type
+        // For now, we'll infer the element type from the lhs
+        let element_type = lhs.infer_type(scope, errors);
+        
+        // Return an iterator type - for simplicity, we'll use an array type
+        // In a more complete implementation, we might have a specific Iterator type
+        TypeElement::Array(Box::new(ArrayTypeItem {
+            elements: element_type,
+            span: galvan_ast::Span::default(),
+        }))
+    }
+
+    fn infer_owned(
+        &self,
+        _ctx: &Context<'_>,
+        _scope: &Scope,
+        _errors: &mut ErrorCollector,
+    ) -> Ownership {
+        // Ranges are typically owned iterators
+        Ownership::UniqueOwned
     }
 }
 

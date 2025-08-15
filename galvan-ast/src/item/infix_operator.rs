@@ -14,6 +14,7 @@ pub enum InfixExpression {
     Logical(InfixOperation<LogicalOperator>),
     Arithmetic(InfixOperation<ArithmeticOperator>),
     Collection(InfixOperation<CollectionOperator>),
+    Range(InfixOperation<RangeOperator>),
     Comparison(InfixOperation<ComparisonOperator>),
     Member(InfixOperation<MemberOperator>),
     Unwrap(InfixOperation<UnwrapOperator>),
@@ -187,5 +188,24 @@ pub struct CustomInfix(String);
 impl InfixOperator for CustomInfix {
     fn symbol(&self) -> &str {
         &self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RangeOperator {
+    Inclusive,
+    Exclusive,
+    Tolerance,
+    Interval,
+}
+
+impl InfixOperator for RangeOperator {
+    fn symbol(&self) -> &str {
+        match self {
+            RangeOperator::Inclusive => "..=",
+            RangeOperator::Exclusive => "..<",
+            RangeOperator::Tolerance => "±",
+            RangeOperator::Interval => "..+",
+        }
     }
 }

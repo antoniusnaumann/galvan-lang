@@ -1,0 +1,21 @@
+test "Iterate over inclusive range" {
+    mut last = 0
+    for 1..=7 |i| {
+        last = i
+
+        assert i <= 7
+    }
+
+    assert last == 7
+}
+
+test "Iterate over exclusive range" {
+    mut last = 0
+    for 1..<5 |i| {
+        last = i
+
+        assert i < 5
+    }
+
+    assert last == 4
+}

@@ -1,7 +1,7 @@
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, EnumAccess,
     Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
-    MemberOperator, Span, TypeIdent, UnwrapOperator,
+    MemberOperator, RangeOperator, Span, TypeIdent, UnwrapOperator,
 };
 use galvan_parse::TreeCursor;
 
@@ -60,6 +60,11 @@ impl ReadCursor for InfixExpression {
             }
             "collection_expression" => {
                 InfixExpression::Collection(InfixOperation::<CollectionOperator>::read_cursor(
+                    cursor, source,
+                )?)
+            }
+            "range_expression" => {
+                InfixExpression::Range(InfixOperation::<RangeOperator>::read_cursor(
                     cursor, source,
                 )?)
             }
@@ -182,5 +187,19 @@ impl ReadCursor for UnwrapOperator {
 impl ReadCursor for CustomInfix {
     fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
         todo!()
+    }
+}
+
+impl ReadCursor for RangeOperator {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
+        let op = match cursor.kind()? {
+            "inclusive_range" => Self::Inclusive,
+            "exclusive_range" => Self::Exclusive,
+            "tolerance_range" => Self::Tolerance,
+            "interval_range" => Self::Interval,
+            unknown => unreachable!("Unknown range operator: {unknown}"),
+        };
+
+        Ok(op)
     }
 }

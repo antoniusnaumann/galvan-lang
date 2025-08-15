@@ -1,16 +1,16 @@
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
-    InfixOperation, LogicalOperator, Ownership, UnwrapOperator, TypeElement,
+    InfixOperation, LogicalOperator, Ownership, RangeOperator, TypeElement, UnwrapOperator,
 };
 use galvan_resolver::Scope;
 
 use crate::error::ErrorCollector;
 use crate::macros::impl_transpile_variants;
-use crate::{context::Context, transpile};
 use crate::type_inference::InferType;
 use crate::Transpile;
+use crate::{context::Context, transpile};
 
-impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Comparison, Unwrap, Custom, Member);
+impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Range, Comparison, Unwrap, Custom, Member);
 
 impl Transpile for InfixOperation<LogicalOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
@@ -41,10 +41,24 @@ impl Transpile for InfixOperation<ComparisonOperator> {
                 transpile!(ctx, scope, errors, "{} >= {}", lhs, rhs)
             }
             ComparisonOperator::Identical => {
-                transpile!(ctx, scope, errors, "::std::sync::Arc::ptr_eq({}, {})", lhs, rhs)
+                transpile!(
+                    ctx,
+                    scope,
+                    errors,
+                    "::std::sync::Arc::ptr_eq({}, {})",
+                    lhs,
+                    rhs
+                )
             }
             ComparisonOperator::NotIdentical => {
-                transpile!(ctx, scope, errors, "!::std::sync::Arc::ptr_eq({}, {})", lhs, rhs)
+                transpile!(
+                    ctx,
+                    scope,
+                    errors,
+                    "!::std::sync::Arc::ptr_eq({}, {})",
+                    lhs,
+                    rhs
+                )
             }
         }
     }
@@ -60,7 +74,7 @@ impl Transpile for InfixOperation<CollectionOperator> {
                 // Default to concat behavior to be consistent with ++= operator
                 let lhs_type = lhs.infer_type(scope, errors);
                 let rhs_type = rhs.infer_type(scope, errors);
-                
+
                 // Check if LHS is an array/vector type
                 match &lhs_type {
                     TypeElement::Array(array_type) => {
@@ -135,7 +149,7 @@ impl Transpile for InfixOperation<CollectionOperator> {
                         }
                     }
                     _ => {
-                        // LHS is not an array or string, default to concat behavior 
+                        // LHS is not an array or string, default to concat behavior
                         // (consistent with ++= operator which assumes collections)
                         transpile!(
                             ctx,
@@ -182,14 +196,14 @@ impl Transpile for InfixOperation<UnwrapOperator> {
         // Check ownership of both sides to determine if we need to clone
         let lhs_ownership = lhs.infer_owned(ctx, scope, errors);
         let rhs_ownership = rhs.infer_owned(ctx, scope, errors);
-        
+
         // For the left-hand side (receiver), we need to clone if it's borrowed to avoid move issues
         let lhs_clone_suffix = match lhs_ownership {
             Ownership::SharedOwned => ".clone()",
             Ownership::Borrowed | Ownership::MutBorrowed => ".clone()",
             Ownership::UniqueOwned | Ownership::Ref => "",
         };
-        
+
         // For the right-hand side, we need to clone to avoid move issues when captured in closure
         let rhs_clone_suffix = match rhs_ownership {
             Ownership::SharedOwned => ".clone()",
@@ -198,12 +212,58 @@ impl Transpile for InfixOperation<UnwrapOperator> {
         };
 
         // TODO: this should be a match expression instead to allow return from the left arm and so on
-        transpile!(ctx, scope, errors, "({}{}).unwrap_or_else(|| {}{})", lhs, lhs_clone_suffix, rhs, rhs_clone_suffix)
+        transpile!(
+            ctx,
+            scope,
+            errors,
+            "({}{}).unwrap_or_else(|| {}{})",
+            lhs,
+            lhs_clone_suffix,
+            rhs,
+            rhs_clone_suffix
+        )
     }
 }
 
 impl Transpile for InfixOperation<CustomInfix> {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+    fn transpile(
+        &self,
+        _ctx: &Context,
+        _scope: &mut Scope,
+        _errors: &mut ErrorCollector,
+    ) -> String {
         todo!("Implement custom infix operator!")
+    }
+}
+
+impl Transpile for InfixOperation<RangeOperator> {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        let Self { lhs, operator, rhs } = self;
+
+        match operator {
+            RangeOperator::Inclusive => {
+                transpile!(ctx, scope, errors, "{}..=({})", lhs, rhs)
+            }
+            RangeOperator::Exclusive => {
+                transpile!(ctx, scope, errors, "{}..({})", lhs, rhs)
+            }
+            RangeOperator::Tolerance => {
+                // center ± tolerance => (center - tolerance)..=(center + tolerance)
+                transpile!(
+                    ctx,
+                    scope,
+                    errors,
+                    "({} - {})..=({} + {})",
+                    lhs,
+                    rhs,
+                    lhs,
+                    rhs
+                )
+            }
+            RangeOperator::Interval => {
+                // start ..+ interval => start..(start + interval)
+                transpile!(ctx, scope, errors, "{}..({} + {})", lhs, lhs, rhs)
+            }
+        }
     }
 }
