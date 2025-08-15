@@ -422,7 +422,17 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
     } else {
         &condition
     };
-    let prefix = if ctx.mapping.is_copy(&elem_ty) {
+    // Check if this is a range expression - ranges iterate over owned values, not references
+    let is_range_expression = match &iterator.expression.kind {
+        ExpressionKind::Infix(infix) => matches!(**infix, InfixExpression::Range(_)),
+        _ => false,
+    };
+    
+    let prefix = if is_range_expression {
+        // Ranges iterate over owned values directly
+        ""
+    } else if ctx.mapping.is_copy(&elem_ty) {
+        // Arrays/vectors iterate over references that need to be destructured
         "&"
     } else {
         ""
