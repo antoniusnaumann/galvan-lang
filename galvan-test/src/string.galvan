@@ -14,3 +14,14 @@ test "Interpolation with Integers" {
     let sum = x + y
     assert "3 + 7 = 10" == "{x} + {y} = {sum}"
 }
+
+test "Escaped quotes in strings" {
+    let quoted_message = "She said \"Hello, World!\" to everyone"
+    assert "She said \"Hello, World!\" to everyone" == quoted_message
+    
+    let mixed_quotes = "It's a \"beautiful\" day!"
+    assert "It's a \"beautiful\" day!" == mixed_quotes
+    
+    let multiple_escapes = "\"Quote\" and \"Another Quote\""
+    assert "\"Quote\" and \"Another Quote\"" == multiple_escapes
+}
