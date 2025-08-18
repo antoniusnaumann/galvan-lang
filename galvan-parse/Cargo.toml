@@ -12,7 +12,7 @@ license.workspace = true
 [dependencies]
 tree-sitter = "0.25"
 
-tree-sitter-galvan = { path = "../tree-sitter-galvan", version = "0.0.2" }
+tree-sitter-galvan = { path = "../tree-sitter-galvan", version = "0.0.3" }
 
 galvan-files.workspace = true
 thiserror.workspace = true
