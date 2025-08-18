@@ -3,7 +3,7 @@ use typeunion::type_union;
 
 use galvan_ast_macro::AstNode;
 
-use crate::{AstNode, Span};
+use crate::{AstNode, Expression, Span};
 
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
@@ -12,6 +12,7 @@ pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral 
 #[derive(Clone, Debug, PartialEq, Eq, From)]
 pub struct StringLiteral {
     pub value: String,
+    pub interpolations: Vec<Expression>, // Expressions found in {expr} within the string
     pub span: Span,
 }
 
@@ -21,7 +22,11 @@ impl AstNode for StringLiteral {
     }
 
     fn print(&self, indent: usize) -> String {
-        format!("{}\"{}\"", " ".repeat(indent), self.value)
+        if self.interpolations.is_empty() {
+            format!("{}\"{}\"", " ".repeat(indent), self.value)
+        } else {
+            format!("{}\"{}\" (with {} interpolations)", " ".repeat(indent), self.value, self.interpolations.len())
+        }
     }
 }
 

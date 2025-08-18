@@ -13,9 +13,26 @@ impl_transpile_variants! { Literal;
 }
 
 impl Transpile for StringLiteral {
-    fn transpile(&self, _: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
-        // TODO: Implement more sophisticated formatting (extract {} and put them as separate arguments)
-        format!("format!({})", self.as_str())
+    fn transpile(&self, context: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        if self.interpolations.is_empty() {
+            // No interpolation - just return the string as format!
+            format!("format!({})", self.as_str())
+        } else {
+            // Has interpolation - transpile expressions and create positional arguments
+            let mut args = Vec::new();
+            
+            for interpolation in &self.interpolations {
+                let transpiled_expr = interpolation.transpile(context, scope, errors);
+                args.push(transpiled_expr);
+            }
+            
+            // Combine template with arguments
+            if args.is_empty() {
+                format!("format!({})", self.as_str())
+            } else {
+                format!("format!({}, {})", self.as_str(), args.join(", "))
+            }
+        }
     }
 }
 

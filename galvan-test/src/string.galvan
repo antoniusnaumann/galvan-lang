@@ -25,3 +25,14 @@ test "Escaped quotes in strings" {
     let multiple_escapes = "\"Quote\" and \"Another Quote\""
     assert "\"Quote\" and \"Another Quote\"" == multiple_escapes
 }
+
+test "Format string with member access" {
+    let dog = Dog(name: "Bello", age: 7)
+
+    assert "Hi, {dog.name}!" == "Hi, Bello!"
+}
+
+test "Format string with arithmetic" {
+    assert "3 + 7 = {3 + 7}" == "3 + 7 = 10"
+}
+
