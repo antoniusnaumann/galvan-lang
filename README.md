@@ -168,20 +168,19 @@ fn print_value(value: Int | String) {
 
 ### Pass-by-Value and Pass-by-Reference
 #### mutable vs. immutable function parameters
-By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference:
-For consistency, the `let` keyword is allowed as well but redundant as parameters are passed by value by default.
+By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference.
 ```rust
 fn add_one(mut value: Int) {
     value += 1
 }
 
-// Using `let` is not necessary here but allowed
-fn incremented(let value : Int) -> Int {
+// By default, Galvan uses pass-by-value
+fn incremented(value : Int) -> Int {
     value + 1
 } 
 ```
 
-Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan does not have immutable references, as all values are copy-on-write.
+Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan does not have immutable references, as all values are copy-on-write, i.e, Galvan tries to use immutable references for immutable values but creates a copy when assigning to a mutable binding.
 ```rust
 // No copy is happening here as the value is not mutated
 // Arguments are passed by value by default
@@ -194,7 +193,7 @@ fn bark_at(self: Dog, other: Dog) {
 // A copy is happening here as the value is mutated
 fn shout_at(self: Dog, other: Dog) {
     // Redeclaring is neccessary as value parameters cannot be mutated
-    let other = other
+    mut other = other
     // Copy is happening here
     other.name = other.name.uppercase()
     print("{self.name} shouts at {other.name}")
@@ -230,7 +229,7 @@ main {
 }
 ```
 Heap references use atomic reference counting to be auto-freed when no longer needed and are always mutable.
-In contrast to `let` and `mut` values, `ref` values. They follow reference semantics, meaning that they point to the same object. For this reason, they are always mutable.
+In contrast to `let` and `mut` values, `ref` values are not copied on assignment but instead point to the original object--they follow *reference semantics*. For this reason, they are always mutable.
 
 #### Argument Modifiers
 When calling a function with `mut` or `ref` parameters, you have to annotate the argument respectively. This is not the case for the receiver of a member function.
@@ -285,6 +284,19 @@ The loop variable is available via the `it` keyword, but can also be named expli
 for 0..<n |i| {
     print(i)
 }
+```
+
+For loops can be used as expression, they collect their iteration results in a vec
+
+```rust
+let double_even: [Int] = for 0..=n {
+    if it % 2 == 1 { continue } // filters uneven numbers
+    it * 2 // maps 'it' to 'it * 2' 
+}
+
+// double_even == [0, 4, 8, 12, ..., n * 2]
+
+print(double_even[2]) // 8
 ```
 
 Note that ranges are declared using `..<` (exclusive upper bound) or `..=` (inclusive upper bound).
