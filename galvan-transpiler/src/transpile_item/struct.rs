@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_match, transpile};
 use crate::{StructTypeMember, Transpile, TupleTypeMember, TypeDecl};
-use galvan_ast::{DeclModifier, EnumAccess, EnumTypeMember};
+use galvan_ast::{DeclModifier, EnumAccess, EnumTypeMember, EnumVariantField};
 use galvan_resolver::Scope;
 
 static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
@@ -43,8 +43,29 @@ impl Transpile for StructTypeMember {
 }
 
 impl Transpile for EnumTypeMember {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut crate::ErrorCollector) -> String {
-        format!("{}", self.ident)
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut crate::ErrorCollector) -> String {
+        if self.fields.is_empty() {
+            // Simple variant: Transparent
+            format!("{}", self.ident)
+        } else if self.fields.iter().all(|f| f.name.is_none()) {
+            // All anonymous fields: Gray(u8) 
+            let types: Vec<_> = self.fields.iter().map(|f| f.r#type.transpile(ctx, scope, errors)).collect();
+            format!("{}({})", self.ident, types.join(", "))
+        } else {
+            // Named fields: Rgb { r: u8, g: u8, b: u8 }
+            let field_defs: Vec<_> = self.fields.iter().map(|f| {
+                if let Some(ref name) = f.name {
+                    format!("{}: {}", name.as_str(), f.r#type.transpile(ctx, scope, errors))
+                } else {
+                    // Mix of named and unnamed should not be allowed
+                    errors.error(crate::TranspilerError::InvalidSyntax { 
+                        message: "Cannot mix named and unnamed fields in enum variant".to_string() 
+                    });
+                    f.r#type.transpile(ctx, scope, errors)
+                }
+            }).collect();
+            format!("{} {{ {} }}", self.ident, field_defs.join(", "))
+        }
     }
 }
 

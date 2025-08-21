@@ -1,7 +1,7 @@
 use galvan_ast::{
-    AliasTypeDecl, AstNode, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember, Ident, Span,
-    StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeElement, TypeIdent,
-    Visibility,
+    AliasTypeDecl, AstNode, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember,
+    EnumVariantField, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
+    TupleTypeMember, TypeElement, TypeIdent, Visibility,
 };
 use galvan_parse::TreeCursor;
 
@@ -102,10 +102,9 @@ impl ReadCursor for EnumTypeDecl {
 
         cursor.next();
         let mut members = vec![];
-        while cursor.kind()? == "type_ident" {
-            let case = TypeIdent::read_cursor(cursor, source)?;
-            let span = case.span();
-            members.push(EnumTypeMember { ident: case, span });
+        while cursor.kind()? == "enum_variant" {
+            let variant = EnumTypeMember::read_cursor(cursor, source)?;
+            members.push(variant);
 
             cursor.next();
             while cursor.kind()? == "," || cursor.kind()? == ";" {
@@ -245,5 +244,70 @@ impl ReadCursor for EmptyTypeDecl {
             ident,
             span,
         })
+    }
+}
+
+impl ReadCursor for EnumTypeMember {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let enum_variant = cursor_expect!(cursor, "enum_variant");
+        let span = Span::from_node(enum_variant);
+
+        cursor.child();
+
+        let ident = TypeIdent::read_cursor(cursor, source)?;
+
+        cursor.next();
+        let mut fields = vec![];
+
+        // Check if there are associated values
+        if cursor.kind()? == "paren_open" {
+            cursor.next(); // Move past paren_open
+
+            while cursor.kind()? == "enum_variant_field" {
+                let field = EnumVariantField::read_cursor(cursor, source)?;
+                fields.push(field);
+
+                cursor.next();
+                while cursor.kind()? == "," {
+                    cursor.next();
+                }
+            }
+
+            cursor_expect!(cursor, "paren_close");
+        }
+
+        cursor.goto_parent();
+
+        Ok(EnumTypeMember {
+            ident,
+            fields,
+            span,
+        })
+    }
+}
+
+impl ReadCursor for EnumVariantField {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let field_node = cursor_expect!(cursor, "enum_variant_field");
+        let span = Span::from_node(field_node);
+
+        cursor.child();
+
+        // Check if this is a named field (has ident:type) or anonymous field (just type)
+        let (name, r#type) = if cursor.kind()? == "ident" {
+            let ident = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+            cursor_expect!(cursor, "colon");
+            cursor.next();
+            let type_element = TypeElement::read_cursor(cursor, source)?;
+            (Some(ident), type_element)
+        } else {
+            let type_element = TypeElement::read_cursor(cursor, source)?;
+            (None, type_element)
+        };
+
+        cursor.goto_parent();
+
+        Ok(EnumVariantField { name, r#type, span })
     }
 }

@@ -1,4 +1,4 @@
-use crate::{DeclModifier, Expression, Ident, PrintAst, TypeIdent};
+use crate::{DeclModifier, EnumAccess, Expression, Ident, PrintAst, TypeIdent};
 use derive_more::From;
 use galvan_ast_macro::PrintAst;
 
@@ -23,5 +23,18 @@ pub struct ConstructorCall {
 #[derive(Clone, Debug, PartialEq, Eq, From, PrintAst)]
 pub struct ConstructorCallArg {
     pub ident: Ident,
+    pub expression: Expression,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
+pub struct EnumConstructor {
+    pub enum_access: EnumAccess,
+    pub arguments: Vec<EnumConstructorArg>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
+pub struct EnumConstructorArg {
+    pub field_name: Option<Ident>,  // None for anonymous args
+    pub modifier: Option<DeclModifier>,
     pub expression: Expression,
 }

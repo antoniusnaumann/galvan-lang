@@ -76,8 +76,15 @@ pub struct EnumTypeDecl {
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct EnumTypeMember {
-    // pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub fields: Vec<EnumVariantField>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct EnumVariantField {
+    pub name: Option<Ident>,  // None for anonymous fields
+    pub r#type: TypeElement,
     pub span: Span,
 }
 

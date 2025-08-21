@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 
 use galvan_ast::TypeElement::{self};
 use galvan_ast::{
-    ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
+    ComparisonOperator, DeclModifier, EnumConstructor, EnumConstructorArg, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
     Ident, InfixExpression, InfixOperation, Ownership,
 };
 use galvan_resolver::{Lookup, Scope, Variable};
@@ -571,6 +571,52 @@ impl Transpile for FunctionCallArg {
             _ => {
                 // TODO: Add proper error handling for invalid modifier usage
                 String::new()
+            }
+        }
+    }
+}
+
+impl Transpile for EnumConstructor {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        let enum_access = self.enum_access.transpile(ctx, scope, errors);
+        
+        if self.arguments.is_empty() {
+            // Simple enum variant access: Color::Transparent  
+            enum_access
+        } else if self.arguments.iter().all(|arg| arg.field_name.is_none()) {
+            // All anonymous arguments: Color::Gray(128)
+            let args = self.arguments.iter()
+                .map(|arg| arg.expression.transpile(ctx, scope, errors))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({})", enum_access, args)
+        } else {
+            // Named arguments: Color::Rgb { r: 100, g: 10, b: 150 }
+            let args = self.arguments.iter()
+                .map(|arg| arg.transpile(ctx, scope, errors))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{} {{ {} }}", enum_access, args)
+        }
+    }
+}
+
+impl Transpile for EnumConstructorArg {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        let expr = self.expression.transpile(ctx, scope, errors);
+        
+        if let Some(ref field_name) = self.field_name {
+            format!("{}: {}", field_name.as_str(), expr)
+        } else {
+            // Anonymous argument
+            if let Some(ref modifier) = self.modifier {
+                match modifier {
+                    DeclModifier::Mut => format!("&mut {}", expr),
+                    DeclModifier::Ref => format!("::std::sync::Arc::clone(&{})", expr),
+                    DeclModifier::Let => expr,
+                }
+            } else {
+                expr
             }
         }
     }

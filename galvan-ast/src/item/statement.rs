@@ -75,6 +75,7 @@ pub type ExpressionKind = ElseExpression
     + Postfix
     + CollectionLiteral
     + ConstructorCall
+    + EnumConstructor
     + EnumAccess
     + Literal
     + Ident

@@ -202,6 +202,10 @@ impl InferType for ExpressionKind {
                 ident: access.target.clone(),
                 span: Span::default(),
             }),
+            ExpressionKind::EnumConstructor(constructor) => TypeElement::Plain(BasicTypeItem {
+                ident: constructor.enum_access.target.clone(),
+                span: Span::default(),
+            }),
             ExpressionKind::Literal(literal) => literal.infer_type(scope, errors),
             ExpressionKind::Ident(ident) => {
                 let Some(var) = scope.get_variable(ident) else {
@@ -242,6 +246,8 @@ impl InferType for ExpressionKind {
             ExpressionKind::ConstructorCall(_) => Ownership::UniqueOwned,
             // TODO: this might be copy
             ExpressionKind::EnumAccess(_) => Ownership::SharedOwned,
+            // TODO: this might be copy
+            ExpressionKind::EnumConstructor(_) => Ownership::UniqueOwned,
             ExpressionKind::Literal(literal) => literal.infer_owned(ctx, scope, errors),
             ExpressionKind::Ident(ident) => {
                 let var = scope.get_variable(ident);

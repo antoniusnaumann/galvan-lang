@@ -1,6 +1,6 @@
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureParameter, ConstructorCall, ConstructorCallArg,
-    DeclModifier, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
+    DeclModifier, EnumAccess, EnumConstructor, EnumConstructorArg, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
     TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
@@ -287,5 +287,87 @@ impl ReadCursor for ConstructorCallArg {
         cursor.goto_parent();
 
         Ok(ConstructorCallArg { ident, expression })
+    }
+}
+
+impl ReadCursor for EnumConstructor {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        cursor_expect!(cursor, "enum_constructor");
+
+        cursor.child();
+        let enum_access = EnumAccess::read_cursor(cursor, source)?;
+
+        cursor.next();
+        cursor_expect!(cursor, "paren_open");
+
+        let mut arguments = vec![];
+        cursor.next();
+        while cursor.kind()? == "enum_constructor_arg" {
+            let arg = EnumConstructorArg::read_cursor(cursor, source)?;
+            arguments.push(arg);
+            cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
+        }
+
+        cursor_expect!(cursor, "paren_close");
+        cursor.goto_parent();
+
+        Ok(EnumConstructor {
+            enum_access,
+            arguments,
+        })
+    }
+}
+
+impl ReadCursor for EnumConstructorArg {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        cursor_expect!(cursor, "enum_constructor_arg");
+
+        cursor.child();
+
+        // Simplified parsing - try to read field/value structure
+        let mut field_name = None;
+        let mut modifier = None;
+        
+        // Check the first child to determine the structure
+        let first_kind = cursor.kind()?;
+        
+        match first_kind {
+            "declaration_modifier" => {
+                // Anonymous argument with modifier
+                modifier = Some(DeclModifier::read_cursor(cursor, source)?);
+                cursor.next();
+            }
+            _ => {
+                // Look for the pattern: if we have ident followed by colon, it's a named field
+                if first_kind == "ident" {
+                    let current_position = cursor.node();
+                    let ident = Ident::read_cursor(cursor, source)?;
+                    cursor.next();
+                    
+                    if cursor.kind()? == "colon" {
+                        // Named field
+                        field_name = Some(ident);
+                        cursor.next();
+                    } else {
+                        // Need to backtrack - this is actually part of the expression
+                        // For now, let's treat it as an error and simplify
+                        return Err(AstError::ConversionError);
+                    }
+                }
+            }
+        }
+
+        // Read the expression
+        let expression = Expression::read_cursor(cursor, source)?;
+        cursor.goto_parent();
+
+        Ok(EnumConstructorArg {
+            field_name,
+            modifier,
+            expression,
+        })
     }
 }

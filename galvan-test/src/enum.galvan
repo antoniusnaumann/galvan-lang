@@ -1,0 +1,23 @@
+pub type Color {
+    Transparent
+    Gray(U8)
+    Rgb(r: U8, g: U8, b: U8)
+}
+
+test "Create enum variant" {
+    let color = Color::Transparent
+
+    assert color == Color::Transparent
+}
+
+test "Create enum variant with anonymous value" {
+    let color = Color::Gray(128)
+
+    assert color == Color::Gray(128)
+}
+
+test "Create enum variant with struct value" {
+    let color = Color::Rgb(r: 100, g: 10, b: 150)
+
+    assert color == Color::Rgb(r: 100, g: 10, b: 150)
+}
