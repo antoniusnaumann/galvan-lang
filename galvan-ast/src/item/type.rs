@@ -3,7 +3,7 @@ use galvan_ast_macro::AstNode;
 
 use crate::{AstNode, PrintAst, Span};
 
-use super::{DeclModifier, Ident, TypeElement, TypeIdent, Visibility};
+use super::{DeclModifier, Expression, Ident, TypeElement, TypeIdent, Visibility};
 
 #[derive(Debug, PartialEq, Eq, From)]
 pub enum TypeDecl {
@@ -55,6 +55,7 @@ pub struct StructTypeMember {
     pub decl_modifier: Option<DeclModifier>,
     pub ident: Ident,
     pub r#type: TypeElement,
+    pub default_value: Option<Expression>,
     pub span: Span,
 }
 

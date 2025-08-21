@@ -3,7 +3,7 @@ use crate::context::Context;
 use crate::error::ErrorCollector;
 use crate::macros::transpile;
 use crate::type_inference::InferType;
-use crate::Transpile;
+use crate::{TranspilerError, Transpile};
 use galvan_ast::{ConstructorCall, ConstructorCallArg, InfixOperation, MemberOperator, Ownership, TypeDecl};
 use galvan_resolver::{Lookup, Scope};
 
@@ -33,21 +33,45 @@ impl Transpile for ConstructorCall {
                     .map(|member| (member.ident.as_str(), &member.r#type))
                     .collect();
                 
-                self.arguments
+                // Create a map of provided arguments by field name
+                let provided_args: std::collections::HashMap<_, _> = self.arguments
                     .iter()
-                    .map(|arg| {
-                        // Get the expected field type
-                        if let Some(expected_type) = field_types.get(arg.ident.as_str()) {
-                            // Use cast to convert the argument to the expected type
+                    .map(|arg| (arg.ident.as_str(), arg))
+                    .collect();
+                
+                // Build the final argument list including defaults
+                let mut final_args = Vec::new();
+                
+                for member in &struct_decl.members {
+                    let field_name = member.ident.as_str();
+                    
+                    if let Some(arg) = provided_args.get(field_name) {
+                        // Field is explicitly provided in constructor call
+                        if let Some(expected_type) = field_types.get(field_name) {
                             let cast_expr = cast(&arg.expression, expected_type, Ownership::UniqueOwned, ctx, scope, errors);
-                            format!("{}: {}", arg.ident.transpile(ctx, scope, errors), cast_expr)
+                            final_args.push(format!("{}: {}", arg.ident.transpile(ctx, scope, errors), cast_expr));
                         } else {
-                            // Fallback to original behavior if field not found
-                            arg.transpile(ctx, scope, errors)
+                            final_args.push(arg.transpile(ctx, scope, errors));
                         }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                    } else if let Some(ref default_value) = member.default_value {
+                        // Field is missing but has a default value - inline the default expression
+                        let default_transpiled = default_value.transpile(ctx, scope, errors);
+                        final_args.push(format!("{}: {}", member.ident.transpile(ctx, scope, errors), default_transpiled));
+                    } else {
+                        // Field is missing and has no default - this should be a compilation error
+                        let required_fields = struct_decl.members.len();
+                        let provided_fields = self.arguments.len();
+                        errors.error(TranspilerError::ArgumentCountMismatch {
+                            name: format!("{}()", self.identifier.as_str()),
+                            expected: required_fields,
+                            found: provided_fields
+                        });
+                        // Use a placeholder to allow compilation to continue
+                        final_args.push(format!("{}: /* ERROR: missing field */", member.ident.transpile(ctx, scope, errors)));
+                    }
+                }
+                
+                final_args.join(", ")
             } else {
                 // Not a struct, use original behavior
                 self.arguments

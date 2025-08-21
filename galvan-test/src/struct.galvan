@@ -43,3 +43,21 @@ test "Construct from borrowed parameters" {
     assert dog.name == "Hasso"
     assert dog.age == 0
 }
+
+type Book {
+    title: String = "Lorem Ipsum"
+    content: String = "Lorem ipsum dolor sit amet..."
+}
+
+test "Structs with default fields" {
+    let book = Book()
+    assert book.title == "Lorem Ipsum"
+    assert book.content == "Lorem ipsum dolor sit amet..."
+}
+
+test "Structs with some default fields" {
+    let book = Book(content: "empty")
+    assert book.title == "Lorem Ipsum"
+    assert book.content == "empty"
+}
+

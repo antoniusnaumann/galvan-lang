@@ -1,6 +1,6 @@
 use galvan_ast::{
-    AliasTypeDecl, AstNode, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember,
-    EnumVariantField, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
+    AliasTypeDecl, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember,
+    EnumVariantField, Expression, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
     TupleTypeMember, TypeElement, TypeIdent, Visibility,
 };
 use galvan_parse::TreeCursor;
@@ -73,12 +73,22 @@ impl ReadCursor for StructTypeMember {
         cursor.next();
         let r#type = TypeElement::read_cursor(cursor, source)?;
 
+        // Check for optional default value
+        cursor.next();
+        let default_value = if cursor.kind()? == "assign" {
+            cursor.next(); // Skip assign token
+            Some(Expression::read_cursor(cursor, source)?)
+        } else {
+            None
+        };
+
         cursor.goto_parent();
 
         Ok(StructTypeMember {
             decl_modifier,
             ident,
             r#type,
+            default_value,
             span,
         })
     }
