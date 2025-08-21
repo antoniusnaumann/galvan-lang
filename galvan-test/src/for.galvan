@@ -76,3 +76,14 @@ test "continue works" {
         assert num % 2 == 0
     }
 }
+
+test "implicit it parameter works" {
+    let numbers = [1, 2, 3]
+    mut sum = 0
+    
+    for numbers {
+        sum += it
+    }
+    
+    assert sum == 6
+}

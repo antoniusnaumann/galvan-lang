@@ -3,9 +3,9 @@ use std::borrow::Borrow;
 use galvan_ast::TypeElement::{self};
 use galvan_ast::{
     ComparisonOperator, DeclModifier, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
-    InfixExpression, InfixOperation, Ownership,
+    Ident, InfixExpression, InfixOperation, Ownership,
 };
-use galvan_resolver::{Lookup, Scope};
+use galvan_resolver::{Lookup, Scope, Variable};
 use itertools::Itertools;
 
 use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
@@ -345,12 +345,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
     
     let mut iter_scope = Scope::child(scope).returns(iter_ty.clone(), scope_ownership);
     let condition = iterator.transpile(ctx, &mut iter_scope, errors);
-    // TODO: auto-unfold tuples into multiple arguments
-    if closure.parameters.is_empty() {
-        // TODO: Add proper error handling for empty for loop parameters
-        return String::new();
-    }
-
+    
     fn get_iteration_type(parent: &TypeElement, errors: &mut ErrorCollector) -> TypeElement {
         match parent {
             TypeElement::Array(array) => array.elements.clone(),
@@ -392,26 +387,43 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
 
     let mut body_scope = Scope::child(scope).returns(iteration_return, Ownership::UniqueOwned);
     let element = {
-        let elements = closure
-            .parameters
-            .iter()
-            .map(|arg| {
-                transpile_closure_argument(
-                    ctx,
-                    &mut body_scope,
-                    arg,
-                    false,
-                    if ctx.mapping.is_copy(elem_ty) {
-                        Ownership::UniqueOwned
-                    } else {
-                        Ownership::Borrowed
-                    },
-                    true,
-                    errors,
-                )
-            })
-            .join(", ");
-        format!("({elements})")
+        if closure.parameters.is_empty() {
+            // Implicit 'it' parameter case
+            let it_ownership = if ctx.mapping.is_copy(elem_ty) {
+                Ownership::UniqueOwned
+            } else {
+                Ownership::Borrowed
+            };
+            body_scope.declare_variable(Variable {
+                ident: Ident::new("it"),
+                modifier: DeclModifier::Let,
+                ty: elem_ty.clone(),
+                ownership: it_ownership,
+            });
+            "it".to_string()
+        } else {
+            // Existing explicit parameter handling
+            let elements = closure
+                .parameters
+                .iter()
+                .map(|arg| {
+                    transpile_closure_argument(
+                        ctx,
+                        &mut body_scope,
+                        arg,
+                        false,
+                        if ctx.mapping.is_copy(elem_ty) {
+                            Ownership::UniqueOwned
+                        } else {
+                            Ownership::Borrowed
+                        },
+                        true,
+                        errors,
+                    )
+                })
+                .join(", ");
+            format!("({elements})")
+        }
     };
     // HACK: just assume we need to revert the auto-inserted & for unknown types
     let condition = if iter_ty.is_infer() {
