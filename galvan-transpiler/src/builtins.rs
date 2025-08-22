@@ -67,6 +67,7 @@ fn func(name: &str, parameters: Vec<TypeElement>, ret: TypeElement) -> FnDecl {
             span: Span::default(),
         },
         return_type: ret,
+        where_clause: None,
         span: Span::default(),
     }
     .into()

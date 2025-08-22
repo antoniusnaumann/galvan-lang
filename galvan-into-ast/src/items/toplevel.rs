@@ -1,7 +1,7 @@
 use galvan_ast::{
     AliasTypeDecl, Body, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl, FnSignature, Ident,
     MainDecl, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl, TestDecl,
-    TupleTypeDecl, TypeDecl, TypeElement, Visibility,
+    TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility, WhereBound, WhereClause,
 };
 use galvan_parse::TreeCursor;
 
@@ -152,9 +152,16 @@ impl ReadCursor for FnSignature {
             cursor.next();
             let ty = TypeElement::read_cursor(cursor, source)?;
             cursor.goto_parent();
+            cursor.next();
             ty
         } else {
             TypeElement::void()
+        };
+
+        let where_clause = if cursor.kind()? == "where_clause" {
+            Some(WhereClause::read_cursor(cursor, source)?)
+        } else {
+            None
         };
 
         cursor.goto_parent();
@@ -164,6 +171,7 @@ impl ReadCursor for FnSignature {
             identifier,
             parameters,
             return_type,
+            where_clause,
             span,
         })
     }
@@ -188,6 +196,66 @@ impl ReadCursor for ParamList {
 
         cursor.goto_parent();
         Ok(ParamList { params, span })
+    }
+}
+
+impl ReadCursor for WhereClause {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "where_clause");
+        let span = Span::from_node(node);
+        cursor.child();
+
+        cursor_expect!(cursor, "where_keyword");
+        cursor.next();
+
+        let mut bounds = Vec::new();
+        while cursor.kind()? == "where_bound" {
+            bounds.push(WhereBound::read_cursor(cursor, source)?);
+            cursor.next();
+            // Skip comma if present
+            if cursor.kind()? == "_comma" {
+                cursor.next();
+            }
+        }
+
+        cursor.goto_parent();
+        Ok(WhereClause { bounds, span })
+    }
+}
+
+impl ReadCursor for WhereBound {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "where_bound");
+        let span = Span::from_node(node);
+        cursor.child();
+
+        let mut type_params = Vec::new();
+        while cursor.kind()? == "generic_type" {
+            cursor.child();
+            type_params.push(Ident::read_cursor(cursor, source)?);
+            cursor.goto_parent();
+            cursor.next();
+            // Skip comma if present
+            if cursor.kind()? == "_comma" {
+                cursor.next();
+            }
+        }
+
+        cursor_expect!(cursor, "colon");
+        cursor.next();
+
+        let mut bounds = Vec::new();
+        while cursor.kind()? == "type_ident" {
+            bounds.push(TypeIdent::read_cursor(cursor, source)?);
+            cursor.next();
+            // Skip + if present
+            if cursor.kind()? == "trait_bound_plus" {
+                cursor.next();
+            }
+        }
+
+        cursor.goto_parent();
+        Ok(WhereBound { type_params, bounds, span })
     }
 }
 

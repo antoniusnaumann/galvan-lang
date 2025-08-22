@@ -751,6 +751,79 @@ impl InferType for InfixOperation<MemberOperator> {
                     }
                 }
             }
+            TypeElement::Parametric(param) => {
+                // Handle parametric types like Container<t> by resolving the base type
+                let Some(ty) = &scope.resolve_type(&param.base_type) else {
+                    return TypeElement::infer();
+                };
+                let ref ty = ty.item;
+
+                match self.field_ident() {
+                    Some(field) => {
+                        match ty {
+                            TypeDecl::Tuple(_tuple) => {
+                                errors.warning(
+                                    "Tuple member access not yet implemented".to_string(),
+                                    None,
+                                );
+                                TypeElement::infer()
+                            }
+                            TypeDecl::Struct(st) => st
+                                .members
+                                .iter()
+                                .find(|member| member.ident == *field)
+                                .map(|member| member.r#type.clone())
+                                .unwrap_or_else(|| {
+                                    errors.error(TranspilerError::MemberAccessError {
+                                        message: format!("struct does not have field: {field}"),
+                                    });
+                                    TypeElement::infer()
+                                }),
+                            TypeDecl::Enum(_) => {
+                                errors.error(TranspilerError::EnumAccessError {
+                                    message: "Enum cases are accessed with ::".to_string(),
+                                });
+                                TypeElement::infer()
+                            }
+                            TypeDecl::Alias(_) => {
+                                // TODO: Handle Inference for alias types
+                                TypeElement::infer()
+                            }
+                            TypeDecl::Empty(_) => {
+                                errors.error(TranspilerError::MemberAccessError {
+                                    message: "Cannot access member of empty type".to_string(),
+                                });
+                                TypeElement::infer()
+                            }
+                        }
+                    }
+                    None => {
+                        if let ExpressionKind::FunctionCall(ref call) = rhs.kind {
+                            if let Some(func) =
+                                scope.resolve_function(Some(&param.base_type), &call.identifier, &[])
+                            {
+                                func.item.signature.return_type.clone()
+                            } else {
+                                errors.warning(
+                                    format!(
+                                        "Function '{}' not found. Available functions: {}",
+                                        call.identifier,
+                                        scope.functions().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ")
+                                    ),
+                                    None,
+                                );
+                                TypeElement::infer()
+                            }
+                        } else {
+                            errors.error(TranspilerError::MemberAccessError {
+                                message: "Member operator can only be used with function calls"
+                                    .to_string(),
+                            });
+                            TypeElement::infer()
+                        }
+                    }
+                }
+            }
             TypeElement::Optional(_) | TypeElement::Result(_) => {
                 // TODO: Handle inference for optional and result types
                 // TODO: Ultimately transition to a compiler error here

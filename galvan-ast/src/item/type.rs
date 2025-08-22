@@ -24,6 +24,36 @@ impl TypeDecl {
             TypeDecl::Enum(e) => &e.ident,
         }
     }
+
+    pub fn collect_generics(&self) -> std::collections::HashSet<super::Ident> {
+        let mut generics = std::collections::HashSet::new();
+        match self {
+            TypeDecl::Tuple(t) => {
+                for member in &t.members {
+                    member.r#type.collect_generics_recursive(&mut generics);
+                }
+            },
+            TypeDecl::Struct(s) => {
+                for member in &s.members {
+                    member.r#type.collect_generics_recursive(&mut generics);
+                }
+            },
+            TypeDecl::Alias(a) => {
+                a.r#type.collect_generics_recursive(&mut generics);
+            },
+            TypeDecl::Enum(e) => {
+                for member in &e.members {
+                    for field in &member.fields {
+                        field.r#type.collect_generics_recursive(&mut generics);
+                    }
+                }
+            },
+            TypeDecl::Empty(_) => {
+                // Empty types have no generics
+            },
+        }
+        generics
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, AstNode)]

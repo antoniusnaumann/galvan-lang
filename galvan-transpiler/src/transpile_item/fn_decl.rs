@@ -42,6 +42,16 @@ impl Transpile for FnSignature {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let visibility = self.visibility.transpile(ctx, scope, errors);
         let identifier = self.identifier.transpile(ctx, scope, errors);
+        
+        // Collect generic parameters from the function signature
+        let generics = self.collect_generics();
+        let generic_params = if generics.is_empty() {
+            String::new()
+        } else {
+            let params = generics.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", ");
+            format!("<{}>", params)
+        };
+        
         let parameters = self.parameters.transpile(ctx, scope, errors);
 
         let return_type = match &self.return_type {
@@ -53,7 +63,19 @@ impl Transpile for FnSignature {
             ty => transpile!(ctx, scope, errors, " -> {}", ty),
         };
 
-        format!("{visibility} fn {identifier}{parameters}{return_type}",)
+        let where_clause = if let Some(where_clause) = &self.where_clause {
+            let bounds = where_clause.bounds.iter().map(|bound| {
+                let type_params = bound.type_params.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ");
+                let trait_bounds = bound.bounds.iter().map(|b| b.as_str()).collect::<Vec<_>>().join(" + ");
+                format!("{}: {}", type_params, trait_bounds)
+            }).collect::<Vec<_>>().join(", ");
+            
+            format!(" where {}", bounds)
+        } else {
+            String::new()
+        };
+
+        format!("{visibility} fn {identifier}{generic_params}{parameters}{return_type}{where_clause}",)
     }
 }
 

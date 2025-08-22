@@ -137,11 +137,15 @@ fn transpile_segmented(
     for func in &segmented.functions {
         if let Some(receiver) = func.signature.receiver() {
             let elem = &receiver.param_type;
-            let TypeElement::Plain(ty) = elem else {
-                add_extension_module(&mut extensions, func, elem);
-                continue;
+            let base_type_ident = match elem {
+                TypeElement::Plain(ty) => &ty.ident,
+                TypeElement::Parametric(ty) => &ty.base_type,
+                _ => {
+                    add_extension_module(&mut extensions, func, elem);
+                    continue;
+                }
             };
-            match type_files.get_mut(&module_name(&ty.ident)) {
+            match type_files.get_mut(&module_name(base_type_ident)) {
                 Some(content) => content.fns.push(&func.item),
                 None => {
                     add_extension_module(&mut extensions, func, elem);
@@ -204,7 +208,7 @@ fn transpile_segmented(
             content: [
                 "use crate::*;",
                 &v.ty.transpile(ctx, scope, &mut main_errors),
-                &transpile_member_functions(v.ty.ident(), &v.fns, ctx, scope, &mut main_errors),
+                &transpile_member_functions(v.ty, &v.fns, ctx, scope, &mut main_errors),
             ]
             .join("\n\n")
             .trim()
@@ -315,7 +319,7 @@ fn transpile_tests(
 }
 
 fn transpile_member_functions(
-    ty: &TypeIdent,
+    ty: &TypeDecl,
     fns: &[&FnDecl],
     ctx: &Context,
     scope: &mut Scope,
@@ -325,12 +329,50 @@ fn transpile_member_functions(
         return "".into();
     }
 
+    // Collect generic parameters from the type declaration
+    let generics = ty.collect_generics();
+    let generic_params = if generics.is_empty() {
+        String::new()
+    } else {
+        // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
+        let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", g.as_str(), g.as_str())).collect::<Vec<_>>().join(", ");
+        format!("<{}>", params)
+    };
+
+    // Build the type name with generic parameters
+    let type_name = if generics.is_empty() {
+        format!("{}", ty.ident())
+    } else {
+        format!("{}<{}>", ty.ident(), generics.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", "))
+    };
+
     let transpiled_fns = fns
         .iter()
-        .map(|f| f.transpile(ctx, scope, errors))
+        .map(|f| {
+            // Transpile function but strip generic parameters that clash with impl block generics
+            let mut fn_content = f.transpile(ctx, scope, errors);
+            
+            // Remove redundant generic parameters from function signatures
+            // Look for patterns like "fn name<generic>" and replace with "fn name"
+            for generic in &generics {
+                let generic_str = generic.as_str();
+                let fn_name = f.signature.identifier.as_str();
+                
+                // More precise pattern matching: "fn function_name<generic>(" -> "fn function_name("
+                let pattern_with_generics = format!("fn {}<{}>", fn_name, generic_str);
+                let pattern_without_generics = format!("fn {}", fn_name);
+                
+                if fn_content.contains(&pattern_with_generics) {
+                    fn_content = fn_content.replace(&pattern_with_generics, &pattern_without_generics);
+                }
+            }
+            
+            fn_content
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
-    transpile!(ctx, scope, errors, "impl {} {{\n{transpiled_fns}\n}}", ty)
+    
+    format!("impl{} {} {{\n{transpiled_fns}\n}}", generic_params, type_name)
 }
 
 fn transpile_extension_functions(
@@ -409,7 +451,16 @@ fn extension_name(ty: &TypeElement) -> String {
             ),
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
-            TypeElement::Generic(_ty) => todo!("Generics are not supported yet!"),
+            TypeElement::Generic(ty) => format!("Generic_{}", ty.ident.as_str()),
+            TypeElement::Parametric(ty) => {
+                let base_type_item = BasicTypeItem {
+                    ident: ty.base_type.clone(),
+                    span: galvan_ast::Span::default(),
+                };
+                let base = escaped_name(&TypeElement::Plain(base_type_item));
+                let args = ty.type_args.iter().map(escaped_name).collect::<Vec<_>>().join("_");
+                format!("{}_{}", base, args)
+            },
             TypeElement::Void(_) => format!("Void"),
             TypeElement::Infer(_) => format!("Infer"),
             TypeElement::Never(_) => format!("Never"),

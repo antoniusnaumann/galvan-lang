@@ -1,6 +1,6 @@
 use galvan_ast::{
     ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, Ident, OptionalTypeItem,
-    OrderedDictionaryTypeItem, ResultTypeItem, SetTypeItem, Span, TupleTypeItem, TypeElement,
+    OrderedDictionaryTypeItem, ParametricTypeItem, ResultTypeItem, SetTypeItem, Span, TupleTypeItem, TypeElement,
     TypeIdent,
 };
 use galvan_parse::TreeCursor;
@@ -30,6 +30,7 @@ impl ReadCursor for TypeElement {
             ),
             "set_type" => TypeElement::Set(SetTypeItem::read_cursor(cursor, source)?.into()),
             "tuple_type" => TypeElement::Tuple(TupleTypeItem::read_cursor(cursor, source)?.into()),
+            "parametric_type" => TypeElement::Parametric(ParametricTypeItem::read_cursor(cursor, source)?),
             "generic_type" => TypeElement::Generic(GenericTypeItem::read_cursor(cursor, source)?),
             "basic_type" => TypeElement::Plain(BasicTypeItem::read_cursor(cursor, source)?),
             unknown => {
@@ -193,9 +194,51 @@ impl ReadCursor for TupleTypeItem {
     }
 }
 
+impl ReadCursor for ParametricTypeItem {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let type_item = cursor_expect!(cursor, "parametric_type");
+        let span = Span::from_node(type_item);
+
+        cursor.child();
+
+        let base_type = TypeIdent::read_cursor(cursor, source)?;
+
+        cursor.goto_next_sibling();
+        cursor_expect!(cursor, "angle_bracket_open");
+        
+        cursor.goto_next_sibling();
+        let mut type_args = Vec::new();
+        
+        loop {
+            if cursor.kind()? == "angle_bracket_close" {
+                break;
+            }
+            if cursor.kind()? == "_comma" {
+                cursor.goto_next_sibling();
+                continue;
+            }
+            type_args.push(TypeElement::read_cursor(cursor, source)?);
+            cursor.goto_next_sibling();
+        }
+
+        cursor.goto_parent();
+
+        Ok(Self { base_type, type_args, span })
+    }
+}
+
 impl ReadCursor for GenericTypeItem {
-    fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
-        todo!()
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let type_item = cursor_expect!(cursor, "generic_type");
+        let span = Span::from_node(type_item);
+
+        cursor.child();
+
+        let ident = Ident::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(Self { ident, span })
     }
 }
 

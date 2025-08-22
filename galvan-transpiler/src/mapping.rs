@@ -44,7 +44,8 @@ impl Mapping {
                 self.is_copy(&ty.success) && ty.error.as_ref().is_some_and(|ty| self.is_copy(ty))
             }
             TypeElement::Plain(ty) => self.is_copy_ident(&ty.ident),
-            TypeElement::Generic(_) => todo!(),
+            TypeElement::Generic(_) => false, // Generic types are not copy by default
+            TypeElement::Parametric(_) => false, // Parametric types are not copy by default  
             TypeElement::Void(_) => true,
             TypeElement::Infer(_) => false,
             TypeElement::Never(_) => false,

@@ -320,6 +320,13 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
             );
             &TypeElement::infer()
         }
+        TypeElement::Parametric(_ty) => {
+            errors.warning(
+                "For loop on parametric type not yet implemented".to_string(),
+                None
+            );
+            &TypeElement::infer()
+        }
         TypeElement::Void(_) => &iter_ty,
         TypeElement::Infer(_) => &iter_ty,
         TypeElement::Never(_) => {

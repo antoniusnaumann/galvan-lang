@@ -1,8 +1,21 @@
 use galvan_ast_macro::AstNode;
 
-use crate::{AstNode, PrintAst, Span};
+use crate::{AstNode, Ident, PrintAst, Span, TypeIdent};
 
 use super::*;
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct WhereBound {
+    pub type_params: Vec<Ident>,
+    pub bounds: Vec<TypeIdent>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct WhereClause {
+    pub bounds: Vec<WhereBound>,
+    pub span: Span,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct FnDecl {
@@ -33,6 +46,7 @@ pub struct FnSignature {
     pub identifier: Ident,
     pub parameters: ParamList,
     pub return_type: TypeElement,
+    pub where_clause: Option<WhereClause>,
     pub span: Span,
 }
 
@@ -42,6 +56,21 @@ impl FnSignature {
             .params
             .first()
             .filter(|param| param.identifier.as_str() == "self")
+    }
+
+    /// Collect all generic type parameters from this function signature
+    pub fn collect_generics(&self) -> std::collections::HashSet<Ident> {
+        let mut generics = std::collections::HashSet::new();
+
+        // Collect from parameters
+        for param in &self.parameters.params {
+            param.param_type.collect_generics_recursive(&mut generics);
+        }
+
+        // Collect from return type
+        self.return_type.collect_generics_recursive(&mut generics);
+
+        generics
     }
 }
 
