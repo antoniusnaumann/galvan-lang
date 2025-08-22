@@ -210,7 +210,6 @@ impl ReadCursor for WhereClause {
 
         let mut bounds = Vec::new();
         while cursor.kind()? == "where_bound" {
-            println!("cargo::warning=where_bound loop");
             bounds.push(WhereBound::read_cursor(cursor, source)?);
             if !cursor.next() {
                 break;

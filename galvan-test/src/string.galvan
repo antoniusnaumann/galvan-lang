@@ -7,7 +7,6 @@ test "String interpolation" {
     assert "Hello, Galvan!" == greet("Galvan")
 }
 
-// TODO: String interpolation should be able to take any expression
 test "Interpolation with Integers" {
     let x = 3
     let y = 7

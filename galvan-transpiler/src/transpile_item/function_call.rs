@@ -226,11 +226,15 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
 
         format!("{}({})", identifier.transpile(ctx, scope, errors), args)
     } else {
+        // For unknown functions (likely generic functions), follow Galvan ownership conventions:
+        // Generic functions without Copy bounds take ALL arguments by reference
+        // (because we can't know if the function has Copy bounds or not)
         let args = arguments
             .iter()
             .map(|arg| {
-                let mut arg_scope =
-                    Scope::child(scope).returns(TypeElement::infer(), Ownership::Borrowed);
+                let arg_type = arg.expression.infer_type(scope, errors);
+                // For unknown/generic functions, assume they need references
+                let mut arg_scope = Scope::child(scope).returns(arg_type, Ownership::Borrowed);
                 arg.transpile(ctx, &mut arg_scope, errors)
             })
             .join(", ");
@@ -519,7 +523,7 @@ impl Transpile for FunctionCallArg {
                 String::new()
             }
             (None, match_ident!(ident)) => {
-                match scope
+                let variable_ownership = scope
                     .get_variable(&ident)
                     .unwrap_or_else(|| {
                         panic!(
@@ -527,15 +531,25 @@ impl Transpile for FunctionCallArg {
                             scope
                         )
                     })
-                    .ownership
-                {
-                    Ownership::SharedOwned => {
+                    .ownership;
+                
+                match (variable_ownership, scope.ownership) {
+                    // If function expects a reference but variable is owned, borrow it
+                    (Ownership::UniqueOwned | Ownership::SharedOwned, Ownership::Borrowed) => {
                         transpile!(ctx, scope, errors, "&{}", ident)
                     }
-                    Ownership::Borrowed | Ownership::MutBorrowed | Ownership::UniqueOwned => {
+                    // If function expects a mutable reference but variable is owned, mut borrow it
+                    (Ownership::UniqueOwned | Ownership::SharedOwned, Ownership::MutBorrowed) => {
+                        transpile!(ctx, scope, errors, "&mut {}", ident)
+                    }
+                    // Standard cases based on variable ownership
+                    (Ownership::SharedOwned, _) => {
+                        transpile!(ctx, scope, errors, "&{}", ident)
+                    }
+                    (Ownership::Borrowed | Ownership::MutBorrowed | Ownership::UniqueOwned, _) => {
                         transpile!(ctx, scope, errors, "{}", ident)
                     }
-                    Ownership::Ref => {
+                    (Ownership::Ref, _) => {
                         transpile!(ctx, scope, errors, "{}.lock().unwrap()", ident)
                     }
                 }
