@@ -210,12 +210,12 @@ impl ReadCursor for WhereClause {
 
         let mut bounds = Vec::new();
         while cursor.kind()? == "where_bound" {
+            println!("cargo::warning=where_bound loop");
             bounds.push(WhereBound::read_cursor(cursor, source)?);
-            cursor.next();
-            // Skip comma if present
-            if cursor.kind()? == "_comma" {
-                cursor.next();
+            if !cursor.next() {
+                break;
             }
+            while cursor.kind()? == "," && cursor.next() {}
         }
 
         cursor.goto_parent();
@@ -230,24 +230,27 @@ impl ReadCursor for WhereBound {
         cursor.child();
 
         let mut type_params = Vec::new();
+
         while cursor.kind()? == "generic_type" {
             cursor.child();
             type_params.push(Ident::read_cursor(cursor, source)?);
             cursor.goto_parent();
-            cursor.next();
-            // Skip comma if present
-            if cursor.kind()? == "_comma" {
-                cursor.next();
+            if !cursor.next() {
+                break;
             }
+            while cursor.kind()? == "," && cursor.next() {}
         }
 
         cursor_expect!(cursor, "colon");
         cursor.next();
 
         let mut bounds = Vec::new();
+
         while cursor.kind()? == "type_ident" {
             bounds.push(TypeIdent::read_cursor(cursor, source)?);
-            cursor.next();
+            if !cursor.next() {
+                break;
+            }
             // Skip + if present
             if cursor.kind()? == "trait_bound_plus" {
                 cursor.next();
@@ -255,7 +258,11 @@ impl ReadCursor for WhereBound {
         }
 
         cursor.goto_parent();
-        Ok(WhereBound { type_params, bounds, span })
+        Ok(WhereBound {
+            type_params,
+            bounds,
+            span,
+        })
     }
 }
 

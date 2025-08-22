@@ -53,15 +53,20 @@ impl TypeElement {
     }
 
     pub fn collect_generics_recursive(&self, generics: &mut std::collections::HashSet<Ident>) {
-        self.collect_generics_recursive_with_depth(generics, 0, 32);
+        self.collect_generics_recursive_with_depth(generics, 0, 512);
     }
 
-    fn collect_generics_recursive_with_depth(&self, generics: &mut std::collections::HashSet<Ident>, depth: u32, max_depth: u32) {
+    fn collect_generics_recursive_with_depth(
+        &self,
+        generics: &mut std::collections::HashSet<Ident>,
+        depth: u32,
+        max_depth: u32,
+    ) {
         if depth >= max_depth {
             // Prevent infinite recursion
             return;
         }
-        
+
         match self {
             TypeElement::Generic(gen) => {
                 generics.insert(gen.ident.clone());
@@ -72,24 +77,38 @@ impl TypeElement {
                     arg.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
                 }
             }
-            TypeElement::Array(arr) => arr.elements.collect_generics_recursive_with_depth(generics, depth + 1, max_depth),
+            TypeElement::Array(arr) => {
+                arr.elements
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth)
+            }
             TypeElement::Dictionary(dict) => {
-                dict.key.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
-                dict.value.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                dict.key
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                dict.value
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
             }
             TypeElement::OrderedDictionary(dict) => {
-                dict.key.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
-                dict.value.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                dict.key
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                dict.value
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
             }
-            TypeElement::Set(set) => set.elements.collect_generics_recursive_with_depth(generics, depth + 1, max_depth),
+            TypeElement::Set(set) => {
+                set.elements
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth)
+            }
             TypeElement::Tuple(tuple) => {
                 for elem in &tuple.elements {
                     elem.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
                 }
             }
-            TypeElement::Optional(opt) => opt.inner.collect_generics_recursive_with_depth(generics, depth + 1, max_depth),
+            TypeElement::Optional(opt) => {
+                opt.inner
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth)
+            }
             TypeElement::Result(res) => {
-                res.success.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                res.success
+                    .collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
                 if let Some(error) = &res.error {
                     error.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
                 }

@@ -69,8 +69,8 @@ impl Transpile for ParametricTypeItem {
 
 impl Transpile for GenericTypeItem {
     fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
-        // Generic type parameters are just passed through to Rust
-        self.ident.as_str().to_string()
+        // Generic type parameters should be capitalized for Rust conventions
+        crate::capitalize_generic(self.ident.as_str())
     }
 }
 

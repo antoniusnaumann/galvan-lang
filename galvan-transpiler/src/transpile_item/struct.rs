@@ -21,7 +21,7 @@ impl Transpile for TypeDecl {
                     String::new()
                 } else {
                     // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
-                    let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", g.as_str(), g.as_str())).collect::<Vec<_>>().join(", ");
+                    let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", crate::capitalize_generic(g.as_str()), crate::capitalize_generic(g.as_str()))).collect::<Vec<_>>().join(", ");
                     format!("<{}>", params)
                 };
                 
@@ -41,7 +41,7 @@ impl Transpile for TypeDecl {
                     String::new()
                 } else {
                     // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
-                    let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", g.as_str(), g.as_str())).collect::<Vec<_>>().join(", ");
+                    let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", crate::capitalize_generic(g.as_str()), crate::capitalize_generic(g.as_str()))).collect::<Vec<_>>().join(", ");
                     format!("<{}>", params)
                 };
                 

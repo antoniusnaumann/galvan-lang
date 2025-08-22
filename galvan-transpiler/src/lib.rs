@@ -18,6 +18,18 @@ static SUPPRESS_WARNINGS: &str = "#![allow(warnings, unused)]";
 
 // TODO: Maybe use something like https://crates.io/crates/ruast to generate the Rust code in a more reliable way
 
+/// Helper function to capitalize first letter of generic type parameters for Rust convention
+fn capitalize_generic(s: &str) -> String {
+    if s.is_empty() {
+        return s.to_string();
+    }
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 /// Name of the generated rust module that exports all public items from all galvan files in this crate
 #[macro_export]
 macro_rules! galvan_module {
@@ -335,7 +347,7 @@ fn transpile_member_functions(
         String::new()
     } else {
         // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
-        let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", g.as_str(), g.as_str())).collect::<Vec<_>>().join(", ");
+        let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", capitalize_generic(g.as_str()), capitalize_generic(g.as_str()))).collect::<Vec<_>>().join(", ");
         format!("<{}>", params)
     };
 
@@ -343,7 +355,7 @@ fn transpile_member_functions(
     let type_name = if generics.is_empty() {
         format!("{}", ty.ident())
     } else {
-        format!("{}<{}>", ty.ident(), generics.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", "))
+        format!("{}<{}>", ty.ident(), generics.iter().map(|g| capitalize_generic(g.as_str())).collect::<Vec<_>>().join(", "))
     };
 
     let transpiled_fns = fns
@@ -355,15 +367,18 @@ fn transpile_member_functions(
             // Remove redundant generic parameters from function signatures
             // Look for patterns like "fn name<generic>" and replace with "fn name"
             for generic in &generics {
-                let generic_str = generic.as_str();
+                let generic_lowercase = generic.as_str();
+                let generic_capitalized = capitalize_generic(generic.as_str());
                 let fn_name = f.signature.identifier.as_str();
                 
-                // More precise pattern matching: "fn function_name<generic>(" -> "fn function_name("
-                let pattern_with_generics = format!("fn {}<{}>", fn_name, generic_str);
-                let pattern_without_generics = format!("fn {}", fn_name);
-                
-                if fn_content.contains(&pattern_with_generics) {
-                    fn_content = fn_content.replace(&pattern_with_generics, &pattern_without_generics);
+                // Try both the original and capitalized versions of the generic parameter
+                for generic_str in [generic_lowercase, generic_capitalized.as_str()] {
+                    let pattern_with_generics = format!("fn {}<{}>", fn_name, generic_str);
+                    let pattern_without_generics = format!("fn {}", fn_name);
+                    
+                    if fn_content.contains(&pattern_with_generics) {
+                        fn_content = fn_content.replace(&pattern_with_generics, &pattern_without_generics);
+                    }
                 }
             }
             
@@ -410,16 +425,58 @@ fn transpile_extension_functions(
         .collect::<Vec<_>>()
         .join("\n\n");
 
-    transpile! {ctx, scope, errors,
-        "
-        pub trait {trait_name} {{
-            {fn_signatures}
-        }}
+    // Handle generic types specially
+    match ty {
+        TypeElement::Generic(generic_ty) => {
+            let generic_param = capitalize_generic(generic_ty.ident.as_str());
+            // Extract where clause from the first function to apply to the impl block
+            let where_clause = fns.first()
+                .and_then(|f| f.signature.where_clause.as_ref())
+                .map(|wc| {
+                    let bounds = wc.bounds.iter().map(|bound| {
+                        let type_params = bound.type_params.iter().map(|p| capitalize_generic(p.as_str())).collect::<Vec<_>>().join(", ");
+                        let trait_bounds = bound.bounds.iter().map(|b| b.as_str()).collect::<Vec<_>>().join(" + ");
+                        format!("{}: {}", type_params, trait_bounds)
+                    }).collect::<Vec<_>>().join(", ");
+                    format!(" where {}", bounds)
+                })
+                .unwrap_or_default();
+            
+            // Strip generic parameters from function signatures since they'll use the trait's generic
+            let fn_signatures_clean = fn_signatures
+                .replace(&format!("<{}>", generic_param), "")
+                .replace(&format!(" where {}: ", generic_param), " where Self: ");
+            let transpiled_fns_clean = transpiled_fns
+                .replace(&format!("<{}>", generic_param), "")
+                .replace(&format!(" where {}: ", generic_param), " where Self: ");
+            
+            format!(
+                "
+                pub trait {}<{}> {{
+                    {}
+                }}
 
-        impl {trait_name} for {} {{
-            {transpiled_fns}
-        }}
-        ", ty
+                impl<{}> {}<{}> for {}{} {{
+                    {}
+                }}
+                ", 
+                trait_name, generic_param, fn_signatures_clean,
+                generic_param, trait_name, generic_param, generic_param, where_clause, transpiled_fns_clean
+            )
+        }
+        _ => {
+            transpile! {ctx, scope, errors,
+                "
+                pub trait {trait_name} {{
+                    {fn_signatures}
+                }}
+
+                impl {trait_name} for {} {{
+                    {transpiled_fns}
+                }}
+                ", ty
+            }
+        }
     }
 }
 
@@ -451,7 +508,7 @@ fn extension_name(ty: &TypeElement) -> String {
             ),
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
-            TypeElement::Generic(ty) => format!("Generic_{}", ty.ident.as_str()),
+            TypeElement::Generic(ty) => format!("Generic_{}", capitalize_generic(ty.ident.as_str())),
             TypeElement::Parametric(ty) => {
                 let base_type_item = BasicTypeItem {
                     ident: ty.base_type.clone(),

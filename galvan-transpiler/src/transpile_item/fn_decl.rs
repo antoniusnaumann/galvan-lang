@@ -48,7 +48,7 @@ impl Transpile for FnSignature {
         let generic_params = if generics.is_empty() {
             String::new()
         } else {
-            let params = generics.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", ");
+            let params = generics.iter().map(|g| crate::capitalize_generic(g.as_str())).collect::<Vec<_>>().join(", ");
             format!("<{}>", params)
         };
         
@@ -65,7 +65,7 @@ impl Transpile for FnSignature {
 
         let where_clause = if let Some(where_clause) = &self.where_clause {
             let bounds = where_clause.bounds.iter().map(|bound| {
-                let type_params = bound.type_params.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ");
+                let type_params = bound.type_params.iter().map(|p| crate::capitalize_generic(p.as_str())).collect::<Vec<_>>().join(", ");
                 let trait_bounds = bound.bounds.iter().map(|b| b.as_str()).collect::<Vec<_>>().join(" + ");
                 format!("{}: {}", type_params, trait_bounds)
             }).collect::<Vec<_>>().join(", ");

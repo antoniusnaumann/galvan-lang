@@ -13,11 +13,25 @@ test "Simple generic container type" {
     assert container.get_value() == 42
 }
 
-fn repr(self: t) -> String where t: ToString {
-    t.to_string()
+fn str(a: t) -> String where t: ToString {
+    a.to_string()
 }
 
 test "Generic function with 'where' clause" {
+    let in = 15
+    let a = str(in)
+    assert a == "15"
+
+    let in = "string"
+    let b = str(in)
+    assert b == "string"
+}
+
+fn repr(self: t) -> String where t: ToString {
+    self.to_string()
+}
+
+test "Generic method with 'where' clause" {
     let a = 15.repr()
     assert a == "15"
 
