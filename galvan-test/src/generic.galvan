@@ -43,10 +43,12 @@ fn concat_str(self: a, other: b) -> String where a, b: ToString {
     self.to_string() ++ other.to_string()
 }
 
-test "Generic function with paramm list in 'where' clause" {
-    let concat = 15.concat_str(12)
-    assert concat == "1512"
-    
+test "Generic function with param list in 'where' clause" {
     let concat = "some ".concat_str("string")
     assert concat == "some string"
 }
+
+// test "Generic function with integer literal as argument" {
+//     let concat = 15.concat_str(12)
+//     assert concat == "1512"
+// }

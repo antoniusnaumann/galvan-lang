@@ -64,13 +64,14 @@ impl Transpile for FnSignature {
         };
 
         let where_clause = if let Some(where_clause) = &self.where_clause {
-            let bounds = where_clause.bounds.iter().map(|bound| {
-                let type_params = bound.type_params.iter().map(|p| crate::capitalize_generic(p.as_str())).collect::<Vec<_>>().join(", ");
+            let constraints = where_clause.bounds.iter().flat_map(|bound| {
                 let trait_bounds = bound.bounds.iter().map(|b| b.as_str()).collect::<Vec<_>>().join(" + ");
-                format!("{}: {}", type_params, trait_bounds)
+                bound.type_params.iter().map(move |p| {
+                    format!("{}: {}", crate::capitalize_generic(p.as_str()), trait_bounds)
+                })
             }).collect::<Vec<_>>().join(", ");
             
-            format!(" where {}", bounds)
+            format!(" where {}", constraints)
         } else {
             String::new()
         };

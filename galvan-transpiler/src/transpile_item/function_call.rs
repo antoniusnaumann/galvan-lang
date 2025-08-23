@@ -190,41 +190,104 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
     } = call;
 
     if let Some(func) = func {
-        let args = &func
-            .signature
-            .parameters
-            .params
-            .iter()
-            .skip_while(|p| p.identifier.as_str() == "self")
-            .zip(arguments)
-            .map(|(param, arg)| {
-                let ownership = match param.decl_modifier {
-                    Some(m) => match m {
-                        DeclModifier::Let => {
-                            errors.warning(
-                                "Let modifier not yet implemented".to_string(),
-                                None
-                            );
-                            Ownership::Borrowed
+        // Check if this is a generic function
+        let generics = func.signature.collect_generics();
+        let has_where_clause = func.signature.where_clause.is_some();
+        let is_generic = !generics.is_empty() || has_where_clause;
+        
+        if is_generic {
+            // For generic functions (including generic methods), follow Galvan ownership conventions:
+            // Generic functions take arguments by reference unless they're Copy types and the function
+            // has specific ownership requirements
+            let args = func
+                .signature
+                .parameters
+                .params
+                .iter()
+                .skip_while(|p| p.identifier.as_str() == "self")
+                .zip(arguments)
+                .map(|(param, arg)| {
+                    let ownership = match param.decl_modifier {
+                        Some(m) => match m {
+                            DeclModifier::Let => {
+                                errors.warning(
+                                    "Let modifier not yet implemented".to_string(),
+                                    None
+                                );
+                                Ownership::Borrowed
+                            }
+                            DeclModifier::Mut => Ownership::MutBorrowed,
+                            DeclModifier::Ref => {
+                                errors.warning(
+                                    "Ref modifier not yet implemented".to_string(),
+                                    None
+                                );
+                                Ownership::Borrowed
+                            }
+                        },
+                        None => {
+                            // For generic functions, use conservative approach:
+                            // Copy types can be passed by value, others by reference
+                            if ctx.mapping.is_copy(&param.param_type) {
+                                Ownership::UniqueOwned
+                            } else {
+                                Ownership::Borrowed
+                            }
                         }
-                        DeclModifier::Mut => Ownership::MutBorrowed,
-                        DeclModifier::Ref => {
-                            errors.warning(
-                                "Ref modifier not yet implemented".to_string(),
-                                None
-                            );
-                            Ownership::Borrowed
-                        }
-                    },
-                    None => Ownership::Borrowed,
-                };
-                let mut arg_scope =
-                    Scope::child(scope).returns(param.param_type.clone(), ownership);
-                arg.transpile(ctx, &mut arg_scope, errors)
-            })
-            .join(", ");
+                    };
+                    let mut arg_scope =
+                        Scope::child(scope).returns(param.param_type.clone(), ownership);
+                    arg.transpile(ctx, &mut arg_scope, errors)
+                })
+                .join(", ");
 
-        format!("{}({})", identifier.transpile(ctx, scope, errors), args)
+            format!("{}({})", identifier.transpile(ctx, scope, errors), args)
+        } else {
+            // Non-generic function with known signature
+            let args = &func
+                .signature
+                .parameters
+                .params
+                .iter()
+                .skip_while(|p| p.identifier.as_str() == "self")
+                .zip(arguments)
+                .map(|(param, arg)| {
+                    let ownership = match param.decl_modifier {
+                        Some(m) => match m {
+                            DeclModifier::Let => {
+                                errors.warning(
+                                    "Let modifier not yet implemented".to_string(),
+                                    None
+                                );
+                                Ownership::Borrowed
+                            }
+                            DeclModifier::Mut => Ownership::MutBorrowed,
+                            DeclModifier::Ref => {
+                                errors.warning(
+                                    "Ref modifier not yet implemented".to_string(),
+                                    None
+                                );
+                                Ownership::Borrowed
+                            }
+                        },
+                        None => {
+                            // For parameters without explicit ownership modifiers, 
+                            // use UniqueOwned for Copy types, Borrowed for others
+                            if ctx.mapping.is_copy(&param.param_type) {
+                                Ownership::UniqueOwned
+                            } else {
+                                Ownership::Borrowed
+                            }
+                        },
+                    };
+                    let mut arg_scope =
+                        Scope::child(scope).returns(param.param_type.clone(), ownership);
+                    arg.transpile(ctx, &mut arg_scope, errors)
+                })
+                .join(", ");
+
+            format!("{}({})", identifier.transpile(ctx, scope, errors), args)
+        }
     } else {
         // For unknown functions (likely generic functions), follow Galvan ownership conventions:
         // Generic functions without Copy bounds take ALL arguments by reference
@@ -232,9 +295,9 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
         let args = arguments
             .iter()
             .map(|arg| {
-                let arg_type = arg.expression.infer_type(scope, errors);
-                // For unknown/generic functions, assume they need references
-                let mut arg_scope = Scope::child(scope).returns(arg_type, Ownership::Borrowed);
+                // Don't call infer_type here - it triggers premature type inference
+                // before closure parameter scopes are properly set up
+                let mut arg_scope = Scope::child(scope).returns(TypeElement::infer(), Ownership::Borrowed);
                 arg.transpile(ctx, &mut arg_scope, errors)
             })
             .join(", ");

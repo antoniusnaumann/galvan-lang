@@ -565,9 +565,8 @@ impl InferType for InfixOperation<ArithmeticOperator> {
                         format!(
                             "Type mismatch in arithmetic operation: {} {:?} {}",
                             first, self.operator, second
-                        ),
-                        None,
-                    );
+                                     ),
+                                     Some(self.rhs.span.into()),                    );
                 }
             }
         }
@@ -691,7 +690,7 @@ impl InferType for InfixOperation<MemberOperator> {
                             TypeDecl::Tuple(_tuple) => {
                                 errors.warning(
                                     "Tuple member access not yet implemented".to_string(),
-                                    None,
+                                    Some(rhs.span.into()),
                                 );
                                 TypeElement::infer()
                             }
@@ -764,7 +763,7 @@ impl InferType for InfixOperation<MemberOperator> {
                             TypeDecl::Tuple(_tuple) => {
                                 errors.warning(
                                     "Tuple member access not yet implemented".to_string(),
-                                    None,
+                                    Some(rhs.span.into()),
                                 );
                                 TypeElement::infer()
                             }
@@ -1028,8 +1027,7 @@ fn validate_yeet_return_type(scope: &Scope, yeet_type: &TypeElement, errors: &mu
                 if !yeet_err.is_same(fn_err) && !yeet_err.is_infer() && !fn_err.is_infer() {
                     errors.warning(
                         format!("Yeet operator error type mismatch: yielding {} but function expects {}", yeet_err, fn_err),
-                        None
-                    );
+                        None,                    );
                 }
             }
         }
@@ -1050,8 +1048,7 @@ fn validate_yeet_return_type(scope: &Scope, yeet_type: &TypeElement, errors: &mu
             if !yeet_type.is_infer() && !fn_return_type.is_infer() {
                 errors.warning(
                     format!("Yeet operator return type validation: yielding {} from function returning {}", yeet_type, fn_return_type),
-                    None
-                );
+            None,                );
             }
         }
     }

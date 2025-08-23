@@ -27,6 +27,16 @@ pub struct Span {
     pub file: String,
 }
 
+impl From<galvan_ast::Span> for Span {
+    fn from(ast_span: galvan_ast::Span) -> Self {
+        Self {
+            start: ast_span.range.0,
+            end: ast_span.range.1,
+            file: "".to_string(), // AST span doesn't include file info
+        }
+    }
+}
+
 /// Main error type for the transpiler
 #[derive(Debug, Error)]
 pub enum TranspilerError {
