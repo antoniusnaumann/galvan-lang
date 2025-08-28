@@ -620,30 +620,57 @@ impl Transpile for FunctionCallArg {
             (None, Exp::Closure(closure)) => {
                 transpile!(ctx, scope, errors, "{}", closure)
             }
-            (None, expr) => {
-                let ref current_return_type = scope.return_type;
-                let return_type = if current_return_type.is_infer() {
-                    let ty = expr.infer_type(scope, errors);
-                    ty
-                } else {
-                    current_return_type.clone()
-                };
-                let is_copy = ctx.mapping.is_copy(&return_type);
-                let expression = cast(
-                    expression,
-                    &return_type,
-                    if is_copy {
+            (None, _expr) => {
+                // For function arguments, we need to handle different scenarios:
+                // 1. Known function with concrete type expectations -> use cast system
+                // 2. Unknown function but with ownership info -> apply ownership selectively
+                // 3. No type or ownership info -> just transpile directly
+                let expected_type = scope.return_type.clone();
+                
+                if !expected_type.is_infer() {
+                    // We have concrete type expectations, apply full casting logic
+                    let is_copy = ctx.mapping.is_copy(&expected_type);
+                    let ownership = if is_copy {
                         Ownership::UniqueOwned
                     } else {
-                        // Use the scope's return ownership instead of always forcing Borrowed
                         scope.ownership
-                    },
-                    ctx,
-                    scope,
-                    errors
-                );
+                    };
+                    let converted_expression = cast(
+                        expression,
+                        &expected_type,
+                        ownership,
+                        ctx,
+                        scope,
+                        errors
+                    );
 
-                transpile!(ctx, scope, errors, "{}", expression)
+                    transpile!(ctx, scope, errors, "{}", converted_expression)
+                } else {
+                    // Expected type is inferred, but we may still need to apply ownership
+                    let expr_result = transpile!(ctx, scope, errors, "{}", expression);
+                    
+                    // Only apply borrowing for expressions that produce owned values 
+                    // that need to be borrowed for function calls
+                    let should_borrow = match (&scope.ownership, &expression.kind) {
+                        (Ownership::Borrowed, galvan_ast::ExpressionKind::FunctionCall(_)) => true,
+                        (Ownership::Borrowed, galvan_ast::ExpressionKind::Literal(galvan_ast::Literal::StringLiteral(_))) => true,
+                        (Ownership::Borrowed, galvan_ast::ExpressionKind::Infix(_)) => false, // arithmetic, member access, etc.
+                        (Ownership::Borrowed, galvan_ast::ExpressionKind::Ident(_)) => false, // handled separately above
+                        (Ownership::MutBorrowed, galvan_ast::ExpressionKind::FunctionCall(_)) => true,
+                        (Ownership::MutBorrowed, galvan_ast::ExpressionKind::Literal(galvan_ast::Literal::StringLiteral(_))) => true,
+                        _ => false,
+                    };
+                    
+                    if should_borrow {
+                        match scope.ownership {
+                            Ownership::Borrowed => format!("&({})", expr_result),
+                            Ownership::MutBorrowed => format!("&mut ({})", expr_result),
+                            _ => expr_result,
+                        }
+                    } else {
+                        expr_result
+                    }
+                }
             }
             // TODO: Check if the infix expression is a member field access
             (Some(Mod::Mut), expr @ Exp::Infix(_) | expr @ match_ident!(_)) => {

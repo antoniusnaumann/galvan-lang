@@ -245,12 +245,17 @@ pub fn cast_with_errors(
             expression.transpile(ctx, scope, errors)
         }
         (_, _) => {
-            // Let Rust try to figure this out
-            errors.warning(
-                format!("Trying to cast type {} to {}", actual, expected),
-                None
-            );
-            transpile!(ctx, scope, errors, "{}.into()", expression)
+            // For unknown type conversions, apply basic ownership conversion
+            match ownership {
+                Ownership::Borrowed => {
+                    // If we need a borrowed value, try to borrow the expression
+                    transpile!(ctx, scope, errors, "&{}", expression)
+                }
+                _ => {
+                    // For other ownership types, just return the expression as-is
+                    expression.transpile(ctx, scope, errors)
+                }
+            }
         }
     }
 }
