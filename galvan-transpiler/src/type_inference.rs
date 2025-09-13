@@ -3,8 +3,8 @@ use galvan_ast::{
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
-    Ownership, PostfixExpression, RangeOperator, SetLiteral, SetTypeItem, Span, Statement, TypeDecl, TypeElement,
-    TypeIdent, UnwrapOperator,
+    Ownership, PostfixExpression, RangeOperator, SetLiteral, SetTypeItem, Span, Statement,
+    TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -56,6 +56,61 @@ fn handle_unknown_identifier(
     TypeElement::infer()
 }
 
+// As reference how to implement the unwrap operator with "else"
+// impl InferType for InfixOperation<UnwrapOperator> {
+//     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
+//         let ty = self.rhs.infer_type(scope, errors);
+
+//         match ty {
+//             TypeElement::Plain(_) if ty.is_number() => (),
+//             TypeElement::Infer(_) | TypeElement::Never(_) => (),
+//             _ => return ty,
+//         };
+
+//         match self.lhs.infer_type(scope, errors) {
+//             TypeElement::Optional(opt) => opt.inner.clone(),
+//             TypeElement::Result(res) => res.success.clone(),
+//             ty @ TypeElement::Infer(_) => ty.clone(),
+//             _ => {
+//                 errors.error(TranspilerError::InvalidOperationOnType {
+//                     operation: "'?' operator".to_string(),
+//                     allowed_types: "result or optional types".to_string(),
+//                 });
+//                 TypeElement::infer()
+//             }
+//         }
+//     }
+
+//     fn infer_owned(
+//         &self,
+//         ctx: &Context<'_>,
+//         scope: &Scope,
+//         errors: &mut ErrorCollector,
+//     ) -> Ownership {
+//         match (
+//             self.rhs.infer_owned(ctx, scope, errors),
+//             self.lhs.infer_owned(ctx, scope, errors),
+//         ) {
+//             (lhs, rhs) if rhs == lhs => rhs,
+//             (
+//                 Ownership::SharedOwned | Ownership::UniqueOwned,
+//                 Ownership::SharedOwned | Ownership::UniqueOwned,
+//             ) => {
+//                 // Both are owned variants, prioritize UniqueOwned if one is unique
+//                 match (
+//                     self.rhs.infer_owned(ctx, scope, errors),
+//                     self.lhs.infer_owned(ctx, scope, errors),
+//                 ) {
+//                     (Ownership::UniqueOwned, _) | (_, Ownership::UniqueOwned) => {
+//                         Ownership::UniqueOwned
+//                     }
+//                     _ => Ownership::SharedOwned,
+//                 }
+//             }
+//             _ => Ownership::Borrowed,
+//         }
+//     }
+// }
 impl InferType for ElseExpression {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
         let receiver_type = self.receiver.infer_type(scope, errors);
@@ -259,13 +314,11 @@ impl InferType for ExpressionKind {
                 }
             }
             ExpressionKind::Closure(closure) => {
-                // Infer ownership from closure body  
+                // Infer ownership from closure body
                 // This is a simple improvement over warning and returning Borrowed
                 closure.block.infer_owned(ctx, scope, errors)
             }
-            ExpressionKind::Group(group) => {
-                group.inner.infer_owned(ctx, scope, errors)
-            }
+            ExpressionKind::Group(group) => group.inner.infer_owned(ctx, scope, errors),
         }
     }
 }
@@ -478,7 +531,6 @@ impl InferType for InfixExpression {
             InfixExpression::Range(e) => e.infer_type(scope, errors),
             InfixExpression::Comparison(_) => TypeElement::bool(),
             InfixExpression::Member(e) => e.infer_type(scope, errors),
-            InfixExpression::Unwrap(u) => u.infer_type(scope, errors),
             InfixExpression::Custom(_) => {
                 errors.warning(
                     "Type inference for custom operators not yet implemented".to_string(),
@@ -544,7 +596,6 @@ impl InferType for InfixExpression {
                     mem.lhs.infer_owned(ctx, scope, errors)
                 }
             }
-            InfixExpression::Unwrap(u) => u.infer_owned(ctx, scope, errors),
             InfixExpression::Custom(_custom) => {
                 errors.warning("OWNERSHIP WARNING: Ownership inference for custom operators not yet implemented".to_string(), None);
                 Ownership::Borrowed
@@ -565,8 +616,9 @@ impl InferType for InfixOperation<ArithmeticOperator> {
                         format!(
                             "Type mismatch in arithmetic operation: {} {:?} {}",
                             first, self.operator, second
-                                     ),
-                                     Some(self.rhs.span.into()),                    );
+                        ),
+                        Some(self.rhs.span.into()),
+                    );
                 }
             }
         }
@@ -639,12 +691,16 @@ impl InferType for InfixOperation<CollectionOperator> {
 
 impl InferType for InfixOperation<RangeOperator> {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
-        let Self { lhs, operator: _, rhs: _ } = self;
-        
+        let Self {
+            lhs,
+            operator: _,
+            rhs: _,
+        } = self;
+
         // Range expressions return iterators over the element type
         // For now, we'll infer the element type from the lhs
         let element_type = lhs.infer_type(scope, errors);
-        
+
         // Return an iterator type - for simplicity, we'll use an array type
         // In a more complete implementation, we might have a specific Iterator type
         TypeElement::Array(Box::new(ArrayTypeItem {
@@ -734,7 +790,12 @@ impl InferType for InfixOperation<MemberOperator> {
                                     format!(
                                         "Function '{}' not found. Available functions: {}",
                                         call.identifier,
-                                        scope.functions().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ")
+                                        scope
+                                            .functions()
+                                            .iter()
+                                            .map(|f| f.to_string())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
                                     ),
                                     None,
                                 );
@@ -798,16 +859,23 @@ impl InferType for InfixOperation<MemberOperator> {
                     }
                     None => {
                         if let ExpressionKind::FunctionCall(ref call) = rhs.kind {
-                            if let Some(func) =
-                                scope.resolve_function(Some(&param.base_type), &call.identifier, &[])
-                            {
+                            if let Some(func) = scope.resolve_function(
+                                Some(&param.base_type),
+                                &call.identifier,
+                                &[],
+                            ) {
                                 func.item.signature.return_type.clone()
                             } else {
                                 errors.warning(
                                     format!(
                                         "Function '{}' not found. Available functions: {}",
                                         call.identifier,
-                                        scope.functions().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ")
+                                        scope
+                                            .functions()
+                                            .iter()
+                                            .map(|f| f.to_string())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
                                     ),
                                     None,
                                 );
@@ -858,61 +926,6 @@ impl InferType for InfixOperation<MemberOperator> {
         // Member access propagates the ownership of the receiver
         // If the receiver is borrowed, the member is also borrowed
         lhs.infer_owned(ctx, scope, errors)
-    }
-}
-
-impl InferType for InfixOperation<UnwrapOperator> {
-    fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
-        let ty = self.rhs.infer_type(scope, errors);
-
-        match ty {
-            TypeElement::Plain(_) if ty.is_number() => (),
-            TypeElement::Infer(_) | TypeElement::Never(_) => (),
-            _ => return ty,
-        };
-
-        match self.lhs.infer_type(scope, errors) {
-            TypeElement::Optional(opt) => opt.inner.clone(),
-            TypeElement::Result(res) => res.success.clone(),
-            ty @ TypeElement::Infer(_) => ty.clone(),
-            _ => {
-                errors.error(TranspilerError::InvalidOperationOnType {
-                    operation: "'?' operator".to_string(),
-                    allowed_types: "result or optional types".to_string(),
-                });
-                TypeElement::infer()
-            }
-        }
-    }
-
-    fn infer_owned(
-        &self,
-        ctx: &Context<'_>,
-        scope: &Scope,
-        errors: &mut ErrorCollector,
-    ) -> Ownership {
-        match (
-            self.rhs.infer_owned(ctx, scope, errors),
-            self.lhs.infer_owned(ctx, scope, errors),
-        ) {
-            (lhs, rhs) if rhs == lhs => rhs,
-            (
-                Ownership::SharedOwned | Ownership::UniqueOwned,
-                Ownership::SharedOwned | Ownership::UniqueOwned,
-            ) => {
-                // Both are owned variants, prioritize UniqueOwned if one is unique
-                match (
-                    self.rhs.infer_owned(ctx, scope, errors),
-                    self.lhs.infer_owned(ctx, scope, errors),
-                ) {
-                    (Ownership::UniqueOwned, _) | (_, Ownership::UniqueOwned) => {
-                        Ownership::UniqueOwned
-                    }
-                    _ => Ownership::SharedOwned,
-                }
-            }
-            _ => Ownership::Borrowed,
-        }
     }
 }
 

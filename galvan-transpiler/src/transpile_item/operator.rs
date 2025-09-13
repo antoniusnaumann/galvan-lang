@@ -1,6 +1,6 @@
 use galvan_ast::{
     ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, InfixExpression,
-    InfixOperation, LogicalOperator, Ownership, RangeOperator, TypeElement, UnwrapOperator,
+    InfixOperation, LogicalOperator, Ownership, RangeOperator, TypeElement,
 };
 use galvan_resolver::Scope;
 
@@ -10,7 +10,7 @@ use crate::type_inference::InferType;
 use crate::Transpile;
 use crate::{context::Context, transpile};
 
-impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Range, Comparison, Unwrap, Custom, Member);
+impl_transpile_variants!(InfixExpression; Arithmetic, Logical, Collection, Range, Comparison, Custom, Member);
 
 impl Transpile for InfixOperation<LogicalOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
@@ -182,46 +182,6 @@ impl Transpile for InfixOperation<ArithmeticOperator> {
             ArithmeticOperator::Rem => transpile!(ctx, scope, errors, "{} % {}", lhs, rhs),
             ArithmeticOperator::Exp => transpile!(ctx, scope, errors, "{}.pow({})", lhs, rhs),
         }
-    }
-}
-
-impl Transpile for InfixOperation<UnwrapOperator> {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        let Self {
-            lhs,
-            operator: _,
-            rhs,
-        } = self;
-
-        // Check ownership of both sides to determine if we need to clone
-        let lhs_ownership = lhs.infer_owned(ctx, scope, errors);
-        let rhs_ownership = rhs.infer_owned(ctx, scope, errors);
-
-        // For the left-hand side (receiver), we need to clone if it's borrowed to avoid move issues
-        let lhs_clone_suffix = match lhs_ownership {
-            Ownership::SharedOwned => ".clone()",
-            Ownership::Borrowed | Ownership::MutBorrowed => ".clone()",
-            Ownership::UniqueOwned | Ownership::Ref => "",
-        };
-
-        // For the right-hand side, we need to clone to avoid move issues when captured in closure
-        let rhs_clone_suffix = match rhs_ownership {
-            Ownership::SharedOwned => ".clone()",
-            Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
-            Ownership::UniqueOwned | Ownership::Ref => "",
-        };
-
-        // TODO: this should be a match expression instead to allow return from the left arm and so on
-        transpile!(
-            ctx,
-            scope,
-            errors,
-            "({}{}).unwrap_or_else(|| {}{})",
-            lhs,
-            lhs_clone_suffix,
-            rhs,
-            rhs_clone_suffix
-        )
     }
 }
 

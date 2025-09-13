@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
-use galvan_ast::{BasicTypeItem, Expression, Ownership, TypeElement};
+use galvan_ast::{BasicTypeItem, Block, Expression, Ownership, TypeElement};
 use galvan_resolver::Scope;
+use itertools::Itertools;
 
 use crate::{
     builtins::{CheckBuiltins, IsSame},
@@ -133,7 +134,8 @@ pub fn cast_with_errors(
                 _ => expression.transpile(ctx, scope, errors),
             }
         }
-        (_, TypeElement::Infer(_)) => match (ownership, expression.infer_owned(ctx, scope, errors)) {
+        (_, TypeElement::Infer(_)) => match (ownership, expression.infer_owned(ctx, scope, errors))
+        {
             (
                 Ownership::SharedOwned | Ownership::UniqueOwned,
                 Ownership::SharedOwned | Ownership::Borrowed | Ownership::MutBorrowed,
@@ -198,10 +200,7 @@ pub fn cast_with_errors(
             transpile!(ctx, scope, errors, "Err({})", expression)
         }
         (TypeElement::Result(_), actual) => {
-            errors.warning(
-                format!("Wrapping non-matching type {} in Ok", actual),
-                None
-            );
+            errors.warning(format!("Wrapping non-matching type {} in Ok", actual), None);
             let postfix = match expression.infer_owned(ctx, scope, errors) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
                 _ => ".to_owned()",
@@ -217,14 +216,14 @@ pub fn cast_with_errors(
         (TypeElement::Optional(_), TypeElement::Optional(_)) => {
             errors.warning(
                 format!("Wrapping non-matching type {} in Some", actual),
-                None
+                None,
             );
             transpile!(ctx, scope, errors, "/*non-matching*/{}", expression)
         }
         (TypeElement::Optional(_), actual) => {
             errors.warning(
                 format!("Wrapping non-matching type {} in Some", actual),
-                None
+                None,
             );
             let postfix = match expression.infer_owned(ctx, scope, errors) {
                 Ownership::Borrowed | Ownership::MutBorrowed => ".to_owned()",
@@ -258,4 +257,31 @@ pub fn cast_with_errors(
             }
         }
     }
+}
+
+pub fn cast_block(
+    block: &Block,
+    expected: &TypeElement,
+    ownership: Ownership,
+    ctx: &Context<'_>,
+    scope: &mut Scope<'_>,
+    errors: &mut ErrorCollector,
+) -> String {
+    let last = if let Some(last_statement) = block.body.statements.last() {
+        match last_statement {
+            galvan_ast::Statement::Expression(expression) => expression,
+            _ => return block.transpile(ctx, scope, errors),
+        }
+    } else {
+        return String::new();
+    };
+
+    let block_len = block.body.statements.len();
+    let block_without_last = block.body.statements[0..(block_len - 1)]
+        .iter()
+        .map(|s| s.transpile(ctx, scope, errors))
+        .join(";");
+    let last_expr = cast_with_errors(last, expected, ownership, ctx, scope, errors);
+
+    format!("{{ {}; {} }}", block_without_last, last_expr)
 }

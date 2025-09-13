@@ -5,24 +5,24 @@ test "Arithmetic vs. Comparison precedence" {
     assert 10 / 2 == 5
 }
 
-test "Unwrap operator" {
+test "Else as unwrap operator" {
     mut maybe: Int? = none
-    assert maybe ? 5 == 5
+    assert maybe else { 5 } == 5
 
     maybe = 17
 
-    assert maybe ? 5 == 17
+    assert maybe else { 5 } == 17
 }
 
-test "? operator clones/borrows correctly" {
+test "else operator clones/borrows correctly" {
     let bello: Dog? = none
     let hasso = Dog(name: "Hasso", age: 6)
 
-    let good_boy = bello ? hasso
+    let good_boy = bello else { hasso }
     let again_hasso = hasso
 }
 
-test "? operator clones borrowed value" {
+test "else operator clones borrowed value" {
     let bello: Dog? = none
     let hasso = Dog(name: "Hasso", age: 6)
 
@@ -30,8 +30,19 @@ test "? operator clones borrowed value" {
     let again_hasso = hasso
 }
 
+test "else operator does not consume receiver" {
+    let bello: Dog? = Dog(name: "Bello", age: 3)
+    let hasso = Dog(name: "Hasso", age: 6)
+
+    let good_boy = bello else { hasso }
+    let again_hasso = hasso
+
+    assert bello?.name == "Bello"
+    assert hasso.name == "Hasso"
+}
+
 fn select_good_boy(a: Dog?, b: Dog) -> Dog {
-    a ? b
+    a else { b }
 }
 
 test "++ operator on strings" {

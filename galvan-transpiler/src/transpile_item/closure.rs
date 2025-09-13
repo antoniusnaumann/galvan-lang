@@ -8,11 +8,11 @@ use galvan_resolver::{Scope, Variable};
 use itertools::Itertools;
 
 use crate::builtins::CheckBuiltins;
-use crate::cast::{cast, unify};
+use crate::cast::{cast, cast_block, unify};
 use crate::context::Context;
 use crate::error::ErrorCollector;
 use crate::macros::{impl_transpile, transpile};
-use crate::type_inference::{InferType, infer_closure_param_from_usage};
+use crate::type_inference::{infer_closure_param_from_usage, InferType};
 use crate::Transpile;
 
 use super::function_call::transpile_if;
@@ -36,7 +36,17 @@ pub(crate) fn transpile_closure(
     let arguments = closure
         .parameters
         .iter()
-        .map(|a| transpile_closure_argument(ctx, scope, a, deref_args, Ownership::default(), true, errors))
+        .map(|a| {
+            transpile_closure_argument(
+                ctx,
+                scope,
+                a,
+                deref_args,
+                Ownership::default(),
+                true,
+                errors,
+            )
+        })
         .join(", ");
     let block = closure.block.transpile(ctx, scope, errors);
     transpile!(ctx, scope, errors, "|{}| {}", arguments, block)
@@ -49,7 +59,8 @@ impl Transpile for ElseExpression {
         match &self.receiver.deref().kind {
             // special handling for if-else as opposed to using else on an optional value
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "if" => {
-                let (cond, if_, if_ty) = transpile_if(&call, ctx, scope, scope.return_type.clone(), errors);
+                let (cond, if_, if_ty) =
+                    transpile_if(&call, ctx, scope, scope.return_type.clone(), errors);
                 let else_ = self.block.transpile(ctx, scope, errors);
                 let block_type = self.block.infer_type(scope, errors);
                 let (if_, else_) = unify(&if_, &else_, &if_ty, &block_type);
@@ -57,22 +68,26 @@ impl Transpile for ElseExpression {
             }
             // special handling for try-else
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "try" => {
-                transpile_try(&call, ctx, scope, TypeElement::default(), Some(self), errors)
+                transpile_try(
+                    &call,
+                    ctx,
+                    scope,
+                    TypeElement::default(),
+                    Some(self),
+                    errors,
+                )
             }
             _ => {
-                let mut else_scope = Scope::child(scope);
-                let block = self.block.transpile(ctx, &mut else_scope, errors);
-                
                 // Determine the inner type of the optional for __value
                 let receiver_type = self.receiver.infer_type(scope, errors);
                 let inner_type = match &receiver_type {
                     TypeElement::Optional(opt) => opt.inner.clone(),
                     _ => receiver_type, // fallback for non-optional types
                 };
-                
+
                 // Create a child scope for the Some arm to declare __value
                 let mut some_scope = Scope::child(scope);
-                
+
                 // Declare __value variable in the Some arm scope
                 some_scope.declare_variable(Variable {
                     ident: "__value".to_owned().into(),
@@ -80,19 +95,29 @@ impl Transpile for ElseExpression {
                     ty: inner_type,
                     ownership: Ownership::Borrowed, // pattern match creates a borrowed reference
                 });
-                
+
                 let cast_result = cast(
                     &Expression {
                         kind: ExpressionKind::Ident("__value".to_owned().into()),
-                        span: Span::default()
+                        span: Span::default(),
                     },
                     &scope.return_type.clone(),
                     scope.ownership,
                     ctx,
                     &mut some_scope,
-                    errors
+                    errors,
                 );
-                
+
+                let mut else_scope = Scope::child(scope);
+                let block = cast_block(
+                    &self.block,
+                    &scope.return_type.clone(),
+                    scope.ownership,
+                    ctx,
+                    &mut else_scope,
+                    errors,
+                );
+
                 transpile!(
                     ctx,
                     scope,
@@ -136,11 +161,13 @@ fn transpile_try(
         cond_ownership,
         ctx,
         &mut cond_scope,
-        errors
+        errors,
     );
-    
+
     // For borrowed conditions in match expressions, we need to explicitly add &
-    let condition = if cond_ownership == Ownership::Borrowed && matches!(cond_type, TypeElement::Optional(_) | TypeElement::Result(_)) {
+    let condition = if cond_ownership == Ownership::Borrowed
+        && matches!(cond_type, TypeElement::Optional(_) | TypeElement::Result(_))
+    {
         format!("&{}", condition)
     } else {
         condition
@@ -284,7 +311,7 @@ pub(crate) fn transpile_closure_argument(
     } else {
         arg.ty.clone()
     };
-    
+
     scope.declare_variable(Variable {
         ident: arg.ident.clone(),
         modifier: DeclModifier::Let, // TODO: Closure arg modifiers self.modifier.clone(),

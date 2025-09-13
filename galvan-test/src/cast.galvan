@@ -9,7 +9,7 @@ test "Auto-wrap ok on assign" {
 }
 
 fn echo_or_default(arg: Int?) -> Int {
-    arg ? 42
+    arg else { 42 }
 }
 
 test "Auto-wrap some on function call" {
