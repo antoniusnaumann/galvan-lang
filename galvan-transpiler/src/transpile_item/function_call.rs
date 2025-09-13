@@ -2,8 +2,9 @@ use std::borrow::Borrow;
 
 use galvan_ast::TypeElement::{self};
 use galvan_ast::{
-    ComparisonOperator, DeclModifier, EnumConstructor, EnumConstructorArg, Expression, ExpressionKind, FunctionCall, FunctionCallArg,
-    Ident, InfixExpression, InfixOperation, Ownership,
+    ComparisonOperator, DeclModifier, EnumConstructor, EnumConstructorArg, Expression,
+    ExpressionKind, FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation,
+    Ownership,
 };
 use galvan_resolver::{Lookup, Scope, Variable};
 use itertools::Itertools;
@@ -21,12 +22,18 @@ use crate::Transpile;
 impl Transpile for FunctionCall {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         match self.identifier.as_str() {
-            "panic" => format!("panic!(\"{{}}\", {})", self.arguments.transpile(ctx, scope, errors)),
+            "panic" => format!(
+                "panic!(\"{{}}\", {})",
+                self.arguments.transpile(ctx, scope, errors)
+            ),
             "println" => format!(
                 "println!(\"{{}}\", {})",
                 self.arguments.transpile(ctx, scope, errors)
             ),
-            "print" => format!("print!(\"{{}}\", {})", self.arguments.transpile(ctx, scope, errors)),
+            "print" => format!(
+                "print!(\"{{}}\", {})",
+                self.arguments.transpile(ctx, scope, errors)
+            ),
             "debug" => format!(
                 "println!(\"{{:?}}\", {})",
                 self.arguments.transpile(ctx, scope, errors)
@@ -81,11 +88,15 @@ impl Transpile for FunctionCall {
                     let mut rhs_scope = Scope::child(scope);
                     let lhs_scope = &mut lhs_scope;
                     let rhs_scope = &mut rhs_scope;
-                     
-                     // Check if either side is a __Number for special handling
-                     let lhs_type = lhs.infer_type(lhs_scope, errors);
-                     let rhs_type = rhs.infer_type(rhs_scope, errors);
-                     let has_number = lhs_type.is_number() || rhs_type.is_number() || lhs_type.is_infer() || rhs_type.is_infer();                    let (lhs, rhs) = match (
+
+                    // Check if either side is a __Number for special handling
+                    let lhs_type = lhs.infer_type(lhs_scope, errors);
+                    let rhs_type = rhs.infer_type(rhs_scope, errors);
+                    let has_number = lhs_type.is_number()
+                        || rhs_type.is_number()
+                        || lhs_type.is_infer()
+                        || rhs_type.is_infer();
+                    let (lhs, rhs) = match (
                         lhs.infer_owned(ctx, &lhs_scope, errors),
                         rhs.infer_owned(ctx, &rhs_scope, errors),
                     ) {
@@ -93,14 +104,16 @@ impl Transpile for FunctionCall {
                             Ownership::SharedOwned | Ownership::UniqueOwned,
                             Ownership::Borrowed | Ownership::MutBorrowed,
                         ) if !has_number => {
-                            let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx, errors);
+                            let (lhs, rhs) =
+                                transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx, errors);
                             (format!("&({})", lhs), rhs)
                         }
                         (
                             Ownership::Borrowed | Ownership::MutBorrowed,
                             Ownership::SharedOwned | Ownership::UniqueOwned,
                         ) if !has_number => {
-                            let (lhs, rhs) = transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx, errors);
+                            let (lhs, rhs) =
+                                transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx, errors);
                             (lhs, format!("&({})", rhs))
                         }
                         _ => {
@@ -109,30 +122,42 @@ impl Transpile for FunctionCall {
                                 // For __Number types, we don't want to add & prefixes as they break type unification
                                 let lhs_trans = lhs.transpile(ctx, lhs_scope, errors);
                                 let rhs_trans = rhs.transpile(ctx, rhs_scope, errors);
-                                
+
                                 // Apply unification to handle __Number -> wrapper type casting
-                                let (unified_lhs, unified_rhs) = unify(&lhs_trans, &rhs_trans, &lhs_type, &rhs_type);
-                                
+                                let (unified_lhs, unified_rhs) =
+                                    unify(&lhs_trans, &rhs_trans, &lhs_type, &rhs_type);
+
                                 // Handle reference vs value mismatches - for any borrowed type with __Number/Infer, dereference
                                 let lhs_ownership = lhs.infer_owned(ctx, &lhs_scope, errors);
                                 let rhs_ownership = rhs.infer_owned(ctx, &rhs_scope, errors);
-                                
+
                                 // Handle reference vs value mismatches based on actual ownership inference
                                 let lhs_needs_deref = match (lhs_ownership, &lhs.kind) {
-                                    (Ownership::Borrowed | Ownership::MutBorrowed, ExpressionKind::Ident(_)) => true,
-                                    _ => false
+                                    (
+                                        Ownership::Borrowed | Ownership::MutBorrowed,
+                                        ExpressionKind::Ident(_),
+                                    ) => true,
+                                    _ => false,
                                 };
-                                
+
                                 let rhs_needs_deref = match (rhs_ownership, &rhs.kind) {
-                                    (Ownership::Borrowed | Ownership::MutBorrowed, ExpressionKind::Ident(_)) => true,
-                                    _ => false
+                                    (
+                                        Ownership::Borrowed | Ownership::MutBorrowed,
+                                        ExpressionKind::Ident(_),
+                                    ) => true,
+                                    _ => false,
                                 };
-                                
-                                let (final_lhs, final_rhs) = match (lhs_needs_deref, rhs_needs_deref) {
-                                    (true, false) => (format!("*{}", unified_lhs), unified_rhs.into_owned()),
-                                    (false, true) => (unified_lhs.into_owned(), format!("*{}", unified_rhs)),
-                                    _ => (unified_lhs.into_owned(), unified_rhs.into_owned())
-                                };
+
+                                let (final_lhs, final_rhs) =
+                                    match (lhs_needs_deref, rhs_needs_deref) {
+                                        (true, false) => {
+                                            (format!("*{}", unified_lhs), unified_rhs.into_owned())
+                                        }
+                                        (false, true) => {
+                                            (unified_lhs.into_owned(), format!("*{}", unified_rhs))
+                                        }
+                                        _ => (unified_lhs.into_owned(), unified_rhs.into_owned()),
+                                    };
                                 (final_lhs, final_rhs)
                             } else {
                                 transpile_unified(lhs, rhs, lhs_scope, rhs_scope, ctx, errors)
@@ -141,10 +166,16 @@ impl Transpile for FunctionCall {
                     };
                     match operator {
                         ComparisonOperator::Equal => {
-                            format!("assert_eq!({lhs}, {rhs}, {})", args.transpile(ctx, scope, errors))
+                            format!(
+                                "assert_eq!({lhs}, {rhs}, {})",
+                                args.transpile(ctx, scope, errors)
+                            )
                         }
                         ComparisonOperator::NotEqual => {
-                            format!("assert_ne!({lhs}, {rhs}, {})", args.transpile(ctx, scope, errors))
+                            format!(
+                                "assert_ne!({lhs}, {rhs}, {})",
+                                args.transpile(ctx, scope, errors)
+                            )
                         }
                         _ => format!("assert!({})", self.arguments.transpile(ctx, scope, errors)),
                     }
@@ -182,7 +213,12 @@ impl Transpile for FunctionCall {
     }
 }
 
-fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+fn transpile_fn_call(
+    call: &FunctionCall,
+    ctx: &Context<'_>,
+    scope: &mut Scope,
+    errors: &mut ErrorCollector,
+) -> String {
     let func = ctx.lookup.resolve_function(None, &call.identifier, &[]);
     let FunctionCall {
         identifier,
@@ -194,7 +230,7 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
         let generics = func.signature.collect_generics();
         let has_where_clause = func.signature.where_clause.is_some();
         let is_generic = !generics.is_empty() || has_where_clause;
-        
+
         if is_generic {
             // For generic functions (including generic methods), follow Galvan ownership conventions:
             // Generic functions take arguments by reference unless they're Copy types and the function
@@ -210,18 +246,14 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
                     let ownership = match param.decl_modifier {
                         Some(m) => match m {
                             DeclModifier::Let => {
-                                errors.warning(
-                                    "Let modifier not yet implemented".to_string(),
-                                    None
-                                );
+                                errors
+                                    .warning("Let modifier not yet implemented".to_string(), None);
                                 Ownership::Borrowed
                             }
                             DeclModifier::Mut => Ownership::MutBorrowed,
                             DeclModifier::Ref => {
-                                errors.warning(
-                                    "Ref modifier not yet implemented".to_string(),
-                                    None
-                                );
+                                errors
+                                    .warning("Ref modifier not yet implemented".to_string(), None);
                                 Ownership::Borrowed
                             }
                         },
@@ -255,30 +287,26 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
                     let ownership = match param.decl_modifier {
                         Some(m) => match m {
                             DeclModifier::Let => {
-                                errors.warning(
-                                    "Let modifier not yet implemented".to_string(),
-                                    None
-                                );
+                                errors
+                                    .warning("Let modifier not yet implemented".to_string(), None);
                                 Ownership::Borrowed
                             }
                             DeclModifier::Mut => Ownership::MutBorrowed,
                             DeclModifier::Ref => {
-                                errors.warning(
-                                    "Ref modifier not yet implemented".to_string(),
-                                    None
-                                );
+                                errors
+                                    .warning("Ref modifier not yet implemented".to_string(), None);
                                 Ownership::Borrowed
                             }
                         },
                         None => {
-                            // For parameters without explicit ownership modifiers, 
+                            // For parameters without explicit ownership modifiers,
                             // use UniqueOwned for Copy types, Borrowed for others
                             if ctx.mapping.is_copy(&param.param_type) {
                                 Ownership::UniqueOwned
                             } else {
                                 Ownership::Borrowed
                             }
-                        },
+                        }
                     };
                     let mut arg_scope =
                         Scope::child(scope).returns(param.param_type.clone(), ownership);
@@ -297,7 +325,8 @@ fn transpile_fn_call(call: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope, 
             .map(|arg| {
                 // Don't call infer_type here - it triggers premature type inference
                 // before closure parameter scopes are properly set up
-                let mut arg_scope = Scope::child(scope).returns(TypeElement::infer(), Ownership::Borrowed);
+                let mut arg_scope =
+                    Scope::child(scope).returns(TypeElement::infer(), Ownership::Borrowed);
                 arg.transpile(ctx, &mut arg_scope, errors)
             })
             .join(", ");
@@ -322,7 +351,11 @@ pub fn transpile_if(
     let condition = &func.arguments[0];
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
         // TODO: Add proper error handling for invalid if body argument
-        return (String::from("/* error */"), String::from("/* error */"), TypeElement::infer());
+        return (
+            String::from("/* error */"),
+            String::from("/* error */"),
+            TypeElement::infer(),
+        );
     };
     let mut condition_scope =
         Scope::child(scope).returns(TypeElement::bool(), Ownership::UniqueOwned);
@@ -337,7 +370,12 @@ pub fn transpile_if(
     )
 }
 
-fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, errors: &mut ErrorCollector) -> String {
+fn transpile_for(
+    func: &FunctionCall,
+    ctx: &Context<'_>,
+    scope: &mut Scope<'_>,
+    errors: &mut ErrorCollector,
+) -> String {
     if func.arguments.len() != 2 {
         // TODO: Add proper error handling for invalid for loop arguments
         return String::new();
@@ -349,14 +387,14 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
         TypeElement::Dictionary(_ty) => {
             errors.warning(
                 "For loop on dictionary not yet implemented".to_string(),
-                None
+                None,
             );
             &TypeElement::infer()
         }
         TypeElement::OrderedDictionary(_ty) => {
             errors.warning(
                 "For loop on ordered dictionary not yet implemented".to_string(),
-                None
+                None,
             );
             &TypeElement::infer()
         }
@@ -376,21 +414,21 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
         TypeElement::Plain(_ty) => {
             errors.warning(
                 "For loop on plain type not yet implemented".to_string(),
-                None
+                None,
             );
             &TypeElement::infer()
         }
         TypeElement::Generic(_ty) => {
             errors.warning(
                 "For loop on generic type not yet implemented".to_string(),
-                None
+                None,
             );
             &TypeElement::infer()
         }
         TypeElement::Parametric(_ty) => {
             errors.warning(
                 "For loop on parametric type not yet implemented".to_string(),
-                None
+                None,
             );
             &TypeElement::infer()
         }
@@ -399,7 +437,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
         TypeElement::Never(_) => {
             errors.warning(
                 "For loop on never type not yet implemented".to_string(),
-                None
+                None,
             );
             &TypeElement::infer()
         }
@@ -408,40 +446,37 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
         // TODO: Add proper error handling for invalid for body argument
         return String::new();
     };
-    
-    // Check iterator ownership - if exclusively owned (e.g., from function return), 
+
+    // Check iterator ownership - if exclusively owned (e.g., from function return),
     // use that ownership to avoid unnecessary borrowing
     let iter_ownership = iterator.expression.infer_owned(ctx, scope, errors);
     let scope_ownership = match iter_ownership {
         Ownership::UniqueOwned | Ownership::SharedOwned => iter_ownership,
         _ => Ownership::Borrowed,
     };
-    
+
     let mut iter_scope = Scope::child(scope).returns(iter_ty.clone(), scope_ownership);
     let condition = iterator.transpile(ctx, &mut iter_scope, errors);
-    
+
     fn get_iteration_type(parent: &TypeElement, errors: &mut ErrorCollector) -> TypeElement {
         match parent {
             TypeElement::Array(array) => array.elements.clone(),
             TypeElement::Dictionary(_) => {
                 errors.warning(
                     "Collecting into dictionary not yet implemented".to_string(),
-                    None
+                    None,
                 );
                 TypeElement::infer()
             }
             TypeElement::OrderedDictionary(_) => {
                 errors.warning(
                     "Collecting into ordered dictionary not yet implemented".to_string(),
-                    None
+                    None,
                 );
                 TypeElement::infer()
             }
             TypeElement::Set(_) => {
-                errors.warning(
-                    "Collecting into set not yet implemented".to_string(),
-                    None
-                );
+                errors.warning("Collecting into set not yet implemented".to_string(), None);
                 TypeElement::infer()
             }
             TypeElement::Optional(opt) => get_iteration_type(&opt.inner, errors),
@@ -513,7 +548,7 @@ fn transpile_for(func: &FunctionCall, ctx: &Context<'_>, scope: &mut Scope<'_>, 
         ExpressionKind::Infix(infix) => matches!(**infix, InfixExpression::Range(_)),
         _ => false,
     };
-    
+
     let prefix = if is_range_expression {
         // Ranges iterate over owned values directly
         ""
@@ -595,7 +630,7 @@ impl Transpile for FunctionCallArg {
                         )
                     })
                     .ownership;
-                
+
                 match (variable_ownership, scope.ownership) {
                     // If function expects a reference but variable is owned, borrow it
                     (Ownership::UniqueOwned | Ownership::SharedOwned, Ownership::Borrowed) => {
@@ -626,7 +661,7 @@ impl Transpile for FunctionCallArg {
                 // 2. Unknown function but with ownership info -> apply ownership selectively
                 // 3. No type or ownership info -> just transpile directly
                 let expected_type = scope.return_type.clone();
-                
+
                 if !expected_type.is_infer() {
                     // We have concrete type expectations, apply full casting logic
                     let is_copy = ctx.mapping.is_copy(&expected_type);
@@ -635,32 +670,38 @@ impl Transpile for FunctionCallArg {
                     } else {
                         scope.ownership
                     };
-                    let converted_expression = cast(
-                        expression,
-                        &expected_type,
-                        ownership,
-                        ctx,
-                        scope,
-                        errors
-                    );
+                    let converted_expression =
+                        cast(expression, &expected_type, ownership, ctx, scope, errors);
 
                     transpile!(ctx, scope, errors, "{}", converted_expression)
                 } else {
                     // Expected type is inferred, but we may still need to apply ownership
                     let expr_result = transpile!(ctx, scope, errors, "{}", expression);
-                    
-                    // Only apply borrowing for expressions that produce owned values 
+
+                    // Only apply borrowing for expressions that produce owned values
                     // that need to be borrowed for function calls
                     let should_borrow = match (&scope.ownership, &expression.kind) {
                         (Ownership::Borrowed, galvan_ast::ExpressionKind::FunctionCall(_)) => true,
-                        (Ownership::Borrowed, galvan_ast::ExpressionKind::Literal(galvan_ast::Literal::StringLiteral(_))) => true,
+                        (
+                            Ownership::Borrowed,
+                            galvan_ast::ExpressionKind::Literal(
+                                galvan_ast::Literal::StringLiteral(_),
+                            ),
+                        ) => true,
                         (Ownership::Borrowed, galvan_ast::ExpressionKind::Infix(_)) => false, // arithmetic, member access, etc.
                         (Ownership::Borrowed, galvan_ast::ExpressionKind::Ident(_)) => false, // handled separately above
-                        (Ownership::MutBorrowed, galvan_ast::ExpressionKind::FunctionCall(_)) => true,
-                        (Ownership::MutBorrowed, galvan_ast::ExpressionKind::Literal(galvan_ast::Literal::StringLiteral(_))) => true,
+                        (Ownership::MutBorrowed, galvan_ast::ExpressionKind::FunctionCall(_)) => {
+                            true
+                        }
+                        (
+                            Ownership::MutBorrowed,
+                            galvan_ast::ExpressionKind::Literal(
+                                galvan_ast::Literal::StringLiteral(_),
+                            ),
+                        ) => true,
                         _ => false,
                     };
-                    
+
                     if should_borrow {
                         match scope.ownership {
                             Ownership::Borrowed => format!("&({})", expr_result),
@@ -690,20 +731,24 @@ impl Transpile for FunctionCallArg {
 impl Transpile for EnumConstructor {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let enum_access = self.enum_access.transpile(ctx, scope, errors);
-        
+
         if self.arguments.is_empty() {
-            // Simple enum variant access: Color::Transparent  
+            // Simple enum variant access: Color::Transparent
             enum_access
         } else if self.arguments.iter().all(|arg| arg.field_name.is_none()) {
             // All anonymous arguments: Color::Gray(128)
-            let args = self.arguments.iter()
+            let args = self
+                .arguments
+                .iter()
                 .map(|arg| arg.expression.transpile(ctx, scope, errors))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}({})", enum_access, args)
         } else {
             // Named arguments: Color::Rgb { r: 100, g: 10, b: 150 }
-            let args = self.arguments.iter()
+            let args = self
+                .arguments
+                .iter()
                 .map(|arg| arg.transpile(ctx, scope, errors))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -715,7 +760,7 @@ impl Transpile for EnumConstructor {
 impl Transpile for EnumConstructorArg {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let expr = self.expression.transpile(ctx, scope, errors);
-        
+
         if let Some(ref field_name) = self.field_name {
             format!("{}: {}", field_name.as_str(), expr)
         } else {

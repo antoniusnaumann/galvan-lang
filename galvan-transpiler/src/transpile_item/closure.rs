@@ -88,12 +88,13 @@ impl Transpile for ElseExpression {
                 // Create a child scope for the Some arm to declare __value
                 let mut some_scope = Scope::child(scope);
 
+                let ownership = self.receiver.infer_owned(ctx, scope, errors);
                 // Declare __value variable in the Some arm scope
                 some_scope.declare_variable(Variable {
                     ident: "__value".to_owned().into(),
                     modifier: DeclModifier::Let,
                     ty: inner_type,
-                    ownership: Ownership::Borrowed, // pattern match creates a borrowed reference
+                    ownership, // pattern match creates a borrowed reference
                 });
 
                 let cast_result = cast(
@@ -118,14 +119,27 @@ impl Transpile for ElseExpression {
                     errors,
                 );
 
-                transpile!(
-                    ctx,
-                    scope,
-                    errors,
-                    "if let Some(__value) = {} {{ {} }} else {{ {block} }}",
-                    self.receiver,
-                    cast_result
-                )
+                match ownership {
+                    Ownership::SharedOwned => transpile!(
+                        ctx,
+                        scope,
+                        errors,
+                        "if let Some(ref __value) = {} {{ {} }} else {{ {block} }}",
+                        self.receiver,
+                        cast_result
+                    ),
+                    Ownership::Borrowed
+                    | Ownership::MutBorrowed
+                    | Ownership::UniqueOwned
+                    | Ownership::Ref => transpile!(
+                        ctx,
+                        scope,
+                        errors,
+                        "if let Some(__value) = {} {{ {} }} else {{ {block} }}",
+                        self.receiver,
+                        cast_result
+                    ),
+                }
             }
         }
     }

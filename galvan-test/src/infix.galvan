@@ -31,13 +31,13 @@ test "else operator clones borrowed value" {
 }
 
 test "else operator does not consume receiver" {
-    let bello: Dog? = Dog(name: "Bello", age: 3)
+    let bello2: Dog? = Dog(name: "Bello", age: 3)
     let hasso = Dog(name: "Hasso", age: 6)
 
-    let good_boy = bello else { hasso }
+    let good_boy = bello2 else { hasso }
     let again_hasso = hasso
 
-    assert bello?.name == "Bello"
+    assert bello2?.name == "Bello"
     assert hasso.name == "Hasso"
 }
 

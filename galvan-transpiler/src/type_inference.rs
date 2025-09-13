@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use galvan_ast::{
     ArithmeticOperator, ArrayLiteral, ArrayTypeItem, BasicTypeItem, Block, Body, CollectionLiteral,
     CollectionOperator, DictLiteral, DictLiteralElement, DictionaryTypeItem, ElseExpression,
     Expression, ExpressionKind, FunctionCall, Group, InfixExpression, InfixOperation, Literal,
     MemberOperator, NeverTypeItem, OptionalTypeItem, OrderedDictLiteral, OrderedDictionaryTypeItem,
-    Ownership, PostfixExpression, RangeOperator, SetLiteral, SetTypeItem, Span, Statement,
-    TypeDecl, TypeElement, TypeIdent,
+    Ownership, PostfixExpression, RangeOperator, ResultTypeItem, SetLiteral, SetTypeItem, Span,
+    Statement, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope};
 use itertools::Itertools;
@@ -13,6 +15,7 @@ use crate::{
     builtins::{CheckBuiltins, IsSame},
     context::Context,
     error::{ErrorCollector, TranspilerError},
+    Transpile,
 };
 
 pub(crate) trait InferType {
@@ -722,14 +725,51 @@ impl InferType for InfixOperation<RangeOperator> {
 
 impl InferType for InfixOperation<MemberOperator> {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
-        let Self {
-            lhs,
-            operator: _,
-            rhs,
-        } = self;
+        let Self { lhs, operator, rhs } = self;
 
         let receiver_type = lhs.infer_type(scope, errors);
 
+        self.infer_rec(scope, errors, operator, rhs, receiver_type)
+    }
+
+    fn infer_owned(
+        &self,
+        ctx: &Context<'_>,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+    ) -> Ownership {
+        let Self {
+            lhs,
+            operator: _,
+            rhs: _,
+        } = self;
+
+        // Member access propagates the ownership of the receiver
+        // If the receiver is borrowed, the member is also borrowed
+        lhs.infer_owned(ctx, scope, errors)
+    }
+}
+
+trait InferRec {
+    fn infer_rec(
+        &self,
+        scope: &Scope,
+        errors: &mut ErrorCollector,
+        operator: &MemberOperator,
+        rhs: &Expression,
+        receiver_type: TypeElement,
+    ) -> TypeElement;
+}
+
+impl InferRec for InfixOperation<MemberOperator> {
+    fn infer_rec(
+        &self,
+        scope: &Scope<'_>,
+        errors: &mut ErrorCollector,
+        operator: &MemberOperator,
+        rhs: &Expression,
+        receiver_type: TypeElement,
+    ) -> TypeElement {
         match receiver_type {
             TypeElement::Plain(ty) => {
                 let Some(ty) = &scope.resolve_type(&ty.ident) else {
@@ -891,12 +931,61 @@ impl InferType for InfixOperation<MemberOperator> {
                     }
                 }
             }
-            TypeElement::Optional(_) | TypeElement::Result(_) => {
-                // TODO: Handle inference for optional and result types
-                // TODO: Ultimately transition to a compiler error here
-                //  that tells the user to use safe-call ?. or forward-error-call !.
-                TypeElement::infer()
-            }
+            TypeElement::Optional(_) | TypeElement::Result(_) => match operator {
+                MemberOperator::Dot => {
+                    if self.is_field() {
+                        errors.error(TranspilerError::MemberAccessError {
+                            message: "Should use safe-call operator '?.' or error forwarding '!' on optional and result types"
+                            .to_string(),
+                        });
+                        TypeElement::infer()
+                    } else {
+                        // TODO: lookup function here
+                        TypeElement::infer()
+                    }
+                }
+                MemberOperator::SafeCall => {
+                    let (err, inner) = match receiver_type {
+                        TypeElement::Optional(op) => (None, op.inner),
+                        TypeElement::Result(op) => (Some(op.error), op.success),
+                        _ => unreachable!(),
+                    };
+                    let ty = self.infer_rec(scope, errors, operator, rhs, inner);
+
+                    let dummy_ctx = &Context::new(crate::mapping::Mapping {
+                        types: HashMap::new(),
+                    });
+                    println!(
+                        "cargo::warning={}",
+                        format!(
+                            "inferring type for optional '{}' for member '{}': {ty}",
+                            self.lhs
+                                .transpile(dummy_ctx, &mut Scope::child(scope), errors),
+                            self.rhs
+                                .transpile(dummy_ctx, &mut Scope::child(scope), errors)
+                        )
+                    );
+
+                    if let Some(err) = err {
+                        TypeElement::Result(
+                            ResultTypeItem {
+                                success: ty,
+                                error: err,
+                                span: Span::default(),
+                            }
+                            .into(),
+                        )
+                    } else {
+                        TypeElement::Optional(
+                            OptionalTypeItem {
+                                inner: ty,
+                                span: Span::default(),
+                            }
+                            .into(),
+                        )
+                    }
+                }
+            },
             other => {
                 if self.is_field() && !other.is_infer() {
                     errors.error(TranspilerError::MemberAccessError {
@@ -909,23 +998,6 @@ impl InferType for InfixOperation<MemberOperator> {
                 }
             }
         }
-    }
-
-    fn infer_owned(
-        &self,
-        ctx: &Context<'_>,
-        scope: &Scope,
-        errors: &mut ErrorCollector,
-    ) -> Ownership {
-        let Self {
-            lhs,
-            operator: _,
-            rhs: _,
-        } = self;
-
-        // Member access propagates the ownership of the receiver
-        // If the receiver is borrowed, the member is also borrowed
-        lhs.infer_owned(ctx, scope, errors)
     }
 }
 
