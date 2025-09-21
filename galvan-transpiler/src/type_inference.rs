@@ -744,9 +744,11 @@ impl InferType for InfixOperation<MemberOperator> {
             rhs: _,
         } = self;
 
-        // Member access propagates the ownership of the receiver
-        // If the receiver is borrowed, the member is also borrowed
-        lhs.infer_owned(ctx, scope, errors)
+        match lhs.infer_owned(ctx, scope, errors) {
+            Ownership::SharedOwned | Ownership::Borrowed => Ownership::Borrowed,
+            Ownership::UniqueOwned | Ownership::MutBorrowed => Ownership::UniqueOwned,
+            Ownership::Ref => todo!(),
+        }
     }
 }
 

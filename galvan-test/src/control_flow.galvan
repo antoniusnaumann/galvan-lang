@@ -93,3 +93,11 @@ test "Return from else on optional" {
     let result = double_or_minus_one(none)
     assert result == -1
 }
+
+test "Try-expression on struct member" {
+    let maybe_dog: Dog? = Dog(name: "Hugo", age: 8)
+    let dog_name: String = maybe_dog?.name else { "Bello" }
+
+    assert dog_name == "Hugo"
+    assert maybe_dog?.name == "Hugo" 
+}
