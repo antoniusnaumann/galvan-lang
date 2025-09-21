@@ -15,3 +15,41 @@ fn echo_or_default(arg: Int?) -> Int {
 test "Auto-wrap some on function call" {
     assert echo_or_default(21) == 21
 }
+
+
+type Point {
+    x: Double
+    y: Double
+}
+
+type LineSegment {
+    start: Point
+    end: Point
+}
+
+test "Auto-reference field" {
+    let p1 = Point(x: 0.0, y: 1.0)
+    let p2 = Point(x: 0.5, y: 1.2)
+    let line = LineSegment(start: p1, end: p2)
+
+    assert coordinate_sum(line.start) == 1.0
+    assert coordinate_sum(line.end) == 1.7
+}
+
+fn coordinate_sum(p: Point) -> Double {
+    p.x + p.y
+}
+
+test "Auto-reference field in method" {
+    let p1 = Point(x: 0.0, y: 1.0)
+    let p2 = Point(x: 0.5, y: 1.2)
+    let line = LineSegment(start: p1, end: p2)
+
+    assert line.start.x_diff(line.start) == 0.0
+    assert line.end.x_diff(line.end) == 0.0
+}
+
+fn x_diff(self: Point, p: Point) -> Double {
+    self.x - p.x
+}
+
