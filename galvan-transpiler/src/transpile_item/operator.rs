@@ -28,17 +28,17 @@ impl Transpile for InfixOperation<ComparisonOperator> {
         let Self { lhs, operator, rhs } = self;
 
         match operator {
-            ComparisonOperator::Equal => transpile!(ctx, scope, errors, "{} == {}", lhs, rhs),
+            ComparisonOperator::Equal => transpile!(ctx, scope, errors, "({}).eq(&{})", lhs, rhs),
             ComparisonOperator::NotEqual => {
-                transpile!(ctx, scope, errors, "{} != {}", lhs, rhs)
+                transpile!(ctx, scope, errors, "({}).ne(&{})", lhs, rhs)
             }
-            ComparisonOperator::Less => transpile!(ctx, scope, errors, "{} < {}", lhs, rhs),
+            ComparisonOperator::Less => transpile!(ctx, scope, errors, "({}).lt(&{})", lhs, rhs),
             ComparisonOperator::LessEqual => {
-                transpile!(ctx, scope, errors, "{} <= {}", lhs, rhs)
+                transpile!(ctx, scope, errors, "({}).le(&{})", lhs, rhs)
             }
-            ComparisonOperator::Greater => transpile!(ctx, scope, errors, "{} > {}", lhs, rhs),
+            ComparisonOperator::Greater => transpile!(ctx, scope, errors, "({}).gt(&{})", lhs, rhs),
             ComparisonOperator::GreaterEqual => {
-                transpile!(ctx, scope, errors, "{} >= {}", lhs, rhs)
+                transpile!(ctx, scope, errors, "({}).ge(&{})", lhs, rhs)
             }
             ComparisonOperator::Identical => {
                 transpile!(

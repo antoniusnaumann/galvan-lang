@@ -2,16 +2,25 @@ use crate::cast::cast;
 use crate::context::Context;
 use crate::error::ErrorCollector;
 use crate::macros::transpile;
+use crate::transpile_item::function_call::transpile_call_with_receiver;
 use crate::type_inference::InferType;
 use crate::{TranspilerError, Transpile};
-use galvan_ast::{ConstructorCall, ConstructorCallArg, InfixOperation, MemberOperator, Ownership, TypeDecl};
+use galvan_ast::{ConstructorCall, ConstructorCallArg, ExpressionKind, InfixOperation, MemberOperator, Ownership, TypeDecl};
 use galvan_resolver::{Lookup, Scope};
 
 impl Transpile for InfixOperation<MemberOperator> {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
         let Self { lhs, operator, rhs } = self;
         match operator {
-            MemberOperator::Dot => transpile!(ctx, scope, errors, "{}.{}", lhs, rhs),
+            MemberOperator::Dot => {
+                // Check if RHS is a function call for member method syntax
+                if let ExpressionKind::FunctionCall(ref call) = rhs.kind {
+                    transpile_call_with_receiver(Some(lhs), &call.identifier, &call.arguments, ctx, scope, errors)
+                } else {
+                    // Regular field access
+                    transpile!(ctx, scope, errors, "{}.{}", lhs, rhs)
+                }
+            }
             MemberOperator::SafeCall => {
                 transpile!(ctx, scope, errors, "{}.map(|__elem__| {{ __elem__.{} }})", lhs, rhs)
             }
