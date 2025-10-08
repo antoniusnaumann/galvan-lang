@@ -12,7 +12,7 @@ use itertools::Itertools;
 use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
 use crate::cast::{cast, transpile_unified, unify};
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::error::{ErrorCollector, TranspilerError};
 use crate::macros::transpile;
 use crate::transpile_item::closure::{transpile_closure, transpile_closure_argument};
 use crate::transpile_item::statement::match_ident;
@@ -69,8 +69,11 @@ impl Transpile for FunctionCall {
                         },
                 }) if e.is_comparison() => {
                     if modifier.is_some() {
-                        // TODO: Add proper error handling for invalid assert modifier
-                        return format!("/* error: assert modifier not allowed */");
+                        errors.error(TranspilerError::InvalidModifier { 
+                            modifier: "assert".to_string(), 
+                            context: "comparison expressions".to_string() 
+                        });
+                        return format!("/* invalid assert modifier */");
                     }
 
                     let InfixExpression::Comparison(comp) = e.borrow() else {
@@ -182,8 +185,10 @@ impl Transpile for FunctionCall {
                 }
                 Some(_) => format!("assert!({})", self.arguments.transpile(ctx, scope, errors)),
                 _ => {
-                    // TODO: Add proper error handling for invalid assert arguments
-                    format!("/* assert error */")
+                    errors.error(TranspilerError::InvalidSyntax { 
+                        message: "Assert requires a condition or comparison expression".to_string() 
+                    });
+                    format!("/* invalid assert arguments */")
                 }
             },
             s if BORROWED_ITERATOR_FNS.contains(&s) => {
@@ -197,8 +202,11 @@ impl Transpile for FunctionCall {
                         match &a.expression.kind {
                             ExpressionKind::Closure(closure) => {
                                 if a.modifier.is_some() {
-                                    // TODO: Add proper error handling for invalid closure modifier
-                                    return format!("/* error: closure modifier not allowed */");
+                                    errors.error(TranspilerError::InvalidModifier { 
+                                        modifier: "closure".to_string(), 
+                                        context: "borrowed iterator functions".to_string() 
+                                    });
+                                    return format!("/* invalid closure modifier */");
                                 }
                                 transpile_closure(ctx, &mut scope, closure, true, errors)
                             }
@@ -368,10 +376,13 @@ pub fn transpile_if(
     );
     let condition = &func.arguments[0];
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
-        // TODO: Add proper error handling for invalid if body argument
+        errors.error(TranspilerError::MissingArgument { 
+            operation: "if".to_string(), 
+            argument_type: "body expression".to_string() 
+        });
         return (
-            String::from("/* error */"),
-            String::from("/* error */"),
+            String::from("/* invalid if body */"),
+            String::from("/* invalid if body */"),
             TypeElement::infer(),
         );
     };

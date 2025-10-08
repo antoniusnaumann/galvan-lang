@@ -6,7 +6,6 @@ use galvan_resolver::Scope;
 
 impl Transpile for Ident {
     fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
-        // TODO: Escape ident when name has collision with rust keyword
         // TODO: Use lookup to insert fully qualified name
         sanitize_name(self.as_str()).into()
     }

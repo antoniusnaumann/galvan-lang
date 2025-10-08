@@ -2,15 +2,14 @@
 
 ## Critical - Core Language Features
 - **Type inference system improvements** (galvan-transpiler/src/type_inference.rs)
-  - Implement type inference for closures (line 189)
-  - Add support for type unions (line 74)  
-  - Handle inference for optional and result types (line 722)
-  - Implement function lookup with borrowed return values (line 342)
+  - Add support for type unions (line 132)  
+  - Implement function lookup with borrowed return values (line 402)
+  - Handle inference for alias types (lines 813, 891)
 
 - **Missing operator implementations** (galvan-transpiler/src/transpile_item/operator.rs)
   - Implement XOR chain handling (line 21)
-  - Add remove operator for collections (line 151)
-  - Implement custom infix operators (line 207)
+  - Add remove operator for collections (line 165)
+  - Implement custom infix operators (line 195)
 
 - **Generic type support** (galvan-transpiler/src/transpile_item/type.rs)
   - Transpile generic type parameters (line 42)
@@ -26,10 +25,9 @@
   - Implement OrderedDictLiteral transpilation (line 48)
 
 - **Function call enhancements** (galvan-transpiler/src/transpile_item/function_call.rs)
-  - Auto-unfold tuples into multiple arguments (line 348)
-  - Add capacity optimization for vector creation (line 390)
-  - Implement for loop on optional types (line 302)
-  - Add tuple iteration support (line 298)
+  - Add capacity optimization for vector creation (line 512)
+  - Implement for loop on optional types (line 425)
+  - Add tuple iteration support (line 421)
 
 ## Medium Priority - Error Handling & Validation
 - **Comprehensive error handling** (multiple files)
@@ -43,11 +41,9 @@
 
 ## Low Priority - Language Polish
 - **String formatting** (galvan-transpiler/src/transpile_item/literal.rs)
-  - Implement sophisticated string interpolation with {} extraction (line 17)
   - Add number literal parsing and type validation (line 24)
 
-- **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)
-  - Add Rust keyword collision escaping (line 9)
+- **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)  
   - Implement fully qualified name lookup (line 10, 24)
 
 - **Tree-sitter grammar completeness** (tree-sitter-galvan/)
@@ -62,5 +58,5 @@
 - Improve span tracking throughout AST nodes
 
 ---
-*Last updated: 2025-08-15*
+*Last updated: 2025-10-08*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*
