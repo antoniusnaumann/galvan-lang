@@ -94,9 +94,17 @@ test "Return from else on optional" {
     assert result == -1
 }
 
-test "Try-expression on struct member" {
+test "Safe-call -> else on struct member" {
     let maybe_dog: Dog? = Dog(name: "Hugo", age: 8)
     let dog_name: String = maybe_dog?.name else { "Bello" }
+
+    assert dog_name == "Hugo"
+    assert maybe_dog?.name == "Hugo" 
+}
+
+test "Try-expression on struct member" {
+    let maybe_dog: Dog? = Dog(name: "Hugo", age: 8)
+    let dog_name: String = try maybe_dog |dog| { dog.name } else { "Bello" }
 
     assert dog_name == "Hugo"
     assert maybe_dog?.name == "Hugo" 
