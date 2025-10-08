@@ -44,7 +44,13 @@ impl_transpile!(
 );
 
 impl Transpile for OrderedDictLiteral {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
-        todo!("Transpile OrderedDictLiteral")
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        let elements = self
+            .elements
+            .iter()
+            .map(|e| e.transpile(ctx, scope, errors))
+            .join(", ");
+
+        format!("::std::collections::BTreeMap::from([{}])", elements)
     }
 }
