@@ -84,9 +84,12 @@ impl ReadCursor for OrderedDictLiteral {
         while cursor.kind()? == "dict_element" {
             elements.push(DictLiteralElement::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
-        cursor_expect!(cursor, "bracket_open");
+        cursor_expect!(cursor, "bracket_close");
         cursor.goto_parent();
 
         Ok(OrderedDictLiteral { elements, span })

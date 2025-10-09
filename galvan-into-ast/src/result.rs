@@ -57,7 +57,9 @@ impl CursorUtil for TreeCursor<'_> {
         let mut res = self.goto_next_sibling();
 
         while let Ok("comment") = self.kind() {
-            if !res { break; }
+            if !res {
+                break;
+            }
             res = self.goto_next_sibling();
         }
 
@@ -68,7 +70,9 @@ impl CursorUtil for TreeCursor<'_> {
         let mut res = self.goto_first_child();
 
         while let Ok("comment") = self.kind() {
-            if !res { break; }
+            if !res {
+                break;
+            }
             res = self.goto_next_sibling();
         }
 
