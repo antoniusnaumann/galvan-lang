@@ -62,6 +62,9 @@ impl ReadCursor for SetLiteral {
         while cursor.kind()? == "expression" {
             elements.push(Expression::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor_expect!(cursor, "brace_close");

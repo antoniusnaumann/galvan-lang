@@ -70,18 +70,12 @@ impl Transpile for InfixOperation<CollectionOperator> {
 
         match operator {
             CollectionOperator::Concat => {
-                // Determine if RHS is a collection (use concat) or element (use single-element append)
-                // Default to concat behavior to be consistent with ++= operator
                 let lhs_type = lhs.infer_type(scope, errors);
                 let rhs_type = rhs.infer_type(scope, errors);
 
-                // Check if LHS is an array/vector type
                 match &lhs_type {
                     TypeElement::Array(array_type) => {
-                        // If RHS type exactly matches the element type, append as single element
-                        // Otherwise, default to concat (consistent with ++= operator behavior)
                         if rhs_type == array_type.elements {
-                            // Single element append: create a new vector with the element added
                             transpile!(
                                 ctx,
                                 scope,
@@ -91,7 +85,6 @@ impl Transpile for InfixOperation<CollectionOperator> {
                                 rhs
                             )
                         } else {
-                            // Default to concat behavior (consistent with ++= operator)
                             transpile!(
                                 ctx,
                                 scope,
@@ -102,11 +95,30 @@ impl Transpile for InfixOperation<CollectionOperator> {
                             )
                         }
                     }
+                    TypeElement::Set(set_type) => {
+                        if rhs_type == set_type.elements {
+                            transpile!(
+                                ctx,
+                                scope,
+                                errors,
+                                "{{ let mut temp = ({}).to_owned(); temp.insert({}); temp }}",
+                                lhs,
+                                rhs
+                            )
+                        } else {
+                            transpile!(
+                                ctx,
+                                scope,
+                                errors,
+                                "({}).union(&{}).cloned().collect::<::std::collections::HashSet<_>>().to_owned()",
+                                lhs,
+                                rhs
+                            )
+                        }
+                    }
                     TypeElement::Plain(basic_type) if basic_type.ident.as_str() == "String" => {
-                        // Check if RHS is a char
                         if let TypeElement::Plain(rhs_basic) = &rhs_type {
                             if rhs_basic.ident.as_str() == "Char" {
-                                // String + char: use push method
                                 transpile!(
                                     ctx,
                                     scope,
@@ -116,7 +128,6 @@ impl Transpile for InfixOperation<CollectionOperator> {
                                     rhs
                                 )
                             } else if rhs_basic.ident.as_str() == "String" {
-                                // String + String: existing logic
                                 transpile!(
                                     ctx,
                                     scope,
@@ -126,7 +137,6 @@ impl Transpile for InfixOperation<CollectionOperator> {
                                     rhs
                                 )
                             } else {
-                                // String + other: existing conversion logic
                                 transpile!(
                                     ctx,
                                     scope,
@@ -137,7 +147,6 @@ impl Transpile for InfixOperation<CollectionOperator> {
                                 )
                             }
                         } else {
-                            // String + complex type: existing default logic
                             transpile!(
                                 ctx,
                                 scope,
@@ -149,8 +158,6 @@ impl Transpile for InfixOperation<CollectionOperator> {
                         }
                     }
                     _ => {
-                        // LHS is not an array or string, default to concat behavior
-                        // (consistent with ++= operator which assumes collections)
                         transpile!(
                             ctx,
                             scope,

@@ -1,0 +1,76 @@
+test "Access set" {
+    let set = {
+        "oranges",
+        "apples",
+        "brussel sprouts",
+    }
+
+    assert "oranges" in set
+    assert "apples" in set
+    assert "brussel sprouts" in set
+}
+
+test "Insert into set" {
+    mut set = {
+        "oranges",
+        "apples",
+        "brussel sprouts",
+    }
+
+    set ++= "kiwis"
+
+    assert "oranges" in set
+    assert "apples" in set
+    assert "brussel sprouts" in set
+}
+
+test "Set with type annotation" {
+    let set: {String} = {
+        "oranges",
+        "apples",
+        "brussel sprouts",
+    }
+
+    assert "oranges" in set
+    assert "apples" in set
+    assert "brussel sprouts" in set
+}
+
+test "Merge sets" {
+    let set: {String} = {
+        "apples",
+        "pineapples"
+    }
+
+    let other: {String} = {
+        "bananas",
+        "pears",
+    }
+
+    let merged = set ++ other
+
+    assert "apples" in merged
+    assert "pineapples" in merged
+    assert "bananas" in merged
+    assert "pears" in merged
+}
+
+test "Append sets" {
+    mut set: {String} = {
+        "apples",
+        "pineapples"
+    }
+
+    let other: {String} = {
+        "bananas",
+        "pears",
+    }
+
+    set ++= other
+
+    assert "apples" in set
+    assert "pineapples" in set
+    assert "bananas" in set
+    assert "pears" in set
+}
+

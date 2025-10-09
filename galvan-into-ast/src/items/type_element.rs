@@ -1,7 +1,7 @@
 use galvan_ast::{
     ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, Ident, OptionalTypeItem,
-    OrderedDictionaryTypeItem, ParametricTypeItem, ResultTypeItem, SetTypeItem, Span, TupleTypeItem, TypeElement,
-    TypeIdent,
+    OrderedDictionaryTypeItem, ParametricTypeItem, ResultTypeItem, SetTypeItem, Span,
+    TupleTypeItem, TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -30,7 +30,9 @@ impl ReadCursor for TypeElement {
             ),
             "set_type" => TypeElement::Set(SetTypeItem::read_cursor(cursor, source)?.into()),
             "tuple_type" => TypeElement::Tuple(TupleTypeItem::read_cursor(cursor, source)?.into()),
-            "parametric_type" => TypeElement::Parametric(ParametricTypeItem::read_cursor(cursor, source)?),
+            "parametric_type" => {
+                TypeElement::Parametric(ParametricTypeItem::read_cursor(cursor, source)?)
+            }
             "generic_type" => TypeElement::Generic(GenericTypeItem::read_cursor(cursor, source)?),
             "basic_type" => TypeElement::Plain(BasicTypeItem::read_cursor(cursor, source)?),
             unknown => {
@@ -171,7 +173,7 @@ impl ReadCursor for SetTypeItem {
         let span = Span::from_node(set);
 
         cursor.child();
-        let _brace = cursor_expect!(cursor, "brace_close");
+        let _brace = cursor_expect!(cursor, "brace_open");
 
         cursor.next();
         let inner = TypeElement::read_cursor(cursor, source)?;
@@ -205,10 +207,10 @@ impl ReadCursor for ParametricTypeItem {
 
         cursor.goto_next_sibling();
         cursor_expect!(cursor, "angle_bracket_open");
-        
+
         cursor.goto_next_sibling();
         let mut type_args = Vec::new();
-        
+
         loop {
             if cursor.kind()? == "angle_bracket_close" {
                 break;
@@ -223,7 +225,11 @@ impl ReadCursor for ParametricTypeItem {
 
         cursor.goto_parent();
 
-        Ok(Self { base_type, type_args, span })
+        Ok(Self {
+            base_type,
+            type_args,
+            span,
+        })
     }
 }
 
