@@ -87,6 +87,9 @@ pub enum TranspilerError {
 
     #[error("Incompatible ownership types: {message}")]
     IncompatibleOwnership { message: String },
+
+    #[error("Unsupported assignment operation: {operation} is not supported on {type_name} types. Only plain assignment (=) is supported for indexed dictionary and set access.")]
+    UnsupportedDictSetAssignment { operation: String, type_name: String },
 }
 
 /// Collects errors and warnings during compilation

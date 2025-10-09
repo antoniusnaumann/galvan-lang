@@ -3,6 +3,7 @@ use crate::error::ErrorCollector;
 use crate::macros::transpile;
 use crate::type_inference::InferType;
 use crate::Transpile;
+use crate::TranspilerError;
 use crate::context::Context;
 use galvan_ast::{Assignment, AssignmentOperator, ExpressionKind, Ownership, TypeElement};
 use galvan_resolver::Scope;
@@ -41,6 +42,53 @@ impl Transpile for Assignment {
         };
 
         let exp = cast(exp, &scope.return_type.clone(), ownership, ctx, scope, errors);
+
+        // Special case for indexed dictionary and set assignment
+        if let ExpressionKind::Postfix(postfix) = &target.kind {
+            if let galvan_ast::PostfixExpression::AccessExpression(access_expr) = &**postfix {
+                let base_type = access_expr.base.infer_type(scope, errors);
+                
+                match &base_type {
+                    TypeElement::Dictionary(_) | TypeElement::OrderedDictionary(_) | TypeElement::Set(_) => {
+                        let type_name = match &base_type {
+                            TypeElement::Dictionary(_) => "dictionary",
+                            TypeElement::OrderedDictionary(_) => "ordered dictionary", 
+                            TypeElement::Set(_) => "set",
+                            _ => unreachable!(),
+                        };
+                        
+                        match operator {
+                            AssignmentOperator::Assign => {
+                                // Use .insert() for plain assignment
+                                return transpile!(ctx, scope, errors, "{}.insert({}, {})", access_expr.base, access_expr.index, exp);
+                            }
+                            _ => {
+                                // Error for combined assignment operators
+                                let op_str = match operator {
+                                    AssignmentOperator::AddAssign => "+=",
+                                    AssignmentOperator::SubAssign => "-=",
+                                    AssignmentOperator::MulAssign => "*=",
+                                    AssignmentOperator::DivAssign => "/=",
+                                    AssignmentOperator::RemAssign => "%=",
+                                    AssignmentOperator::PowAssign => "**=",
+                                    AssignmentOperator::ConcatAssign => "++=",
+                                    AssignmentOperator::Assign => unreachable!(),
+                                };
+                                
+                                errors.error(TranspilerError::UnsupportedDictSetAssignment {
+                                    operation: op_str.to_string(),
+                                    type_name: type_name.to_string(),
+                                });
+                                return format!("/* Unsupported operation: {} on {} */", op_str, type_name);
+                            }
+                        }
+                    }
+                    _ => {
+                        // Not a dictionary/set type, fall through to normal assignment
+                    }
+                }
+            }
+        }
 
         match operator {
             AssignmentOperator::Assign => {

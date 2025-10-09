@@ -32,9 +32,9 @@ test "Modify map element" {
         "brussel sprouts": 14,
     }
 
-    map["oranges"] = 17
+    map["oranges"] = 16
 
-    assert map["oranges"] == 17
+    assert map["oranges"] == 16
     assert map["apples"] == 5
     assert map["brussel sprouts"] == 14
 }
