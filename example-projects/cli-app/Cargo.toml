@@ -1,0 +1,14 @@
+[package]
+name = "galvan-hello-world"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+galvan = { path = "../..", version = "0.0.3" }
+thiserror = "2.0.12"
+usvg = "0.45.1"
+
+[build-dependencies]
+galvan = { features = ["build"], path = "../..", version = "0.0.3" }
+
+[workspace]

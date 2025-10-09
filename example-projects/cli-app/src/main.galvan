@@ -1,0 +1,19 @@
+main {
+    print "Hello World!"
+}
+
+// commands automatically get added to the CLI application as subcommands, including doc comments being shown in the -h argument 
+/// Greets the user
+cmd greet(
+    /// First name of the person to greet
+    n name: String
+    // optional args can be left out
+    /// Surname of the person to greet
+    s surname: Option<String>
+) {
+    try surname |surname| {
+        print "Hello {name} {surname}!"
+    } else {
+        print "Hello {name}!"
+    }
+}
