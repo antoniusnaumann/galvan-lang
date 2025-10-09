@@ -1,0 +1,42 @@
+test "Access map" {
+    let map = {
+        "oranges": 4,
+        "apples": 5,
+        "brussel sprouts": 14,
+    }
+
+    assert map["oranges"] == 4
+    assert map["apples"] == 5
+    assert map["brussel sprouts"] == 14
+}
+
+test "Insert into map" {
+    mut map = {
+        "oranges": 4,
+        "apples": 5,
+        "brussel sprouts": 14,
+    }
+
+    map["kiwis"] = 21
+
+    assert map["oranges"] == 4
+    assert map["apples"] == 5
+    assert map["brussel sprouts"] == 14
+    assert map["kiwis"] == 21
+}
+
+test "Modify map element" {
+    mut map = {
+        "oranges": 4,
+        "apples": 5,
+        "brussel sprouts": 14,
+    }
+
+    map["oranges"] = 17
+
+    assert map["oranges"] == 17
+    assert map["apples"] == 5
+    assert map["brussel sprouts"] == 14
+}
+
+

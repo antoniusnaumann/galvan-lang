@@ -106,6 +106,9 @@ impl ReadCursor for DictLiteral {
         while cursor.kind()? == "dict_element" {
             elements.push(DictLiteralElement::read_cursor(cursor, source)?);
             cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
         }
 
         cursor_expect!(cursor, "brace_close");
@@ -124,7 +127,12 @@ impl ReadCursor for DictLiteralElement {
         let key = Expression::read_cursor(cursor, source)?;
 
         cursor.next();
+        cursor_expect!(cursor, "colon");
+
+        cursor.next();
         let value = Expression::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
 
         Ok(DictLiteralElement { key, value, span })
     }
