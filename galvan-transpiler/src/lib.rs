@@ -102,7 +102,7 @@ fn generate_cli_structure(
             format!("{}({})", cmd_name, function_params.join(", "))
         };
         
-        match_arms.push(format!("        Commands::{}(args) => {}", cmd_name_pascal, function_call));
+        match_arms.push(format!("        Some(Commands::{}(args)) => {},", cmd_name_pascal, function_call));
     }
 
     let cli_code = format!(
@@ -113,7 +113,7 @@ use clap::{{Parser, Subcommand, Args}};
 #[command(author, version, about, long_about = None)]
 struct Cli {{
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }}
 
 #[derive(Subcommand)]
@@ -127,6 +127,7 @@ pub(crate) fn __cli_main() {{
     let cli = Cli::parse();
     match cli.command {{
 {}
+        None => __main__(),
     }}
 }}
 "#,

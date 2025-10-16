@@ -1,5 +1,5 @@
 main {
-    print "Hello World!"
+    print "Hello World! ..."
 }
 
 // commands automatically get added to the CLI application as subcommands, including doc comments being shown in the -h argument
