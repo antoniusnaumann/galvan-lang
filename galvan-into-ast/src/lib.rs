@@ -64,6 +64,7 @@ impl SegmentAst for Ast {
         let mut types = Vec::new();
         let mut functions = Vec::new();
         let mut tests = Vec::new();
+        let mut cmds = Vec::new();
         let mut main = None;
 
         for item in self.toplevel {
@@ -90,6 +91,10 @@ impl SegmentAst for Ast {
                         source: self.source.clone(),
                     })
                 }
+                RootItem::Cmd(item) => cmds.push(ToplevelItem {
+                    item,
+                    source: self.source.clone(),
+                }),
             }
         }
 
@@ -98,6 +103,7 @@ impl SegmentAst for Ast {
             functions,
             tests,
             main,
+            cmds,
         })
     }
 }
@@ -107,6 +113,7 @@ impl SegmentAst for Vec<Ast> {
         let mut types = Vec::new();
         let mut functions = Vec::new();
         let mut tests = Vec::new();
+        let mut cmds = Vec::new();
         let mut main = None;
         let segmented = self.into_iter().map(SegmentAst::segmented);
 
@@ -115,6 +122,7 @@ impl SegmentAst for Vec<Ast> {
             types.extend(ast.types);
             functions.extend(ast.functions);
             tests.extend(ast.tests);
+            cmds.extend(ast.cmds);
             if let Some(main_decl) = ast.main {
                 if main.is_some() {
                     return Err(AstError::DuplicateMain);
@@ -129,6 +137,7 @@ impl SegmentAst for Vec<Ast> {
             functions,
             tests,
             main,
+            cmds,
         })
     }
 }

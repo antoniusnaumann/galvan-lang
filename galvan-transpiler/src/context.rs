@@ -54,5 +54,6 @@ pub fn predefined_from(mapping: &Mapping, functions: Vec<FnDecl>) -> SegmentedAs
         functions,
         tests,
         main,
+        cmds: vec![],
     }
 }

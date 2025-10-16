@@ -340,6 +340,7 @@ pub(crate) fn transpile_closure_argument(
         let param = Param {
             identifier: arg.ident.clone(),
             decl_modifier: None,
+            short_name: None,
             param_type: param_type,
             span: arg.ty.span(),
         };

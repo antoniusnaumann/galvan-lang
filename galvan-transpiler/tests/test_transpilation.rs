@@ -41,6 +41,7 @@ mod test_utils {
                     && !line.starts_with("pub mod")
                     && !line.starts_with("#![")
                     && !line.starts_with("extern crate galvan")
+                    && !line.starts_with("pub(crate) const __HAS_CLI_COMMANDS")
             })
             .dropping_back(1)
             .collect::<Vec<_>>()

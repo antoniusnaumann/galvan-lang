@@ -1,0 +1,3 @@
+cmd greet(n name: String) {
+    print "Hello {name}!"
+}

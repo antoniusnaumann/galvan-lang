@@ -1,5 +1,5 @@
 use galvan_ast::{
-    AliasTypeDecl, Body, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl, FnSignature, Ident,
+    AliasTypeDecl, Body, CmdDecl, CmdSignature, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl, FnSignature, Ident,
     MainDecl, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl, TestDecl,
     TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility, WhereBound, WhereClause,
 };
@@ -14,6 +14,7 @@ impl ReadCursor for RootItem {
             "build" => todo!("Implement build entry point!"),
             "test" => TestDecl::read_cursor(cursor, source)?.into(),
             "function" => FnDecl::read_cursor(cursor, source)?.into(),
+            "cmd" => CmdDecl::read_cursor(cursor, source)?.into(),
             "type_declaration" => TypeDecl::read_cursor(cursor, source)?.into(),
             "entry_point" => todo!("Implement custom tasks!"),
             other => unreachable!("Unexpected node in root item: {other}"),
@@ -101,6 +102,51 @@ impl ReadCursor for FnDecl {
         Ok(FnDecl {
             signature,
             body,
+            span,
+        })
+    }
+}
+
+impl ReadCursor for CmdDecl {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let cmd = cursor_expect!(cursor, "cmd");
+        let span = Span::from_node(cmd);
+        cursor.child();
+
+        let signature = CmdSignature::read_cursor(cursor, source)?;
+
+        cursor.next();
+        let body = Body::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(CmdDecl {
+            signature,
+            body,
+            span,
+        })
+    }
+}
+
+impl ReadCursor for CmdSignature {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let signature = cursor_expect!(cursor, "cmd_signature");
+        let span = Span::from_node(signature);
+        cursor.child();
+
+        cursor_expect!(cursor, "cmd_keyword");
+
+        cursor.next();
+        let identifier = Ident::read_cursor(cursor, source)?;
+
+        cursor.next();
+        let parameters = ParamList::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(CmdSignature {
+            identifier,
+            parameters,
             span,
         })
     }
@@ -279,8 +325,20 @@ impl ReadCursor for Param {
             None
         };
 
-        let identifier = Ident::read_cursor(cursor, source)?;
+        // For CLI commands, we might have two consecutive idents: short_name and identifier
+        // For regular functions, we only have the identifier
+        let first_ident = Ident::read_cursor(cursor, source)?;
         cursor.next();
+
+        let (short_name, identifier) = if cursor.kind()? == "ident" {
+            // CLI syntax: "n name: String" -> short_name="n", identifier="name"
+            let second_ident = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+            (Some(first_ident), second_ident)
+        } else {
+            // Regular syntax: "name: String" -> short_name=None, identifier="name"
+            (None, first_ident)
+        };
 
         cursor_expect!(cursor, "colon");
         cursor.next();
@@ -290,6 +348,7 @@ impl ReadCursor for Param {
         cursor.goto_parent();
         Ok(Param {
             decl_modifier,
+            short_name,
             identifier,
             param_type,
             span,

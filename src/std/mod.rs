@@ -11,6 +11,7 @@ pub use result::*;
 pub use std::string::ToString;
 
 pub use itertools::*;
+pub use clap;
 pub trait ItertoolsExt: Itertools {
     fn vec(self) -> Vec<Self::Item>
     where

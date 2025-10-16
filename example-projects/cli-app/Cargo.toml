@@ -1,5 +1,5 @@
 [package]
-name = "galvan-hello-world"
+name = "galvan-cli-hello-world"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,3 +12,4 @@ usvg = "0.45.1"
 galvan = { features = ["build"], path = "../..", version = "0.0.3" }
 
 [workspace]
+

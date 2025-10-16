@@ -41,6 +41,103 @@ macro_rules! galvan_module {
     };
 }
 
+/// Generate CLI structure with subcommands
+fn generate_cli_structure(
+    commands: &[ToplevelItem<CmdDecl>],
+    ctx: &Context,
+    scope: &mut Scope,
+    errors: &mut ErrorCollector,
+) -> (String, String) {
+    let mut command_functions = Vec::new();
+    let mut subcommand_variants = Vec::new();
+    let mut subcommand_args = Vec::new();
+    let mut match_arms = Vec::new();
+
+    for cmd in commands {
+        let cmd_name = cmd.item.signature.identifier.as_str();
+        let cmd_name_pascal = cmd_name.to_case(Case::Pascal);
+        
+        // Generate the command function
+        let function_code = cmd.transpile(ctx, scope, errors);
+        command_functions.push(function_code);
+        
+        // Generate args struct for this command
+        let mut args_fields = Vec::new();
+        let mut function_params = Vec::new();
+        
+        for param in &cmd.item.signature.parameters.params {
+            let field_name = param.identifier.as_str();
+            let param_type = param.param_type.transpile(ctx, scope, errors);
+            
+            // Generate clap attribute based on short_name
+            let clap_attr = if let Some(short_name) = &param.short_name {
+                format!("#[arg(short = '{}', long = \"{}\")]", short_name.as_str(), field_name)
+            } else {
+                format!("#[arg(long = \"{}\")]", field_name)
+            };
+            
+            args_fields.push(format!("    {}\n    pub {}: {}", clap_attr, field_name, param_type));
+            function_params.push(format!("args.{}", field_name));
+        }
+        
+        let args_struct = if args_fields.is_empty() {
+            format!("#[derive(clap::Args, Debug)]\nstruct {}Args {{}}", cmd_name_pascal)
+        } else {
+            format!(
+                "#[derive(clap::Args, Debug)]\nstruct {}Args {{\n{}\n}}",
+                cmd_name_pascal,
+                args_fields.join(",\n")
+            )
+        };
+        
+        subcommand_args.push(args_struct);
+        
+        // Generate subcommand enum variant
+        subcommand_variants.push(format!("    {} ({}Args)", cmd_name_pascal, cmd_name_pascal));
+        
+        // Generate match arm
+        let function_call = if function_params.is_empty() {
+            format!("{}()", cmd_name)
+        } else {
+            format!("{}({})", cmd_name, function_params.join(", "))
+        };
+        
+        match_arms.push(format!("        Commands::{}(args) => {}", cmd_name_pascal, function_call));
+    }
+
+    let cli_code = format!(
+        r#"
+use clap::{{Parser, Subcommand, Args}};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {{
+    #[command(subcommand)]
+    command: Commands,
+}}
+
+#[derive(Subcommand)]
+enum Commands {{
+{}
+}}
+
+{}
+
+pub(crate) fn __cli_main() {{
+    let cli = Cli::parse();
+    match cli.command {{
+{}
+    }}
+}}
+"#,
+        subcommand_variants.join(",\n"),
+        subcommand_args.join("\n\n"),
+        match_arms.join("\n")
+    );
+
+    (command_functions.join("\n\n"), cli_code)
+}
+
 mod builtins;
 mod error;
 #[cfg(feature = "exec")]
@@ -99,6 +196,7 @@ fn transpile_segmented(
     scope: &mut Scope,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
     let mut main_errors = ErrorCollector::new();
+    let mut cmd_errors = ErrorCollector::new();
     #[derive(Hash, PartialEq, Eq, Deref, From, Display)]
     struct ModuleName(Box<str>);
     fn module_name(ident: &TypeIdent) -> ModuleName {
@@ -202,13 +300,29 @@ fn transpile_segmented(
         })
         .unwrap_or_default();
 
+    let (cmds, cli_main) = if !segmented.cmds.is_empty() {
+        let (command_functions, cli_code) = generate_cli_structure(&segmented.cmds, ctx, scope, &mut cmd_errors);
+        (command_functions, cli_code)
+    } else {
+        (String::new(), String::new())
+    };
+
+    let has_cli_commands = !segmented.cmds.is_empty();
+    let cli_flag = if has_cli_commands {
+        "pub(crate) const __HAS_CLI_COMMANDS: bool = true;"
+    } else {
+        "pub(crate) const __HAS_CLI_COMMANDS: bool = false;"
+    };
+
     let lib = TranspileOutput {
         file_name: galvan_module!("rs").into(),
         content: format!(
-            "extern crate galvan; #[allow(unused_imports)] pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n}}",
+            "extern crate galvan; #[allow(unused_imports)] pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n{}\n{}\n}}",
             galvan_module!(),
             SUPPRESS_WARNINGS,
-            [modules, toplevel_functions, &main, &tests].join("\n\n")
+            cli_flag,
+            [modules, toplevel_functions, &main, &cmds, &tests].join("\n\n"),
+            cli_main
         )
         .into(),
     };

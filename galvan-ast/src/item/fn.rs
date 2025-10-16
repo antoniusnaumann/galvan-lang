@@ -83,6 +83,7 @@ pub struct ParamList {
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Param {
     pub decl_modifier: Option<DeclModifier>,
+    pub short_name: Option<Ident>,
     pub identifier: Ident,
     pub param_type: TypeElement,
     pub span: Span,

@@ -53,6 +53,7 @@ pub struct SegmentedAsts {
     pub functions: Vec<ToplevelItem<FnDecl>>,
     pub tests: Vec<ToplevelItem<TestDecl>>,
     pub main: Option<ToplevelItem<MainDecl>>,
+    pub cmds: Vec<ToplevelItem<CmdDecl>>,
     // pub other: Vec<ToplevelItem<CustomTaskDecl>>
 }
 

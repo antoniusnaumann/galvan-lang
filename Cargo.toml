@@ -30,6 +30,7 @@ license.workspace = true
 galvan-transpiler = { path = "galvan-transpiler", version = "0.0.3" }
 itertools = "0.13.0"
 anyhow = "1.0.86"
+clap = { version = "4.0", features = ["derive"] }
 
 [features]
 build = ["galvan-transpiler/exec"]

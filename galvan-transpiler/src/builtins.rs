@@ -59,6 +59,7 @@ fn func(name: &str, parameters: Vec<TypeElement>, ret: TypeElement) -> FnDecl {
                 .into_iter()
                 .map(|t| Param {
                     decl_modifier: None,
+                    short_name: None,
                     identifier: "_".to_owned().into(),
                     param_type: t,
                     span: Span::default(),

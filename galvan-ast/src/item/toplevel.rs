@@ -1,17 +1,8 @@
 use derive_more::From;
 use galvan_ast_macro::AstNode;
 
-use super::{Body, FnDecl, Ident, StringLiteral, TypeDecl};
+use super::{Body, FnDecl, Ident, ParamList, StringLiteral, TypeDecl};
 use crate::{AstNode, PrintAst, Span};
-
-#[derive(Debug, PartialEq, Eq, From)]
-pub enum RootItem {
-    Fn(FnDecl),
-    Type(TypeDecl),
-    Main(MainDecl),
-    Test(TestDecl),
-    // CustomTask(TaskDecl),
-}
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct MainDecl {
@@ -25,11 +16,35 @@ pub struct TestDecl {
     pub body: Body,
 }
 
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct CmdDecl {
+    pub signature: CmdSignature,
+    pub body: Body,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq, AstNode)]
+pub struct CmdSignature {
+    pub identifier: Ident,
+    pub parameters: ParamList,
+    pub span: Span,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct TaskDecl {
     pub ident: Ident,
     // name: Option<String>,
     pub body: Body,
+}
+
+#[derive(Debug, PartialEq, Eq, From)]
+pub enum RootItem {
+    Fn(FnDecl),
+    Type(TypeDecl),
+    Main(MainDecl),
+    Test(TestDecl),
+    Cmd(CmdDecl),
+    // CustomTask(TaskDecl),
 }
 
 mod private {
@@ -53,4 +68,8 @@ impl RootItemMarker for MainDecl {}
 impl private::Seal for TestDecl {}
 
 impl RootItemMarker for TestDecl {}
+
+impl private::Seal for CmdDecl {}
+
+impl RootItemMarker for CmdDecl {}
 // impl RootItemMarker for TaskDecl {}

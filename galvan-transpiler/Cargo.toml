@@ -13,6 +13,7 @@ license.workspace = true
 regex = "1.10.4"
 convert_case = "0.6.0"
 derive_more = "0.99.17"
+clap = { version = "4.4", features = ["derive"] }
 
 thiserror.workspace = true
 itertools.workspace = true
