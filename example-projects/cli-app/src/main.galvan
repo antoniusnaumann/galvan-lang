@@ -10,7 +10,7 @@ cmd greet(
     // args can specify both a short and a long name, here -n and --name
     n name: String,
     // optional args can be left out
-    /// Surname of the person to greet
+    /// Surname of the person that should be greeted
     s surname: String?
 ) {
     try surname |surname| {

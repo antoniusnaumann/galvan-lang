@@ -41,6 +41,53 @@ macro_rules! galvan_module {
     };
 }
 
+/// Extract doc comment from source code by looking backwards from a given span
+fn extract_doc_comment(source_content: &str, span: &galvan_ast::Span) -> Option<String> {
+    let lines: Vec<&str> = source_content.lines().collect();
+    
+    // Find the line before the span
+    if span.start.row == 0 {
+        return None;
+    }
+    
+    let mut doc_lines = Vec::new();
+    let mut current_row = span.start.row;
+    
+    // Look backwards from the span line to find doc comments
+    while current_row > 0 {
+        current_row -= 1;
+        
+        if let Some(line) = lines.get(current_row) {
+            let trimmed = line.trim();
+            
+            if trimmed.starts_with("///") {
+                // Extract the doc comment content (remove /// and trim)
+                let comment_content = trimmed.strip_prefix("///").unwrap_or("").trim();
+                doc_lines.insert(0, comment_content.to_string());
+            } else if trimmed.is_empty() || trimmed.starts_with("//") {
+                // Empty lines and regular comments are allowed between doc comments and the target
+                continue;
+            } else {
+                // Non-comment line, stop looking
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    
+    if doc_lines.is_empty() {
+        None
+    } else {
+        Some(doc_lines.join(" "))
+    }
+}
+
+/// Extract doc comment for a parameter from source code
+fn extract_param_doc_comment(source_content: &str, param: &Param) -> Option<String> {
+    extract_doc_comment(source_content, &param.span)
+}
+
 /// Generate CLI structure with subcommands
 fn generate_cli_structure(
     commands: &[ToplevelItem<CmdDecl>],
@@ -69,11 +116,25 @@ fn generate_cli_structure(
             let field_name = param.identifier.as_str();
             let param_type = param.param_type.transpile(ctx, scope, errors);
             
-            // Generate clap attribute based on short_name
-            let clap_attr = if let Some(short_name) = &param.short_name {
-                format!("#[arg(short = '{}', long = \"{}\")]", short_name.as_str(), field_name)
-            } else {
-                format!("#[arg(long = \"{}\")]", field_name)
+            // Extract doc comment for this parameter
+            let help_text = extract_param_doc_comment(cmd.source.content(), param);
+            
+            // Generate clap attribute based on short_name and help text
+            let clap_attr = match (&param.short_name, &help_text) {
+                (Some(short_name), Some(help)) => {
+                    format!("#[arg(short = '{}', long = \"{}\", help = \"{}\")]", 
+                           short_name.as_str(), field_name, help)
+                },
+                (Some(short_name), None) => {
+                    format!("#[arg(short = '{}', long = \"{}\")]", 
+                           short_name.as_str(), field_name)
+                },
+                (None, Some(help)) => {
+                    format!("#[arg(long = \"{}\", help = \"{}\")]", field_name, help)
+                },
+                (None, None) => {
+                    format!("#[arg(long = \"{}\")]", field_name)
+                }
             };
             
             args_fields.push(format!("    {}\n    pub {}: {}", clap_attr, field_name, param_type));
@@ -92,8 +153,16 @@ fn generate_cli_structure(
         
         subcommand_args.push(args_struct);
         
-        // Generate subcommand enum variant
-        subcommand_variants.push(format!("    {} ({}Args)", cmd_name_pascal, cmd_name_pascal));
+        // Extract doc comment for the command itself
+        let cmd_help = extract_doc_comment(cmd.source.content(), &cmd.item.span);
+        
+        // Generate subcommand enum variant with help text
+        let variant = if let Some(help) = cmd_help {
+            format!("    /// {}\n    {} ({}Args)", help, cmd_name_pascal, cmd_name_pascal)
+        } else {
+            format!("    {} ({}Args)", cmd_name_pascal, cmd_name_pascal)
+        };
+        subcommand_variants.push(variant);
         
         // Generate match arm
         let function_call = if function_params.is_empty() {
