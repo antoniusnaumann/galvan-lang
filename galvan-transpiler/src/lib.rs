@@ -374,7 +374,7 @@ fn transpile_segmented(
         let (command_functions, cli_code) = generate_cli_structure(&segmented.cmds, ctx, scope, &mut cmd_errors);
         (command_functions, cli_code)
     } else {
-        (String::new(), String::new())
+        (String::new(), "pub(crate) fn __cli_main() { unreachable!(\"This is not a CLI app.\") }".to_owned())
     };
 
     let has_cli_commands = !segmented.cmds.is_empty();
