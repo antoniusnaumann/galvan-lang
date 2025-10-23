@@ -1,4 +1,7 @@
 # Galvan
+[![Tests](https://github.com/antoniusnaumann/galvan-lang/actions/workflows/tests.yaml/badge.svg)](https://github.com/antoniusnaumann/galvan-lang/actions/workflows/tests.yaml)
+[![Examples](https://github.com/antoniusnaumann/galvan-lang/actions/workflows/examples.yaml/badge.svg)](https://github.com/antoniusnaumann/galvan-lang/actions/workflows/examples.yaml)
+
 A high-level companion language for Rust.
 
 > [!IMPORTANT]
