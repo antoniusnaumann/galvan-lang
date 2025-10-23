@@ -37,7 +37,7 @@ impl Parse for MacroInput {
 pub fn generate_code_tests(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let macro_input = syn::parse_macro_input!(input as MacroInput);
 
-    let tests = walkdir::WalkDir::new("example-code")
+    let tests = walkdir::WalkDir::new("galvan-transpiler/test-cases")
         .into_iter()
         .map(|entry| entry.expect("entry to exist"))
         .filter(|entry| entry.file_type().is_file())
@@ -81,7 +81,7 @@ pub fn generate_code_tests(input: proc_macro::TokenStream) -> proc_macro::TokenS
 }
 
 fn module_hierarchy(path: &Path) -> Vec<String> {
-    let relative = &path.strip_prefix("example-code").unwrap();
+    let relative = &path.strip_prefix("galvan-transpiler/test-cases").unwrap();
 
     let mut hierarchy = relative
         .components()

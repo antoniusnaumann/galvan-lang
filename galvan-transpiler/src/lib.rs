@@ -44,22 +44,22 @@ macro_rules! galvan_module {
 /// Extract doc comment from source code by looking backwards from a given span
 fn extract_doc_comment(source_content: &str, span: &galvan_ast::Span) -> Option<String> {
     let lines: Vec<&str> = source_content.lines().collect();
-    
+
     // Find the line before the span
     if span.start.row == 0 {
         return None;
     }
-    
+
     let mut doc_lines = Vec::new();
     let mut current_row = span.start.row;
-    
+
     // Look backwards from the span line to find doc comments
     while current_row > 0 {
         current_row -= 1;
-        
+
         if let Some(line) = lines.get(current_row) {
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("///") {
                 // Extract the doc comment content (remove /// and trim)
                 let comment_content = trimmed.strip_prefix("///").unwrap_or("").trim();
@@ -75,7 +75,7 @@ fn extract_doc_comment(source_content: &str, span: &galvan_ast::Span) -> Option<
             break;
         }
     }
-    
+
     if doc_lines.is_empty() {
         None
     } else {
@@ -103,46 +103,59 @@ fn generate_cli_structure(
     for cmd in commands {
         let cmd_name = cmd.item.signature.identifier.as_str();
         let cmd_name_pascal = cmd_name.to_case(Case::Pascal);
-        
+
         // Generate the command function
         let function_code = cmd.transpile(ctx, scope, errors);
         command_functions.push(function_code);
-        
+
         // Generate args struct for this command
         let mut args_fields = Vec::new();
         let mut function_params = Vec::new();
-        
+
         for param in &cmd.item.signature.parameters.params {
             let field_name = param.identifier.as_str();
             let param_type = param.param_type.transpile(ctx, scope, errors);
-            
+
             // Extract doc comment for this parameter
             let help_text = extract_param_doc_comment(cmd.source.content(), param);
-            
+
             // Generate clap attribute based on short_name and help text
             let clap_attr = match (&param.short_name, &help_text) {
                 (Some(short_name), Some(help)) => {
-                    format!("#[arg(short = '{}', long = \"{}\", help = \"{}\")]", 
-                           short_name.as_str(), field_name, help)
-                },
+                    format!(
+                        "#[arg(short = '{}', long = \"{}\", help = \"{}\")]",
+                        short_name.as_str(),
+                        field_name,
+                        help
+                    )
+                }
                 (Some(short_name), None) => {
-                    format!("#[arg(short = '{}', long = \"{}\")]", 
-                           short_name.as_str(), field_name)
-                },
+                    format!(
+                        "#[arg(short = '{}', long = \"{}\")]",
+                        short_name.as_str(),
+                        field_name
+                    )
+                }
                 (None, Some(help)) => {
                     format!("#[arg(long = \"{}\", help = \"{}\")]", field_name, help)
-                },
+                }
                 (None, None) => {
                     format!("#[arg(long = \"{}\")]", field_name)
                 }
             };
-            
-            args_fields.push(format!("    {}\n    pub {}: {}", clap_attr, field_name, param_type));
+
+            args_fields.push(format!(
+                "    {}\n    pub {}: {}",
+                clap_attr, field_name, param_type
+            ));
             function_params.push(format!("args.{}", field_name));
         }
-        
+
         let args_struct = if args_fields.is_empty() {
-            format!("#[derive(clap::Args, Debug)]\nstruct {}Args {{}}", cmd_name_pascal)
+            format!(
+                "#[derive(clap::Args, Debug)]\nstruct {}Args {{}}",
+                cmd_name_pascal
+            )
         } else {
             format!(
                 "#[derive(clap::Args, Debug)]\nstruct {}Args {{\n{}\n}}",
@@ -150,28 +163,34 @@ fn generate_cli_structure(
                 args_fields.join(",\n")
             )
         };
-        
+
         subcommand_args.push(args_struct);
-        
+
         // Extract doc comment for the command itself
         let cmd_help = extract_doc_comment(cmd.source.content(), &cmd.item.span);
-        
+
         // Generate subcommand enum variant with help text
         let variant = if let Some(help) = cmd_help {
-            format!("    /// {}\n    {} ({}Args)", help, cmd_name_pascal, cmd_name_pascal)
+            format!(
+                "    /// {}\n    {} ({}Args)",
+                help, cmd_name_pascal, cmd_name_pascal
+            )
         } else {
             format!("    {} ({}Args)", cmd_name_pascal, cmd_name_pascal)
         };
         subcommand_variants.push(variant);
-        
+
         // Generate match arm
         let function_call = if function_params.is_empty() {
             format!("{}()", cmd_name)
         } else {
             format!("{}({})", cmd_name, function_params.join(", "))
         };
-        
-        match_arms.push(format!("        Some(Commands::{}(args)) => {},", cmd_name_pascal, function_call));
+
+        match_arms.push(format!(
+            "        Some(Commands::{}(args)) => {},",
+            cmd_name_pascal, function_call
+        ));
     }
 
     let cli_code = format!(
@@ -371,10 +390,18 @@ fn transpile_segmented(
         .unwrap_or_default();
 
     let (cmds, cli_main) = if !segmented.cmds.is_empty() {
-        let (command_functions, cli_code) = generate_cli_structure(&segmented.cmds, ctx, scope, &mut cmd_errors);
+        let (command_functions, cli_code) =
+            generate_cli_structure(&segmented.cmds, ctx, scope, &mut cmd_errors);
         (command_functions, cli_code)
     } else {
-        (String::new(), "pub(crate) fn __cli_main() { unreachable!(\"This is not a CLI app.\") }".to_owned())
+        (
+            String::new(),
+            if segmented.main.is_some() {
+                "pub(crate) fn __cli_main() { unreachable!(\"This is not a CLI app.\") }".to_owned()
+            } else {
+                String::new()
+            },
+        )
     };
 
     let has_cli_commands = !segmented.cmds.is_empty();
@@ -531,7 +558,17 @@ fn transpile_member_functions(
         String::new()
     } else {
         // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
-        let params = generics.iter().map(|g| format!("{}: ToOwned<Owned = {}>", capitalize_generic(g.as_str()), capitalize_generic(g.as_str()))).collect::<Vec<_>>().join(", ");
+        let params = generics
+            .iter()
+            .map(|g| {
+                format!(
+                    "{}: ToOwned<Owned = {}>",
+                    capitalize_generic(g.as_str()),
+                    capitalize_generic(g.as_str())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("<{}>", params)
     };
 
@@ -539,7 +576,15 @@ fn transpile_member_functions(
     let type_name = if generics.is_empty() {
         format!("{}", ty.ident())
     } else {
-        format!("{}<{}>", ty.ident(), generics.iter().map(|g| capitalize_generic(g.as_str())).collect::<Vec<_>>().join(", "))
+        format!(
+            "{}<{}>",
+            ty.ident(),
+            generics
+                .iter()
+                .map(|g| capitalize_generic(g.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     };
 
     let transpiled_fns = fns
@@ -547,31 +592,35 @@ fn transpile_member_functions(
         .map(|f| {
             // Transpile function but strip generic parameters that clash with impl block generics
             let mut fn_content = f.transpile(ctx, scope, errors);
-            
+
             // Remove redundant generic parameters from function signatures
             // Look for patterns like "fn name<generic>" and replace with "fn name"
             for generic in &generics {
                 let generic_lowercase = generic.as_str();
                 let generic_capitalized = capitalize_generic(generic.as_str());
                 let fn_name = f.signature.identifier.as_str();
-                
+
                 // Try both the original and capitalized versions of the generic parameter
                 for generic_str in [generic_lowercase, generic_capitalized.as_str()] {
                     let pattern_with_generics = format!("fn {}<{}>", fn_name, generic_str);
                     let pattern_without_generics = format!("fn {}", fn_name);
-                    
+
                     if fn_content.contains(&pattern_with_generics) {
-                        fn_content = fn_content.replace(&pattern_with_generics, &pattern_without_generics);
+                        fn_content =
+                            fn_content.replace(&pattern_with_generics, &pattern_without_generics);
                     }
                 }
             }
-            
+
             fn_content
         })
         .collect::<Vec<_>>()
         .join("\n\n");
-    
-    format!("impl{} {} {{\n{transpiled_fns}\n}}", generic_params, type_name)
+
+    format!(
+        "impl{} {} {{\n{transpiled_fns}\n}}",
+        generic_params, type_name
+    )
 }
 
 fn transpile_extension_functions(
@@ -614,24 +663,34 @@ fn transpile_extension_functions(
         TypeElement::Generic(generic_ty) => {
             let generic_param = capitalize_generic(generic_ty.ident.as_str());
             // Extract where clause from the first function, but only include constraints for the impl-level generic (A)
-            let where_clause = fns.first()
+            let where_clause = fns
+                .first()
                 .and_then(|f| f.signature.where_clause.as_ref())
                 .map(|wc| {
                     let generic_param_copy = generic_param.clone();
-                    let impl_constraints = wc.bounds.iter().flat_map(|bound| {
-                        let trait_bounds = bound.bounds.iter().map(|b| b.as_str()).collect::<Vec<_>>().join(" + ");
-                        let generic_param_ref = generic_param_copy.clone();
-                        bound.type_params.iter().filter_map(move |p| {
-                            let capitalized = capitalize_generic(p.as_str());
-                            // Only include constraints for the trait's generic parameter
-                            if capitalized == generic_param_ref {
-                                Some(format!("{}: {}", capitalized, trait_bounds))
-                            } else {
-                                None
-                            }
+                    let impl_constraints = wc
+                        .bounds
+                        .iter()
+                        .flat_map(|bound| {
+                            let trait_bounds = bound
+                                .bounds
+                                .iter()
+                                .map(|b| b.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" + ");
+                            let generic_param_ref = generic_param_copy.clone();
+                            bound.type_params.iter().filter_map(move |p| {
+                                let capitalized = capitalize_generic(p.as_str());
+                                // Only include constraints for the trait's generic parameter
+                                if capitalized == generic_param_ref {
+                                    Some(format!("{}: {}", capitalized, trait_bounds))
+                                } else {
+                                    None
+                                }
+                            })
                         })
-                    }).collect::<Vec<_>>();
-                    
+                        .collect::<Vec<_>>();
+
                     if impl_constraints.is_empty() {
                         String::new()
                     } else {
@@ -639,7 +698,7 @@ fn transpile_extension_functions(
                     }
                 })
                 .unwrap_or_default();
-            
+
             // Strip trait-level generic parameters from function signatures
             let fn_signatures_clean = fn_signatures
                 .replace(&format!("<{}, ", generic_param), "<")
@@ -651,7 +710,7 @@ fn transpile_extension_functions(
                 .replace(&format!(", {}>", generic_param), ">")
                 .replace(&format!("<{}>", generic_param), "")
                 .replace(&format!(" where {}: ", generic_param), " where Self: ");
-            
+
             format!(
                 "
                 pub trait {}<{}> {{
@@ -661,9 +720,16 @@ fn transpile_extension_functions(
                 impl<{}> {}<{}> for {}{} {{
                     {}
                 }}
-                ", 
-                trait_name, generic_param, fn_signatures_clean,
-                generic_param, trait_name, generic_param, generic_param, where_clause, transpiled_fns_clean
+                ",
+                trait_name,
+                generic_param,
+                fn_signatures_clean,
+                generic_param,
+                trait_name,
+                generic_param,
+                generic_param,
+                where_clause,
+                transpiled_fns_clean
             )
         }
         _ => {
@@ -710,16 +776,23 @@ fn extension_name(ty: &TypeElement) -> String {
             ),
             TypeElement::Array(ty) => format!("Array_{}", escaped_name(&ty.elements)),
             TypeElement::Set(ty) => format!("Set_{}", escaped_name(&ty.elements)),
-            TypeElement::Generic(ty) => format!("Generic_{}", capitalize_generic(ty.ident.as_str())),
+            TypeElement::Generic(ty) => {
+                format!("Generic_{}", capitalize_generic(ty.ident.as_str()))
+            }
             TypeElement::Parametric(ty) => {
                 let base_type_item = BasicTypeItem {
                     ident: ty.base_type.clone(),
                     span: galvan_ast::Span::default(),
                 };
                 let base = escaped_name(&TypeElement::Plain(base_type_item));
-                let args = ty.type_args.iter().map(escaped_name).collect::<Vec<_>>().join("_");
+                let args = ty
+                    .type_args
+                    .iter()
+                    .map(escaped_name)
+                    .collect::<Vec<_>>()
+                    .join("_");
                 format!("{}_{}", base, args)
-            },
+            }
             TypeElement::Void(_) => format!("Void"),
             TypeElement::Infer(_) => format!("Infer"),
             TypeElement::Never(_) => format!("Never"),
