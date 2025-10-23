@@ -28,7 +28,7 @@ Galvan is a modern programming language that transpiles to Rust. It provides a c
 
 ### Basic Syntax and String Formatting
 In Galvan, `main` is not a function but an "entry point".
-```rust
+```galvan
 main {
     let name = "Galvan"
     print("Welcome to {name}, the modern language!")
@@ -39,19 +39,11 @@ Note that Galvan strings always support inline format arguments.
 
 ### Functions
 Like in Rust, functions are defined with the `fn` keyword and return the value of the last expression:
-```rust
+```galvan
 fn add(a: Int, b: Int) -> Int {
     a + b
 }
 ```
-
-Very short functions can also be defined with = and have their return type inferred:
-> [!WARNING]
-> Defining functions with '=' is not implemented yet
-```rust
-fn add(a: Int, b: Int) = a + b
-```
-Those functions are not allowed to have newlines in their body.
 
 ### Types 
 Types in Galvan are defined with the `type` keyword.
@@ -91,8 +83,8 @@ pub type Theme(name: String) {
 
 ### Member Functions
 All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
-```rust
-pub type Dog(name: String)
+```galvan
+pub type Dog { name: String }
 
 fn bark(self: Dog) {
     print("{self.name} barks")
@@ -105,12 +97,9 @@ main {
 ```
 
 ### Default Values
-> [!WARNING]
-> Default values are not implemented yet
-
 Struct types in Galvan can allow ommitting certain attributes when created with the default initializer. To do so, 
 
-```rust
+```galvan
 type Book {
     title: String = "Lorem Ipsum"
     content: String = "Lorem ipsum dolor sit amet..."
@@ -126,7 +115,7 @@ In case the type can be constructed without arguments, Rust's `Default` trait is
 ### Collections
 
 Galvan features syntactic sugar for collection types:
-```rust
+```galvan
 pub type IntArray = [Int] // This is a Vec
 pub type StringSet = {String} // This is a HashSet
 pub type MyDict = {String: Int} // This is a HashMap
@@ -145,7 +134,7 @@ type FileOrIoErr = File!IoError
 ```
 The error variant is specified after the `!` symbol. If it is not given, a flexible error type is used.
 
-```rust
+```galvan
 fn open_file(path: String) -> File! {
     let file = File::open(path)!
     let contents = file.read_to_string()?.find("foo")?.uppercase() else { "" }
@@ -172,7 +161,7 @@ fn print_value(value: Int | String) {
 ### Pass-by-Value and Pass-by-Reference
 #### mutable vs. immutable function parameters
 By default, arguments are passed by value. If the argument needs to be mutated, the `mut` keyword can be used to pass it by reference.
-```rust
+```galvan
 fn add_one(mut value: Int) {
     value += 1
 }
@@ -184,7 +173,7 @@ fn incremented(value : Int) -> Int {
 ```
 
 Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan does not have immutable references, as all values are copy-on-write, i.e, Galvan tries to use immutable references for immutable values but creates a copy when assigning to a mutable binding.
-```rust
+```galvan
 // No copy is happening here as the value is not mutated
 // Arguments are passed by value by default
 fn bark_at(self: Dog, other: Dog) {
@@ -192,7 +181,7 @@ fn bark_at(self: Dog, other: Dog) {
 }
 ```
 
-```rust
+```galvan
 // A copy is happening here as the value is mutated
 fn shout_at(self: Dog, other: Dog) {
     // Redeclaring is neccessary as value parameters cannot be mutated
@@ -203,7 +192,7 @@ fn shout_at(self: Dog, other: Dog) {
 }
 ```
 
-```rust
+```galvan
 fn grow(mut self: Dog) {
     // This mutates the original value as it is passed by reference
     self.age += 1
@@ -212,7 +201,7 @@ fn grow(mut self: Dog) {
 
 #### Stored References
 References that are allowed to be stored in structs have to be declared as heap references. This is done by prefixing the declaration with `ref`:
-```rust
+```galvan
 pub type Person {
     name: String,
     age: Int,
@@ -237,10 +226,14 @@ In contrast to `let` and `mut` values, `ref` values are not copied on assignment
 #### Argument Modifiers
 When calling a function with `mut` or `ref` parameters, you have to annotate the argument respectively. This is not the case for the receiver of a member function.
 
-```rust
-fn make_uppercase(mut arg: String) { ... }
+```galvan
+fn make_uppercase(mut arg: String) {
+    // ...
+}
 
-fn store(ref arg: String) { ... }
+fn store(ref arg: String) {
+    // ...
+}
 
 main {
     ref my_string = "This is a heap ref"
@@ -275,8 +268,6 @@ print(i) // 15
 ```
 
 For loops are also supported:
-> [!WARNING]
-> Ranges are not implemented yet
 ```rust
 for 0..<n {
     print(it)
@@ -443,39 +434,41 @@ Range operators:
 - `..=`: Inclusive Range
 - `+-`, `±`: Inclusive Range around a value (tolerance)
 
-#### Unicode and Custom Operators
-Galvan supports Unicode and custom operators:
+#### Canonical Operator Implementation
 > [!WARNING]
-> Custom operators are not implemented yet
-```rust
-@infix("⨁")
-fn xor(lhs: n, rhs: n) = lhs ^^ rhs
+> Canonical operator implementation is not implemented yet
 
-@prefix("√")
-fn sqrt(n: Float) = n.sqrt()
+Galvan does not support operator overloading. Instead, operators are automatically implemented in a consistent fashion on types where all members individually implement that operator, e.g.:
 
-main {
-    let a_bool = true 
-    let other_bool = false
-    let value = if a_bool ⨁ other_bool { √16.0 } else { 3.0 }
+```galvan
+type Vec2 {
+    x: Float
+    y: Float
+}
+
+test "Automatically derive addition for struct" {
+    let this_vec = Vec2(x: 5.0, y: 10.0)
+    let that_vec = Vec2(x: 7.0, y: 1.0)
+
+    let result = this_vec + that_vec
+
+    assert result.x == this_vec.x + that_vec.x
+    assert result.y == this_vec.y + that_vec.y
 }
 ```
-
-This section defines custom infix `⨁` and prefix `√` operators. 
-Note that no whitespace is allowed between a prefix operator and the operands.
-Infix operators have to be surrounded by whitespace.
-
-Prefix operators generally take precedence over infix operators.
-
 ### Closures
 Closures are defined using the parameter list syntax:
 ```rust
 let add = |a, b| a + b
 ```
 
-Closure types use the arrow syntax:
+Closure types use the `|_|` syntax:
 ```rust
-fn map(self: [t], f: t -> u) -> [u] {
+fn floatifier(self: [Int], f: |Int| Float) -> [Float] {
+    // ...
+}
+
+fn map(self: [t], f: |t| u) -> [u] {
     mut result = []
     for self {
         result.push(f(it))
