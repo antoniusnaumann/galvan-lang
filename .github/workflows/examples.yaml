@@ -1,0 +1,27 @@
+name: Examples
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        path: [./example-projects/cli-app, ./example-projects/hello-world]
+    steps:
+      - uses: actions/checkout@v3
+        with: 
+          submodules: 'true'
+      - name: Check
+        run: cargo check --verbose
+        working-directory: ${{ path }}
+      - name: Build
+        run: cargo build --verbose
+        working-directory: ${{ path }}
