@@ -518,6 +518,17 @@ main {
 As this syntax is only allowed in assignments and statements, you cannot use it in i.e. function parameters. This avoids ambiguity.
 It is also not allowed to use this syntax for functions that take no arguments to avoid confusing it with a variable.
 
+## Semicolon Inference
+While Galvan uses semicolons to separate statements, Galvan infers semicolons on newlines when:
+- the next line starts with an alpha-character (or an underscore) as the first non-whitespace character
+- the next line starts with `{`, `(`, `[`, or `'`, `"` as the first non-whitespace character
+
+Regardless of the rules above, Galvan does not infer a semicolon when the current line itself is not a valid statement.
+Galvan also infers commas for struct type declarations if a newline is used after each field instead.
+
+
+## Advanced Features
+Galvan is a "batteries-included" language. This means, it provides language-level support for popular Rust features and crates.
 ### Testing
 Every obstacle to writing unit tests is a unit test that is not written. For this reason, Galvan provides a concise syntax to quickly write unit tests in any .galvan file:
 ```galvan
@@ -531,10 +542,53 @@ test "Ensure that addition works correctly" {
 ```
 Like 'main', 'test' is not a function but an entry point. Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
 
-## Semicolon Inference
-While Galvan uses semicolons to separate statements, Galvan infers semicolons on newlines when:
-- the next line starts with an alpha-character (or an underscore) as the first non-whitespace character
-- the next line starts with `{`, `(`, `[`, or `'`, `"` as the first non-whitespace character
+### CLI argument parsing
+Galvan has built-in support for creating CLI apps with arguments and subcommands by integrating the popular *clap* crate.
+This code:
 
-Regardless of the rules above, Galvan does not infer a semicolon when the current line itself is not a valid statement.
-Galvan also infers commas for struct type declarations if a newline is used after each field instead.
+```galvan
+main {
+    print "Hello World! ..."
+}
+
+// commands automatically get added to the CLI application as subcommands, including doc comments being shown in the -h argument
+// so this adds a <program-name> greet -n <NAME> -s <SURNAME> subcommand
+/// Greets the user
+cmd greet(
+    /// First name of the person to greet
+    // args can specify both a short and a long name, here -n and --name
+    n name: String,
+    // optional args can be left out
+    /// Surname of the person that should be greeted
+    s surname: String?
+) {
+    try surname |surname| {
+        print "Hello {name} {surname}!"
+    } else {
+        print "Hello {name}!"
+    }
+}
+```
+
+creates this CLI tool: 
+```
+$ my-app --help
+Commands:
+  greet  Greets the user
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+
+$ my-app greet --help
+Greets the user
+
+Usage: galvan-cli-hello-world greet [OPTIONS] --name <NAME>
+
+Options:
+  -n, --name <NAME>        First name of the person to greet
+  -s, --surname <SURNAME>  Surname of the person that should be greeted
+  -h, --help               Print help
+```
