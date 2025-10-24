@@ -69,9 +69,9 @@ impl Transpile for FunctionCall {
                         },
                 }) if e.is_comparison() => {
                     if modifier.is_some() {
-                        errors.error(TranspilerError::InvalidModifier { 
-                            modifier: "assert".to_string(), 
-                            context: "comparison expressions".to_string() 
+                        errors.error(TranspilerError::InvalidModifier {
+                            modifier: "assert".to_string(),
+                            context: "comparison expressions".to_string(),
                         });
                         return format!("/* invalid assert modifier */");
                     }
@@ -185,8 +185,8 @@ impl Transpile for FunctionCall {
                 }
                 Some(_) => format!("assert!({})", self.arguments.transpile(ctx, scope, errors)),
                 _ => {
-                    errors.error(TranspilerError::InvalidSyntax { 
-                        message: "Assert requires a condition or comparison expression".to_string() 
+                    errors.error(TranspilerError::InvalidSyntax {
+                        message: "Assert requires a condition or comparison expression".to_string(),
                     });
                     format!("/* invalid assert arguments */")
                 }
@@ -202,9 +202,9 @@ impl Transpile for FunctionCall {
                         match &a.expression.kind {
                             ExpressionKind::Closure(closure) => {
                                 if a.modifier.is_some() {
-                                    errors.error(TranspilerError::InvalidModifier { 
-                                        modifier: "closure".to_string(), 
-                                        context: "borrowed iterator functions".to_string() 
+                                    errors.error(TranspilerError::InvalidModifier {
+                                        modifier: "closure".to_string(),
+                                        context: "borrowed iterator functions".to_string(),
                                     });
                                     return format!("/* invalid closure modifier */");
                                 }
@@ -240,22 +240,22 @@ pub fn transpile_call_with_receiver(
 ) -> String {
     // Determine receiver type for method lookup
     let receiver_type = receiver.map(|r| r.infer_type(scope, errors));
-        let receiver_ident = receiver_type.as_ref().and_then(|t| match t {
-            TypeElement::Plain(basic) => Some(&basic.ident),
-            TypeElement::Parametric(param) => Some(&param.base_type),
-            _ => None,
-        });
-        
-        // For Generic types, we need to create a temporary TypeIdent
-        let temp_type_ident;
-        let receiver_ident = if let Some(ident) = receiver_ident {
-            Some(ident)
-        } else if let Some(TypeElement::Generic(gen)) = receiver_type.as_ref() {
-            temp_type_ident = TypeIdent::new(gen.ident.as_str());
-            Some(&temp_type_ident)
-        } else {
-            None
-        };    
+    let receiver_ident = receiver_type.as_ref().and_then(|t| match t {
+        TypeElement::Plain(basic) => Some(&basic.ident),
+        TypeElement::Parametric(param) => Some(&param.base_type),
+        _ => None,
+    });
+
+    // For Generic types, we need to create a temporary TypeIdent
+    let temp_type_ident;
+    let receiver_ident = if let Some(ident) = receiver_ident {
+        Some(ident)
+    } else if let Some(TypeElement::Generic(gen)) = receiver_type.as_ref() {
+        temp_type_ident = TypeIdent::new(gen.ident.as_str());
+        Some(&temp_type_ident)
+    } else {
+        None
+    };
     // Look up the function/method
     let func = ctx.lookup.resolve_function(receiver_ident, identifier, &[]);
 
@@ -278,7 +278,12 @@ pub fn transpile_call_with_receiver(
         // Format the call based on whether it's a method or function
         if let Some(recv) = receiver {
             let receiver_transpiled = recv.transpile(ctx, scope, errors);
-            format!("{}.{}({})", receiver_transpiled, identifier.transpile(ctx, scope, errors), args)
+            format!(
+                "{}.{}({})",
+                receiver_transpiled,
+                identifier.transpile(ctx, scope, errors),
+                args
+            )
         } else {
             format!("{}({})", identifier.transpile(ctx, scope, errors), args)
         }
@@ -297,7 +302,8 @@ pub fn transpile_call_with_receiver(
             let receiver_transpiled = recv.transpile(ctx, scope, errors);
             if let Some(recv_type) = receiver_type {
                 errors.warning(
-                    format!("Function '{}' not found. Available functions: {}", 
+                    format!(
+                        "Function '{}' not found. Available functions: {}",
                         identifier,
                         scope
                             .functions()
@@ -305,11 +311,16 @@ pub fn transpile_call_with_receiver(
                             .map(|f| f.to_string())
                             .collect::<Vec<_>>()
                             .join(", ")
-                    ), 
-                    None
+                    ),
+                    None,
                 );
             }
-            format!("{}.{}({})", receiver_transpiled, identifier.transpile(ctx, scope, errors), args)
+            format!(
+                "{}.{}({})",
+                receiver_transpiled,
+                identifier.transpile(ctx, scope, errors),
+                args
+            )
         } else {
             format!("{}({})", identifier.transpile(ctx, scope, errors), args)
         }
@@ -376,9 +387,9 @@ pub fn transpile_if(
     );
     let condition = &func.arguments[0];
     let ExpressionKind::Closure(body) = &func.arguments[1].expression.kind else {
-        errors.error(TranspilerError::MissingArgument { 
-            operation: "if".to_string(), 
-            argument_type: "body expression".to_string() 
+        errors.error(TranspilerError::MissingArgument {
+            operation: "if".to_string(),
+            argument_type: "body expression".to_string(),
         });
         return (
             String::from("/* invalid if body */"),
@@ -440,34 +451,11 @@ fn transpile_for(
             // TODO: Add proper error handling for result iteration
             &TypeElement::infer()
         }
-        TypeElement::Plain(_ty) => {
-            errors.warning(
-                "For loop on plain type not yet implemented".to_string(),
-                None,
-            );
-            &TypeElement::infer()
-        }
-        TypeElement::Generic(_ty) => {
-            errors.warning(
-                "For loop on generic type not yet implemented".to_string(),
-                None,
-            );
-            &TypeElement::infer()
-        }
-        TypeElement::Parametric(_ty) => {
-            errors.warning(
-                "For loop on parametric type not yet implemented".to_string(),
-                None,
-            );
-            &TypeElement::infer()
-        }
         TypeElement::Void(_) => &iter_ty,
         TypeElement::Infer(_) => &iter_ty,
-        TypeElement::Never(_) => {
-            errors.warning(
-                "For loop on never type not yet implemented".to_string(),
-                None,
-            );
+        _ => {
+            // TODO: This should be an error
+            errors.warning("For loop on type that is not an iterator".to_string(), None);
             &TypeElement::infer()
         }
     };

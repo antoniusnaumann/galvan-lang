@@ -793,6 +793,15 @@ fn extension_name(ty: &TypeElement) -> String {
                     .join("_");
                 format!("{}_{}", base, args)
             }
+            TypeElement::Closure(ty) => {
+                let args = ty
+                    .parameters
+                    .iter()
+                    .map(escaped_name)
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("Closure_{}__{}", args, escaped_name(&ty.return_ty))
+            }
             TypeElement::Void(_) => format!("Void"),
             TypeElement::Infer(_) => format!("Infer"),
             TypeElement::Never(_) => format!("Never"),

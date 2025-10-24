@@ -45,7 +45,8 @@ impl Mapping {
             }
             TypeElement::Plain(ty) => self.is_copy_ident(&ty.ident),
             TypeElement::Generic(_) => false, // Generic types are not copy by default
-            TypeElement::Parametric(_) => false, // Parametric types are not copy by default  
+            TypeElement::Parametric(_) => false, // Parametric types are not copy by default
+            TypeElement::Closure(_) => false,
             TypeElement::Void(_) => true,
             TypeElement::Infer(_) => false,
             TypeElement::Never(_) => false,

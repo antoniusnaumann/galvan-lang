@@ -15,6 +15,7 @@ type Result = Box<ResultTypeItem>;
 type Plain = BasicTypeItem;
 type Generic = GenericTypeItem;
 type Parametric = ParametricTypeItem;
+type Closure = Box<ClosureTypeItem>;
 type Void = VoidTypeItem;
 type Infer = InferTypeItem;
 type Never = NeverTypeItem;
@@ -31,6 +32,7 @@ pub type TypeElement = Array
     + Plain
     + Generic
     + Parametric
+    + Closure
     + Infer
     + Void
     + Never;
@@ -68,15 +70,6 @@ impl TypeElement {
         }
 
         match self {
-            TypeElement::Generic(gen) => {
-                generics.insert(gen.ident.clone());
-            }
-            TypeElement::Parametric(param) => {
-                // Only collect from type arguments, not the base type itself
-                for arg in &param.type_args {
-                    arg.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
-                }
-            }
             TypeElement::Array(arr) => {
                 arr.elements
                     .collect_generics_recursive_with_depth(generics, depth + 1, max_depth)
@@ -112,6 +105,26 @@ impl TypeElement {
                 if let Some(error) = &res.error {
                     error.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
                 }
+            }
+            TypeElement::Generic(gen) => {
+                generics.insert(gen.ident.clone());
+            }
+            TypeElement::Parametric(param) => {
+                // Only collect from type arguments, not the base type itself
+                for arg in &param.type_args {
+                    arg.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                }
+            }
+            TypeElement::Closure(clos) => {
+                for param in &clos.parameters {
+                    param.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
+                }
+
+                &clos.return_ty.collect_generics_recursive_with_depth(
+                    generics,
+                    depth + 1,
+                    max_depth,
+                );
             }
             // No generics in these cases
             TypeElement::Plain(_)
@@ -187,6 +200,13 @@ pub struct GenericTypeItem {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
+pub struct ClosureTypeItem {
+    pub parameters: Vec<TypeElement>,
+    pub return_ty: TypeElement,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, AstNode)]
 pub struct ParametricTypeItem {
     pub base_type: TypeIdent,
     pub type_args: Vec<TypeElement>,
@@ -241,6 +261,17 @@ impl fmt::Display for TypeElement {
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ">")
+            }
+            TypeElement::Closure(clos) => {
+                write!(f, "|")?;
+                for (i, param) in clos.parameters.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, "| ")?;
+                write!(f, "{}", clos.return_ty)
             }
             TypeElement::Void(_) => write!(f, "Void"),
             TypeElement::Infer(_) => write!(f, "_"),

@@ -1,7 +1,7 @@
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, GenericTypeItem, Ident, OptionalTypeItem,
-    OrderedDictionaryTypeItem, ParametricTypeItem, ResultTypeItem, SetTypeItem, Span,
-    TupleTypeItem, TypeElement, TypeIdent,
+    ArrayTypeItem, BasicTypeItem, ClosureTypeItem, DictionaryTypeItem, GenericTypeItem, Ident,
+    OptionalTypeItem, OrderedDictionaryTypeItem, ParametricTypeItem, ResultTypeItem, SetTypeItem,
+    Span, TupleTypeItem, TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -34,6 +34,9 @@ impl ReadCursor for TypeElement {
                 TypeElement::Parametric(ParametricTypeItem::read_cursor(cursor, source)?)
             }
             "generic_type" => TypeElement::Generic(GenericTypeItem::read_cursor(cursor, source)?),
+            "closure_type" => {
+                TypeElement::Closure(ClosureTypeItem::read_cursor(cursor, source)?.into())
+            }
             "basic_type" => TypeElement::Plain(BasicTypeItem::read_cursor(cursor, source)?),
             unknown => {
                 unimplemented!("Encountered type element not known to AST converstion: {unknown}")
@@ -245,6 +248,12 @@ impl ReadCursor for GenericTypeItem {
         cursor.goto_parent();
 
         Ok(Self { ident, span })
+    }
+}
+
+impl ReadCursor for ClosureTypeItem {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        todo!()
     }
 }
 

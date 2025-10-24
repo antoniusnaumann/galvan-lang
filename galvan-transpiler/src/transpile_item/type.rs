@@ -90,6 +90,12 @@ impl Transpile for GenericTypeItem {
     }
 }
 
+impl Transpile for ClosureTypeItem {
+    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+        todo!()
+    }
+}
+
 impl_transpile_variants! { TypeElement;
     Plain
     Array
@@ -101,6 +107,7 @@ impl_transpile_variants! { TypeElement;
     Result
     Generic
     Parametric
+    Closure
     Void
     Infer
     Never
