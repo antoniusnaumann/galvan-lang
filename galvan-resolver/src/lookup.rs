@@ -50,7 +50,7 @@ impl<'a> LookupContext<'a> {
     pub fn add_from(&mut self, asts: &'a SegmentedAsts) -> Result<(), LookupError> {
         for func in &asts.functions {
             let receiver = func.item.signature.parameters.params.first().and_then(|p| {
-                if p.identifier.as_str() == "self" {
+                if p.identifier.is_self() {
                     // TODO: We should allow implementing something on Vec, etc. as well
                     match p.param_type {
                         TypeElement::Plain(ref ty) => Some(&ty.ident),

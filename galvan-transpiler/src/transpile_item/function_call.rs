@@ -343,7 +343,7 @@ fn process_function_arguments(
 ) -> String {
     params
         .iter()
-        .skip_while(|p| p.identifier.as_str() == "self")
+        .skip_while(|p| p.identifier.is_self())
         .zip(arguments)
         .map(|(param, arg)| {
             let ownership = match param.decl_modifier {

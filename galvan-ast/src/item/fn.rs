@@ -55,21 +55,30 @@ impl FnSignature {
         self.parameters
             .params
             .first()
-            .filter(|param| param.identifier.as_str() == "self")
+            .filter(|param| param.identifier.is_self())
     }
 
     /// Collect all generic type parameters from this function signature
     pub fn collect_generics(&self) -> std::collections::HashSet<Ident> {
         let mut generics = std::collections::HashSet::new();
+        let mut self_generics = std::collections::HashSet::new();
 
         // Collect from parameters
         for param in &self.parameters.params {
-            param.param_type.collect_generics_recursive(&mut generics);
+            param
+                .param_type
+                .collect_generics_recursive(if param.identifier.is_self() {
+                    &mut self_generics
+                } else {
+                    &mut generics
+                });
         }
 
         // Collect from return type
         self.return_type.collect_generics_recursive(&mut generics);
 
+        // Remove generics present in self parameter, as these generics will be declared by the impl block
+        generics.retain(|g| !self_generics.contains(g));
         generics
     }
 }

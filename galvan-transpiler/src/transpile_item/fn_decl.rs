@@ -172,7 +172,7 @@ macro_rules! transpile_type {
 
 impl Transpile for Param {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        let is_self = self.identifier.as_str() == "self";
+        let is_self = self.identifier.is_self();
         let is_copy = ctx.mapping.is_copy(&self.param_type);
 
         scope.declare_variable(Variable {

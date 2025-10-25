@@ -49,6 +49,6 @@ fn floor_map(self: [Float], f: |Float| Float) -> [Float] {
 }
 
 // TODO: This currently does not work because the extension function impl block is missing a <T>
-// fn my_map(self: [t], f: |t| u) -> [u] {
-//     for self { f(it) }
-// }
+fn my_map(self: [t], f: |t| u) -> [u] {
+    for self { f(it) }
+}

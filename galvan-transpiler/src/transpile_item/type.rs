@@ -95,7 +95,14 @@ impl Transpile for ClosureTypeItem {
         let params = self
             .parameters
             .iter()
-            .map(|p| p.transpile(ctx, scope, errors))
+            .map(|p| {
+                let ty = p.transpile(ctx, scope, errors);
+                if ctx.mapping.is_copy(p) {
+                    ty
+                } else {
+                    format!("&{ty}")
+                }
+            })
             .join(", ");
 
         // TODO: We should somehow give users a way to declare that an Fn instead of an FnMut is desired here, e.g., for multithreading

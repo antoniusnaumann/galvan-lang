@@ -13,6 +13,10 @@ impl Ident {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn is_self(&self) -> bool {
+        self.0 == "self"
+    }
 }
 
 impl AstNode for Ident {
@@ -54,7 +58,6 @@ impl AstNode for TypeIdent {
     fn span(&self) -> Span {
         // TODO  Save a meaningful span in this struct
         Span::default()
-
     }
 
     fn print(&self, _indent: usize) -> String {

@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::iter;
 
 use convert_case::{Case, Casing};
@@ -658,6 +658,9 @@ fn transpile_extension_functions(
         .collect::<Vec<_>>()
         .join("\n\n");
 
+    let mut generics = HashSet::new();
+    ty.collect_generics_recursive(&mut generics);
+
     // Handle generic types specially
     match ty {
         TypeElement::Generic(generic_ty) => {
@@ -731,6 +734,23 @@ fn transpile_extension_functions(
                 where_clause,
                 transpiled_fns_clean
             )
+        }
+        _ if !generics.is_empty() => {
+            let generics = generics
+                .iter()
+                .map(|g| capitalize_generic(&g.transpile(ctx, scope, errors)))
+                .join(", ");
+            transpile! {ctx, scope, errors,
+                "
+                pub trait {trait_name}<{generics}> {{
+                    {fn_signatures}
+                }}
+
+                impl <{generics}> {trait_name}<{generics}> for {} {{
+                    {transpiled_fns}
+                }}
+                ", ty 
+            }
         }
         _ => {
             transpile! {ctx, scope, errors,
