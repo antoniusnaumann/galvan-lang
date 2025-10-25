@@ -92,7 +92,14 @@ impl Transpile for GenericTypeItem {
 
 impl Transpile for ClosureTypeItem {
     fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        todo!()
+        let params = self
+            .parameters
+            .iter()
+            .map(|p| p.transpile(ctx, scope, errors))
+            .join(", ");
+
+        // TODO: We should somehow give users a way to declare that an Fn instead of an FnMut is desired here, e.g., for multithreading
+        transpile!(ctx, scope, "impl Fn({params}) -> {}", self.return_ty)
     }
 }
 

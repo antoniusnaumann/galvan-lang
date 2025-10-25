@@ -4,7 +4,7 @@ use galvan_ast::TypeElement::{self};
 use galvan_ast::{
     ComparisonOperator, DeclModifier, EnumConstructor, EnumConstructorArg, Expression,
     ExpressionKind, FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation,
-    Ownership, TypeIdent,
+    Ownership, Param, TypeIdent,
 };
 use galvan_resolver::{Lookup, Scope, Variable};
 use itertools::Itertools;
@@ -292,8 +292,14 @@ pub fn transpile_call_with_receiver(
         let args = arguments
             .iter()
             .map(|arg| {
-                let mut arg_scope =
-                    Scope::child(scope).returns(TypeElement::infer(), Ownership::Borrowed);
+                let mut arg_scope = Scope::child(scope).returns(
+                    TypeElement::infer(),
+                    if matches!(arg.expression.kind, ExpressionKind::Closure(_)) {
+                        Ownership::UniqueOwned
+                    } else {
+                        Ownership::Borrowed
+                    },
+                );
                 arg.transpile(ctx, &mut arg_scope, errors)
             })
             .join(", ");
@@ -328,9 +334,9 @@ pub fn transpile_call_with_receiver(
 }
 
 fn process_function_arguments(
-    params: &[galvan_ast::Param],
+    params: &[Param],
     arguments: &[FunctionCallArg],
-    is_generic: bool,
+    _is_generic: bool,
     ctx: &Context<'_>,
     scope: &mut Scope,
     errors: &mut ErrorCollector,
@@ -356,13 +362,7 @@ fn process_function_arguments(
                     if ctx.mapping.is_copy(&param.param_type) {
                         Ownership::UniqueOwned
                     } else {
-                        if is_generic {
-                            // For generic functions, use conservative approach
-                            Ownership::Borrowed
-                        } else {
-                            // For non-generic functions with known signature
-                            Ownership::Borrowed
-                        }
+                        Ownership::Borrowed
                     }
                 }
             };
@@ -670,7 +670,15 @@ impl Transpile for FunctionCallArg {
                 }
             }
             (None, Exp::Closure(closure)) => {
-                transpile!(ctx, scope, errors, "{}", closure)
+                // TODO: lookup if the function expects a borrowed or owned closure
+                match scope.ownership {
+                    Ownership::Borrowed => transpile!(ctx, scope, errors, "&{}", closure),
+                    Ownership::MutBorrowed => transpile!(ctx, scope, errors, "&mut {}", closure),
+                    Ownership::UniqueOwned | Ownership::SharedOwned => {
+                        transpile!(ctx, scope, errors, "{}", closure)
+                    }
+                    Ownership::Ref => todo!(),
+                }
             }
             (None, _expr) => {
                 // For function arguments, we need to handle different scenarios:

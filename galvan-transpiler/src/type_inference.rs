@@ -114,6 +114,7 @@ fn handle_unknown_identifier(
 //         }
 //     }
 // }
+
 impl InferType for ElseExpression {
     fn infer_type(&self, scope: &Scope, errors: &mut ErrorCollector) -> TypeElement {
         let receiver_type = self.receiver.infer_type(scope, errors);
@@ -246,6 +247,7 @@ impl InferType for ExpressionKind {
             ExpressionKind::Closure(closure) => {
                 // Infer the return type from the closure body
                 // This is a simple improvement over returning TypeElement::infer()
+                // TODO: infer the type of the closure here
                 closure.block.infer_type(scope, errors)
             }
             ExpressionKind::ElseExpression(e) => e.infer_type(scope, errors),
@@ -316,11 +318,7 @@ impl InferType for ExpressionKind {
                     Ownership::Borrowed
                 }
             }
-            ExpressionKind::Closure(closure) => {
-                // Infer ownership from closure body
-                // This is a simple improvement over warning and returning Borrowed
-                closure.block.infer_owned(ctx, scope, errors)
-            }
+            ExpressionKind::Closure(_) => Ownership::UniqueOwned,
             ExpressionKind::Group(group) => group.inner.infer_owned(ctx, scope, errors),
         }
     }

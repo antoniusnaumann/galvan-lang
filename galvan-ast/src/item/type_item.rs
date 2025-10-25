@@ -120,7 +120,7 @@ impl TypeElement {
                     param.collect_generics_recursive_with_depth(generics, depth + 1, max_depth);
                 }
 
-                &clos.return_ty.collect_generics_recursive_with_depth(
+                clos.return_ty.collect_generics_recursive_with_depth(
                     generics,
                     depth + 1,
                     max_depth,

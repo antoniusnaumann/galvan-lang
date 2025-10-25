@@ -253,7 +253,38 @@ impl ReadCursor for GenericTypeItem {
 
 impl ReadCursor for ClosureTypeItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        todo!()
+        let type_item = cursor_expect!(cursor, "closure_type");
+        let span = Span::from_node(type_item);
+
+        cursor.child();
+
+        cursor_expect!(cursor, "pipe");
+        cursor.goto_next_sibling();
+        let mut parameters = Vec::new();
+        loop {
+            if cursor.kind()? == "pipe" {
+                break;
+            }
+            if cursor.kind()? == "_comma" {
+                cursor.goto_next_sibling();
+                continue;
+            }
+            parameters.push(TypeElement::read_cursor(cursor, source)?);
+            cursor.goto_next_sibling();
+        }
+
+        cursor_expect!(cursor, "pipe");
+        cursor.goto_next_sibling();
+
+        let return_ty = TypeElement::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(Self {
+            parameters,
+            return_ty,
+            span,
+        })
     }
 }
 
