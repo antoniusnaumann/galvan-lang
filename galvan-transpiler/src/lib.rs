@@ -661,58 +661,48 @@ fn transpile_extension_functions(
     let mut generics = HashSet::new();
     ty.collect_generics_recursive(&mut generics);
 
+    // Extract where clause from the first function, but only include constraints for the impl-level generic (A)
+    // TODO: we should group impl blocks by constraints instead of blindly taking the first where clause
+    fn transpile_where_clause(fns: &[&FnDecl], generic_param: &str) -> String {
+        fns.first()
+            .and_then(|f| f.signature.where_clause.as_ref())
+            .map(|wc| {
+                let impl_constraints = wc
+                    .bounds
+                    .iter()
+                    .flat_map(|bound| {
+                        let trait_bounds = bound
+                            .bounds
+                            .iter()
+                            .map(|b| b.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" + ");
+                        bound.type_params.iter().filter_map(move |p| {
+                            let capitalized = capitalize_generic(p.as_str());
+                            // Only include constraints for the trait's generic parameter
+                            if capitalized == generic_param {
+                                Some(format!("{}: {}", capitalized, trait_bounds))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                if impl_constraints.is_empty() {
+                    String::new()
+                } else {
+                    format!(" where {}", impl_constraints.join(", "))
+                }
+            })
+            .unwrap_or_default()
+    }
+
     // Handle generic types specially
     match ty {
         TypeElement::Generic(generic_ty) => {
             let generic_param = capitalize_generic(generic_ty.ident.as_str());
-            // Extract where clause from the first function, but only include constraints for the impl-level generic (A)
-            let where_clause = fns
-                .first()
-                .and_then(|f| f.signature.where_clause.as_ref())
-                .map(|wc| {
-                    let generic_param_copy = generic_param.clone();
-                    let impl_constraints = wc
-                        .bounds
-                        .iter()
-                        .flat_map(|bound| {
-                            let trait_bounds = bound
-                                .bounds
-                                .iter()
-                                .map(|b| b.as_str())
-                                .collect::<Vec<_>>()
-                                .join(" + ");
-                            let generic_param_ref = generic_param_copy.clone();
-                            bound.type_params.iter().filter_map(move |p| {
-                                let capitalized = capitalize_generic(p.as_str());
-                                // Only include constraints for the trait's generic parameter
-                                if capitalized == generic_param_ref {
-                                    Some(format!("{}: {}", capitalized, trait_bounds))
-                                } else {
-                                    None
-                                }
-                            })
-                        })
-                        .collect::<Vec<_>>();
-
-                    if impl_constraints.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" where {}", impl_constraints.join(", "))
-                    }
-                })
-                .unwrap_or_default();
-
-            // Strip trait-level generic parameters from function signatures
-            let fn_signatures_clean = fn_signatures
-                .replace(&format!("<{}, ", generic_param), "<")
-                .replace(&format!(", {}>", generic_param), ">")
-                .replace(&format!("<{}>", generic_param), "")
-                .replace(&format!(" where {}: ", generic_param), " where Self: ");
-            let transpiled_fns_clean = transpiled_fns
-                .replace(&format!("<{}, ", generic_param), "<")
-                .replace(&format!(", {}>", generic_param), ">")
-                .replace(&format!("<{}>", generic_param), "")
-                .replace(&format!(" where {}: ", generic_param), " where Self: ");
+            let where_clause = transpile_where_clause(fns, &generic_param);
 
             format!(
                 "
@@ -726,13 +716,13 @@ fn transpile_extension_functions(
                 ",
                 trait_name,
                 generic_param,
-                fn_signatures_clean,
+                fn_signatures,
                 generic_param,
                 trait_name,
                 generic_param,
                 generic_param,
                 where_clause,
-                transpiled_fns_clean
+                transpiled_fns
             )
         }
         _ if !generics.is_empty() => {
@@ -740,6 +730,9 @@ fn transpile_extension_functions(
                 .iter()
                 .map(|g| capitalize_generic(&g.transpile(ctx, scope, errors)))
                 .join(", ");
+
+            // TODO: we probably need to transpile the where_clause here like above
+
             transpile! {ctx, scope, errors,
                 "
                 pub trait {trait_name}<{generics}> {{
