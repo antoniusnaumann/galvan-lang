@@ -1,8 +1,8 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, impl_transpile_variants, transpile};
-use crate::{ErrorCollector, Transpile, TypeElement};
+use crate::{ErrorCollector, Transpile};
 use galvan_ast::*;
-use galvan_resolver::{Lookup, Scope};
+use galvan_resolver::Lookup;
 use itertools::Itertools;
 
 // TODO: Re-export used types from galvan library to avoid referencing the used crates directly
@@ -23,13 +23,14 @@ impl_transpile!(
 impl_transpile!(SetTypeItem, "::std::collections::HashSet<{}>", elements);
 impl_transpile!(TupleTypeItem, "({})", elements);
 impl_transpile!(OptionalTypeItem, "Option<{}>", inner);
+
 impl Transpile for BasicTypeItem {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        let base_name = self.ident.transpile(ctx, scope, errors);
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let base_name = self.ident.transpile(ctx, errors);
 
         // Check if this is a known type with generic parameters in the current context
         // We need to look up the type definition and see if it has generics
-        if let Some(type_item) = scope.resolve_type(&self.ident) {
+        if let Some(type_item) = ctx.lookup.resolve_type(&self.ident) {
             let generics = type_item.item.collect_generics();
             if !generics.is_empty() {
                 // This is a generic type, add <_> for each generic parameter
@@ -47,56 +48,46 @@ impl_transpile!(InferTypeItem, "_",);
 impl_transpile!(NeverTypeItem, "!",);
 
 impl Transpile for ResultTypeItem {
-    fn transpile(
-        &self,
-        ctx: &Context,
-        scope: &mut Scope,
-        errors: &mut crate::ErrorCollector,
-    ) -> String {
+    fn transpile(&self, ctx: &Context, errors: &mut crate::ErrorCollector) -> String {
         let ResultTypeItem {
             success,
             error,
             span: _span,
         } = self;
         if let Some(error) = error {
-            transpile!(ctx, scope, errors, "Result<{}, {}>", success, error)
+            transpile!(ctx, errors, "Result<{}, {}>", success, error)
         } else {
-            transpile!(ctx, scope, errors, "::galvan::std::FlexResult<{}>", success)
+            transpile!(ctx, errors, "::galvan::std::FlexResult<{}>", success)
         }
     }
 }
 
 impl Transpile for ParametricTypeItem {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        let base = self.base_type.transpile(ctx, scope, errors);
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let base = self.base_type.transpile(ctx, errors);
         let args = self
             .type_args
             .iter()
-            .map(|arg| arg.transpile(ctx, scope, errors))
+            .map(|arg| arg.transpile(ctx, errors))
             .join(", ");
         format!("{}<{}>", base, args)
     }
 }
 
 impl Transpile for GenericTypeItem {
-    fn transpile(
-        &self,
-        _ctx: &Context,
-        _scope: &mut Scope,
-        _errors: &mut ErrorCollector,
-    ) -> String {
+    fn transpile(&self, _ctx: &Context, _errors: &mut ErrorCollector) -> String {
         // Generic type parameters should be capitalized for Rust conventions
         crate::capitalize_generic(self.ident.as_str())
     }
 }
 
 impl Transpile for ClosureTypeItem {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let params = self
             .parameters
             .iter()
             .map(|p| {
-                let ty = p.transpile(ctx, scope, errors);
+                let ty = p.transpile(ctx, errors);
                 if ctx.mapping.is_copy(p) {
                     ty
                 } else {
@@ -106,7 +97,7 @@ impl Transpile for ClosureTypeItem {
             .join(", ");
 
         // TODO: We should somehow give users a way to declare that an Fn instead of an FnMut is desired here, e.g., for multithreading
-        transpile!(ctx, scope, "impl Fn({params}) -> {}", self.return_ty)
+        transpile!(ctx, errors, "impl Fn({params}) -> {}", self.return_ty)
     }
 }
 

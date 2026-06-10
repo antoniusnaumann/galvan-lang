@@ -23,7 +23,8 @@ use crate::mapping::Mapping;
 
 pub use scope::Variable;
 
-pub(crate) use coerce::{types_compatible, Expected};
+pub use coerce::types_compatible;
+pub(crate) use coerce::Expected;
 pub(crate) use scope::ScopeStack;
 
 /// Typechecks a segmented AST and lowers it into a [`HirModule`].

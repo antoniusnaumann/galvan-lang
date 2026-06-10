@@ -52,12 +52,14 @@ impl Expected {
     }
 }
 
-/// Checks whether two types are compatible, treating `Infer` and the
-/// `__Number` intrinsic as wildcards (recursively)
-pub(crate) fn types_compatible(expected: &TypeElement, actual: &TypeElement) -> bool {
+/// Checks whether two types are compatible, treating `Infer`, generic type
+/// parameters and the `__Number` intrinsic as wildcards (recursively)
+pub fn types_compatible(expected: &TypeElement, actual: &TypeElement) -> bool {
     match (expected, actual) {
         (TypeElement::Infer(_), _) | (_, TypeElement::Infer(_)) => true,
         (TypeElement::Never(_), _) | (_, TypeElement::Never(_)) => true,
+        // Generic type parameters unify with any type
+        (TypeElement::Generic(_), _) | (_, TypeElement::Generic(_)) => true,
         (expected, actual) if expected.is_number() || actual.is_number() => {
             // The number intrinsic is compatible with every plain type
             // (rustc decides whether the literal actually fits)
@@ -87,6 +89,14 @@ pub(crate) fn types_compatible(expected: &TypeElement, actual: &TypeElement) -> 
                     (Some(a), Some(b)) => types_compatible(a, b),
                     _ => true,
                 }
+        }
+        (TypeElement::Closure(a), TypeElement::Closure(b)) => {
+            a.parameters.len() == b.parameters.len()
+                && a.parameters
+                    .iter()
+                    .zip(&b.parameters)
+                    .all(|(a, b)| types_compatible(a, b))
+                && types_compatible(&a.return_ty, &b.return_ty)
         }
         (expected, actual) => expected.is_same(actual),
     }

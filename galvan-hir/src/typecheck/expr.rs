@@ -65,6 +65,20 @@ impl Checker<'_> {
     }
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {
+        // String interpolation falls back to an identifier containing the
+        // raw expression source (e.g. `dog.name`); render those verbatim
+        if ident
+            .as_str()
+            .contains(|c: char| !c.is_alphanumeric() && c != '_')
+        {
+            return HirExpression::new(
+                HirExpressionKind::Variable(ident.clone()),
+                TypeElement::infer(),
+                Ownership::Borrowed,
+                span,
+            );
+        }
+
         match self.variable(ident, span) {
             Some(variable) => HirExpression::new(
                 HirExpressionKind::Variable(ident.clone()),
@@ -189,6 +203,23 @@ impl Checker<'_> {
         arguments: &[FunctionCallArg],
         span: Span,
     ) -> HirExpression {
+        if receiver.is_none() {
+            if let Some(variable) = self.scopes.get(ident).cloned() {
+                if let TypeElement::Closure(closure) = variable.ty {
+                    let args = self.lower_closure_call_args(&closure.parameters, arguments);
+                    return HirExpression::new(
+                        HirExpressionKind::FunctionCall(HirFunctionCall {
+                            ident: ident.clone(),
+                            args,
+                        }),
+                        closure.return_ty.clone(),
+                        Ownership::UniqueOwned,
+                        span,
+                    );
+                }
+            }
+        }
+
         let receiver_ident = receiver.as_ref().and_then(|receiver| match &receiver.ty {
             TypeElement::Plain(basic) => Some(basic.ident.clone()),
             TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
@@ -308,6 +339,43 @@ impl Checker<'_> {
                         let expected = Expected::with(param.param_type.clone(), ownership);
                         self.lower_expression(&argument.expression, &expected)
                     }
+                }
+            })
+            .collect()
+    }
+
+    fn lower_closure_call_args(
+        &mut self,
+        params: &[TypeElement],
+        arguments: &[FunctionCallArg],
+    ) -> Vec<HirExpression> {
+        params
+            .iter()
+            .zip(arguments)
+            .map(|(param_ty, argument)| match argument.modifier {
+                Some(DeclModifier::Mut) => {
+                    let expected = Expected::with(param_ty.clone(), Ownership::MutBorrowed);
+                    self.lower_expression(&argument.expression, &expected)
+                }
+                Some(DeclModifier::Ref) => {
+                    let lowered = self.lower_expression(&argument.expression, &Expected::free());
+                    lowered.adjusted(Adjustment::ArcClone)
+                }
+                Some(DeclModifier::Let) => {
+                    self.errors.error(TranspilerError::InvalidModifier {
+                        modifier: "let".to_string(),
+                        context: "closure arguments".to_string(),
+                    });
+                    HirExpression::error("invalid let modifier on argument", argument.expression.span)
+                }
+                None => {
+                    let ownership = if self.is_copy(param_ty) {
+                        Ownership::UniqueOwned
+                    } else {
+                        Ownership::Borrowed
+                    };
+                    let expected = Expected::with(param_ty.clone(), ownership);
+                    self.lower_expression(&argument.expression, &expected)
                 }
             })
             .collect()
