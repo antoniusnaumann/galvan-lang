@@ -13,7 +13,7 @@ use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
 use crate::error::TranspilerError;
 use crate::hir::*;
 
-use super::{types_compatible, Checker, Expected, Variable};
+use super::{concat_kind, types_compatible, Checker, Expected, Variable};
 
 impl Checker<'_> {
     pub(crate) fn lower_expression(
@@ -65,20 +65,6 @@ impl Checker<'_> {
     }
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {
-        // String interpolation falls back to an identifier containing the
-        // raw expression source (e.g. `dog.name`); render those verbatim
-        if ident
-            .as_str()
-            .contains(|c: char| !c.is_alphanumeric() && c != '_')
-        {
-            return HirExpression::new(
-                HirExpressionKind::Variable(ident.clone()),
-                TypeElement::infer(),
-                Ownership::Borrowed,
-                span,
-            );
-        }
-
         match self.variable(ident, span) {
             Some(variable) => HirExpression::new(
                 HirExpressionKind::Variable(ident.clone()),
@@ -119,7 +105,7 @@ impl Checker<'_> {
                 let interpolations = string
                     .interpolations
                     .iter()
-                    .map(|interpolation| self.lower_expression(interpolation, &Expected::free()))
+                    .map(|interpolation| self.lower_interpolation(interpolation))
                     .collect();
                 (
                     HirLiteral::String(HirStringLiteral {
@@ -137,6 +123,28 @@ impl Checker<'_> {
             Ownership::UniqueOwned,
             span,
         )
+    }
+
+    /// Lowers a string interpolation argument. When parsing the interpolated
+    /// source failed, the AST falls back to an identifier containing the raw
+    /// expression source (e.g. `dog.name`); such identifiers are rendered
+    /// verbatim instead of being resolved as variables.
+    fn lower_interpolation(&mut self, interpolation: &Expression) -> HirExpression {
+        if let ExpressionKind::Ident(ident) = &interpolation.kind {
+            let is_fallback = ident
+                .as_str()
+                .contains(|c: char| !c.is_alphanumeric() && c != '_');
+            if is_fallback {
+                return HirExpression::new(
+                    HirExpressionKind::Variable(ident.clone()),
+                    TypeElement::infer(),
+                    Ownership::Borrowed,
+                    interpolation.span,
+                );
+            }
+        }
+
+        self.lower_expression(interpolation, &Expected::free())
     }
 
     // ------------------------------------------------------------------
@@ -583,6 +591,22 @@ impl Checker<'_> {
                 )
             }
             None => {
+                // In statement position the branch produces no value
+                if expected.is_void() {
+                    let then_block = self.lower_block(&body.block.body, &Expected::void());
+                    return HirExpression::new(
+                        HirExpressionKind::If(Box::new(HirIf {
+                            condition,
+                            then_block,
+                            else_block: None,
+                            wraps_optional: false,
+                        })),
+                        TypeElement::void(),
+                        Ownership::UniqueOwned,
+                        span,
+                    );
+                }
+
                 // Without an else branch, an if expression evaluates to an
                 // optional: the tail is wrapped in Some and codegen emits
                 // `else { None }`
@@ -1015,6 +1039,14 @@ impl Checker<'_> {
         let mut lhs = self.lower_expression(lhs, &Expected::free());
         let mut rhs = self.lower_expression(rhs, &Expected::free());
 
+        // `ref` variables compare by their locked value
+        if lhs.adjusted_ownership() == Ownership::Ref {
+            lhs = lhs.adjusted(Adjustment::LockRef).adjusted(Adjustment::Deref);
+        }
+        if rhs.adjusted_ownership() == Ownership::Ref {
+            rhs = rhs.adjusted(Adjustment::LockRef).adjusted(Adjustment::Deref);
+        }
+
         let has_number = lhs.ty.is_number()
             || rhs.ty.is_number()
             || lhs.ty.is_infer()
@@ -1164,13 +1196,19 @@ impl Checker<'_> {
             InfixExpression::Collection(operation) => {
                 let lhs = self.lower_expression(&operation.lhs, &Expected::free());
                 let rhs = self.lower_expression(&operation.rhs, &Expected::free());
-                let operator = match operation.operator {
-                    galvan_ast::CollectionOperator::Concat => CollectionOperator::Concat,
-                    galvan_ast::CollectionOperator::Remove => CollectionOperator::Remove,
-                    galvan_ast::CollectionOperator::Contains => CollectionOperator::Contains,
+                let (operator, rhs) = match operation.operator {
+                    galvan_ast::CollectionOperator::Concat => {
+                        let kind = concat_kind(&lhs.ty, &rhs.ty);
+                        let rhs = self.coerce_concat_value(&lhs.ty, kind, rhs, false);
+                        (CollectionOperator::Concat(kind), rhs)
+                    }
+                    galvan_ast::CollectionOperator::Remove => (CollectionOperator::Remove, rhs),
+                    galvan_ast::CollectionOperator::Contains => {
+                        (CollectionOperator::Contains, rhs)
+                    }
                 };
                 let ty = match operator {
-                    CollectionOperator::Concat | CollectionOperator::Remove => lhs.ty.clone(),
+                    CollectionOperator::Concat(_) | CollectionOperator::Remove => lhs.ty.clone(),
                     CollectionOperator::Contains => TypeElement::bool(),
                 };
                 HirExpression::new(

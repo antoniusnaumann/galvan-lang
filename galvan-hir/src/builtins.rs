@@ -164,7 +164,17 @@ impl IsSame for TypeElement {
             (TypeElement::Result(a), TypeElement::Result(b)) => a.is_same(b),
             (TypeElement::Plain(a), TypeElement::Plain(b)) => a.is_same(b),
             (TypeElement::Generic(a), TypeElement::Generic(b)) => a.is_same(b),
+            (TypeElement::Closure(a), TypeElement::Closure(b)) => {
+                a.parameters.len() == b.parameters.len()
+                    && a.parameters
+                        .iter()
+                        .zip(&b.parameters)
+                        .all(|(a, b)| a.is_same(b))
+                    && a.return_ty.is_same(&b.return_ty)
+            }
             (TypeElement::Never(_), TypeElement::Never(_)) => true,
+            (TypeElement::Void(_), TypeElement::Void(_)) => true,
+            (TypeElement::Infer(_), TypeElement::Infer(_)) => true,
             _ => false,
         }
     }

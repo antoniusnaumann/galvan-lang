@@ -6,7 +6,7 @@ use galvan_hir::hir::{HirFunction, HirMain, HirTest};
 use itertools::Itertools;
 
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::ErrorCollector;
 use crate::sanitize::sanitize_name;
 use crate::transpile_item::ident::{TranspileType, TypeOwnership};
 use crate::Transpile;
@@ -154,8 +154,10 @@ fn transpile_param(
     let ty = match &param.param_type {
         TypeElement::Plain(plain) => plain.ident.transpile_type(ctx, ownership, errors),
         other => {
-            if matches!(ownership, TypeOwnership::Borrowed) {
-                prefix = "&";
+            match ownership {
+                TypeOwnership::Borrowed => prefix = "&",
+                TypeOwnership::MutBorrowed => prefix = "&mut ",
+                TypeOwnership::Owned | TypeOwnership::MutOwned => {}
             }
             other.transpile(ctx, errors)
         }

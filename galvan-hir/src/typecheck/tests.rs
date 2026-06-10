@@ -2,15 +2,21 @@ use galvan_ast::{Ownership, TypeElement};
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
 
+use crate::builtins::CheckBuiltins;
+use crate::error::ErrorCollector;
 use crate::hir::*;
 use crate::typecheck::typecheck;
 
-fn lower(code: &str) -> HirModule {
+fn lower_with_diagnostics(code: &str) -> (HirModule, ErrorCollector) {
     let ast = Source::from_string(code)
         .try_into_ast()
         .expect("test code should parse");
     let segmented = vec![ast].segmented().expect("test code should segment");
-    let (module, errors) = typecheck(segmented).expect("test code should typecheck");
+    typecheck(segmented).expect("test code should typecheck")
+}
+
+fn lower(code: &str) -> HirModule {
+    let (module, errors) = lower_with_diagnostics(code);
     assert!(
         !errors.has_errors(),
         "expected no type errors, got: {errors}"
@@ -322,6 +328,166 @@ fn safe_access_style_follows_receiver_ownership() {
     // Optional<Dog> is not copy, the parameter is borrowed -> clone out of the map
     assert_eq!(access.style, SafeAccessStyle::Clone);
     assert!(matches!(tail.ty, TypeElement::Optional(_)));
+}
+
+#[test]
+fn void_branches_unify_without_diagnostics() {
+    let (module, errors) = lower_with_diagnostics(
+        "fn check(x: Bool) {
+             if x { println(\"yes\") } else { println(\"no\") }
+         }",
+    );
+    assert!(
+        errors.diagnostics().is_empty(),
+        "expected no diagnostics, got: {errors}"
+    );
+
+    let check = function(&module, "check");
+    let HirStatement::Expression(if_expr) = &check.body.statements[0] else {
+        panic!("expected if statement");
+    };
+    assert!(if_expr.ty.is_void());
+}
+
+#[test]
+fn statement_position_if_does_not_wrap_optional() {
+    let module = lower(
+        "fn check(x: Bool) {
+             if x { println(\"yes\") }
+         }",
+    );
+    let check = function(&module, "check");
+
+    let HirStatement::Expression(if_expr) = &check.body.statements[0] else {
+        panic!("expected if statement");
+    };
+    let HirExpressionKind::If(inner) = &if_expr.kind else {
+        panic!("expected if expression");
+    };
+    assert!(!inner.wraps_optional);
+    assert!(if_expr.ty.is_void());
+}
+
+#[test]
+fn assignment_values_are_owned_not_mut_borrowed() {
+    let module = lower(
+        "type Dog { name: String }
+         fn rename(mut dog: Dog, name: String) { dog.name = name }",
+    );
+    let rename = function(&module, "rename");
+
+    let HirStatement::Assignment(assignment) = &rename.body.statements[0] else {
+        panic!("expected assignment");
+    };
+    // The borrowed parameter is cloned into the field; it must never be
+    // adjusted to the `&mut` ownership of the target place
+    assert_eq!(assignment.value.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn assignment_to_mut_parameter_dereferences_the_place() {
+    let module = lower("fn overwrite(mut value: Int) { value = 42 }");
+    let overwrite = function(&module, "overwrite");
+
+    let HirStatement::Assignment(assignment) = &overwrite.body.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert!(assignment.deref_target);
+    // The copy value is assigned as-is
+    assert!(assignment.value.adjustments.is_empty());
+}
+
+#[test]
+fn assignment_to_ref_variable_locks_the_mutex() {
+    let module = lower(
+        "fn check() {
+             ref counter = 0
+             counter = 42
+         }",
+    );
+    let check = function(&module, "check");
+
+    let HirStatement::Assignment(assignment) = &check.body.statements[1] else {
+        panic!("expected assignment");
+    };
+    // `*counter.lock().unwrap() = 42`
+    assert!(assignment.deref_target);
+    assert_eq!(assignment.target.adjustments, vec![Adjustment::LockRef]);
+    assert!(assignment.value.adjustments.is_empty());
+}
+
+#[test]
+fn concat_assign_classifies_and_owns_elements() {
+    let module = lower(
+        "fn push_name(mut names: [String], name: String) { names ++= name }
+         fn merge(mut names: [String], more: [String]) { names ++= more }",
+    );
+
+    let push_name = function(&module, "push_name");
+    let HirStatement::Assignment(assignment) = &push_name.body.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert_eq!(
+        assignment.operator,
+        HirAssignmentOperator::ConcatAssign(ConcatKind::Element)
+    );
+    // `push` consumes the element, so the borrowed parameter is cloned
+    assert_eq!(assignment.value.adjustments, vec![Adjustment::ToOwned]);
+
+    let merge = function(&module, "merge");
+    let HirStatement::Assignment(assignment) = &merge.body.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert_eq!(
+        assignment.operator,
+        HirAssignmentOperator::ConcatAssign(ConcatKind::Collection)
+    );
+    // `extend` iterates by value, so the borrowed collection is cloned
+    assert_eq!(assignment.value.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn concat_expression_owns_appended_elements() {
+    let module = lower(
+        "fn appended(names: [String], name: String) -> [String] { names ++ name }",
+    );
+    let tail = trailing(function(&module, "appended"));
+
+    let HirExpressionKind::CollectionOp(operation) = &tail.kind else {
+        panic!("expected collection operation");
+    };
+    assert_eq!(
+        operation.operator,
+        CollectionOperator::Concat(ConcatKind::Element)
+    );
+    assert_eq!(operation.rhs.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn tuples_of_copy_types_are_copy() {
+    use galvan_ast::{Span, TupleTypeItem};
+
+    let mapping = crate::builtins::builtins();
+    let int = TypeElement::Plain(galvan_ast::BasicTypeItem {
+        ident: galvan_ast::TypeIdent::new("Int"),
+        span: Span::default(),
+    });
+    let string = TypeElement::Plain(galvan_ast::BasicTypeItem {
+        ident: galvan_ast::TypeIdent::new("String"),
+        span: Span::default(),
+    });
+
+    let copy_tuple = TypeElement::Tuple(Box::new(TupleTypeItem {
+        elements: vec![int.clone(), int.clone()],
+        span: Span::default(),
+    }));
+    let non_copy_tuple = TypeElement::Tuple(Box::new(TupleTypeItem {
+        elements: vec![int, string],
+        span: Span::default(),
+    }));
+
+    assert!(mapping.is_copy(&copy_tuple));
+    assert!(!mapping.is_copy(&non_copy_tuple));
 }
 
 #[test]

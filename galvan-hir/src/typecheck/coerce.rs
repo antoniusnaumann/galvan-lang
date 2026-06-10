@@ -1,7 +1,7 @@
 use galvan_ast::{Ownership, TypeElement};
 
 use crate::builtins::{CheckBuiltins, IsSame};
-use crate::hir::{Adjustment, HirExpression, HirExpressionKind, HirLiteral};
+use crate::hir::{Adjustment, ConcatKind, HirExpression, HirExpressionKind, HirLiteral};
 
 use super::Checker;
 
@@ -99,6 +99,63 @@ pub fn types_compatible(expected: &TypeElement, actual: &TypeElement) -> bool {
                 && types_compatible(&a.return_ty, &b.return_ty)
         }
         (expected, actual) => expected.is_same(actual),
+    }
+}
+
+/// Classifies a `++` concatenation by its operand types: appending a single
+/// element, merging a collection of the same shape, or stringifying the
+/// right-hand side (strings only)
+pub(crate) fn concat_kind(lhs: &TypeElement, rhs: &TypeElement) -> ConcatKind {
+    match lhs {
+        TypeElement::Array(array) => {
+            if matches!(rhs, TypeElement::Array(_))
+                && !value_matches_concrete_element(&array.elements, rhs)
+            {
+                ConcatKind::Collection
+            } else {
+                ConcatKind::Element
+            }
+        }
+        TypeElement::Set(set) => {
+            if matches!(rhs, TypeElement::Set(_))
+                && !value_matches_concrete_element(&set.elements, rhs)
+            {
+                ConcatKind::Collection
+            } else {
+                ConcatKind::Element
+            }
+        }
+        TypeElement::Plain(basic) if basic.ident.as_str() == "String" => match rhs {
+            TypeElement::Plain(rhs) if rhs.ident.as_str() == "Char" => ConcatKind::Element,
+            TypeElement::Plain(rhs) if rhs.ident.as_str() == "String" => ConcatKind::Collection,
+            _ => ConcatKind::Stringify,
+        },
+        _ => ConcatKind::Collection,
+    }
+}
+
+/// `true` when the value type matches a concrete (non-wildcard) element type,
+/// meaning a collection-typed right-hand side is appended as a single element
+/// (e.g. pushing a `[Int]` row into a `[[Int]]` matrix)
+fn value_matches_concrete_element(element_ty: &TypeElement, value_ty: &TypeElement) -> bool {
+    !matches!(
+        element_ty,
+        TypeElement::Infer(_) | TypeElement::Generic(_)
+    ) && types_compatible(element_ty, value_ty)
+}
+
+/// The element type a `++` element append consumes for the given collection
+fn concat_element_type(lhs: &TypeElement) -> TypeElement {
+    match lhs {
+        TypeElement::Array(array) => array.elements.clone(),
+        TypeElement::Set(set) => set.elements.clone(),
+        TypeElement::Plain(basic) if basic.ident.as_str() == "String" => {
+            TypeElement::Plain(galvan_ast::BasicTypeItem {
+                ident: galvan_ast::TypeIdent::new("Char"),
+                span: galvan_ast::Span::default(),
+            })
+        }
+        _ => TypeElement::infer(),
     }
 }
 
@@ -215,6 +272,32 @@ impl Checker<'_> {
             // `ref` declarations wrap the initializer at the declaration site,
             // `ref` arguments are wrapped with Arc::clone at the call site
             (Ref, _) => expr,
+        }
+    }
+
+    /// Coerces the right-hand side of a `++` to the ownership its generated
+    /// shape consumes: appended elements are owned (`push`/`insert` consume
+    /// them) and arrays extended in place own their argument (`extend`
+    /// iterates by value). Merged collections and stringified values are
+    /// borrowed or cloned inside the generated pattern instead.
+    pub(crate) fn coerce_concat_value(
+        &mut self,
+        lhs_ty: &TypeElement,
+        kind: ConcatKind,
+        value: HirExpression,
+        extends_in_place: bool,
+    ) -> HirExpression {
+        match kind {
+            ConcatKind::Element => {
+                let element_ty = concat_element_type(lhs_ty);
+                self.coerce(value, &Expected::owned(element_ty))
+            }
+            ConcatKind::Collection
+                if extends_in_place && matches!(lhs_ty, TypeElement::Array(_)) =>
+            {
+                self.ensure_owned(value)
+            }
+            ConcatKind::Collection | ConcatKind::Stringify => value,
         }
     }
 

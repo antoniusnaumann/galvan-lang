@@ -1,0 +1,38 @@
+fn overwrite(mut value: Int) {
+    value = 42
+}
+
+test "Assign to mut parameter" {
+    mut a = 1
+    overwrite(mut a)
+    assert a == 42
+}
+
+fn rename(mut dog: Dog, name: String) {
+    dog.name = name
+}
+
+test "Assign borrowed value to field of mut parameter" {
+    mut dog = Dog(name: "Rex", age: 3)
+    let new_name = "Bello"
+    rename(mut dog, new_name)
+    assert dog.name == "Bello"
+}
+
+fn push_name(mut names: [String], name: String) {
+    names ++= name
+}
+
+test "Concat-assign borrowed element to list" {
+    mut names = ["Rex"]
+    let name = "Bello"
+    push_name(mut names, name)
+    assert names == ["Rex", "Bello"]
+}
+
+test "Assign to ref variable" {
+    ref counter = 0
+    counter = 42
+    counter += 1
+    assert counter == 43
+}

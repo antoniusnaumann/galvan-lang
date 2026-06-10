@@ -4,9 +4,8 @@ use galvan_ast::{
 use galvan_hir::hir::*;
 use itertools::Itertools;
 
-use super::{rhs_is_array_collection, rhs_is_set_collection};
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::ErrorCollector;
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
 use crate::Transpile;
@@ -535,7 +534,7 @@ impl Transpile for HirBinary<RangeOperator> {
 impl Transpile for HirBinary<CollectionOperator> {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.operator {
-            CollectionOperator::Concat => transpile_concat(self, ctx, errors),
+            CollectionOperator::Concat(kind) => transpile_concat(self, kind, ctx, errors),
             CollectionOperator::Remove => {
                 errors.warning(
                     "The remove operator '--' is not implemented yet".to_string(),
@@ -550,66 +549,52 @@ impl Transpile for HirBinary<CollectionOperator> {
     }
 }
 
-/// `++` concatenation; the generated shape depends on the operand types
+/// `++` concatenation; the shape was decided by the typechecker, the
+/// collection kind comes from the stored left-hand side type
 fn transpile_concat(
     operation: &HirBinary<CollectionOperator>,
+    kind: ConcatKind,
     ctx: &Context,
     errors: &mut ErrorCollector,
 ) -> String {
-    let lhs_ty = &operation.lhs.ty;
-    let rhs_ty = &operation.rhs.ty;
-
-    match lhs_ty {
-        TypeElement::Array(array) => {
-            if rhs_is_array_collection(&array.elements, rhs_ty) {
-                transpile!(
-                    ctx,
-                    errors,
-                    "[({}).to_owned(), ({}).to_owned()].concat()",
-                    operation.lhs,
-                    operation.rhs
-                )
-            } else {
-                transpile!(
-                    ctx,
-                    errors,
-                    "{{ let mut temp = ({}).to_owned(); temp.push({}); temp }}",
-                    operation.lhs,
-                    operation.rhs
-                )
-            }
+    match (&operation.lhs.ty, kind) {
+        (TypeElement::Array(_), ConcatKind::Element) => {
+            transpile!(
+                ctx,
+                errors,
+                "{{ let mut temp = ({}).to_owned(); temp.push({}); temp }}",
+                operation.lhs,
+                operation.rhs
+            )
         }
-        TypeElement::Set(set) => {
-            if rhs_is_set_collection(&set.elements, rhs_ty) {
-                transpile!(
-                    ctx,
-                    errors,
-                    "({}).union(&{}).cloned().collect::<::std::collections::HashSet<_>>().to_owned()",
-                    operation.lhs,
-                    operation.rhs
-                )
-            } else {
-                transpile!(
-                    ctx,
-                    errors,
-                    "{{ let mut temp = ({}).to_owned(); temp.insert({}); temp }}",
-                    operation.lhs,
-                    operation.rhs
-                )
-            }
+        (TypeElement::Set(_), ConcatKind::Element) => {
+            transpile!(
+                ctx,
+                errors,
+                "{{ let mut temp = ({}).to_owned(); temp.insert({}); temp }}",
+                operation.lhs,
+                operation.rhs
+            )
         }
-        TypeElement::Plain(basic) if basic.ident.as_str() == "String" => {
-            if let TypeElement::Plain(rhs_basic) = rhs_ty {
-                if rhs_basic.ident.as_str() == "Char" {
-                    return transpile!(
-                        ctx,
-                        errors,
-                        "{{ let mut temp = ({}).to_owned(); temp.push({}); temp }}",
-                        operation.lhs,
-                        operation.rhs
-                    );
-                }
-            }
+        (TypeElement::Set(_), _) => {
+            transpile!(
+                ctx,
+                errors,
+                "({}).union(&{}).cloned().collect::<::std::collections::HashSet<_>>()",
+                operation.lhs,
+                operation.rhs
+            )
+        }
+        (TypeElement::Plain(basic), ConcatKind::Element) if basic.ident.as_str() == "String" => {
+            transpile!(
+                ctx,
+                errors,
+                "{{ let mut temp = ({}).to_owned(); temp.push({}); temp }}",
+                operation.lhs,
+                operation.rhs
+            )
+        }
+        (TypeElement::Plain(basic), _) if basic.ident.as_str() == "String" => {
             transpile!(
                 ctx,
                 errors,
@@ -618,6 +603,7 @@ fn transpile_concat(
                 operation.rhs
             )
         }
+        // Arrays and unknown collection types concatenate as arrays
         _ => {
             transpile!(
                 ctx,

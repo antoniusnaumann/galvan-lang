@@ -24,7 +24,7 @@ use crate::mapping::Mapping;
 pub use scope::Variable;
 
 pub use coerce::types_compatible;
-pub(crate) use coerce::Expected;
+pub(crate) use coerce::{concat_kind, Expected};
 pub(crate) use scope::ScopeStack;
 
 /// Typechecks a segmented AST and lowers it into a [`HirModule`].
@@ -343,51 +343,67 @@ impl<'a> Checker<'a> {
     }
 
     fn lower_assignment(&mut self, assignment: &Assignment) -> HirAssignment {
-        let target = self.lower_expression(&assignment.target, &Expected::free());
+        let mut target = self.lower_expression(&assignment.target, &Expected::free());
 
-        let deref_target = match &target.kind {
-            HirExpressionKind::Variable(ident) => {
-                let ownership = self.scopes.get(ident).map(|variable| variable.ownership);
-                match ownership {
-                    Some(Ownership::MutBorrowed) => true,
-                    Some(Ownership::Ref) => {
-                        self.errors.warning(
-                            "Assignment to ref variables is not implemented yet".to_string(),
-                            Some(assignment.span.into()),
-                        );
-                        false
-                    }
-                    _ => false,
+        // Assignments store through the place the target denotes; mutably
+        // borrowed places are dereferenced and `ref` places go through the
+        // mutex (`*x.lock().unwrap() = value`)
+        let mut deref_target = false;
+        if let HirExpressionKind::Variable(ident) = &target.kind {
+            match self.scopes.get(ident).map(|variable| variable.ownership) {
+                Some(Ownership::MutBorrowed) => deref_target = true,
+                Some(Ownership::Ref) => {
+                    target = target.adjusted(Adjustment::LockRef);
+                    deref_target = true;
                 }
+                _ => {}
             }
-            _ => false,
-        };
+        }
 
-        let value_expected = self.assignment_value_expected(assignment, &target);
         let value = self.lower_expression(&assignment.expression, &Expected::free());
-        let value = self.coerce(value, &value_expected);
+        let (operator, value) = self.lower_assignment_operator(assignment, &target, value);
 
         HirAssignment {
             target,
             deref_target,
-            operator: assignment.operator.clone(),
+            operator,
             value,
             span: assignment.span,
         }
     }
 
-    /// Determines the expectation for the right-hand side of an assignment.
-    /// `++=` appends a single element when the value is element-typed, so the
-    /// expectation depends on the resolved shape.
-    fn assignment_value_expected(
+    /// Resolves the assignment operator and coerces the value to what the
+    /// generated assignment consumes: an owned value of the place's type, or
+    /// the shape determined by the `++=` classification.
+    fn lower_assignment_operator(
         &mut self,
         assignment: &Assignment,
         target: &HirExpression,
-    ) -> Expected {
-        if assignment.operator == AssignmentOperator::ConcatAssign {
-            return Expected::free();
-        }
+        value: HirExpression,
+    ) -> (HirAssignmentOperator, HirExpression) {
+        let operator = match assignment.operator {
+            AssignmentOperator::Assign => HirAssignmentOperator::Assign,
+            AssignmentOperator::AddAssign => HirAssignmentOperator::AddAssign,
+            AssignmentOperator::SubAssign => HirAssignmentOperator::SubAssign,
+            AssignmentOperator::MulAssign => HirAssignmentOperator::MulAssign,
+            AssignmentOperator::DivAssign => HirAssignmentOperator::DivAssign,
+            AssignmentOperator::RemAssign => HirAssignmentOperator::RemAssign,
+            AssignmentOperator::PowAssign => HirAssignmentOperator::PowAssign,
+            AssignmentOperator::ConcatAssign => {
+                let kind = concat_kind(&target.ty, &value.ty);
+                let value = self.coerce_concat_value(&target.ty, kind, value, true);
+                return (HirAssignmentOperator::ConcatAssign(kind), value);
+            }
+        };
 
+        let value = self.coerce(value, &self.assignment_value_expected(target));
+        (operator, value)
+    }
+
+    /// The expectation for the right-hand side of a non-concat assignment:
+    /// an owned value of the place's type. The mutability of the place itself
+    /// is handled through `deref_target`, never by adjusting the value.
+    fn assignment_value_expected(&self, target: &HirExpression) -> Expected {
         // Assigning into an indexed dictionary or set inserts the value
         if let HirExpressionKind::Index(index) = &target.kind {
             match &index.base.ty {
@@ -404,7 +420,7 @@ impl<'a> Checker<'a> {
             }
         }
 
-        Expected::with(target.ty.clone(), target.ownership)
+        Expected::owned(target.ty.clone())
     }
 
     /// Resolves a variable, reporting an error with a suggestion when the

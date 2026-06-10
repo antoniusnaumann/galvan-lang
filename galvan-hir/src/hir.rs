@@ -16,9 +16,9 @@
 //! therefore *is* the ownership of the generated Rust expression.
 
 use galvan_ast::{
-    ArithmeticOperator, AssignmentOperator, CmdSignature, ComparisonOperator, DeclModifier,
-    FnSignature, Ident, LogicalOperator, Ownership, RangeOperator, Span, StringLiteral,
-    ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+    ArithmeticOperator, CmdSignature, ComparisonOperator, DeclModifier, FnSignature, Ident,
+    LogicalOperator, Ownership, RangeOperator, Span, StringLiteral, ToplevelItem, TypeDecl,
+    TypeElement, TypeIdent,
 };
 use galvan_files::Source;
 
@@ -119,9 +119,23 @@ pub struct HirAssignment {
     pub target: HirExpression,
     /// `true` when assigning through a mutable reference, requiring `*target`
     pub deref_target: bool,
-    pub operator: AssignmentOperator,
+    pub operator: HirAssignmentOperator,
     pub value: HirExpression,
     pub span: Span,
+}
+
+/// Assignment operators with the `++=` shape already resolved by the
+/// typechecker
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HirAssignmentOperator {
+    Assign,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    RemAssign,
+    PowAssign,
+    ConcatAssign(ConcatKind),
 }
 
 #[derive(Clone, Debug)]
@@ -260,9 +274,29 @@ pub enum HirExpressionKind {
 /// depends on the stored operand types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionOperator {
-    Concat,
+    Concat(ConcatKind),
     Remove,
     Contains,
+}
+
+/// Shape of a `++` concatenation, decided by the typechecker from the
+/// operand types.
+///
+/// The shape also fixes the ownership contract of the right-hand side:
+/// `Element` values are coerced to an owned element by the typechecker
+/// (they are consumed by `push`/`insert`), while `Collection` and
+/// `Stringify` values are taken by reference or cloned inside the
+/// generated pattern.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConcatKind {
+    /// The right-hand side is a single element appended to the collection
+    /// (`push`/`insert`)
+    Element,
+    /// The right-hand side is a collection of the same shape
+    /// (`concat`/`union`/string append)
+    Collection,
+    /// The right-hand side is stringified and appended (strings only)
+    Stringify,
 }
 
 #[derive(Clone, Debug)]

@@ -8,7 +8,7 @@ pub struct Mapping {
 }
 
 impl Mapping {
-    pub fn get_owned(&self, type_id: &TypeIdent) -> Cow<str> {
+    pub fn get_owned(&self, type_id: &TypeIdent) -> Cow<'_, str> {
         self.types
             .get(type_id)
             .map(RustType::owned)
@@ -16,7 +16,7 @@ impl Mapping {
             .unwrap_or_else(|| type_id.to_string().into())
     }
 
-    pub fn get_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
+    pub fn get_borrowed(&self, type_id: &TypeIdent) -> Cow<'_, str> {
         self.types
             .get(type_id)
             .map(RustType::borrowed)
@@ -24,7 +24,7 @@ impl Mapping {
             .unwrap_or_else(|| type_id.to_string().into())
     }
 
-    pub fn get_mut_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
+    pub fn get_mut_borrowed(&self, type_id: &TypeIdent) -> Cow<'_, str> {
         self.types
             .get(type_id)
             .map(RustType::mut_borrowed)
@@ -38,7 +38,7 @@ impl Mapping {
             TypeElement::Dictionary(_) => false,
             TypeElement::OrderedDictionary(_) => false,
             TypeElement::Set(_) => false,
-            TypeElement::Tuple(_) => todo!(),
+            TypeElement::Tuple(tuple) => tuple.elements.iter().all(|ty| self.is_copy(ty)),
             TypeElement::Optional(ty) => self.is_copy(&ty.inner),
             TypeElement::Result(ty) => {
                 self.is_copy(&ty.success) && ty.error.as_ref().is_some_and(|ty| self.is_copy(ty))

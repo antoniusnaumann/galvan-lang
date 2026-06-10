@@ -1,29 +1,37 @@
-use galvan_ast::{AssignmentOperator, DeclModifier, TypeElement};
+use galvan_ast::{DeclModifier, TypeElement};
 use galvan_hir::hir::*;
 use itertools::Itertools;
 
-use super::{rhs_is_array_collection, rhs_is_set_collection};
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::ErrorCollector;
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
 use crate::Transpile;
 
 impl Transpile for HirBlock {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        let trailing = matches!(
-            self.statements.last(),
-            Some(HirStatement::Expression(_)) | Some(HirStatement::Return(_))
-        );
+        // Only blocks that produce a value keep their trailing expression
+        // unterminated; in void blocks a trailing `;` makes sure temporaries
+        // (e.g. mutex guards) are dropped before the block's locals
+        let trailing = !self.is_void()
+            && matches!(
+                self.statements.last(),
+                Some(HirStatement::Expression(_)) | Some(HirStatement::Return(_))
+            );
 
         if trailing {
             let (init, last) = self.statements.split_at(self.statements.len() - 1);
+            let last = last[0].transpile(ctx, errors);
+            if init.is_empty() {
+                return format!("{{\n{last}\n}}");
+            }
             let statements = init
                 .iter()
                 .map(|statement| statement.transpile(ctx, errors))
                 .join(";\n");
-            let last = last[0].transpile(ctx, errors);
             format!("{{\n{statements};\n{last}\n}}")
+        } else if self.statements.is_empty() {
+            "{ }".to_string()
         } else {
             let statements = self
                 .statements
@@ -97,7 +105,7 @@ impl Transpile for HirAssignment {
                     | TypeElement::Set(_)
             ) {
                 match self.operator {
-                    AssignmentOperator::Assign => {
+                    HirAssignmentOperator::Assign => {
                         return transpile!(
                             ctx,
                             errors,
@@ -122,25 +130,36 @@ impl Transpile for HirAssignment {
         }
 
         match self.operator {
-            AssignmentOperator::Assign => {
+            HirAssignmentOperator::Assign => {
                 transpile!(ctx, errors, "{prefix}{} = {}", self.target, self.value)
             }
-            AssignmentOperator::AddAssign => {
+            HirAssignmentOperator::AddAssign => {
                 transpile!(ctx, errors, "{prefix}{} += {}", self.target, self.value)
             }
-            AssignmentOperator::SubAssign => {
+            HirAssignmentOperator::SubAssign => {
                 transpile!(ctx, errors, "{prefix}{} -= {}", self.target, self.value)
             }
-            AssignmentOperator::MulAssign => {
+            HirAssignmentOperator::MulAssign => {
                 transpile!(ctx, errors, "{prefix}{} *= {}", self.target, self.value)
             }
-            AssignmentOperator::DivAssign => {
+            HirAssignmentOperator::DivAssign => {
                 transpile!(ctx, errors, "{prefix}{} /= {}", self.target, self.value)
             }
-            AssignmentOperator::RemAssign => {
+            HirAssignmentOperator::RemAssign => {
                 transpile!(ctx, errors, "{prefix}{} %= {}", self.target, self.value)
             }
-            AssignmentOperator::PowAssign => {
+            // The target is rendered twice; bind a guard so `ref` targets
+            // lock their mutex only once
+            HirAssignmentOperator::PowAssign if locks_target(&self.target) => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "{{ let mut __guard = {}; *__guard = __guard.pow({}); }}",
+                    self.target,
+                    self.value
+                )
+            }
+            HirAssignmentOperator::PowAssign => {
                 transpile!(
                     ctx,
                     errors,
@@ -150,94 +169,122 @@ impl Transpile for HirAssignment {
                     self.value
                 )
             }
-            AssignmentOperator::ConcatAssign => {
-                transpile_concat_assign(self, ctx, errors, prefix)
+            HirAssignmentOperator::ConcatAssign(kind) => {
+                transpile_concat_assign(self, kind, ctx, errors, prefix)
             }
         }
     }
 }
 
-/// `++=` appends an element or extends with a collection depending on the
-/// stored operand types
+/// Whether the rendered target ends in a mutex lock (`ref` variables)
+fn locks_target(target: &HirExpression) -> bool {
+    target.adjustments.last() == Some(&Adjustment::LockRef)
+}
+
+/// `++=` appends an element or extends with a collection; the shape was
+/// decided by the typechecker. Method-call shapes auto-(de)reference their
+/// receiver, so they never need the deref prefix.
 fn transpile_concat_assign(
     assignment: &HirAssignment,
+    kind: ConcatKind,
     ctx: &Context,
     errors: &mut ErrorCollector,
     prefix: &str,
 ) -> String {
-    match &assignment.target.ty {
-        TypeElement::Array(array) => {
-            if rhs_is_array_collection(&array.elements, &assignment.value.ty) {
-                transpile!(
-                    ctx,
-                    errors,
-                    "{prefix}{}.extend({})",
-                    assignment.target,
-                    assignment.value
-                )
-            } else {
-                transpile!(
-                    ctx,
-                    errors,
-                    "{prefix}{}.push({})",
-                    assignment.target,
-                    assignment.value
-                )
-            }
-        }
-        TypeElement::Set(set) => {
-            if rhs_is_set_collection(&set.elements, &assignment.value.ty) {
-                transpile!(
-                    ctx,
-                    errors,
-                    "{} = {prefix}{}.union(&{}).cloned().collect::<::std::collections::HashSet<_>>().to_owned()",
-                    assignment.target,
-                    assignment.target,
-                    assignment.value
-                )
-            } else {
-                transpile!(
-                    ctx,
-                    errors,
-                    "{prefix}{}.insert({})",
-                    assignment.target,
-                    assignment.value
-                )
-            }
-        }
-        TypeElement::Plain(basic) if basic.ident.as_str() == "String" => {
-            if let TypeElement::Plain(value_ty) = &assignment.value.ty {
-                if value_ty.ident.as_str() == "Char" {
-                    return transpile!(
-                        ctx,
-                        errors,
-                        "{prefix}{}.push({})",
-                        assignment.target,
-                        assignment.value
-                    );
-                } else if value_ty.ident.as_str() == "String" {
-                    return transpile!(
-                        ctx,
-                        errors,
-                        "{prefix}{}.push_str(&{})",
-                        assignment.target,
-                        assignment.value
-                    );
-                }
-            }
+    match (&assignment.target.ty, kind) {
+        (TypeElement::Array(_), ConcatKind::Element) => {
             transpile!(
                 ctx,
                 errors,
-                "{prefix}{}.push_str(&{}.to_string())",
+                "{}.push({})",
                 assignment.target,
                 assignment.value
             )
         }
-        _ => {
+        (TypeElement::Array(_), _) => {
             transpile!(
                 ctx,
                 errors,
-                "{prefix}{}.extend({})",
+                "{}.extend({})",
+                assignment.target,
+                assignment.value
+            )
+        }
+        (TypeElement::Set(_), ConcatKind::Element) => {
+            transpile!(
+                ctx,
+                errors,
+                "{}.insert({})",
+                assignment.target,
+                assignment.value
+            )
+        }
+        // The target is rendered twice; bind a guard so `ref` targets lock
+        // their mutex only once
+        (TypeElement::Set(_), _) if locks_target(&assignment.target) => {
+            transpile!(
+                ctx,
+                errors,
+                "{{ let mut __guard = {}; *__guard = __guard.union(&{}).cloned().collect::<::std::collections::HashSet<_>>(); }}",
+                assignment.target,
+                assignment.value
+            )
+        }
+        (TypeElement::Set(_), _) => {
+            transpile!(
+                ctx,
+                errors,
+                "{prefix}{} = ({prefix}{}).union(&{}).cloned().collect::<::std::collections::HashSet<_>>()",
+                assignment.target,
+                assignment.target,
+                assignment.value
+            )
+        }
+        (TypeElement::Plain(basic), ConcatKind::Element) if basic.ident.as_str() == "String" => {
+            transpile!(
+                ctx,
+                errors,
+                "{}.push({})",
+                assignment.target,
+                assignment.value
+            )
+        }
+        (TypeElement::Plain(basic), ConcatKind::Collection)
+            if basic.ident.as_str() == "String" =>
+        {
+            transpile!(
+                ctx,
+                errors,
+                "{}.push_str(&{})",
+                assignment.target,
+                assignment.value
+            )
+        }
+        (TypeElement::Plain(basic), ConcatKind::Stringify)
+            if basic.ident.as_str() == "String" =>
+        {
+            transpile!(
+                ctx,
+                errors,
+                "{}.push_str(&{}.to_string())",
+                assignment.target,
+                assignment.value
+            )
+        }
+        (_, ConcatKind::Element) => {
+            transpile!(
+                ctx,
+                errors,
+                "{}.push({})",
+                assignment.target,
+                assignment.value
+            )
+        }
+        (_, _) => {
+            transpile!(
+                ctx,
+                errors,
+                "{}.extend({})",
                 assignment.target,
                 assignment.value
             )
@@ -245,15 +292,15 @@ fn transpile_concat_assign(
     }
 }
 
-fn combined_operator_symbol(operator: &AssignmentOperator) -> &'static str {
+fn combined_operator_symbol(operator: &HirAssignmentOperator) -> &'static str {
     match operator {
-        AssignmentOperator::Assign => "=",
-        AssignmentOperator::AddAssign => "+=",
-        AssignmentOperator::SubAssign => "-=",
-        AssignmentOperator::MulAssign => "*=",
-        AssignmentOperator::DivAssign => "/=",
-        AssignmentOperator::RemAssign => "%=",
-        AssignmentOperator::PowAssign => "**=",
-        AssignmentOperator::ConcatAssign => "++=",
+        HirAssignmentOperator::Assign => "=",
+        HirAssignmentOperator::AddAssign => "+=",
+        HirAssignmentOperator::SubAssign => "-=",
+        HirAssignmentOperator::MulAssign => "*=",
+        HirAssignmentOperator::DivAssign => "/=",
+        HirAssignmentOperator::RemAssign => "%=",
+        HirAssignmentOperator::PowAssign => "**=",
+        HirAssignmentOperator::ConcatAssign(_) => "++=",
     }
 }

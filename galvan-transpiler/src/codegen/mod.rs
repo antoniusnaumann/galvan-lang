@@ -10,12 +10,10 @@ mod statement;
 
 pub(crate) use function::{transpile_function, transpile_main, transpile_signature, transpile_test};
 
-use galvan_ast::TypeElement;
 use galvan_hir::hir::{Adjustment, HirExpression, HirExpressionKind};
-use galvan_hir::typecheck::types_compatible;
 
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::ErrorCollector;
 use crate::Transpile;
 
 impl Transpile for HirExpression {
@@ -65,18 +63,4 @@ fn needs_parens(kind: &HirExpressionKind) -> bool {
         If(_) | ElseUnwrap(_) | Try(_) | For(_) | Closure(_) | Logical(_) | Arithmetic(_)
         | Comparison(_) | CollectionOp(_) | Range(_) => true,
     }
-}
-
-pub(crate) fn rhs_is_array_collection(element_ty: &TypeElement, rhs_ty: &TypeElement) -> bool {
-    matches!(rhs_ty, TypeElement::Array(_))
-        && !value_matches_concrete_element(element_ty, rhs_ty)
-}
-
-pub(crate) fn rhs_is_set_collection(element_ty: &TypeElement, rhs_ty: &TypeElement) -> bool {
-    matches!(rhs_ty, TypeElement::Set(_)) && !value_matches_concrete_element(element_ty, rhs_ty)
-}
-
-fn value_matches_concrete_element(element_ty: &TypeElement, value_ty: &TypeElement) -> bool {
-    !matches!(element_ty, TypeElement::Infer(_) | TypeElement::Generic(_))
-        && types_compatible(element_ty, value_ty)
 }
