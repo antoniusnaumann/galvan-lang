@@ -1,0 +1,425 @@
+//! The Galvan typechecker: lowers the AST into the typed [HIR](crate::hir).
+//!
+//! Lowering performs name resolution, bidirectional type inference and
+//! ownership analysis in a single pass. Expected types and ownership flow
+//! *down* through [`Expected`] values, inferred types and ownership flow *up*
+//! through the returned [`HirExpression`]s, and [`Checker::coerce`] reconciles
+//! the two by attaching explicit [`Adjustment`](crate::hir::Adjustment)s.
+
+mod coerce;
+mod expr;
+mod scope;
+
+use galvan_ast::{
+    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, Ownership,
+    SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+};
+use galvan_resolver::{LookupContext, LookupError};
+
+use crate::builtins::{builtin_fns, builtins, predefined_from, CheckBuiltins};
+use crate::error::ErrorCollector;
+use crate::hir::*;
+use crate::mapping::Mapping;
+
+pub use scope::Variable;
+
+pub(crate) use coerce::{types_compatible, Expected};
+pub(crate) use scope::ScopeStack;
+
+/// Typechecks a segmented AST and lowers it into a [`HirModule`].
+///
+/// Type and ownership errors do not abort lowering; they are reported through
+/// the returned [`ErrorCollector`] so that callers can decide how to surface
+/// them.
+pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), LookupError> {
+    let mapping = builtins();
+    let predefined = predefined_from(&mapping, builtin_fns());
+
+    let (functions, tests, main, cmd_bodies, errors) = {
+        let lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
+        let mut checker = Checker::new(&lookup, &mapping);
+
+        let functions = asts
+            .functions
+            .iter()
+            .map(|func| checker.lower_function(func))
+            .collect::<Vec<_>>();
+
+        let tests = asts
+            .tests
+            .iter()
+            .map(|test| HirTest {
+                name: test.item.name.clone(),
+                body: checker.lower_toplevel_body(&test.item.body),
+                source: test.source.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        let main = asts.main.as_ref().map(|main| HirMain {
+            body: checker.lower_toplevel_body(&main.item.body),
+            source: main.source.clone(),
+        });
+
+        let cmd_bodies = asts
+            .cmds
+            .iter()
+            .map(|cmd| {
+                checker.scopes.push();
+                for param in &cmd.item.signature.parameters.params {
+                    // CLI parameters are passed by value
+                    checker.scopes.declare(Variable {
+                        ident: param.identifier.clone(),
+                        modifier: param.decl_modifier.unwrap_or(DeclModifier::Let),
+                        ty: param.param_type.clone(),
+                        ownership: Ownership::UniqueOwned,
+                    });
+                }
+                let body = checker.lower_block(&cmd.item.body, &Expected::void());
+                checker.scopes.pop();
+                body
+            })
+            .collect::<Vec<_>>();
+
+        (functions, tests, main, cmd_bodies, checker.errors)
+    };
+
+    let SegmentedAsts { types, cmds, .. } = asts;
+    let cmds = cmds
+        .into_iter()
+        .zip(cmd_bodies)
+        .map(|(decl, body)| {
+            let ToplevelItem { item, source } = decl;
+            HirCmd {
+                signature: item.signature,
+                body,
+                source,
+                span: item.span,
+            }
+        })
+        .collect();
+
+    Ok((
+        HirModule {
+            types,
+            functions,
+            tests,
+            main,
+            cmds,
+        },
+        errors,
+    ))
+}
+
+pub(crate) struct Checker<'a> {
+    pub(crate) lookup: &'a LookupContext<'a>,
+    pub(crate) mapping: &'a Mapping,
+    pub(crate) scopes: ScopeStack,
+    pub(crate) errors: ErrorCollector,
+    /// Return type of the function currently being lowered
+    pub(crate) fn_return: TypeElement,
+}
+
+impl<'a> Checker<'a> {
+    fn new(lookup: &'a LookupContext<'a>, mapping: &'a Mapping) -> Self {
+        Self {
+            lookup,
+            mapping,
+            scopes: ScopeStack::new(),
+            errors: ErrorCollector::new(),
+            fn_return: TypeElement::void(),
+        }
+    }
+
+    pub(crate) fn is_copy(&self, ty: &TypeElement) -> bool {
+        self.mapping.is_copy(ty)
+    }
+
+    fn lower_function(&mut self, func: &ToplevelItem<FnDecl>) -> HirFunction {
+        let signature = func.item.signature.clone();
+
+        self.scopes.push();
+        for param in &signature.parameters.params {
+            let is_copy = self.is_copy(&param.param_type);
+            let ownership = match param.decl_modifier {
+                Some(DeclModifier::Let) | None => {
+                    if is_copy {
+                        Ownership::UniqueOwned
+                    } else {
+                        Ownership::Borrowed
+                    }
+                }
+                Some(DeclModifier::Mut) => Ownership::MutBorrowed,
+                Some(DeclModifier::Ref) => Ownership::Ref,
+            };
+            self.scopes.declare(Variable {
+                ident: param.identifier.clone(),
+                modifier: param.decl_modifier.unwrap_or(DeclModifier::Let),
+                ty: param.param_type.clone(),
+                ownership,
+            });
+        }
+
+        self.fn_return = signature.return_type.clone();
+        let expected = if signature.return_type.is_void() || signature.return_type.is_infer() {
+            Expected::void()
+        } else {
+            Expected::owned(signature.return_type.clone())
+        };
+        let body = self.lower_block(&func.item.body, &expected);
+
+        self.scopes.pop();
+        self.fn_return = TypeElement::void();
+
+        HirFunction {
+            signature,
+            body,
+            source: func.source.clone(),
+            span: func.item.span,
+        }
+    }
+
+    fn lower_toplevel_body(&mut self, body: &Body) -> HirBlock {
+        self.fn_return = TypeElement::void();
+        self.scopes.push();
+        let block = self.lower_block(body, &Expected::void());
+        self.scopes.pop();
+        block
+    }
+
+    /// Lowers a body. When the context expects a value, the trailing
+    /// expression is coerced to it; all other statements are lowered in
+    /// statement position.
+    pub(crate) fn lower_block(&mut self, body: &Body, expected: &Expected) -> HirBlock {
+        self.scopes.push();
+
+        let mut statements = Vec::with_capacity(body.statements.len());
+        let last_index = body.statements.len().saturating_sub(1);
+        let mut ty = TypeElement::void();
+
+        for (i, statement) in body.statements.iter().enumerate() {
+            let is_last = i == last_index;
+            match statement {
+                Statement::Expression(expression) if is_last && !expected.is_void() => {
+                    let lowered = self.lower_expression(expression, expected);
+                    ty = if matches!(lowered.ty, TypeElement::Never(_)) {
+                        lowered.ty.clone()
+                    } else if expected.is_free() {
+                        lowered.ty.clone()
+                    } else {
+                        expected.ty.clone()
+                    };
+                    statements.push(HirStatement::Expression(lowered));
+                }
+                statement => {
+                    let lowered = self.lower_statement(statement);
+                    if is_last {
+                        ty = match &lowered {
+                            HirStatement::Return(_)
+                            | HirStatement::Throw(_)
+                            | HirStatement::Break(_)
+                            | HirStatement::Continue(_) => {
+                                TypeElement::Never(galvan_ast::NeverTypeItem {
+                                    span: Span::default(),
+                                })
+                            }
+                            _ => TypeElement::void(),
+                        };
+                    }
+                    statements.push(lowered);
+                }
+            }
+        }
+
+        self.scopes.pop();
+
+        HirBlock {
+            statements,
+            ty,
+            span: body.span,
+        }
+    }
+
+    pub(crate) fn lower_statement(&mut self, statement: &Statement) -> HirStatement {
+        match statement {
+            Statement::Declaration(declaration) => {
+                HirStatement::Declaration(self.lower_declaration(declaration))
+            }
+            Statement::Assignment(assignment) => {
+                HirStatement::Assignment(self.lower_assignment(assignment))
+            }
+            Statement::Expression(expression) => {
+                HirStatement::Expression(self.lower_expression(expression, &Expected::void()))
+            }
+            Statement::Return(ret) => {
+                let expected = if self.fn_return.is_void() || self.fn_return.is_infer() {
+                    Expected::free()
+                } else {
+                    Expected::owned(self.fn_return.clone())
+                };
+                HirStatement::Return(HirReturn {
+                    expression: self.lower_expression(&ret.expression, &expected),
+                    is_explicit: ret.is_explicit,
+                    span: ret.span,
+                })
+            }
+            Statement::Throw(throw) => HirStatement::Throw(HirThrow {
+                expression: self.lower_expression(&throw.expression, &Expected::free()),
+                span: throw.span,
+            }),
+            Statement::Break(brk) => HirStatement::Break(brk.span),
+            Statement::Continue(cont) => HirStatement::Continue(cont.span),
+        }
+    }
+
+    fn lower_declaration(&mut self, declaration: &Declaration) -> HirDeclaration {
+        let (value, ty) = match (&declaration.type_annotation, &declaration.assignment) {
+            (Some(annotation), Some(expression)) => {
+                let expected = self.declaration_expected(annotation, declaration.decl_modifier);
+                let value = self.lower_expression(expression, &expected);
+                (Some(value), annotation.clone())
+            }
+            (None, Some(expression)) => {
+                // Infer the variable type from the initializer, then make
+                // sure the initializer produces an owned value
+                let value = self.lower_expression(expression, &Expected::free());
+                let ty = value.ty.clone();
+                let expected = self.declaration_expected(&ty, declaration.decl_modifier);
+                let value = self.coerce(value, &expected);
+                (Some(value), ty)
+            }
+            (Some(annotation), None) => (None, annotation.clone()),
+            (None, None) => {
+                self.errors.warning(
+                    format!(
+                        "Variable '{}' needs a type annotation or an initializer",
+                        declaration.identifier
+                    ),
+                    Some(declaration.span.into()),
+                );
+                (None, TypeElement::infer())
+            }
+        };
+
+        let ownership = match declaration.decl_modifier {
+            DeclModifier::Let | DeclModifier::Mut => {
+                if self.is_copy(&ty) {
+                    Ownership::UniqueOwned
+                } else {
+                    Ownership::SharedOwned
+                }
+            }
+            DeclModifier::Ref => Ownership::Ref,
+        };
+
+        self.scopes.declare(Variable {
+            ident: declaration.identifier.clone(),
+            modifier: declaration.decl_modifier,
+            ty: ty.clone(),
+            ownership,
+        });
+
+        HirDeclaration {
+            modifier: declaration.decl_modifier,
+            identifier: declaration.identifier.clone(),
+            ty,
+            value,
+            span: declaration.span,
+        }
+    }
+
+    fn declaration_expected(&self, ty: &TypeElement, modifier: DeclModifier) -> Expected {
+        let ownership = match modifier {
+            DeclModifier::Let | DeclModifier::Mut => {
+                if self.is_copy(ty) {
+                    Ownership::UniqueOwned
+                } else {
+                    Ownership::SharedOwned
+                }
+            }
+            DeclModifier::Ref => Ownership::Ref,
+        };
+        Expected::with(ty.clone(), ownership)
+    }
+
+    fn lower_assignment(&mut self, assignment: &Assignment) -> HirAssignment {
+        let target = self.lower_expression(&assignment.target, &Expected::free());
+
+        let deref_target = match &target.kind {
+            HirExpressionKind::Variable(ident) => {
+                let ownership = self.scopes.get(ident).map(|variable| variable.ownership);
+                match ownership {
+                    Some(Ownership::MutBorrowed) => true,
+                    Some(Ownership::Ref) => {
+                        self.errors.warning(
+                            "Assignment to ref variables is not implemented yet".to_string(),
+                            Some(assignment.span.into()),
+                        );
+                        false
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+
+        let value_expected = self.assignment_value_expected(assignment, &target);
+        let value = self.lower_expression(&assignment.expression, &Expected::free());
+        let value = self.coerce(value, &value_expected);
+
+        HirAssignment {
+            target,
+            deref_target,
+            operator: assignment.operator.clone(),
+            value,
+            span: assignment.span,
+        }
+    }
+
+    /// Determines the expectation for the right-hand side of an assignment.
+    /// `++=` appends a single element when the value is element-typed, so the
+    /// expectation depends on the resolved shape.
+    fn assignment_value_expected(
+        &mut self,
+        assignment: &Assignment,
+        target: &HirExpression,
+    ) -> Expected {
+        if assignment.operator == AssignmentOperator::ConcatAssign {
+            return Expected::free();
+        }
+
+        // Assigning into an indexed dictionary or set inserts the value
+        if let HirExpressionKind::Index(index) = &target.kind {
+            match &index.base.ty {
+                TypeElement::Dictionary(dict) => {
+                    return Expected::owned(dict.value.clone());
+                }
+                TypeElement::OrderedDictionary(dict) => {
+                    return Expected::owned(dict.value.clone());
+                }
+                TypeElement::Set(set) => {
+                    return Expected::owned(set.elements.clone());
+                }
+                _ => {}
+            }
+        }
+
+        Expected::with(target.ty.clone(), target.ownership)
+    }
+
+    /// Resolves a variable, reporting an error with a suggestion when the
+    /// name is unknown
+    pub(crate) fn variable(&mut self, ident: &Ident, span: Span) -> Option<Variable> {
+        match self.scopes.get(ident) {
+            Some(variable) => Some(variable.clone()),
+            None => {
+                let available = self.scopes.variable_names();
+                self.errors
+                    .suggest_similar_identifier(ident.as_str(), &available, Some(span.into()));
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
