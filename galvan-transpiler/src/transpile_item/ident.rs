@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::ErrorCollector;
 use crate::sanitize::sanitize_name;
 use crate::Transpile;
 use galvan_ast::{Ident, TypeIdent};

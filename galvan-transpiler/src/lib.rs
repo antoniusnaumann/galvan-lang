@@ -229,17 +229,16 @@ pub(crate) fn __cli_main() {{
     (command_functions.join("\n\n"), cli_code)
 }
 
-mod builtins;
 mod codegen;
-mod error;
 #[cfg(feature = "exec")]
 pub mod exec;
 
 mod context;
-mod mapping;
 mod sanitize;
 
-pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, Span, TranspilerError};
+pub use galvan_hir::error::{
+    Diagnostic, DiagnosticSeverity, ErrorCollector, Span, TranspilerError,
+};
 
 #[derive(Debug, Error)]
 pub enum TranspileError {
@@ -869,7 +868,7 @@ mod macros {
     pub(crate) use {impl_transpile, impl_transpile_variants, punct, transpile};
 }
 
-use crate::builtins::{builtin_fns, builtins};
+use galvan_hir::builtins::{builtin_fns, builtins};
 use crate::context::{predefined_from, Context};
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;

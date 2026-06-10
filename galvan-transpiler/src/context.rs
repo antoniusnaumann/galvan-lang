@@ -1,5 +1,5 @@
-use crate::mapping::Mapping;
 use galvan_ast::SegmentedAsts;
+use galvan_hir::mapping::Mapping;
 use galvan_resolver::{LookupContext, LookupError};
 
 pub use galvan_hir::builtins::predefined_from;
