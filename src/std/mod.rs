@@ -10,8 +10,8 @@ pub use result::*;
 // External re-exports
 pub use std::string::ToString;
 
-pub use itertools::*;
 pub use clap;
+pub use itertools::*;
 pub trait ItertoolsExt: Itertools {
     fn vec(self) -> Vec<Self::Item>
     where
