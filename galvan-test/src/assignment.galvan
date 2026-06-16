@@ -36,3 +36,29 @@ test "Assign to ref variable" {
     counter += 1
     assert counter == 43
 }
+
+test "Assign to shared ref variable" {
+    ref counter1 = 1
+    ref counter2 = counter1
+
+    counter2 = 17
+    assert counter1 == 17
+    assert counter2 == 17
+    
+    counter1 += 1
+    assert counter1 == 18
+    assert counter2 == 18
+}
+
+test "Assign copies mut variable" {
+    mut dog1 = "Bello"
+    mut dog2 = dog1
+
+    assert dog1 == "Bello"
+    assert dog2 == "Bello"
+
+    dog1 = "Hasso"
+
+    assert dog1 == "Hasso"
+    assert dog2 == "Bello"
+}
