@@ -39,7 +39,7 @@ test "Assign to ref variable" {
 
 test "Assign to shared ref variable" {
     ref counter1 = 1
-    ref counter2 = counter1
+    ref counter2 = ref counter1
 
     counter2 = 17
     assert counter1 == 17
@@ -48,6 +48,32 @@ test "Assign to shared ref variable" {
     counter1 += 1
     assert counter1 == 18
     assert counter2 == 18
+}
+
+test "Re-assign ref variable" {
+    ref counter1 = 1
+    ref counter2 = ref counter1
+    ref counter3 = 0
+
+    counter2 = 17
+    assert counter1 == 17
+    assert counter2 == 17
+
+    counter2 = ref counter3
+
+    counter1 = 42
+    assert counter1 == 42
+    assert counter2 == 0
+    assert counter3 == 0
+
+    counter3 = 15
+    assert counter2 == 15
+    assert counter3 == 15
+
+    counter2 -= 5
+    assert counter2 == 10
+    assert counter3 == 10
+
 }
 
 test "Assign copies mut variable" {
