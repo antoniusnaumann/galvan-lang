@@ -86,5 +86,5 @@ stored in them.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-11*
+*Last updated: 2026-06-16*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

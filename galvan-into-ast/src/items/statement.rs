@@ -3,8 +3,9 @@ use crate::result::CursorUtil;
 use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
-    Declaration, ElseExpression, EnumAccess, EnumConstructor, Expression, ExpressionKind, FunctionCall, Group,
-    Ident, InfixExpression, Literal, PostfixExpression, Span, Statement, TypeElement,
+    Declaration, ElseExpression, EnumAccess, EnumConstructor, Expression, ExpressionKind,
+    FunctionCall, Group, Ident, InfixExpression, Literal, PostfixExpression, RefExpression, Span,
+    Statement, TypeElement,
 };
 use galvan_parse::TreeCursor;
 
@@ -126,12 +127,22 @@ impl ReadCursor for AssignmentOperator {
 
 impl ReadCursor for Expression {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let node = cursor_expect!(cursor, "expression");
+        let node = cursor.node();
         let span = Span::from_node(node);
+
+        if cursor.kind()? == "ref_expression" {
+            return Ok(Expression {
+                kind: RefExpression::read_cursor(cursor, source)?.into(),
+                span,
+            });
+        }
+
+        cursor_expect!(cursor, "expression");
 
         cursor.child();
 
         let kind: ExpressionKind = match cursor.kind()? {
+            "ref_expression" => RefExpression::read_cursor(cursor, source)?.into(),
             "else_expression" => ElseExpression::read_cursor(cursor, source)?.into(),
             "trailing_closure_expression" => read_trailing_closure_call(cursor, source)?.into(),
             "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),

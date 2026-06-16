@@ -65,7 +65,8 @@ impl Transpile for HirStatement {
 impl Transpile for HirDeclaration {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let keyword = match self.modifier {
-            DeclModifier::Let | DeclModifier::Ref => "let",
+            DeclModifier::Let => "let",
+            DeclModifier::Ref => "let mut",
             DeclModifier::Mut => "let mut",
         };
 

@@ -11,8 +11,8 @@ mod expr;
 mod scope;
 
 use galvan_ast::{
-    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, Ownership,
-    SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, ExpressionKind, FnDecl, Ident,
+    Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
 };
 use galvan_resolver::{LookupContext, LookupError};
 
@@ -344,6 +344,8 @@ impl<'a> Checker<'a> {
 
     fn lower_assignment(&mut self, assignment: &Assignment) -> HirAssignment {
         let mut target = self.lower_expression(&assignment.target, &Expected::free());
+        let rebinds_ref = assignment.operator == AssignmentOperator::Assign
+            && matches!(assignment.expression.kind, ExpressionKind::RefExpression(_));
 
         // Assignments store through the place the target denotes; mutably
         // borrowed places are dereferenced and `ref` places go through the
@@ -353,8 +355,10 @@ impl<'a> Checker<'a> {
             match self.scopes.get(ident).map(|variable| variable.ownership) {
                 Some(Ownership::MutBorrowed) => deref_target = true,
                 Some(Ownership::Ref) => {
-                    target = target.adjusted(Adjustment::LockRef);
-                    deref_target = true;
+                    if !rebinds_ref {
+                        target = target.adjusted(Adjustment::LockRef);
+                        deref_target = true;
+                    }
                 }
                 _ => {}
             }

@@ -5,7 +5,8 @@ use galvan_ast::{
     ComparisonOperator, ConstructorCall, DeclModifier, DictLiteralElement, ElseExpression,
     EnumConstructor, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident,
     InfixExpression, InfixOperation, Literal, MemberOperator, NeverTypeItem, OptionalTypeItem,
-    Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl, TypeElement, TypeIdent,
+    Ownership, Param, PostfixExpression, RefExpression, ResultTypeItem, Span, TypeDecl,
+    TypeElement, TypeIdent,
 };
 use galvan_resolver::Lookup;
 
@@ -25,6 +26,9 @@ impl Checker<'_> {
         let lowered = match &expression.kind {
             ExpressionKind::ElseExpression(else_expression) => {
                 self.lower_else_expression(else_expression, expected, span)
+            }
+            ExpressionKind::RefExpression(ref_expression) => {
+                self.lower_ref_expression(ref_expression, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
@@ -62,6 +66,25 @@ impl Checker<'_> {
         };
 
         self.coerce(lowered, expected)
+    }
+
+    fn lower_ref_expression(
+        &mut self,
+        ref_expression: &RefExpression,
+        span: Span,
+    ) -> HirExpression {
+        let lowered = self.lower_expression(&ref_expression.inner, &Expected::free());
+        if lowered.adjusted_ownership() != Ownership::Ref {
+            self.errors.error_with_span(
+                TranspilerError::IncompatibleOwnership {
+                    message: "`ref` can only copy a ref variable".to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("invalid ref expression", span);
+        }
+
+        lowered.adjusted(Adjustment::ArcClone)
     }
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {

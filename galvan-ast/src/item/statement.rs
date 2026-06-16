@@ -70,6 +70,7 @@ pub struct Expression {
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub type ExpressionKind = ElseExpression
+    + RefExpression
     + FunctionCall
     + Infix
     + Postfix
