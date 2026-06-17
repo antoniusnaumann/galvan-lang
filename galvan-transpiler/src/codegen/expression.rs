@@ -5,10 +5,12 @@ use galvan_hir::hir::*;
 use itertools::Itertools;
 
 use crate::context::Context;
-use crate::ErrorCollector;
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
+use crate::ErrorCollector;
 use crate::Transpile;
+
+use super::wrap_ref_storage_value;
 
 impl Transpile for HirExpressionKind {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
@@ -23,12 +25,8 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::MethodCall(call) => call.transpile(ctx, errors),
             HirExpressionKind::FieldAccess(access) => access.transpile(ctx, errors),
             HirExpressionKind::SafeAccess(access) => access.transpile(ctx, errors),
-            HirExpressionKind::ConstructorCall(constructor) => {
-                constructor.transpile(ctx, errors)
-            }
-            HirExpressionKind::EnumConstructor(constructor) => {
-                constructor.transpile(ctx, errors)
-            }
+            HirExpressionKind::ConstructorCall(constructor) => constructor.transpile(ctx, errors),
+            HirExpressionKind::EnumConstructor(constructor) => constructor.transpile(ctx, errors),
             HirExpressionKind::EnumAccess(access) => access.transpile(ctx, errors),
             HirExpressionKind::Literal(literal) => literal.transpile(ctx, errors),
             HirExpressionKind::Variable(ident) => sanitize_name(ident.as_str()).into_owned(),
@@ -69,7 +67,11 @@ impl Transpile for HirIf {
 
 impl Transpile for HirElseUnwrap {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        let pattern = if self.by_ref { "ref __value" } else { "__value" };
+        let pattern = if self.by_ref {
+            "ref __value"
+        } else {
+            "__value"
+        };
         transpile!(
             ctx,
             errors,
@@ -238,7 +240,12 @@ impl Transpile for HirMethodCall {
             .iter()
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
-        format!("{}.{}({})", receiver, sanitize_name(self.ident.as_str()), args)
+        format!(
+            "{}.{}({})",
+            receiver,
+            sanitize_name(self.ident.as_str()),
+            args
+        )
     }
 }
 
@@ -269,9 +276,9 @@ impl Transpile for HirSafeAccess {
         };
 
         match self.style {
-            SafeAccessStyle::RefClone => format!(
-                "{receiver}.as_ref().map(|__elem__| {{ __elem__.{access}.clone() }})"
-            ),
+            SafeAccessStyle::RefClone => {
+                format!("{receiver}.as_ref().map(|__elem__| {{ __elem__.{access}.clone() }})")
+            }
             SafeAccessStyle::Clone => {
                 format!("{receiver}.map(|__elem__| {{ __elem__.{access}.clone() }})")
             }
@@ -286,12 +293,14 @@ impl Transpile for HirConstructorCall {
         let args = self
             .args
             .iter()
-            .map(|(field, value)| {
-                format!(
-                    "{}: {}",
-                    sanitize_name(field.as_str()),
-                    value.transpile(ctx, errors)
-                )
+            .map(|argument| {
+                let value = argument.value.transpile(ctx, errors);
+                let value = if argument.store_as_ref {
+                    wrap_ref_storage_value(value, &argument.value)
+                } else {
+                    value
+                };
+                format!("{}: {}", sanitize_name(argument.field.as_str()), value)
             })
             .join(", ");
         format!("{ident} {{ {args} }}")
@@ -372,9 +381,7 @@ impl Transpile for HirStringLiteral {
 
 impl Transpile for HirCollection {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        let elements = |elements: &[HirExpression],
-                        ctx: &Context,
-                        errors: &mut ErrorCollector| {
+        let elements = |elements: &[HirExpression], ctx: &Context, errors: &mut ErrorCollector| {
             elements
                 .iter()
                 .map(|element| element.transpile(ctx, errors))
@@ -518,14 +525,7 @@ impl Transpile for HirBinary<RangeOperator> {
             }
             RangeOperator::Interval => {
                 // start ..+ interval => start..(start + interval)
-                transpile!(
-                    ctx,
-                    errors,
-                    "{}..({} + {})",
-                    self.lhs,
-                    self.lhs,
-                    self.rhs
-                )
+                transpile!(ctx, errors, "{}..({} + {})", self.lhs, self.lhs, self.rhs)
             }
         }
     }

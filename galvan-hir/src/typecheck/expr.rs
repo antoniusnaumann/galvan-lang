@@ -5,8 +5,7 @@ use galvan_ast::{
     ComparisonOperator, ConstructorCall, DeclModifier, DictLiteralElement, ElseExpression,
     EnumConstructor, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident,
     InfixExpression, InfixOperation, Literal, MemberOperator, NeverTypeItem, OptionalTypeItem,
-    Ownership, Param, PostfixExpression, RefExpression, ResultTypeItem, Span, TypeDecl,
-    TypeElement, TypeIdent,
+    Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_resolver::Lookup;
 
@@ -26,9 +25,6 @@ impl Checker<'_> {
         let lowered = match &expression.kind {
             ExpressionKind::ElseExpression(else_expression) => {
                 self.lower_else_expression(else_expression, expected, span)
-            }
-            ExpressionKind::RefExpression(ref_expression) => {
-                self.lower_ref_expression(ref_expression, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
@@ -68,20 +64,41 @@ impl Checker<'_> {
         self.coerce(lowered, expected)
     }
 
-    fn lower_ref_expression(
+    pub(crate) fn lower_modified_value(
         &mut self,
-        ref_expression: &RefExpression,
-        span: Span,
+        expression: &Expression,
+        modifier: Option<DeclModifier>,
+        allow_ref: bool,
+        context: &str,
     ) -> HirExpression {
-        let lowered = self.lower_expression(&ref_expression.inner, &Expected::free());
+        match modifier {
+            Some(DeclModifier::Ref) if allow_ref => {
+                let lowered = self.lower_expression(expression, &Expected::free());
+                self.lower_ref_value(lowered, expression.span)
+            }
+            Some(modifier) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidModifier {
+                        modifier: modifier_name(modifier).to_string(),
+                        context: context.to_string(),
+                    },
+                    Some(expression.span.into()),
+                );
+                self.lower_expression(expression, &Expected::free())
+            }
+            None => self.lower_expression(expression, &Expected::free()),
+        }
+    }
+
+    pub(crate) fn lower_ref_value(&mut self, lowered: HirExpression, span: Span) -> HirExpression {
         if lowered.adjusted_ownership() != Ownership::Ref {
             self.errors.error_with_span(
                 TranspilerError::IncompatibleOwnership {
-                    message: "`ref` can only copy a ref variable".to_string(),
+                    message: "`ref` can only share a ref value".to_string(),
                 },
                 Some(span.into()),
             );
-            return HirExpression::error("invalid ref expression", span);
+            return HirExpression::error("invalid ref modifier", span);
         }
 
         lowered.adjusted(Adjustment::ArcClone)
@@ -320,17 +337,15 @@ impl Checker<'_> {
                 match argument.modifier {
                     // Explicit `mut` at the call site
                     Some(DeclModifier::Mut) => {
-                        let expected = Expected::with(
-                            param.param_type.clone(),
-                            Ownership::MutBorrowed,
-                        );
+                        let expected =
+                            Expected::with(param.param_type.clone(), Ownership::MutBorrowed);
                         self.lower_expression(&argument.expression, &expected)
                     }
                     // Explicit `ref` at the call site shares the reference
                     Some(DeclModifier::Ref) => {
                         let lowered =
                             self.lower_expression(&argument.expression, &Expected::free());
-                        lowered.adjusted(Adjustment::ArcClone)
+                        self.lower_ref_value(lowered, argument.expression.span)
                     }
                     Some(DeclModifier::Let) => {
                         self.errors.error(TranspilerError::InvalidModifier {
@@ -345,18 +360,14 @@ impl Checker<'_> {
                     None => {
                         let ownership = match param.decl_modifier {
                             Some(DeclModifier::Let) => {
-                                self.errors.warning(
-                                    "Let modifier not yet implemented".to_string(),
-                                    None,
-                                );
+                                self.errors
+                                    .warning("Let modifier not yet implemented".to_string(), None);
                                 Ownership::Borrowed
                             }
                             Some(DeclModifier::Mut) => Ownership::MutBorrowed,
                             Some(DeclModifier::Ref) => {
-                                self.errors.warning(
-                                    "Ref modifier not yet implemented".to_string(),
-                                    None,
-                                );
+                                self.errors
+                                    .warning("Ref modifier not yet implemented".to_string(), None);
                                 Ownership::Borrowed
                             }
                             None => {
@@ -390,14 +401,17 @@ impl Checker<'_> {
                 }
                 Some(DeclModifier::Ref) => {
                     let lowered = self.lower_expression(&argument.expression, &Expected::free());
-                    lowered.adjusted(Adjustment::ArcClone)
+                    self.lower_ref_value(lowered, argument.expression.span)
                 }
                 Some(DeclModifier::Let) => {
                     self.errors.error(TranspilerError::InvalidModifier {
                         modifier: "let".to_string(),
                         context: "closure arguments".to_string(),
                     });
-                    HirExpression::error("invalid let modifier on argument", argument.expression.span)
+                    HirExpression::error(
+                        "invalid let modifier on argument",
+                        argument.expression.span,
+                    )
                 }
                 None => {
                     let ownership = if self.is_copy(param_ty) {
@@ -422,7 +436,7 @@ impl Checker<'_> {
             }
             Some(DeclModifier::Ref) => {
                 let lowered = self.lower_expression(&argument.expression, &Expected::free());
-                lowered.adjusted(Adjustment::ArcClone)
+                self.lower_ref_value(lowered, argument.expression.span)
             }
             Some(DeclModifier::Let) => {
                 self.errors.error(TranspilerError::InvalidModifier {
@@ -639,18 +653,13 @@ impl Checker<'_> {
                 };
                 let mut then_block = self.lower_block(&body.block.body, &tail_expected);
 
-                let wraps_optional = !matches!(
-                    then_block.ty,
-                    TypeElement::Never(_) | TypeElement::Void(_)
-                );
+                let wraps_optional =
+                    !matches!(then_block.ty, TypeElement::Never(_) | TypeElement::Void(_));
 
                 let ty = if wraps_optional {
-                    if let Some(HirStatement::Expression(tail)) = then_block.statements.last_mut()
-                    {
-                        let coerced = self.ensure_owned(std::mem::replace(
-                            tail,
-                            HirExpression::error("", span),
-                        ));
+                    if let Some(HirStatement::Expression(tail)) = then_block.statements.last_mut() {
+                        let coerced = self
+                            .ensure_owned(std::mem::replace(tail, HirExpression::error("", span)));
                         *tail = coerced.adjusted(Adjustment::WrapSome);
                     }
                     TypeElement::Optional(Box::new(OptionalTypeItem {
@@ -701,9 +710,7 @@ impl Checker<'_> {
         let condition = self.lower_expression(&call.arguments[0].expression, &Expected::free());
 
         let (kind, ok_ty, err_ty) = match &condition.ty {
-            TypeElement::Optional(optional) => {
-                (TryKind::Optional, optional.inner.clone(), None)
-            }
+            TypeElement::Optional(optional) => (TryKind::Optional, optional.inner.clone(), None),
             TypeElement::Result(result) => (
                 TryKind::Result,
                 result.success.clone(),
@@ -1064,16 +1071,18 @@ impl Checker<'_> {
 
         // `ref` variables compare by their locked value
         if lhs.adjusted_ownership() == Ownership::Ref {
-            lhs = lhs.adjusted(Adjustment::LockRef).adjusted(Adjustment::Deref);
+            lhs = lhs
+                .adjusted(Adjustment::LockRef)
+                .adjusted(Adjustment::Deref);
         }
         if rhs.adjusted_ownership() == Ownership::Ref {
-            rhs = rhs.adjusted(Adjustment::LockRef).adjusted(Adjustment::Deref);
+            rhs = rhs
+                .adjusted(Adjustment::LockRef)
+                .adjusted(Adjustment::Deref);
         }
 
-        let has_number = lhs.ty.is_number()
-            || rhs.ty.is_number()
-            || lhs.ty.is_infer()
-            || rhs.ty.is_infer();
+        let has_number =
+            lhs.ty.is_number() || rhs.ty.is_number() || lhs.ty.is_infer() || rhs.ty.is_infer();
 
         // Wrap a plain value when the other side is an optional or result
         match (&lhs.ty, &rhs.ty) {
@@ -1226,28 +1235,20 @@ impl Checker<'_> {
                         (CollectionOperator::Concat(kind), rhs)
                     }
                     galvan_ast::CollectionOperator::Remove => (CollectionOperator::Remove, rhs),
-                    galvan_ast::CollectionOperator::Contains => {
-                        (CollectionOperator::Contains, rhs)
-                    }
+                    galvan_ast::CollectionOperator::Contains => (CollectionOperator::Contains, rhs),
                 };
                 let ty = match operator {
                     CollectionOperator::Concat(_) | CollectionOperator::Remove => lhs.ty.clone(),
                     CollectionOperator::Contains => TypeElement::bool(),
                 };
                 HirExpression::new(
-                    HirExpressionKind::CollectionOp(Box::new(HirBinary {
-                        lhs,
-                        operator,
-                        rhs,
-                    })),
+                    HirExpressionKind::CollectionOp(Box::new(HirBinary { lhs, operator, rhs })),
                     ty,
                     Ownership::UniqueOwned,
                     span,
                 )
             }
-            InfixExpression::Member(operation) => {
-                self.lower_member(operation, expected, span)
-            }
+            InfixExpression::Member(operation) => self.lower_member(operation, expected, span),
             InfixExpression::Custom(_) => {
                 self.errors.warning(
                     "Custom infix operators are not yet implemented".to_string(),
@@ -1366,9 +1367,7 @@ impl Checker<'_> {
 
         let (inner_ty, err_ty) = match &receiver.ty {
             TypeElement::Optional(optional) => (optional.inner.clone(), None),
-            TypeElement::Result(result) => {
-                (result.success.clone(), Some(result.error.clone()))
-            }
+            TypeElement::Result(result) => (result.success.clone(), Some(result.error.clone())),
             _ => (TypeElement::infer(), None),
         };
 
@@ -1390,7 +1389,8 @@ impl Checker<'_> {
                 match function {
                     Some(function) => {
                         let signature = function.item.signature.clone();
-                        let args = self.lower_call_args(&signature.parameters.params, &call.arguments);
+                        let args =
+                            self.lower_call_args(&signature.parameters.params, &call.arguments);
                         (
                             SafeAccessKind::Call(call.identifier.clone(), args),
                             signature.return_type.clone(),
@@ -1697,20 +1697,30 @@ impl Checker<'_> {
             Some(TypeDecl::Struct(decl)) => {
                 let mut args = Vec::with_capacity(decl.members.len());
                 for member in &decl.members {
+                    let is_ref_field = matches!(member.decl_modifier, Some(DeclModifier::Ref));
                     let provided = constructor
                         .arguments
                         .iter()
                         .find(|argument| argument.ident == member.ident);
-                    match provided {
+                    let value = match provided {
                         Some(argument) => {
-                            let expected = Expected::owned(member.r#type.clone());
-                            let value = self.lower_expression(&argument.expression, &expected);
-                            args.push((member.ident.clone(), value));
+                            let mut value = self.lower_modified_value(
+                                &argument.expression,
+                                argument.modifier,
+                                is_ref_field,
+                                "constructor arguments",
+                            );
+                            if !is_ref_field || argument.modifier != Some(DeclModifier::Ref) {
+                                let expected = Expected::owned(member.r#type.clone());
+                                value = self.coerce(value, &expected);
+                            }
+                            value
                         }
                         None => match &member.default_value {
                             Some(default) => {
                                 let value = self.lower_expression(default, &Expected::free());
-                                args.push((member.ident.clone(), value));
+                                let expected = Expected::owned(member.r#type.clone());
+                                self.coerce(value, &expected)
                             }
                             None => {
                                 self.errors.error(TranspilerError::ArgumentCountMismatch {
@@ -1718,13 +1728,15 @@ impl Checker<'_> {
                                     expected: decl.members.len(),
                                     found: constructor.arguments.len(),
                                 });
-                                args.push((
-                                    member.ident.clone(),
-                                    HirExpression::error("missing field", span),
-                                ));
+                                HirExpression::error("missing field", span)
                             }
                         },
-                    }
+                    };
+                    args.push(HirConstructorArg {
+                        field: member.ident.clone(),
+                        value,
+                        store_as_ref: is_ref_field,
+                    });
                 }
                 args
             }
@@ -1732,9 +1744,18 @@ impl Checker<'_> {
                 .arguments
                 .iter()
                 .map(|argument| {
-                    let value = self.lower_expression(&argument.expression, &Expected::free());
+                    let value = self.lower_modified_value(
+                        &argument.expression,
+                        argument.modifier,
+                        false,
+                        "constructor arguments",
+                    );
                     let value = self.ensure_owned(value);
-                    (argument.ident.clone(), value)
+                    HirConstructorArg {
+                        field: argument.ident.clone(),
+                        value,
+                        store_as_ref: false,
+                    }
                 })
                 .collect(),
         };
@@ -1762,7 +1783,9 @@ impl Checker<'_> {
                 let value = self.lower_expression(&argument.expression, &Expected::free());
                 let value = match (&argument.field_name, &argument.modifier) {
                     (None, Some(DeclModifier::Mut)) => value.adjusted(Adjustment::MutBorrow),
-                    (None, Some(DeclModifier::Ref)) => value.adjusted(Adjustment::ArcClone),
+                    (None, Some(DeclModifier::Ref)) => {
+                        self.lower_ref_value(value, argument.expression.span)
+                    }
                     _ => value,
                 };
                 HirEnumConstructorArg {
@@ -1830,7 +1853,9 @@ impl Checker<'_> {
             .collect();
 
         let body_expected = match expected_closure {
-            Some(closure_ty) if !closure_ty.return_ty.is_infer() && !closure_ty.return_ty.is_void() => {
+            Some(closure_ty)
+                if !closure_ty.return_ty.is_infer() && !closure_ty.return_ty.is_void() =>
+            {
                 Expected::owned(closure_ty.return_ty.clone())
             }
             _ => Expected::free(),
@@ -1839,7 +1864,10 @@ impl Checker<'_> {
         self.scopes.pop();
 
         let ty = TypeElement::Closure(Box::new(ClosureTypeItem {
-            parameters: parameters.iter().map(|parameter| parameter.ty.clone()).collect(),
+            parameters: parameters
+                .iter()
+                .map(|parameter| parameter.ty.clone())
+                .collect(),
             return_ty: body.ty.clone(),
             span: Span::default(),
         }));
@@ -1969,4 +1997,12 @@ fn are_compatible_numeric_types(a: &TypeIdent, b: &TypeIdent) -> bool {
         || (float_types.contains(&a) && float_types.contains(&b))
         || a.starts_with("__")
         || b.starts_with("__")
+}
+
+fn modifier_name(modifier: DeclModifier) -> &'static str {
+    match modifier {
+        DeclModifier::Let => "let",
+        DeclModifier::Mut => "mut",
+        DeclModifier::Ref => "ref",
+    }
 }

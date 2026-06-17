@@ -294,9 +294,12 @@ fn constructor_arguments_are_owned() {
         panic!("expected constructor call");
     };
     // The borrowed parameter must be cloned into the struct
-    assert_eq!(constructor.args[0].1.adjustments, vec![Adjustment::ToOwned]);
+    assert_eq!(
+        constructor.args[0].value.adjustments,
+        vec![Adjustment::ToOwned]
+    );
     // The copy literal is moved
-    assert!(constructor.args[1].1.adjustments.is_empty());
+    assert!(constructor.args[1].value.adjustments.is_empty());
 }
 
 #[test]
@@ -311,7 +314,66 @@ fn constructor_defaults_are_materialized() {
         panic!("expected constructor call");
     };
     assert_eq!(constructor.args.len(), 1);
-    assert_eq!(constructor.args[0].0.as_str(), "title");
+    assert_eq!(constructor.args[0].field.as_str(), "title");
+}
+
+#[test]
+fn constructor_ref_field_modifier_shares_existing_ref() {
+    let module = lower(
+        "type Dog { name: String }
+         type Owner { ref dog: Dog }
+         fn owner() -> Owner {
+             ref dog = Dog(name: \"Rex\")
+             Owner(dog: ref dog)
+         }",
+    );
+    let tail = trailing(function(&module, "owner"));
+
+    let HirExpressionKind::ConstructorCall(constructor) = &tail.kind else {
+        panic!("expected constructor call");
+    };
+    assert!(constructor.args[0].store_as_ref);
+    assert_eq!(
+        constructor.args[0].value.adjustments,
+        vec![Adjustment::ArcClone]
+    );
+}
+
+#[test]
+fn constructor_ref_field_without_modifier_copies_into_new_ref() {
+    let module = lower(
+        "type Dog { name: String }
+         type Owner { ref dog: Dog }
+         fn owner() -> Owner {
+             ref dog = Dog(name: \"Rex\")
+             Owner(dog: dog)
+         }",
+    );
+    let tail = trailing(function(&module, "owner"));
+
+    let HirExpressionKind::ConstructorCall(constructor) = &tail.kind else {
+        panic!("expected constructor call");
+    };
+    assert!(constructor.args[0].store_as_ref);
+    assert_eq!(
+        constructor.args[0].value.adjustments,
+        vec![Adjustment::LockRef, Adjustment::ToOwned]
+    );
+}
+
+#[test]
+fn invalid_constructor_arg_modifiers_are_reported_after_parse() {
+    let (_module, errors) = lower_with_diagnostics(
+        "type Pair { a: Int, b: Int }
+         fn pair() -> Pair { Pair(a: let 1, b: mut 2) }",
+    );
+    let messages = errors
+        .errors()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(messages.contains(&"Invalid modifier: let is not allowed for constructor arguments"));
+    assert!(messages.contains(&"Invalid modifier: mut is not allowed for constructor arguments"));
 }
 
 #[test]
@@ -417,6 +479,76 @@ fn assignment_to_ref_variable_locks_the_mutex() {
 }
 
 #[test]
+fn assignment_ref_modifier_rebinds_ref_variable() {
+    let module = lower(
+        "fn check() {
+             ref counter1 = 1
+             ref counter2 = 0
+             counter2 = ref counter1
+         }",
+    );
+    let check = function(&module, "check");
+
+    let HirStatement::Assignment(assignment) = &check.body.statements[2] else {
+        panic!("expected assignment");
+    };
+    assert!(!assignment.deref_target);
+    assert!(assignment.target.adjustments.is_empty());
+    assert_eq!(assignment.value.adjustments, vec![Adjustment::ArcClone]);
+}
+
+#[test]
+fn invalid_assignment_rhs_modifier_is_reported_after_parse() {
+    let (_module, errors) = lower_with_diagnostics(
+        "fn check() {
+             mut value = 1
+             value = mut 2
+         }",
+    );
+
+    assert!(errors.errors().any(|diagnostic| {
+        diagnostic.message == "Invalid modifier: mut is not allowed for assignment right-hand sides"
+    }));
+}
+
+#[test]
+fn ref_declaration_modifier_shares_existing_ref() {
+    let module = lower(
+        "fn check() {
+             ref counter1 = 1
+             ref counter2 = ref counter1
+         }",
+    );
+    let check = function(&module, "check");
+
+    let HirStatement::Declaration(declaration) = &check.body.statements[1] else {
+        panic!("expected declaration");
+    };
+    let value = declaration.value.as_ref().expect("initializer");
+    assert_eq!(value.adjustments, vec![Adjustment::ArcClone]);
+}
+
+#[test]
+fn ref_declaration_without_assignment_modifier_copies_into_new_ref() {
+    let module = lower(
+        "fn check() {
+             ref counter1 = 1
+             ref counter2 = counter1
+         }",
+    );
+    let check = function(&module, "check");
+
+    let HirStatement::Declaration(declaration) = &check.body.statements[1] else {
+        panic!("expected declaration");
+    };
+    let value = declaration.value.as_ref().expect("initializer");
+    assert_eq!(
+        value.adjustments,
+        vec![Adjustment::LockRef, Adjustment::ToOwned]
+    );
+}
+
+#[test]
 fn concat_assign_classifies_and_owns_elements() {
     let module = lower(
         "fn push_name(mut names: [String], name: String) { names ++= name }
@@ -448,9 +580,7 @@ fn concat_assign_classifies_and_owns_elements() {
 
 #[test]
 fn concat_expression_owns_appended_elements() {
-    let module = lower(
-        "fn appended(names: [String], name: String) -> [String] { names ++ name }",
-    );
+    let module = lower("fn appended(names: [String], name: String) -> [String] { names ++ name }");
     let tail = trailing(function(&module, "appended"));
 
     let HirExpressionKind::CollectionOp(operation) = &tail.kind else {

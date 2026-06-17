@@ -3,10 +3,12 @@ use galvan_hir::hir::*;
 use itertools::Itertools;
 
 use crate::context::Context;
-use crate::ErrorCollector;
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
+use crate::ErrorCollector;
 use crate::Transpile;
+
+use super::wrap_ref_storage_value;
 
 impl Transpile for HirBlock {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
@@ -80,11 +82,11 @@ impl Transpile for HirDeclaration {
 
         match &self.value {
             Some(value) => {
-                let value = value.transpile(ctx, errors);
+                let rendered = value.transpile(ctx, errors);
                 let value = if matches!(self.modifier, DeclModifier::Ref) {
-                    format!("(&({value})).__to_ref()")
+                    wrap_ref_storage_value(rendered, value)
                 } else {
-                    value
+                    rendered
                 };
                 format!("{keyword} {identifier}{ty} = {value}")
             }
@@ -250,9 +252,7 @@ fn transpile_concat_assign(
                 assignment.value
             )
         }
-        (TypeElement::Plain(basic), ConcatKind::Collection)
-            if basic.ident.as_str() == "String" =>
-        {
+        (TypeElement::Plain(basic), ConcatKind::Collection) if basic.ident.as_str() == "String" => {
             transpile!(
                 ctx,
                 errors,
@@ -261,9 +261,7 @@ fn transpile_concat_assign(
                 assignment.value
             )
         }
-        (TypeElement::Plain(basic), ConcatKind::Stringify)
-            if basic.ident.as_str() == "String" =>
-        {
+        (TypeElement::Plain(basic), ConcatKind::Stringify) if basic.ident.as_str() == "String" => {
             transpile!(
                 ctx,
                 errors,

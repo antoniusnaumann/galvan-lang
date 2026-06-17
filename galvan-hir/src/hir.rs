@@ -431,7 +431,14 @@ pub struct HirSafeAccess {
 #[derive(Clone, Debug)]
 pub struct HirConstructorCall {
     pub ident: TypeIdent,
-    pub args: Vec<(Ident, HirExpression)>,
+    pub args: Vec<HirConstructorArg>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirConstructorArg {
+    pub field: Ident,
+    pub value: HirExpression,
+    pub store_as_ref: bool,
 }
 
 #[derive(Clone, Debug)]

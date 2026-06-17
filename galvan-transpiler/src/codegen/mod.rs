@@ -8,7 +8,9 @@ mod expression;
 mod function;
 mod statement;
 
-pub(crate) use function::{transpile_function, transpile_main, transpile_signature, transpile_test};
+pub(crate) use function::{
+    transpile_function, transpile_main, transpile_signature, transpile_test,
+};
 
 use galvan_hir::hir::{Adjustment, HirExpression, HirExpressionKind};
 
@@ -20,6 +22,14 @@ impl Transpile for HirExpression {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let rendered = self.kind.transpile(ctx, errors);
         apply_adjustments(rendered, &self.kind, &self.adjustments)
+    }
+}
+
+pub(crate) fn wrap_ref_storage_value(rendered: String, value: &HirExpression) -> String {
+    if value.adjustments.last() == Some(&Adjustment::ArcClone) {
+        rendered
+    } else {
+        format!("(&({rendered})).__to_ref()")
     }
 }
 

@@ -8,6 +8,7 @@ use super::*;
 pub struct Assignment {
     pub target: Expression,
     pub operator: AssignmentOperator,
+    pub modifier: Option<DeclModifier>,
     pub expression: Expression,
     pub span: Span,
 }

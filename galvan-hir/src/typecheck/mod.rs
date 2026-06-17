@@ -11,8 +11,8 @@ mod expr;
 mod scope;
 
 use galvan_ast::{
-    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, ExpressionKind, FnDecl, Ident,
-    Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, Ownership,
+    SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
 };
 use galvan_resolver::{LookupContext, LookupError};
 
@@ -273,18 +273,34 @@ impl<'a> Checker<'a> {
     }
 
     fn lower_declaration(&mut self, declaration: &Declaration) -> HirDeclaration {
+        let shares_ref = declaration.decl_modifier == DeclModifier::Ref
+            && declaration.assignment_modifier == Some(DeclModifier::Ref);
+
         let (value, ty) = match (&declaration.type_annotation, &declaration.assignment) {
             (Some(annotation), Some(expression)) => {
-                let expected = self.declaration_expected(annotation, declaration.decl_modifier);
-                let value = self.lower_expression(expression, &expected);
+                let expected =
+                    self.declaration_expected(annotation, declaration.decl_modifier, shares_ref);
+                let value = self.lower_modified_value(
+                    expression,
+                    declaration.assignment_modifier,
+                    declaration.decl_modifier == DeclModifier::Ref,
+                    "declaration initializers",
+                );
+                let value = self.coerce(value, &expected);
                 (Some(value), annotation.clone())
             }
             (None, Some(expression)) => {
                 // Infer the variable type from the initializer, then make
                 // sure the initializer produces an owned value
-                let value = self.lower_expression(expression, &Expected::free());
+                let value = self.lower_modified_value(
+                    expression,
+                    declaration.assignment_modifier,
+                    declaration.decl_modifier == DeclModifier::Ref,
+                    "declaration initializers",
+                );
                 let ty = value.ty.clone();
-                let expected = self.declaration_expected(&ty, declaration.decl_modifier);
+                let expected =
+                    self.declaration_expected(&ty, declaration.decl_modifier, shares_ref);
                 let value = self.coerce(value, &expected);
                 (Some(value), ty)
             }
@@ -328,7 +344,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn declaration_expected(&self, ty: &TypeElement, modifier: DeclModifier) -> Expected {
+    fn declaration_expected(
+        &self,
+        ty: &TypeElement,
+        modifier: DeclModifier,
+        shares_ref: bool,
+    ) -> Expected {
         let ownership = match modifier {
             DeclModifier::Let | DeclModifier::Mut => {
                 if self.is_copy(ty) {
@@ -337,7 +358,8 @@ impl<'a> Checker<'a> {
                     Ownership::SharedOwned
                 }
             }
-            DeclModifier::Ref => Ownership::Ref,
+            DeclModifier::Ref if shares_ref => Ownership::Ref,
+            DeclModifier::Ref => Ownership::UniqueOwned,
         };
         Expected::with(ty.clone(), ownership)
     }
@@ -345,7 +367,8 @@ impl<'a> Checker<'a> {
     fn lower_assignment(&mut self, assignment: &Assignment) -> HirAssignment {
         let mut target = self.lower_expression(&assignment.target, &Expected::free());
         let rebinds_ref = assignment.operator == AssignmentOperator::Assign
-            && matches!(assignment.expression.kind, ExpressionKind::RefExpression(_));
+            && assignment.modifier == Some(DeclModifier::Ref);
+        let assignment_accepts_ref = rebinds_ref && target.adjusted_ownership() == Ownership::Ref;
 
         // Assignments store through the place the target denotes; mutably
         // borrowed places are dereferenced and `ref` places go through the
@@ -364,7 +387,12 @@ impl<'a> Checker<'a> {
             }
         }
 
-        let value = self.lower_expression(&assignment.expression, &Expected::free());
+        let value = self.lower_modified_value(
+            &assignment.expression,
+            assignment.modifier,
+            assignment_accepts_ref,
+            "assignment right-hand sides",
+        );
         let (operator, value) = self.lower_assignment_operator(assignment, &target, value);
 
         HirAssignment {
@@ -434,8 +462,11 @@ impl<'a> Checker<'a> {
             Some(variable) => Some(variable.clone()),
             None => {
                 let available = self.scopes.variable_names();
-                self.errors
-                    .suggest_similar_identifier(ident.as_str(), &available, Some(span.into()));
+                self.errors.suggest_similar_identifier(
+                    ident.as_str(),
+                    &available,
+                    Some(span.into()),
+                );
                 None
             }
         }

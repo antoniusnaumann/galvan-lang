@@ -23,6 +23,7 @@ pub struct ConstructorCall {
 #[derive(Clone, Debug, PartialEq, Eq, From, PrintAst)]
 pub struct ConstructorCallArg {
     pub ident: Ident,
+    pub modifier: Option<DeclModifier>,
     pub expression: Expression,
 }
 
@@ -34,7 +35,7 @@ pub struct EnumConstructor {
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct EnumConstructorArg {
-    pub field_name: Option<Ident>,  // None for anonymous args
+    pub field_name: Option<Ident>, // None for anonymous args
     pub modifier: Option<DeclModifier>,
     pub expression: Expression,
 }

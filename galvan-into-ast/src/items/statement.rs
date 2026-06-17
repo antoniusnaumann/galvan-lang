@@ -4,8 +4,8 @@ use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
     Declaration, ElseExpression, EnumAccess, EnumConstructor, Expression, ExpressionKind,
-    FunctionCall, Group, Ident, InfixExpression, Literal, PostfixExpression, RefExpression, Span,
-    Statement, TypeElement,
+    FunctionCall, Group, Ident, InfixExpression, Literal, PostfixExpression, Span, Statement,
+    TypeElement,
 };
 use galvan_parse::TreeCursor;
 
@@ -59,14 +59,15 @@ impl ReadCursor for Declaration {
             _ => None,
         };
 
-        let assignment = match cursor.kind()? {
+        let (assignment_modifier, assignment) = match cursor.kind()? {
             "assign" => {
                 cursor.next();
+                let modifier = read_optional_expression_modifier(cursor, source)?;
                 let expr = Some(Expression::read_cursor(cursor, source)?);
                 cursor.next();
-                expr
+                (modifier, expr)
             }
-            _ => None,
+            _ => (None, None),
         };
 
         cursor.goto_parent();
@@ -75,6 +76,7 @@ impl ReadCursor for Declaration {
             decl_modifier,
             identifier,
             type_annotation,
+            assignment_modifier,
             assignment,
             span,
         };
@@ -95,12 +97,14 @@ impl ReadCursor for Assignment {
         let operator = AssignmentOperator::read_cursor(cursor, source)?;
 
         cursor.next();
+        let modifier = read_optional_expression_modifier(cursor, source)?;
         let rhs = Expression::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
         Ok(Assignment {
             target: lhs,
             operator,
+            modifier,
             expression: rhs,
             span,
         })
@@ -130,19 +134,11 @@ impl ReadCursor for Expression {
         let node = cursor.node();
         let span = Span::from_node(node);
 
-        if cursor.kind()? == "ref_expression" {
-            return Ok(Expression {
-                kind: RefExpression::read_cursor(cursor, source)?.into(),
-                span,
-            });
-        }
-
         cursor_expect!(cursor, "expression");
 
         cursor.child();
 
         let kind: ExpressionKind = match cursor.kind()? {
-            "ref_expression" => RefExpression::read_cursor(cursor, source)?.into(),
             "else_expression" => ElseExpression::read_cursor(cursor, source)?.into(),
             "trailing_closure_expression" => read_trailing_closure_call(cursor, source)?.into(),
             "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),
@@ -163,5 +159,18 @@ impl ReadCursor for Expression {
         cursor.goto_parent();
 
         Ok(Expression { kind, span })
+    }
+}
+
+fn read_optional_expression_modifier(
+    cursor: &mut TreeCursor<'_>,
+    source: &str,
+) -> Result<Option<DeclModifier>, AstError> {
+    if cursor.kind()? == "declaration_modifier" {
+        let modifier = DeclModifier::read_cursor(cursor, source)?;
+        cursor.next();
+        Ok(Some(modifier))
+    } else {
+        Ok(None)
     }
 }

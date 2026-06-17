@@ -40,6 +40,8 @@ stored in them.
 - **`ref` variables**
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Index and field access through ref variables
+  - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
+    does not implement `PartialEq`)
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)
@@ -86,5 +88,5 @@ stored in them.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-16*
+*Last updated: 2026-06-17*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*
