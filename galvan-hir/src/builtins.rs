@@ -1,8 +1,10 @@
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, FnDecl, FnSignature, GenericTypeItem,
-    OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ResultTypeItem, SetTypeItem,
-    Span, TupleTypeItem, TypeElement, TypeIdent, Visibility,
+    ArrayTypeItem, AstNode, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, FnDecl, FnSignature,
+    GenericTypeItem, OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ResultTypeItem,
+    SegmentedAsts, SetTypeItem, Span, ToplevelItem, TupleTypeItem, TypeDecl, TypeElement,
+    TypeIdent, Visibility, VisibilityKind,
 };
+use galvan_files::Source;
 use itertools::Itertools;
 
 use crate::mapping::{mapping, Mapping};
@@ -74,8 +76,41 @@ fn func(name: &str, parameters: Vec<TypeElement>, ret: TypeElement) -> FnDecl {
     .into()
 }
 
+/// Synthesizes toplevel declarations for builtin types and functions so they
+/// can be resolved through the regular lookup context
+pub fn predefined_from(mapping: &Mapping, functions: Vec<FnDecl>) -> SegmentedAsts {
+    let types = mapping
+        .types
+        .keys()
+        .map(|ident| ToplevelItem {
+            item: TypeDecl::Empty(EmptyTypeDecl {
+                visibility: Visibility::new(VisibilityKind::Inherited, ident.span().clone()),
+                ident: ident.clone(),
+                span: ident.span().clone(),
+            }),
+            source: Source::Missing,
+        })
+        .collect();
+    let tests = vec![];
+    let functions = functions
+        .into_iter()
+        .map(|f| ToplevelItem {
+            item: f,
+            source: Source::Builtin,
+        })
+        .collect();
+    let main = None;
+    SegmentedAsts {
+        types,
+        functions,
+        tests,
+        main,
+        cmds: vec![],
+    }
+}
+
 /// Lists all iterator functions that have a closure which borrows its argument, leading to a double iterator when called on .iter()
-pub(crate) const BORROWED_ITERATOR_FNS: [&str; 12] = [
+pub const BORROWED_ITERATOR_FNS: [&str; 12] = [
     "filter",
     "skip_while",
     "take_while",
@@ -129,7 +164,17 @@ impl IsSame for TypeElement {
             (TypeElement::Result(a), TypeElement::Result(b)) => a.is_same(b),
             (TypeElement::Plain(a), TypeElement::Plain(b)) => a.is_same(b),
             (TypeElement::Generic(a), TypeElement::Generic(b)) => a.is_same(b),
+            (TypeElement::Closure(a), TypeElement::Closure(b)) => {
+                a.parameters.len() == b.parameters.len()
+                    && a.parameters
+                        .iter()
+                        .zip(&b.parameters)
+                        .all(|(a, b)| a.is_same(b))
+                    && a.return_ty.is_same(&b.return_ty)
+            }
             (TypeElement::Never(_), TypeElement::Never(_)) => true,
+            (TypeElement::Void(_), TypeElement::Void(_)) => true,
+            (TypeElement::Infer(_), TypeElement::Infer(_)) => true,
             _ => false,
         }
     }

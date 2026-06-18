@@ -1,22 +1,22 @@
 use crate::context::Context;
-use crate::error::ErrorCollector;
+use crate::ErrorCollector;
 use crate::sanitize::sanitize_name;
-use crate::{Ident, Transpile, TypeIdent};
-use galvan_resolver::Scope;
+use crate::Transpile;
+use galvan_ast::{Ident, TypeIdent};
 
 impl Transpile for Ident {
-    fn transpile(&self, _ctx: &Context, _scope: &mut Scope, _errors: &mut ErrorCollector) -> String {
+    fn transpile(&self, _ctx: &Context, _errors: &mut ErrorCollector) -> String {
         // TODO: Use lookup to insert fully qualified name
         sanitize_name(self.as_str()).into()
     }
 }
 
 impl Transpile for TypeIdent {
-    fn transpile(&self, ctx: &Context, _scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
             errors.warning(
                 format!("Type resolving error: Type {} not found", self),
-                None
+                None,
             );
             return format!("{self}");
         };
@@ -36,25 +36,28 @@ pub enum TypeOwnership {
 }
 
 pub trait TranspileType {
-    fn transpile_type(&self, ctx: &Context, scope: &mut Scope, ownership: TypeOwnership, errors: &mut ErrorCollector) -> String;
+    fn transpile_type(
+        &self,
+        ctx: &Context,
+        ownership: TypeOwnership,
+        errors: &mut ErrorCollector,
+    ) -> String;
 }
 
 impl TranspileType for TypeIdent {
     fn transpile_type(
         &self,
         ctx: &Context,
-        _scope: &mut Scope,
         ownership: TypeOwnership,
         errors: &mut ErrorCollector,
     ) -> String {
         let Some(_decl) = ctx.lookup.types.get(self) else {
             errors.warning(
                 format!("Type resolving error: Type {} not found", self),
-                None
+                None,
             );
             let prefix = match ownership {
-                TypeOwnership::Owned => "",
-                TypeOwnership::MutOwned => todo!("Transpile mutable owned types"),
+                TypeOwnership::Owned | TypeOwnership::MutOwned => "",
                 TypeOwnership::Borrowed => "&",
                 TypeOwnership::MutBorrowed => "&mut",
             };
@@ -62,8 +65,7 @@ impl TranspileType for TypeIdent {
         };
         // TODO: Handle module path here and use fully qualified name
         let (prefix, name) = match ownership {
-            TypeOwnership::Owned => ("", ctx.mapping.get_owned(self)),
-            TypeOwnership::MutOwned => todo!("Transpile mutable owned types"), // ctx.mapping.get_mut_owned(&self),
+            TypeOwnership::Owned | TypeOwnership::MutOwned => ("", ctx.mapping.get_owned(self)),
             TypeOwnership::Borrowed => {
                 debug_assert!(
                     !ctx.mapping.is_copy_ident(self),

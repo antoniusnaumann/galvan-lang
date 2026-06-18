@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-pub(crate) fn sanitize_name(name: &str) -> Cow<str> {
+pub(crate) fn sanitize_name(name: &str) -> Cow<'_, str> {
     if RUST_KEYWORDS.contains(&name) {
         format!("r#{}", name).into()
     } else {

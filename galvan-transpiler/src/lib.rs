@@ -9,10 +9,12 @@ use thiserror::Error;
 
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
+use galvan_hir::hir::{HirCmd, HirFunction, HirModule, HirTest};
+use galvan_hir::typecheck::typecheck;
 use galvan_into_ast::{AstError, SegmentAst, SourceIntoAst};
-use galvan_resolver::{LookupError, Scope};
+use galvan_resolver::LookupError;
 
-use builtins::builtin_fns;
+use crate::codegen::{transpile_function, transpile_main, transpile_signature, transpile_test};
 
 static SUPPRESS_WARNINGS: &str = "#![allow(warnings, unused)]";
 
@@ -90,9 +92,8 @@ fn extract_param_doc_comment(source_content: &str, param: &Param) -> Option<Stri
 
 /// Generate CLI structure with subcommands
 fn generate_cli_structure(
-    commands: &[ToplevelItem<CmdDecl>],
+    commands: &[HirCmd],
     ctx: &Context,
-    scope: &mut Scope,
     errors: &mut ErrorCollector,
 ) -> (String, String) {
     let mut command_functions = Vec::new();
@@ -101,20 +102,21 @@ fn generate_cli_structure(
     let mut match_arms = Vec::new();
 
     for cmd in commands {
-        let cmd_name = cmd.item.signature.identifier.as_str();
+        let cmd_name = cmd.signature.identifier.as_str();
         let cmd_name_pascal = cmd_name.to_case(Case::Pascal);
 
         // Generate the command function
-        let function_code = cmd.transpile(ctx, scope, errors);
-        command_functions.push(function_code);
+        let signature = cmd.signature.transpile(ctx, errors);
+        let body = cmd.body.transpile(ctx, errors);
+        command_functions.push(format!("{signature} {body}"));
 
         // Generate args struct for this command
         let mut args_fields = Vec::new();
         let mut function_params = Vec::new();
 
-        for param in &cmd.item.signature.parameters.params {
+        for param in &cmd.signature.parameters.params {
             let field_name = param.identifier.as_str();
-            let param_type = param.param_type.transpile(ctx, scope, errors);
+            let param_type = param.param_type.transpile(ctx, errors);
 
             // Extract doc comment for this parameter
             let help_text = extract_param_doc_comment(cmd.source.content(), param);
@@ -167,7 +169,7 @@ fn generate_cli_structure(
         subcommand_args.push(args_struct);
 
         // Extract doc comment for the command itself
-        let cmd_help = extract_doc_comment(cmd.source.content(), &cmd.item.span);
+        let cmd_help = extract_doc_comment(cmd.source.content(), &cmd.span);
 
         // Generate subcommand enum variant with help text
         let variant = if let Some(help) = cmd_help {
@@ -227,17 +229,16 @@ pub(crate) fn __cli_main() {{
     (command_functions.join("\n\n"), cli_code)
 }
 
-mod builtins;
-mod error;
+mod codegen;
 #[cfg(feature = "exec")]
 pub mod exec;
 
-mod cast;
 mod context;
-mod mapping;
 mod sanitize;
 
-pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, Span, TranspilerError};
+pub use galvan_hir::error::{
+    Diagnostic, DiagnosticSeverity, ErrorCollector, Span, TranspilerError,
+};
 
 #[derive(Debug, Error)]
 pub enum TranspileError {
@@ -260,32 +261,34 @@ fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Trans
 
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
     let segmented = asts.segmented()?;
+    let (module, mut errors) = typecheck(segmented)?;
+
     let builtins = builtins();
     let predefined = predefined_from(&builtins, builtin_fns());
-    let lookup = Context::new(builtins).with(&predefined)?.with(&segmented)?;
-    let mut scope = Scope::default();
-    scope.set_lookup(lookup.lookup.clone());
+    let mut ctx = Context::new(builtins);
+    ctx = ctx.with(&predefined)?;
+    for ty in &module.types {
+        ctx.lookup.types.insert(ty.item.ident().clone(), ty);
+    }
 
-    transpile_segmented(&segmented, &lookup, &mut scope)
+    transpile_module(&module, &ctx, &mut errors)
 }
 
 struct TypeFileContent<'a> {
     pub ty: &'a TypeDecl,
-    pub fns: Vec<&'a FnDecl>,
+    pub fns: Vec<&'a HirFunction>,
 }
 
 struct ExtensionFileContent<'a> {
     pub elem: &'a TypeElement,
-    pub fns: Vec<&'a FnDecl>,
+    pub fns: Vec<&'a HirFunction>,
 }
 
-fn transpile_segmented(
-    segmented: &SegmentedAsts,
+fn transpile_module(
+    module: &HirModule,
     ctx: &Context,
-    scope: &mut Scope,
+    errors: &mut ErrorCollector,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
-    let mut main_errors = ErrorCollector::new();
-    let mut cmd_errors = ErrorCollector::new();
     #[derive(Hash, PartialEq, Eq, Deref, From, Display)]
     struct ModuleName(Box<str>);
     fn module_name(ident: &TypeIdent) -> ModuleName {
@@ -301,7 +304,7 @@ fn transpile_segmented(
 
     fn add_extension_module<'a>(
         extensions: &mut HashMap<ModuleName, ExtensionFileContent<'a>>,
-        func: &'a ToplevelItem<FnDecl>,
+        func: &'a HirFunction,
         elem: &'a TypeElement,
     ) {
         let content = extensions
@@ -310,16 +313,16 @@ fn transpile_segmented(
                 elem,
                 fns: Vec::new(),
             });
-        content.fns.push(&func.item);
+        content.fns.push(func);
     }
 
     let mut type_files: HashMap<ModuleName, TypeFileContent> = HashMap::new();
 
-    for ty in &segmented.types {
+    for ty in &module.types {
         if let Some(duplicate) = type_files.insert(
-            module_name(ty.ident()),
+            module_name(ty.item.ident()),
             TypeFileContent {
-                ty,
+                ty: &ty.item,
                 fns: Vec::new(),
             },
         ) {
@@ -333,7 +336,7 @@ fn transpile_segmented(
 
     let mut toplevel_functions = Vec::new();
     let mut extensions: HashMap<ModuleName, ExtensionFileContent> = HashMap::new();
-    for func in &segmented.functions {
+    for func in &module.functions {
         if let Some(receiver) = func.signature.receiver() {
             let elem = &receiver.param_type;
             let base_type_ident = match elem {
@@ -345,7 +348,7 @@ fn transpile_segmented(
                 }
             };
             match type_files.get_mut(&module_name(base_type_ident)) {
-                Some(content) => content.fns.push(&func.item),
+                Some(content) => content.fns.push(func),
                 None => {
                     add_extension_module(&mut extensions, func, elem);
                 }
@@ -355,15 +358,16 @@ fn transpile_segmented(
         }
     }
 
+    let no_generics = HashSet::new();
     let type_files = type_files;
     let toplevel_functions = toplevel_functions
         .iter()
-        .map(|func| func.transpile(ctx, scope, &mut main_errors))
+        .map(|func| transpile_function(func, ctx, errors, &no_generics))
         .collect::<Vec<_>>()
         .join("\n\n");
     let toplevel_functions = toplevel_functions.trim();
 
-    let tests = transpile_tests(segmented, ctx, scope, &mut main_errors);
+    let tests = transpile_tests(&module.tests, ctx, errors);
 
     let modules = type_files
         .keys()
@@ -374,29 +378,19 @@ fn transpile_segmented(
         .join("\n");
     let modules = modules.trim();
 
-    let main = segmented
+    let main = module
         .main
         .as_ref()
-        .map(|main| {
-            let main_errors_ref = &mut main_errors;
-            transpile!(
-                ctx,
-                scope,
-                main_errors_ref,
-                "pub(crate) fn __main__() {}",
-                main.body
-            )
-        })
+        .map(|main| transpile_main(main, ctx, errors))
         .unwrap_or_default();
 
-    let (cmds, cli_main) = if !segmented.cmds.is_empty() {
-        let (command_functions, cli_code) =
-            generate_cli_structure(&segmented.cmds, ctx, scope, &mut cmd_errors);
+    let (cmds, cli_main) = if !module.cmds.is_empty() {
+        let (command_functions, cli_code) = generate_cli_structure(&module.cmds, ctx, errors);
         (command_functions, cli_code)
     } else {
         (
             String::new(),
-            if segmented.main.is_some() {
+            if module.main.is_some() {
                 "pub(crate) fn __cli_main() { unreachable!(\"This is not a CLI app.\") }".to_owned()
             } else {
                 String::new()
@@ -404,7 +398,7 @@ fn transpile_segmented(
         )
     };
 
-    let has_cli_commands = !segmented.cmds.is_empty();
+    let has_cli_commands = !module.cmds.is_empty();
     let cli_flag = if has_cli_commands {
         "pub(crate) const __HAS_CLI_COMMANDS: bool = true;"
     } else {
@@ -430,8 +424,8 @@ fn transpile_segmented(
             file_name: format!("{k}.rs").into(),
             content: [
                 "use crate::*;",
-                &v.ty.transpile(ctx, scope, &mut main_errors),
-                &transpile_member_functions(v.ty, &v.fns, ctx, scope, &mut main_errors),
+                &v.ty.transpile(ctx, errors),
+                &transpile_member_functions(v.ty, &v.fns, ctx, errors),
             ]
             .join("\n\n")
             .trim()
@@ -445,7 +439,7 @@ fn transpile_segmented(
             file_name: format!("{k}.rs").into(),
             content: [
                 "use crate::*;",
-                &transpile_extension_functions(v.elem, &v.fns, ctx, scope, &mut main_errors),
+                &transpile_extension_functions(v.elem, &v.fns, ctx, errors),
             ]
             .join("\n\n")
             .trim()
@@ -454,7 +448,7 @@ fn transpile_segmented(
         .collect_vec();
 
     // Output any collected warnings
-    for diagnostic in main_errors.diagnostics() {
+    for diagnostic in errors.diagnostics() {
         match diagnostic.severity {
             DiagnosticSeverity::Error => {
                 println!("cargo::error={}", diagnostic.message);
@@ -474,12 +468,7 @@ fn transpile_segmented(
         .collect())
 }
 
-fn transpile_tests(
-    segmented_asts: &SegmentedAsts,
-    ctx: &Context,
-    scope: &mut Scope,
-    errors: &mut ErrorCollector,
-) -> String {
+fn transpile_tests(tests: &[HirTest], ctx: &Context, errors: &mut ErrorCollector) -> String {
     fn test_name<'a>(desc: &Option<StringLiteral>) -> Cow<'a, str> {
         desc.as_ref().map_or("test".into(), |desc| {
             let snake = desc
@@ -502,12 +491,9 @@ fn transpile_tests(
         })
     }
 
-    let mut by_name: HashMap<Cow<'_, str>, Vec<&TestDecl>> = HashMap::new();
-    for test in &segmented_asts.tests {
-        by_name
-            .entry(test_name(&test.item.name))
-            .or_default()
-            .push(&test.item);
+    let mut by_name: HashMap<Cow<'_, str>, Vec<&HirTest>> = HashMap::new();
+    for test in tests {
+        by_name.entry(test_name(&test.name)).or_default().push(test);
     }
 
     let resolved_tests = by_name
@@ -532,7 +518,7 @@ fn transpile_tests(
     let test_mod = "#[cfg(test)]\nmod tests {\nuse crate::*;\n".to_owned()
         + resolved_tests
             .iter()
-            .map(|t| t.transpile(ctx, scope, errors))
+            .map(|(name, test)| transpile_test(name, test, ctx, errors))
             .collect::<Vec<_>>()
             .join("\n\n")
             .as_str()
@@ -543,16 +529,16 @@ fn transpile_tests(
 
 fn transpile_member_functions(
     ty: &TypeDecl,
-    fns: &[&FnDecl],
+    fns: &[&HirFunction],
     ctx: &Context,
-    scope: &mut Scope,
     errors: &mut ErrorCollector,
 ) -> String {
     if fns.is_empty() {
         return "".into();
     }
 
-    // Collect generic parameters from the type declaration
+    // Collect generic parameters from the type declaration; they are
+    // declared on the impl block and skipped on the member functions
     let generics = ty.collect_generics();
     let generic_params = if generics.is_empty() {
         String::new()
@@ -589,31 +575,7 @@ fn transpile_member_functions(
 
     let transpiled_fns = fns
         .iter()
-        .map(|f| {
-            // Transpile function but strip generic parameters that clash with impl block generics
-            let mut fn_content = f.transpile(ctx, scope, errors);
-
-            // Remove redundant generic parameters from function signatures
-            // Look for patterns like "fn name<generic>" and replace with "fn name"
-            for generic in &generics {
-                let generic_lowercase = generic.as_str();
-                let generic_capitalized = capitalize_generic(generic.as_str());
-                let fn_name = f.signature.identifier.as_str();
-
-                // Try both the original and capitalized versions of the generic parameter
-                for generic_str in [generic_lowercase, generic_capitalized.as_str()] {
-                    let pattern_with_generics = format!("fn {}<{}>", fn_name, generic_str);
-                    let pattern_without_generics = format!("fn {}", fn_name);
-
-                    if fn_content.contains(&pattern_with_generics) {
-                        fn_content =
-                            fn_content.replace(&pattern_with_generics, &pattern_without_generics);
-                    }
-                }
-            }
-
-            fn_content
-        })
+        .map(|f| transpile_function(f, ctx, errors, &generics))
         .collect::<Vec<_>>()
         .join("\n\n");
 
@@ -625,9 +587,8 @@ fn transpile_member_functions(
 
 fn transpile_extension_functions(
     ty: &TypeElement,
-    fns: &[&FnDecl],
+    fns: &[&HirFunction],
     ctx: &Context,
-    scope: &mut Scope,
     errors: &mut ErrorCollector,
 ) -> String {
     debug_assert_ne!(fns.len(), 0, "Extension functions should not be empty");
@@ -640,6 +601,7 @@ fn transpile_extension_functions(
         return String::new();
     }
 
+    let no_generics = HashSet::new();
     let trait_name = extension_name(&ty);
     let fn_signatures = fns
         .iter()
@@ -647,13 +609,13 @@ fn transpile_extension_functions(
             visibility: Visibility::private(),
             ..f.signature.clone()
         })
-        .map(|s| s.transpile(ctx, scope, errors))
+        .map(|s| transpile_signature(&s, ctx, errors, &no_generics))
         .collect::<Vec<_>>()
         .join(";\n")
         + ";";
     let transpiled_fns = fns
         .iter()
-        .map(|f| f.transpile(ctx, scope, errors))
+        .map(|f| transpile_function(f, ctx, errors, &no_generics))
         .map(|s| s.strip_prefix("pub(crate) ").unwrap().to_owned())
         .collect::<Vec<_>>()
         .join("\n\n");
@@ -663,7 +625,7 @@ fn transpile_extension_functions(
 
     // Extract where clause from the first function, but only include constraints for the impl-level generic (A)
     // TODO: we should group impl blocks by constraints instead of blindly taking the first where clause
-    fn transpile_where_clause(fns: &[&FnDecl], generic_param: &str) -> String {
+    fn transpile_where_clause(fns: &[&HirFunction], generic_param: &str) -> String {
         fns.first()
             .and_then(|f| f.signature.where_clause.as_ref())
             .map(|wc| {
@@ -728,12 +690,12 @@ fn transpile_extension_functions(
         _ if !generics.is_empty() => {
             let generics = generics
                 .iter()
-                .map(|g| capitalize_generic(&g.transpile(ctx, scope, errors)))
+                .map(|g| capitalize_generic(g.as_str()))
                 .join(", ");
 
             // TODO: we probably need to transpile the where_clause here like above
 
-            transpile! {ctx, scope, errors,
+            transpile! {ctx, errors,
                 "
                 pub trait {trait_name}<{generics}> {{
                     {fn_signatures}
@@ -742,11 +704,11 @@ fn transpile_extension_functions(
                 impl <{generics}> {trait_name}<{generics}> for {} {{
                     {transpiled_fns}
                 }}
-                ", ty 
+                ", ty
             }
         }
         _ => {
-            transpile! {ctx, scope, errors,
+            transpile! {ctx, errors,
                 "
                 pub trait {trait_name} {{
                     {fn_signatures}
@@ -845,10 +807,9 @@ pub fn transpile(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Transpile
 }
 
 mod transpile_item;
-mod type_inference;
 
 trait Transpile {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String;
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String;
 }
 
 trait Punctuated {
@@ -857,60 +818,16 @@ trait Punctuated {
 
 mod macros {
     macro_rules! transpile {
-        ($ctx:ident, $scope:ident, $errors:ident, $string:expr, $($items:expr),*$(,)?) => {
-            format!($string, $(($items).transpile($ctx, $scope, $errors)),*)
-        };
-
-        // Temporary backward compatibility - creates a local temp ErrorCollector
-        ($ctx:ident, $scope:ident, $string:expr, $($items:expr),*$(,)?) => {
-            {
-                let mut _temp_errors = crate::ErrorCollector::new();
-                format!($string, $(($items).transpile($ctx, $scope, &mut _temp_errors)),*)
-            }
+        ($ctx:ident, $errors:ident, $string:expr, $($items:expr),*$(,)?) => {
+            format!($string, $(($items).transpile($ctx, $errors)),*)
         };
     }
 
     macro_rules! impl_transpile {
         ($ty:ty, $string:expr, $($field:tt),*$(,)?) => {
             impl crate::Transpile for $ty {
-                fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope, _errors: &mut crate::ErrorCollector) -> String {
-                    crate::macros::transpile!(_ctx, _scope, _errors, $string, $(self.$field),*)
-                }
-            }
-        };
-
-        // Temporary backward compatibility
-        ($ty:ty, $old_signature:expr, $string:expr, $($field:tt),*$(,)?) => {
-            impl crate::Transpile for $ty {
-                fn transpile(&self, _ctx: &crate::Context, _scope: &mut crate::Scope, _errors: &mut crate::ErrorCollector) -> String {
-                    crate::macros::transpile!(_ctx, _scope, _errors, $string, $(self.$field),*)
-                }
-            }
-        };
-    }
-
-    #[allow(unused_macros)]
-    macro_rules! impl_transpile_fn {
-        ($ty:ty, $string:expr, $($fun:ident),*$(,)?) => {
-            impl crate::Transpile for $ty {
-                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope) -> String {
-                    crate::macros::transpile!(ctx, scope, $string, $(self.$fun()),*)
-                }
-            }
-        };
-    }
-
-    macro_rules! impl_transpile_match {
-        ($ty:ty, $($case:pat_param => ($($args:expr),+)),+$(,)?) => {
-            impl crate::Transpile for $ty {
-                #[deny(bindings_with_variant_name)]
-                #[deny(unreachable_patterns)]
-                #[deny(non_snake_case)]
-                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope, errors: &mut crate::ErrorCollector) -> String {
-                    use $ty::*;
-                    match self {
-                        $($case => crate::macros::transpile!(ctx, scope, errors, $($args),+),)+
-                    }
+                fn transpile(&self, _ctx: &crate::Context, _errors: &mut crate::ErrorCollector) -> String {
+                    crate::macros::transpile!(_ctx, _errors, $string, $(self.$field),*)
                 }
             }
         };
@@ -922,10 +839,10 @@ mod macros {
                 #[deny(bindings_with_variant_name)]
                 #[deny(unreachable_patterns)]
                 #[deny(non_snake_case)]
-                fn transpile(&self, ctx: &crate::Context, scope: &mut crate::Scope, errors: &mut crate::ErrorCollector) -> String {
+                fn transpile(&self, ctx: &crate::Context, errors: &mut crate::ErrorCollector) -> String {
                     use $ty::*;
                     match self {
-                        $($case(inner) => inner.transpile(ctx, scope, errors),)+
+                        $($case(inner) => inner.transpile(ctx, errors),)+
                     }
                 }
             }
@@ -947,36 +864,25 @@ mod macros {
         };
     }
 
-    pub(crate) use {
-        impl_transpile, impl_transpile_match, impl_transpile_variants, punct, transpile,
-    };
+    #[allow(unused_imports)]
+    pub(crate) use {impl_transpile, impl_transpile_variants, punct, transpile};
 }
 
-use crate::builtins::builtins;
+use galvan_hir::builtins::{builtin_fns, builtins};
 use crate::context::{predefined_from, Context};
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
 use macros::punct;
 
-punct!(
-    ", ",
-    TypeElement,
-    TupleTypeMember,
-    Param,
-    ConstructorCallArg,
-    ClosureParameter,
-    DictLiteralElement
-);
+punct!(", ", TypeElement, TupleTypeMember);
 punct!(",\n", StructTypeMember, EnumTypeMember);
-punct!("\n\n", RootItem, FnDecl);
-punct!(";\n", Statement);
 
 impl<T> Transpile for Vec<T>
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        self.as_slice().transpile(ctx, scope, errors)
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        self.as_slice().transpile(ctx, errors)
     }
 }
 
@@ -984,43 +890,23 @@ impl<T> Transpile for [T]
 where
     T: Transpile + Punctuated,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let punct = T::punctuation();
         self.iter()
-            .map(|e| e.transpile(ctx, scope, errors))
+            .map(|e| e.transpile(ctx, errors))
             .reduce(|acc, e| format!("{acc}{punct}{e}"))
             .unwrap_or_else(String::new)
     }
 }
 
-impl<T> Transpile for Option<Vec<T>>
-where
-    T: Transpile + Punctuated,
-{
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        self.as_ref()
-            .map_or_else(String::new, |v| v.transpile(ctx, scope, errors))
-    }
-}
-
 impl Transpile for &str {
-    fn transpile(
-        &self,
-        _ctx: &Context,
-        _scope: &mut Scope,
-        _errors: &mut ErrorCollector,
-    ) -> String {
+    fn transpile(&self, _ctx: &Context, _errors: &mut ErrorCollector) -> String {
         self.to_string()
     }
 }
 
 impl Transpile for String {
-    fn transpile(
-        &self,
-        _ctx: &Context,
-        _scope: &mut Scope,
-        _errors: &mut ErrorCollector,
-    ) -> String {
+    fn transpile(&self, _ctx: &Context, _errors: &mut ErrorCollector) -> String {
         self.to_owned()
     }
 }
@@ -1029,7 +915,7 @@ impl<T> Transpile for Box<T>
 where
     T: Transpile,
 {
-    fn transpile(&self, ctx: &Context, scope: &mut Scope, errors: &mut ErrorCollector) -> String {
-        self.as_ref().transpile(ctx, scope, errors)
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        self.as_ref().transpile(ctx, errors)
     }
 }

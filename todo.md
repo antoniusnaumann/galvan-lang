@@ -1,50 +1,76 @@
 # Galvan Language TODOs
 
+## Architecture
+
+The transpiler is split into a typechecker that lowers the AST into a typed
+HIR (`galvan-hir/src/typecheck/`) and mechanical code generation from the HIR
+(`galvan-transpiler/src/codegen/`). All type, name, and ownership decisions
+belong in the typechecker; codegen only renders nodes and the adjustments
+stored in them.
+
 ## Critical - Core Language Features
-- **Type inference system improvements** (galvan-transpiler/src/type_inference.rs)
-  - Add support for type unions (line 132)  
-  - Implement function lookup with borrowed return values (line 402)
-  - Handle inference for alias types (lines 813, 891)
 
-- **Missing operator implementations** (galvan-transpiler/src/transpile_item/operator.rs)
-  - Implement XOR chain handling (line 21)
-  - Add remove operator for collections (line 165)
-  - Implement custom infix operators (line 195)
+- **Typechecker improvements** (galvan-hir/src/typecheck/)
+  - Add support for type unions
+  - Resolve function return ownership (returns are currently always treated
+    as owned; functions cannot return borrows)
+  - Handle inference for alias types (expr.rs, `field_type`)
+  - Replace the wildcard treatment of generic type parameters in
+    `types_compatible` with real unification/substitution
+  - Resolve `self` receiver calls on Rust standard library methods instead of
+    falling back to unknown-signature lowering
 
-- **Generic type support** (galvan-transpiler/src/transpile_item/type.rs)
-  - Transpile generic type parameters (line 42)
-  - Handle generics in type elements (galvan-transpiler/src/lib.rs line 412)
+- **Missing operator implementations**
+  - Remove operator `--` for collections (codegen/expression.rs renders a
+    placeholder comment)
+  - Custom infix operators (typecheck/expr.rs `lower_infix`)
+
+- **Parameter modifiers in calls** (galvan-hir/src/typecheck/expr.rs `lower_call_args`)
+  - Arguments for `let`-modified parameters are not implemented
+  - Arguments for `ref`-modified parameters without a call-site modifier are
+    not implemented
 
 ## High Priority - Language Completeness
-- **Assignment handling improvements** (galvan-transpiler/src/transpile_item/assignment.rs)
-  - Determine variable ownership for proper dereferencing (line 12)
-  - Handle assignment to ref variables (line 37)
-  - Add proper error handling for borrowed variable assignment (line 32)
 
-- **Collection operations** (galvan-transpiler/src/transpile_item/collection.rs)
-  - Implement OrderedDictLiteral transpilation (line 48)
+- **Iteration** (galvan-hir/src/typecheck/expr.rs `lower_for`)
+  - For loop on dictionaries and ordered dictionaries
+  - For loop on optional and result types
+  - Tuple iteration
 
-- **Function call enhancements** (galvan-transpiler/src/transpile_item/function_call.rs)
-  - Add capacity optimization for vector creation (line 512)
-  - Implement for loop on optional types (line 425)
-  - Add tuple iteration support (line 421)
+- **`ref` variables**
+  - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
+  - Index and field access through ref variables
+  - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
+    does not implement `PartialEq`)
+
+- **Tuples**
+  - Tuple member access (typecheck/expr.rs `field_type`)
 
 ## Medium Priority - Error Handling & Validation
-- **Comprehensive error handling** (multiple files)
-  - Replace todo!() calls with proper Result types throughout codebase
-  - Add validation for function modifiers, closure arguments, type assertions
 
-- **Type validation** 
-  - Add type checking for collection operations (postfix.rs line 9)
-  - Validate error/optional type usage (postfix.rs line 16-17)
-  - Check struct field modifier validity (struct.rs line 23, 26)
+- Validate struct field modifier validity (transpile_item/struct.rs)
+- Add proper error handling for invalid member function visibility
+  (galvan-transpiler/src/lib.rs `transpile_member_functions`)
+- Group extension impl blocks by where-clause constraints instead of taking
+  the first function's where clause (galvan-transpiler/src/lib.rs)
+- Require an explicit `throw` keyword instead of auto-wrapping error values
+  in `Err` (galvan-hir/src/typecheck/coerce.rs)
+- Output collected warnings from `exec::transpile_dir`
+  (galvan-transpiler/src/exec.rs)
 
 ## Low Priority - Language Polish
-- **String formatting** (galvan-transpiler/src/transpile_item/literal.rs)
-  - Add number literal parsing and type validation (line 24)
 
-- **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)  
-  - Implement fully qualified name lookup (line 10, 24)
+- **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)
+  - Implement fully qualified name lookup / module paths
+
+- **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
+  - Let users declare `Fn` instead of `FnMut` closures, e.g. for
+    multithreading
+
+- **String interpolation** (galvan-into-ast/src/items/literal.rs)
+  - Parse interpolation expressions directly in the grammar instead of
+    re-parsing them with a function wrapper and falling back to verbatim
+    identifiers
 
 - **Tree-sitter grammar completeness** (tree-sitter-galvan/)
   - Add const/async keyword support
@@ -52,11 +78,15 @@
   - Add implicit closure parameter rules
 
 ## Future Enhancements
+
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)
-- Improve span tracking throughout AST nodes
+- Improve span tracking throughout AST nodes (most HIR nodes synthesize
+  `Span::default()` for derived types)
+- Consider a structured Rust code generator (e.g. ruast) instead of string
+  formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2025-10-08*
+*Last updated: 2026-06-17*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

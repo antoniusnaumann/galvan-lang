@@ -1,0 +1,90 @@
+fn overwrite(mut value: Int) {
+    value = 42
+}
+
+test "Assign to mut parameter" {
+    mut a = 1
+    overwrite(mut a)
+    assert a == 42
+}
+
+fn rename(mut dog: Dog, name: String) {
+    dog.name = name
+}
+
+test "Assign borrowed value to field of mut parameter" {
+    mut dog = Dog(name: "Rex", age: 3)
+    let new_name = "Bello"
+    rename(mut dog, new_name)
+    assert dog.name == "Bello"
+}
+
+fn push_name(mut names: [String], name: String) {
+    names ++= name
+}
+
+test "Concat-assign borrowed element to list" {
+    mut names = ["Rex"]
+    let name = "Bello"
+    push_name(mut names, name)
+    assert names == ["Rex", "Bello"]
+}
+
+test "Assign to ref variable" {
+    ref counter = 0
+    counter = 42
+    counter += 1
+    assert counter == 43
+}
+
+test "Assign to shared ref variable" {
+    ref counter1 = 1
+    ref counter2 = ref counter1
+
+    counter2 = 17
+    assert counter1 == 17
+    assert counter2 == 17
+    
+    counter1 += 1
+    assert counter1 == 18
+    assert counter2 == 18
+}
+
+test "Re-assign ref variable" {
+    ref counter1 = 1
+    ref counter2 = ref counter1
+    ref counter3 = 0
+
+    counter2 = 17
+    assert counter1 == 17
+    assert counter2 == 17
+
+    counter2 = ref counter3
+
+    counter1 = 42
+    assert counter1 == 42
+    assert counter2 == 0
+    assert counter3 == 0
+
+    counter3 = 15
+    assert counter2 == 15
+    assert counter3 == 15
+
+    counter2 -= 5
+    assert counter2 == 10
+    assert counter3 == 10
+
+}
+
+test "Assign copies mut variable" {
+    mut dog1 = "Bello"
+    mut dog2 = dog1
+
+    assert dog1 == "Bello"
+    assert dog2 == "Bello"
+
+    dog1 = "Hasso"
+
+    assert dog1 == "Hasso"
+    assert dog2 == "Bello"
+}

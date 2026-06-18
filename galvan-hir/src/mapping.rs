@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
-pub(crate) struct Mapping {
-    pub(crate) types: HashMap<TypeIdent, RustType>,
+pub struct Mapping {
+    pub types: HashMap<TypeIdent, RustType>,
 }
 
 impl Mapping {
-    pub(crate) fn get_owned(&self, type_id: &TypeIdent) -> Cow<str> {
+    pub fn get_owned(&self, type_id: &TypeIdent) -> Cow<'_, str> {
         self.types
             .get(type_id)
             .map(RustType::owned)
@@ -16,7 +16,7 @@ impl Mapping {
             .unwrap_or_else(|| type_id.to_string().into())
     }
 
-    pub(crate) fn get_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
+    pub fn get_borrowed(&self, type_id: &TypeIdent) -> Cow<'_, str> {
         self.types
             .get(type_id)
             .map(RustType::borrowed)
@@ -24,7 +24,7 @@ impl Mapping {
             .unwrap_or_else(|| type_id.to_string().into())
     }
 
-    pub(crate) fn get_mut_borrowed(&self, type_id: &TypeIdent) -> Cow<str> {
+    pub fn get_mut_borrowed(&self, type_id: &TypeIdent) -> Cow<'_, str> {
         self.types
             .get(type_id)
             .map(RustType::mut_borrowed)
@@ -32,13 +32,13 @@ impl Mapping {
             .unwrap_or_else(|| type_id.to_string().into())
     }
 
-    pub(crate) fn is_copy(&self, ty: &TypeElement) -> bool {
+    pub fn is_copy(&self, ty: &TypeElement) -> bool {
         match ty {
             TypeElement::Array(_) => false,
             TypeElement::Dictionary(_) => false,
             TypeElement::OrderedDictionary(_) => false,
             TypeElement::Set(_) => false,
-            TypeElement::Tuple(_) => todo!(),
+            TypeElement::Tuple(tuple) => tuple.elements.iter().all(|ty| self.is_copy(ty)),
             TypeElement::Optional(ty) => self.is_copy(&ty.inner),
             TypeElement::Result(ty) => {
                 self.is_copy(&ty.success) && ty.error.as_ref().is_some_and(|ty| self.is_copy(ty))
@@ -53,7 +53,7 @@ impl Mapping {
         }
     }
 
-    pub(crate) fn is_copy_ident(&self, type_id: &TypeIdent) -> bool {
+    pub fn is_copy_ident(&self, type_id: &TypeIdent) -> bool {
         self.types
             .get(type_id)
             .map(|rust_type| rust_type.is_copy)
@@ -112,7 +112,7 @@ pub(crate) use mapping_insert;
 
 /// Transpiled type names, depending on whether they are owned, borrowed, or mutably borrowed.
 #[derive(Debug, Clone)]
-pub(crate) struct RustType {
+pub struct RustType {
     owned: Box<str>,
     borrowed: Box<str>,
     mut_borrowed: Box<str>,

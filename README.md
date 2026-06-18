@@ -250,6 +250,33 @@ Immutable variables or members of immutable struct instances (declared with `let
 By annotating the argument as `ref`, the caller acknowledges that the function might store a mutable (heap) reference.
 Only variables and members declared as `ref` can be passed as `ref`
 
+Ref variables can be assigned to each other by reference
+
+```galvan
+main {
+    ref msg = "Hello World!"
+    ref say = ref msg // now say points to msg
+
+    msg = "Hi!"
+    print msg // "Hi!"
+    print say // "Hi!"
+
+    ref bye = "Bye!"
+    say = ref bye
+
+    print msg // "Hi!"
+    print say // "Bye!"
+    print bye // "Bye!"
+
+    // meanwhile, this assigns only by value
+    msg = bye
+    bye = "Goodbye!"
+    print msg // "Bye!"
+    print bye // "Goodbye!"
+}
+    
+```
+
 ### Control Flow
 #### Loops
 Like in Rust, loops can yield a value:

@@ -26,6 +26,7 @@ pub struct Declaration {
     pub decl_modifier: DeclModifier,
     pub identifier: Ident,
     pub type_annotation: Option<TypeElement>,
+    pub assignment_modifier: Option<DeclModifier>,
     pub assignment: Option<Expression>,
     pub span: Span,
 }

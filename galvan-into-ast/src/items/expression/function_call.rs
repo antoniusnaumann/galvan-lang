@@ -1,7 +1,7 @@
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureParameter, ConstructorCall, ConstructorCallArg,
-    DeclModifier, EnumAccess, EnumConstructor, EnumConstructorArg, Expression, FunctionCall, FunctionCallArg, Ident, Return, Span, Statement, Throw,
-    TypeElement, TypeIdent,
+    DeclModifier, EnumAccess, EnumConstructor, EnumConstructorArg, Expression, FunctionCall,
+    FunctionCallArg, Ident, Return, Span, Statement, Throw, TypeElement, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -282,11 +282,22 @@ impl ReadCursor for ConstructorCallArg {
         cursor_expect!(cursor, "colon");
 
         cursor.next();
+        let modifier = if cursor.kind()? == "declaration_modifier" {
+            let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
+            cursor.next();
+            modifier
+        } else {
+            None
+        };
         let expression = Expression::read_cursor(cursor, source)?;
 
         cursor.goto_parent();
 
-        Ok(ConstructorCallArg { ident, expression })
+        Ok(ConstructorCallArg {
+            ident,
+            modifier,
+            expression,
+        })
     }
 }
 
@@ -330,10 +341,10 @@ impl ReadCursor for EnumConstructorArg {
         // Simplified parsing - try to read field/value structure
         let mut field_name = None;
         let mut modifier = None;
-        
+
         // Check the first child to determine the structure
         let first_kind = cursor.kind()?;
-        
+
         match first_kind {
             "declaration_modifier" => {
                 // Anonymous argument with modifier
@@ -346,7 +357,7 @@ impl ReadCursor for EnumConstructorArg {
                     let current_position = cursor.node();
                     let ident = Ident::read_cursor(cursor, source)?;
                     cursor.next();
-                    
+
                     if cursor.kind()? == "colon" {
                         // Named field
                         field_name = Some(ident);

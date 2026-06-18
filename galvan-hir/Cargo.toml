@@ -1,0 +1,19 @@
+[package]
+name = "galvan-hir"
+description = "Typed high-level intermediate representation and typechecker for the Galvan programming language"
+
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+galvan-ast = { workspace = true }
+galvan-files = { workspace = true }
+galvan-resolver = { workspace = true }
+
+itertools = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+galvan-into-ast = { workspace = true }
