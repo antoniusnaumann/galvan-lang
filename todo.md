@@ -24,6 +24,7 @@ stored in them.
   - Remove operator `--` for collections (codegen/expression.rs renders a
     placeholder comment)
   - Custom infix operators (typecheck/expr.rs `lower_infix`)
+  - Add unary expression support for logical and bitwise not
 
 - **Parameter modifiers in calls** (galvan-hir/src/typecheck/expr.rs `lower_call_args`)
   - Arguments for `let`-modified parameters are not implemented
@@ -88,5 +89,5 @@ stored in them.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-17*
+*Last updated: 2026-06-19*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

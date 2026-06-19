@@ -428,15 +428,14 @@ Logical operators:
 - `xor`, `^^`: Logical xor
 - `not`, `!`: Logical not
 
-> [!WARNING]
-> Bitwise operators are implemented yet
-Bitwise operators are prefixed with b:
-- `b|`: Bitwise or
-- `b&`: Bitwise and
-- `b^`: Bitwise xor
-- `b<<`: Bitwise left shift
-- `b>>`: Bitwise right shift
-- `b~`: Bitwise not
+Bitwise operators:
+- `|`: Bitwise or
+- `&`: Bitwise and
+- `~`: Bitwise xor
+- `<<`: Bitwise left shift
+- `>>`: Bitwise right shift
+
+Like in Lua, `^` is exponentiation and `~` is bitwise xor.
 
 Comparison operators:
 - `==`: Equality
