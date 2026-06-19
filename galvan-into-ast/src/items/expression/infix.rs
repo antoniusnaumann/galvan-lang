@@ -119,7 +119,6 @@ impl ReadCursor for LogicalOperator {
         let op = match cursor.kind()? {
             "and" => Self::And,
             "or" => Self::Or,
-            "xor" => Self::Xor,
             unknown => unreachable!("Unknown logical operator: {unknown}"),
         };
 

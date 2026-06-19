@@ -445,7 +445,6 @@ impl Transpile for HirBinary<LogicalOperator> {
         match self.operator {
             LogicalOperator::And => transpile!(ctx, errors, "{} && {}", self.lhs, self.rhs),
             LogicalOperator::Or => transpile!(ctx, errors, "{} || {}", self.lhs, self.rhs),
-            LogicalOperator::Xor => transpile!(ctx, errors, "{} ^ {}", self.lhs, self.rhs),
         }
     }
 }

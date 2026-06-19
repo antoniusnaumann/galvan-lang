@@ -425,7 +425,6 @@ Arithmetic operators:
 Logical operators:
 - `and`, `&&`: Logical and
 - `or`, `||`: Logical or
-- `xor`, `^^`: Logical xor
 - `not`, `!`: Logical not
 
 Bitwise operators:
