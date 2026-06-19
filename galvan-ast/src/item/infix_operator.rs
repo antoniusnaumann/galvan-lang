@@ -78,6 +78,7 @@ impl InfixOperation<MemberOperator> {
 pub enum LogicalOperator {
     Or,
     And,
+    Xor,
 }
 
 impl InfixOperator for LogicalOperator {
@@ -85,6 +86,7 @@ impl InfixOperator for LogicalOperator {
         match self {
             LogicalOperator::Or => "||",
             LogicalOperator::And => "&&",
+            LogicalOperator::Xor => "xor",
         }
     }
 }
