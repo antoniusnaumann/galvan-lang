@@ -58,6 +58,13 @@ pub enum TranspilerError {
     #[error("Function {name} expects {expected} arguments, found {found}")]
     ArgumentCountMismatch { name: String, expected: usize, found: usize },
 
+    #[error("Argument {parameter} requires {expected} passing mode, found {found} passing mode")]
+    ArgumentPassingMode {
+        parameter: String,
+        expected: String,
+        found: String,
+    },
+
     #[error("Cannot infer type for expression")]
     TypeInferenceFailure,
 

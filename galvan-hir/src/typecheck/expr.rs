@@ -29,6 +29,16 @@ impl Checker<'_> {
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
             ExpressionKind::Postfix(postfix) => self.lower_postfix(postfix, span),
+            ExpressionKind::Modified(modified) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidModifier {
+                        modifier: modifier_name(modified.modifier).to_string(),
+                        context: "expressions outside calls".to_string(),
+                    },
+                    Some(span.into()),
+                );
+                self.lower_expression(&modified.inner, &Expected::free())
+            }
             ExpressionKind::CollectionLiteral(literal) => self.lower_collection(literal, span),
             ExpressionKind::ConstructorCall(constructor) => {
                 self.lower_constructor(constructor, span)
@@ -49,6 +59,15 @@ impl Checker<'_> {
             ExpressionKind::Ident(ident) => self.lower_variable_expression(ident, span),
             ExpressionKind::Closure(closure) => self.lower_closure(closure, expected, false, span),
             ExpressionKind::Group(group) => {
+                if let Some(modifier) = group.modifier {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidModifier {
+                            modifier: modifier_name(modifier).to_string(),
+                            context: "expressions outside calls".to_string(),
+                        },
+                        Some(span.into()),
+                    );
+                }
                 let inner = self.lower_expression(&group.inner, &Expected::free());
                 let ty = inner.ty.clone();
                 let ownership = inner.adjusted_ownership();
@@ -246,7 +265,7 @@ impl Checker<'_> {
     /// known signature
     fn lower_call(
         &mut self,
-        receiver: Option<HirExpression>,
+        receiver: Option<(HirExpression, Option<DeclModifier>)>,
         ident: &Ident,
         arguments: &[FunctionCallArg],
         span: Span,
@@ -268,12 +287,14 @@ impl Checker<'_> {
             }
         }
 
-        let receiver_ident = receiver.as_ref().and_then(|receiver| match &receiver.ty {
-            TypeElement::Plain(basic) => Some(basic.ident.clone()),
-            TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
-            TypeElement::Generic(generic) => Some(TypeIdent::new(generic.ident.as_str())),
-            _ => None,
-        });
+        let receiver_ident = receiver
+            .as_ref()
+            .and_then(|(receiver, _)| match &receiver.ty {
+                TypeElement::Plain(basic) => Some(basic.ident.clone()),
+                TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
+                TypeElement::Generic(generic) => Some(TypeIdent::new(generic.ident.as_str())),
+                _ => None,
+            });
 
         let lookup = self.lookup;
         let function = lookup
@@ -282,17 +303,62 @@ impl Checker<'_> {
             // registered without a receiver type
             .or_else(|| lookup.resolve_function(None, ident, &[]));
 
+        if receiver.is_none() && function.is_none() {
+            if let Some((receiver_argument, arguments)) = arguments.split_first() {
+                let (lowered_receiver, expression_modifier) =
+                    self.lower_call_value(&receiver_argument.expression);
+                let modifier = self.merge_argument_modifiers(
+                    receiver_argument.modifier,
+                    expression_modifier,
+                    receiver_argument.expression.span,
+                );
+                let receiver_ident = receiver_type_ident(&lowered_receiver.ty);
+
+                if let Some(function) = receiver_ident
+                    .as_ref()
+                    .and_then(|receiver| lookup.resolve_function(Some(receiver), ident, &[]))
+                {
+                    let signature = function.item.signature.clone();
+                    let receiver = self.lower_known_receiver(
+                        lowered_receiver,
+                        modifier,
+                        signature.receiver(),
+                        receiver_argument.expression.span,
+                    );
+                    let args = self.lower_call_args(&signature.parameters.params, arguments);
+                    return HirExpression::new(
+                        HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                            receiver,
+                            ident: ident.clone(),
+                            args,
+                        })),
+                        signature.return_type,
+                        Ownership::UniqueOwned,
+                        span,
+                    );
+                }
+            }
+        }
+
         match function {
             Some(function) => {
                 let signature = function.item.signature.clone();
                 let args = self.lower_call_args(&signature.parameters.params, arguments);
                 let ty = signature.return_type.clone();
                 let kind = match receiver {
-                    Some(receiver) => HirExpressionKind::MethodCall(Box::new(HirMethodCall {
-                        receiver,
-                        ident: ident.clone(),
-                        args,
-                    })),
+                    Some((receiver, modifier)) => {
+                        let receiver = self.lower_known_receiver(
+                            receiver,
+                            modifier,
+                            signature.receiver(),
+                            span,
+                        );
+                        HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                            receiver,
+                            ident: ident.clone(),
+                            args,
+                        }))
+                    }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         ident: ident.clone(),
                         args,
@@ -306,11 +372,14 @@ impl Checker<'_> {
                     .map(|argument| self.lower_unknown_argument(argument))
                     .collect();
                 let kind = match receiver {
-                    Some(receiver) => HirExpressionKind::MethodCall(Box::new(HirMethodCall {
-                        receiver,
-                        ident: ident.clone(),
-                        args,
-                    })),
+                    Some((receiver, modifier)) => {
+                        let receiver = self.lower_unknown_receiver(receiver, modifier, span);
+                        HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                            receiver,
+                            ident: ident.clone(),
+                            args,
+                        }))
+                    }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         ident: ident.clone(),
                         args,
@@ -318,6 +387,34 @@ impl Checker<'_> {
                 };
                 HirExpression::new(kind, TypeElement::infer(), Ownership::UniqueOwned, span)
             }
+        }
+    }
+
+    fn lower_known_receiver(
+        &mut self,
+        receiver: HirExpression,
+        modifier: Option<DeclModifier>,
+        param: Option<&Param>,
+        span: Span,
+    ) -> HirExpression {
+        let Some(param) = param else {
+            return self.lower_unknown_receiver(receiver, modifier, span);
+        };
+
+        self.lower_known_argument(receiver, modifier, param, span)
+    }
+
+    fn lower_unknown_receiver(
+        &mut self,
+        receiver: HirExpression,
+        modifier: Option<DeclModifier>,
+        span: Span,
+    ) -> HirExpression {
+        match modifier {
+            Some(DeclModifier::Mut) => self.adjust_ownership(receiver, Ownership::MutBorrowed),
+            Some(DeclModifier::Ref) => self.lower_ref_value(receiver, span),
+            Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
+            None => receiver,
         }
     }
 
@@ -334,56 +431,136 @@ impl Checker<'_> {
             .skip_while(|param| param.identifier.is_self())
             .zip(arguments)
             .map(|(param, argument)| {
-                match argument.modifier {
-                    // Explicit `mut` at the call site
-                    Some(DeclModifier::Mut) => {
-                        let expected =
-                            Expected::with(param.param_type.clone(), Ownership::MutBorrowed);
-                        self.lower_expression(&argument.expression, &expected)
-                    }
-                    // Explicit `ref` at the call site shares the reference
-                    Some(DeclModifier::Ref) => {
-                        let lowered =
-                            self.lower_expression(&argument.expression, &Expected::free());
-                        self.lower_ref_value(lowered, argument.expression.span)
-                    }
-                    Some(DeclModifier::Let) => {
-                        self.errors.error(TranspilerError::InvalidModifier {
-                            modifier: "let".to_string(),
-                            context: "function arguments".to_string(),
-                        });
-                        HirExpression::error(
-                            "invalid let modifier on argument",
-                            argument.expression.span,
-                        )
-                    }
-                    None => {
-                        let ownership = match param.decl_modifier {
-                            Some(DeclModifier::Let) => {
-                                self.errors
-                                    .warning("Let modifier not yet implemented".to_string(), None);
-                                Ownership::Borrowed
-                            }
-                            Some(DeclModifier::Mut) => Ownership::MutBorrowed,
-                            Some(DeclModifier::Ref) => {
-                                self.errors
-                                    .warning("Ref modifier not yet implemented".to_string(), None);
-                                Ownership::Borrowed
-                            }
-                            None => {
-                                if self.is_copy(&param.param_type) {
-                                    Ownership::UniqueOwned
-                                } else {
-                                    Ownership::Borrowed
-                                }
-                            }
-                        };
-                        let expected = Expected::with(param.param_type.clone(), ownership);
-                        self.lower_expression(&argument.expression, &expected)
-                    }
-                }
+                let (lowered, expression_modifier) = self.lower_call_value(&argument.expression);
+                let modifier = self.merge_argument_modifiers(
+                    argument.modifier,
+                    expression_modifier,
+                    argument.expression.span,
+                );
+                self.lower_known_argument(lowered, modifier, param, argument.expression.span)
             })
             .collect()
+    }
+
+    fn lower_known_argument(
+        &mut self,
+        lowered: HirExpression,
+        modifier: Option<DeclModifier>,
+        param: &Param,
+        span: Span,
+    ) -> HirExpression {
+        let expected_modifier = match param.decl_modifier {
+            Some(DeclModifier::Mut) => Some(DeclModifier::Mut),
+            Some(DeclModifier::Ref) => Some(DeclModifier::Ref),
+            Some(DeclModifier::Let) | None => None,
+        };
+        self.validate_argument_modifier(param, expected_modifier, modifier, span);
+
+        match expected_modifier {
+            Some(DeclModifier::Mut) => {
+                let expected = Expected::with(param.param_type.clone(), Ownership::MutBorrowed);
+                self.coerce(lowered, &expected)
+            }
+            Some(DeclModifier::Ref) if modifier == Some(DeclModifier::Ref) => {
+                self.lower_ref_value(lowered, span)
+            }
+            Some(DeclModifier::Ref) => HirExpression::error("invalid ref passing mode", span),
+            Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
+            None => {
+                let ownership = if self.is_copy(&param.param_type) {
+                    Ownership::UniqueOwned
+                } else {
+                    Ownership::Borrowed
+                };
+                let expected = Expected::with(param.param_type.clone(), ownership);
+                self.coerce(lowered, &expected)
+            }
+        }
+    }
+
+    fn validate_argument_modifier(
+        &mut self,
+        param: &Param,
+        expected: Option<DeclModifier>,
+        found: Option<DeclModifier>,
+        span: Span,
+    ) {
+        if expected == found {
+            return;
+        }
+
+        self.errors.error_with_span(
+            TranspilerError::ArgumentPassingMode {
+                parameter: format!("'{}'", param.identifier),
+                expected: passing_mode_name(expected).to_string(),
+                found: passing_mode_name(found).to_string(),
+            },
+            Some(span.into()),
+        );
+    }
+
+    fn merge_argument_modifiers(
+        &mut self,
+        prefix: Option<DeclModifier>,
+        postfix: Option<DeclModifier>,
+        span: Span,
+    ) -> Option<DeclModifier> {
+        match (prefix, postfix) {
+            (Some(DeclModifier::Let), _) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidModifier {
+                        modifier: "let".to_string(),
+                        context: "function arguments".to_string(),
+                    },
+                    Some(span.into()),
+                );
+                None
+            }
+            (Some(prefix), Some(postfix)) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "argument has both {} and {} passing modifiers",
+                            modifier_name(prefix),
+                            modifier_name(postfix)
+                        ),
+                    },
+                    Some(span.into()),
+                );
+                Some(postfix)
+            }
+            (Some(modifier), None) | (None, Some(modifier)) => Some(modifier),
+            (None, None) => None,
+        }
+    }
+
+    fn lower_call_value(
+        &mut self,
+        expression: &Expression,
+    ) -> (HirExpression, Option<DeclModifier>) {
+        match &expression.kind {
+            ExpressionKind::Modified(modified) => (
+                self.lower_expression(&modified.inner, &Expected::free()),
+                Some(modified.modifier),
+            ),
+            ExpressionKind::Group(group) => {
+                let (inner, inner_modifier) = self.lower_call_value(&group.inner);
+                let modifier =
+                    self.merge_argument_modifiers(group.modifier, inner_modifier, expression.span);
+                let ty = inner.ty.clone();
+                let ownership = inner.adjusted_ownership();
+                (
+                    HirExpression::new(
+                        HirExpressionKind::Group(Box::new(inner)),
+                        ty,
+                        ownership,
+                        expression.span,
+                    ),
+                    modifier,
+                )
+            }
+            _ => (self.lower_expression(expression, &Expected::free()), None),
+        }
     }
 
     fn lower_closure_call_args(
@@ -394,33 +571,33 @@ impl Checker<'_> {
         params
             .iter()
             .zip(arguments)
-            .map(|(param_ty, argument)| match argument.modifier {
-                Some(DeclModifier::Mut) => {
-                    let expected = Expected::with(param_ty.clone(), Ownership::MutBorrowed);
-                    self.lower_expression(&argument.expression, &expected)
-                }
-                Some(DeclModifier::Ref) => {
-                    let lowered = self.lower_expression(&argument.expression, &Expected::free());
-                    self.lower_ref_value(lowered, argument.expression.span)
-                }
-                Some(DeclModifier::Let) => {
-                    self.errors.error(TranspilerError::InvalidModifier {
-                        modifier: "let".to_string(),
-                        context: "closure arguments".to_string(),
-                    });
-                    HirExpression::error(
-                        "invalid let modifier on argument",
-                        argument.expression.span,
-                    )
-                }
-                None => {
-                    let ownership = if self.is_copy(param_ty) {
-                        Ownership::UniqueOwned
-                    } else {
-                        Ownership::Borrowed
-                    };
-                    let expected = Expected::with(param_ty.clone(), ownership);
-                    self.lower_expression(&argument.expression, &expected)
+            .map(|(param_ty, argument)| {
+                let (lowered, expression_modifier) = self.lower_call_value(&argument.expression);
+                let modifier = self.merge_argument_modifiers(
+                    argument.modifier,
+                    expression_modifier,
+                    argument.expression.span,
+                );
+                match modifier {
+                    Some(DeclModifier::Mut) => {
+                        let expected = Expected::with(param_ty.clone(), Ownership::MutBorrowed);
+                        self.coerce(lowered, &expected)
+                    }
+                    Some(DeclModifier::Ref) => {
+                        self.lower_ref_value(lowered, argument.expression.span)
+                    }
+                    Some(DeclModifier::Let) => {
+                        unreachable!("let modifiers are rejected while merging")
+                    }
+                    None => {
+                        let ownership = if self.is_copy(param_ty) {
+                            Ownership::UniqueOwned
+                        } else {
+                            Ownership::Borrowed
+                        };
+                        let expected = Expected::with(param_ty.clone(), ownership);
+                        self.coerce(lowered, &expected)
+                    }
                 }
             })
             .collect()
@@ -429,15 +606,15 @@ impl Checker<'_> {
     /// Lowers an argument for a call whose signature is unknown (e.g. Rust
     /// standard library methods)
     fn lower_unknown_argument(&mut self, argument: &FunctionCallArg) -> HirExpression {
-        match argument.modifier {
-            Some(DeclModifier::Mut) => {
-                let lowered = self.lower_expression(&argument.expression, &Expected::free());
-                self.adjust_ownership(lowered, Ownership::MutBorrowed)
-            }
-            Some(DeclModifier::Ref) => {
-                let lowered = self.lower_expression(&argument.expression, &Expected::free());
-                self.lower_ref_value(lowered, argument.expression.span)
-            }
+        let (lowered, expression_modifier) = self.lower_call_value(&argument.expression);
+        let modifier = self.merge_argument_modifiers(
+            argument.modifier,
+            expression_modifier,
+            argument.expression.span,
+        );
+        match modifier {
+            Some(DeclModifier::Mut) => self.adjust_ownership(lowered, Ownership::MutBorrowed),
+            Some(DeclModifier::Ref) => self.lower_ref_value(lowered, argument.expression.span),
             Some(DeclModifier::Let) => {
                 self.errors.error(TranspilerError::InvalidModifier {
                     modifier: "let".to_string(),
@@ -445,10 +622,7 @@ impl Checker<'_> {
                 });
                 HirExpression::error("invalid let modifier on argument", argument.expression.span)
             }
-            None => {
-                let lowered = self.lower_expression(&argument.expression, &Expected::free());
-                self.coerce_unknown_argument(lowered)
-            }
+            None => self.coerce_unknown_argument(lowered),
         }
     }
 
@@ -1289,8 +1463,13 @@ impl Checker<'_> {
         match operation.operator {
             MemberOperator::Dot => match &operation.rhs.kind {
                 ExpressionKind::FunctionCall(call) => {
-                    let receiver = self.lower_expression(&operation.lhs, &Expected::free());
-                    self.lower_call(Some(receiver), &call.identifier, &call.arguments, span)
+                    let (receiver, modifier) = self.lower_call_value(&operation.lhs);
+                    self.lower_call(
+                        Some((receiver, modifier)),
+                        &call.identifier,
+                        &call.arguments,
+                        span,
+                    )
                 }
                 ExpressionKind::Ident(field) => {
                     let receiver = self.lower_expression(&operation.lhs, &Expected::free());
@@ -2025,5 +2204,23 @@ fn modifier_name(modifier: DeclModifier) -> &'static str {
         DeclModifier::Let => "let",
         DeclModifier::Mut => "mut",
         DeclModifier::Ref => "ref",
+    }
+}
+
+fn passing_mode_name(modifier: Option<DeclModifier>) -> &'static str {
+    match modifier {
+        Some(DeclModifier::Mut) => "`mut`",
+        Some(DeclModifier::Ref) => "`ref`",
+        Some(DeclModifier::Let) => "`let`",
+        None => "unmodified",
+    }
+}
+
+fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {
+    match ty {
+        TypeElement::Plain(basic) => Some(basic.ident.clone()),
+        TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
+        TypeElement::Generic(generic) => Some(TypeIdent::new(generic.ident.as_str())),
+        _ => None,
     }
 }

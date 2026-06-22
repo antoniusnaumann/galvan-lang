@@ -1,9 +1,10 @@
+use itertools::Itertools;
+
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, ComparisonOperator, LogicalOperator, RangeOperator,
     TypeElement,
 };
 use galvan_hir::hir::*;
-use itertools::Itertools;
 
 use crate::context::Context;
 use crate::macros::transpile;
@@ -237,6 +238,11 @@ impl Transpile for HirFunctionCall {
 impl Transpile for HirMethodCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let receiver = self.receiver.transpile(ctx, errors);
+        let receiver = if self.receiver.adjustments.is_empty() {
+            receiver
+        } else {
+            format!("({receiver})")
+        };
         let args = self
             .args
             .iter()

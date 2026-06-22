@@ -216,6 +216,112 @@ fn mut_parameters_are_mutably_borrowed() {
 }
 
 #[test]
+fn postfix_argument_modifiers_match_prefix_modifiers() {
+    let module = lower(
+        "type Dog { age: Int }
+         fn birthday(mut dog: Dog) { dog.age = dog.age + 1 }
+         fn celebrate() {
+             mut prefix = Dog(age: 3)
+             mut postfix = Dog(age: 4)
+             birthday(mut prefix)
+             birthday(postfix.mut)
+         }",
+    );
+    let celebrate = function(&module, "celebrate");
+
+    for statement in &celebrate.body.statements[2..] {
+        let HirStatement::Expression(call) = statement else {
+            panic!("expected call statement");
+        };
+        let HirExpressionKind::FunctionCall(call) = &call.kind else {
+            panic!("expected function call");
+        };
+        assert_eq!(call.args[0].adjustments, vec![Adjustment::MutBorrow]);
+    }
+}
+
+#[test]
+fn ref_argument_modifier_supports_postfix_syntax() {
+    let module = lower(
+        "type Dog
+         fn share(ref dog: Dog) {}
+         fn check() {
+             ref dog = Dog()
+             share(dog.ref)
+         }",
+    );
+    let check = function(&module, "check");
+    let HirStatement::Expression(call) = &check.body.statements[1] else {
+        panic!("expected call statement");
+    };
+    let HirExpressionKind::FunctionCall(call) = &call.kind else {
+        panic!("expected function call");
+    };
+    assert_eq!(call.args[0].adjustments, vec![Adjustment::ArcClone]);
+}
+
+#[test]
+fn mutable_method_receivers_accept_all_explicit_call_forms() {
+    let module = lower(
+        "type Dog { age: Int }
+         fn birthday(mut self: Dog) { self.age = self.age + 1 }
+         fn celebrate() {
+             mut postfix = Dog(age: 3)
+             mut grouped = Dog(age: 4)
+             mut function_style = Dog(age: 5)
+             postfix.mut.birthday()
+             (mut grouped).birthday()
+             birthday(mut function_style)
+         }",
+    );
+    let celebrate = function(&module, "celebrate");
+
+    for statement in &celebrate.body.statements[3..] {
+        let HirStatement::Expression(call) = statement else {
+            panic!("expected call statement");
+        };
+        let HirExpressionKind::MethodCall(call) = &call.kind else {
+            panic!("expected method call");
+        };
+        assert_eq!(call.receiver.adjusted_ownership(), Ownership::MutBorrowed);
+    }
+}
+
+#[test]
+fn mutable_method_receivers_require_explicit_passing_mode() {
+    let (_module, errors) = lower_with_diagnostics(
+        "type Dog
+         fn bark(mut self: Dog) {}
+         fn check() {
+             mut dog = Dog()
+             dog.bark()
+         }",
+    );
+
+    assert!(errors.errors().any(|diagnostic| {
+        diagnostic.message
+            == "Argument 'self' requires `mut` passing mode, found unmodified passing mode"
+    }));
+}
+
+#[test]
+fn passing_modifiers_are_rejected_for_unmodified_parameters() {
+    let (_module, errors) = lower_with_diagnostics(
+        "type Dog
+         fn pet(dog: Dog) {}
+         fn check() {
+             mut dog = Dog()
+             pet(dog.mut)
+         }",
+    );
+
+    assert!(errors.errors().any(|diagnostic| {
+        diagnostic.message
+            == "Argument 'dog' requires unmodified passing mode, found `mut` passing mode"
+    }));
+}
+
+#[test]
 fn else_unwrap_clones_borrowed_values() {
     let module = lower(
         "type Dog { name: String }
