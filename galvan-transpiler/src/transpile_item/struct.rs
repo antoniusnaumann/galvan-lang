@@ -1,9 +1,7 @@
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::{ErrorCollector, Transpile};
-use galvan_ast::{
-    DeclModifier, EnumTypeMember, StructTypeMember, TupleTypeMember, TypeDecl,
-};
+use galvan_ast::{DeclModifier, EnumTypeMember, StructTypeMember, TupleTypeMember, TypeDecl};
 use std::collections::HashSet;
 
 static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
@@ -102,13 +100,7 @@ impl Transpile for StructTypeMember {
                     modifier: "let/mut".to_string(),
                     context: "struct fields".to_string(),
                 });
-                transpile!(
-                    ctx,
-                    errors,
-                    "pub(crate) {}: {}",
-                    self.ident,
-                    self.r#type
-                )
+                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
             }
             Some(DeclModifier::Ref) => {
                 transpile!(
@@ -120,13 +112,7 @@ impl Transpile for StructTypeMember {
                 )
             }
             None => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "pub(crate) {}: {}",
-                    self.ident,
-                    self.r#type
-                )
+                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
             }
         }
     }

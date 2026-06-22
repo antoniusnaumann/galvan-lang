@@ -393,6 +393,7 @@ pub struct HirFunctionCall {
 #[derive(Clone, Debug)]
 pub struct HirMethodCall {
     pub receiver: HirExpression,
+    pub receiver_modifier: Option<DeclModifier>,
     pub ident: Ident,
     pub args: Vec<HirExpression>,
 }

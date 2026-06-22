@@ -1,7 +1,7 @@
 use galvan_ast::{
-    AliasTypeDecl, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember,
-    EnumVariantField, Expression, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
-    TupleTypeMember, TypeElement, TypeIdent, Visibility,
+    AliasTypeDecl, DeclModifier, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember, EnumVariantField,
+    Expression, Ident, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember,
+    TypeElement, TypeIdent, Visibility,
 };
 use galvan_parse::TreeCursor;
 

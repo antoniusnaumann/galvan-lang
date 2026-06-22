@@ -1,6 +1,6 @@
+use core::panic;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
-use core::panic;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
@@ -106,7 +106,10 @@ fn generate_test(path: PathBuf, macro_input: &MacroInput) -> TokenStream {
 
     let Ok(expected_struct) = expected_result(&test_file, tag).map_err(|e| match e {
         TestError::TagNotClosed => panic!("Tag not closed in test file!"),
-        TestError::InvalidRustCode => panic!("Invalid Rust code in test file '{}'!", path.to_string_lossy()),
+        TestError::InvalidRustCode => panic!(
+            "Invalid Rust code in test file '{}'!",
+            path.to_string_lossy()
+        ),
         TestError::TagNotFound => e,
     }) else {
         return quote! {};
@@ -166,7 +169,10 @@ fn expected_result(test_file: &str, tag: &str) -> std::result::Result<TokenStrea
     loop {
         match iter.next() {
             Some(line) if line.starts_with("//@end") => break,
-            Some(line) => lines.push(line.strip_prefix("//").expect(&format!("line to start with '//': {line} in \n{test_file}"))),
+            Some(line) => lines.push(
+                line.strip_prefix("//")
+                    .expect(&format!("line to start with '//': {line} in \n{test_file}")),
+            ),
             None => return Err(TestError::TagNotClosed),
         }
     }

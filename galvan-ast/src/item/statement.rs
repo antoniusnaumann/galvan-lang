@@ -56,10 +56,12 @@ pub struct Continue {
 
 type Infix = Box<InfixExpression>;
 type Postfix = Box<PostfixExpression>;
+type Modified = Box<ModifiedExpression>;
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct Group {
     pub inner: Box<Expression>,
+    pub modifier: Option<DeclModifier>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
@@ -74,6 +76,7 @@ pub type ExpressionKind = ElseExpression
     + FunctionCall
     + Infix
     + Postfix
+    + Modified
     + CollectionLiteral
     + ConstructorCall
     + EnumConstructor

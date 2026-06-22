@@ -25,7 +25,12 @@ impl AstNode for StringLiteral {
         if self.interpolations.is_empty() {
             format!("{}\"{}\"", " ".repeat(indent), self.value)
         } else {
-            format!("{}\"{}\" (with {} interpolations)", " ".repeat(indent), self.value, self.interpolations.len())
+            format!(
+                "{}\"{}\" (with {} interpolations)",
+                " ".repeat(indent),
+                self.value,
+                self.interpolations.len()
+            )
         }
     }
 }

@@ -216,6 +216,138 @@ fn mut_parameters_are_mutably_borrowed() {
 }
 
 #[test]
+fn postfix_argument_modifiers_match_prefix_modifiers() {
+    let module = lower(
+        "type Dog { age: Int }
+         fn birthday(mut dog: Dog) { dog.age = dog.age + 1 }
+         fn celebrate() {
+             mut prefix = Dog(age: 3)
+             mut postfix = Dog(age: 4)
+             birthday(mut prefix)
+             birthday(postfix.mut)
+         }",
+    );
+    let celebrate = function(&module, "celebrate");
+
+    for statement in &celebrate.body.statements[2..] {
+        let HirStatement::Expression(call) = statement else {
+            panic!("expected call statement");
+        };
+        let HirExpressionKind::FunctionCall(call) = &call.kind else {
+            panic!("expected function call");
+        };
+        assert_eq!(call.args[0].adjustments, vec![Adjustment::MutBorrow]);
+    }
+}
+
+#[test]
+fn ref_argument_modifier_supports_postfix_syntax() {
+    let module = lower(
+        "type Dog
+         fn share(ref dog: Dog) {}
+         fn check() {
+             ref dog = Dog()
+             share(dog.ref)
+         }",
+    );
+    let check = function(&module, "check");
+    let HirStatement::Expression(call) = &check.body.statements[1] else {
+        panic!("expected call statement");
+    };
+    let HirExpressionKind::FunctionCall(call) = &call.kind else {
+        panic!("expected function call");
+    };
+    assert_eq!(call.args[0].adjustments, vec![Adjustment::ArcClone]);
+}
+
+#[test]
+fn ref_variables_can_be_passed_as_mutable_arguments() {
+    let module = lower(
+        "fn bump(mut value: Int) { value += 1 }
+         fn check() {
+             ref counter = 0
+             bump(counter.mut)
+         }",
+    );
+    let check = function(&module, "check");
+    let HirStatement::Expression(call) = &check.body.statements[1] else {
+        panic!("expected call statement");
+    };
+    let HirExpressionKind::FunctionCall(call) = &call.kind else {
+        panic!("expected function call");
+    };
+    assert_eq!(
+        call.args[0].adjustments,
+        vec![
+            Adjustment::LockRef,
+            Adjustment::Deref,
+            Adjustment::MutBorrow
+        ]
+    );
+}
+
+#[test]
+fn mutable_method_receivers_accept_all_explicit_call_forms() {
+    let module = lower(
+        "type Dog { age: Int }
+         fn birthday(mut self: Dog) { self.age = self.age + 1 }
+         fn celebrate() {
+             mut postfix = Dog(age: 3)
+             mut grouped = Dog(age: 4)
+             mut function_style = Dog(age: 5)
+             postfix.mut.birthday()
+             (mut grouped).birthday()
+             birthday(mut function_style)
+         }",
+    );
+    let celebrate = function(&module, "celebrate");
+
+    for statement in &celebrate.body.statements[3..] {
+        let HirStatement::Expression(call) = statement else {
+            panic!("expected call statement");
+        };
+        let HirExpressionKind::MethodCall(call) = &call.kind else {
+            panic!("expected method call");
+        };
+        assert_eq!(call.receiver.adjusted_ownership(), Ownership::MutBorrowed);
+    }
+}
+
+#[test]
+fn mutable_method_receivers_require_explicit_passing_mode() {
+    let (_module, errors) = lower_with_diagnostics(
+        "type Dog
+         fn bark(mut self: Dog) {}
+         fn check() {
+             mut dog = Dog()
+             dog.bark()
+         }",
+    );
+
+    assert!(errors.errors().any(|diagnostic| {
+        diagnostic.message
+            == "Argument 'self' requires `mut` passing mode, found unmodified passing mode"
+    }));
+}
+
+#[test]
+fn passing_modifiers_are_rejected_for_unmodified_parameters() {
+    let (_module, errors) = lower_with_diagnostics(
+        "type Dog
+         fn pet(dog: Dog) {}
+         fn check() {
+             mut dog = Dog()
+             pet(dog.mut)
+         }",
+    );
+
+    assert!(errors.errors().any(|diagnostic| {
+        diagnostic.message
+            == "Argument 'dog' requires unmodified passing mode, found `mut` passing mode"
+    }));
+}
+
+#[test]
 fn else_unwrap_clones_borrowed_values() {
     let module = lower(
         "type Dog { name: String }
@@ -315,6 +447,89 @@ fn constructor_defaults_are_materialized() {
     };
     assert_eq!(constructor.args.len(), 1);
     assert_eq!(constructor.args[0].field.as_str(), "title");
+}
+
+#[test]
+fn field_access_locks_ref_receiver() {
+    let module = lower(
+        "type Dog { name: String }
+         fn name() -> String {
+             ref dog = Dog(name: \"Rex\")
+             dog.name
+         }",
+    );
+    let tail = trailing(function(&module, "name"));
+    let HirExpressionKind::FieldAccess(access) = &tail.kind else {
+        panic!("expected field access");
+    };
+    assert_eq!(access.receiver.adjustments, vec![Adjustment::LockRef]);
+    assert_eq!(tail.ownership, Ownership::SharedOwned);
+    assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn index_access_locks_ref_base() {
+    let module = lower(
+        "fn first() -> String {
+             ref names = [\"Rex\"]
+             names[0]
+         }",
+    );
+    let tail = trailing(function(&module, "first"));
+    let HirExpressionKind::Index(access) = &tail.kind else {
+        panic!("expected index access");
+    };
+    assert_eq!(access.base.adjustments, vec![Adjustment::LockRef]);
+    assert_eq!(tail.ownership, Ownership::SharedOwned);
+    assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn field_and_index_assignments_preserve_mutable_places() {
+    let module = lower(
+        "type Dog { age: Int }
+         fn check() {
+             mut mut_dog = Dog(age: 1)
+             ref ref_dog = Dog(age: 2)
+             mut mut_values = [3]
+             ref ref_values = [4]
+             mut_dog.age = 5
+             ref_dog.age = 6
+             mut_values[0] = 7
+             ref_values[0] = 8
+         }",
+    );
+    let check = function(&module, "check");
+    let assignments = check.body.statements[4..]
+        .iter()
+        .map(|statement| match statement {
+            HirStatement::Assignment(assignment) => assignment,
+            _ => panic!("expected assignment"),
+        })
+        .collect::<Vec<_>>();
+
+    let HirExpressionKind::FieldAccess(mut_field) = &assignments[0].target.kind else {
+        panic!("expected field assignment");
+    };
+    assert!(mut_field.receiver.adjustments.is_empty());
+
+    let HirExpressionKind::FieldAccess(ref_field) = &assignments[1].target.kind else {
+        panic!("expected field assignment");
+    };
+    assert_eq!(ref_field.receiver.adjustments, vec![Adjustment::LockRef]);
+
+    let HirExpressionKind::Index(mut_index) = &assignments[2].target.kind else {
+        panic!("expected index assignment");
+    };
+    assert!(mut_index.base.adjustments.is_empty());
+
+    let HirExpressionKind::Index(ref_index) = &assignments[3].target.kind else {
+        panic!("expected index assignment");
+    };
+    assert_eq!(ref_index.base.adjustments, vec![Adjustment::LockRef]);
+    assert!(assignments
+        .iter()
+        .all(|assignment| !assignment.deref_target));
 }
 
 #[test]

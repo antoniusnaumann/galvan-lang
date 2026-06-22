@@ -1,7 +1,7 @@
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, CollectionOperator, ComparisonOperator, CustomInfix,
-    EnumAccess, Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
-    MemberOperator, RangeOperator, Span, TypeIdent,
+    DeclModifier, EnumAccess, Expression, Group, InfixExpression, InfixOperation, InfixOperator,
+    LogicalOperator, MemberOperator, ModifiedExpression, RangeOperator, Span, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -15,13 +15,25 @@ impl ReadCursor for Group {
         cursor_expect!(cursor, "paren_open");
         cursor.next();
 
+        let modifier = match cursor.kind()? {
+            "mut_keyword" => {
+                cursor.next();
+                Some(DeclModifier::Mut)
+            }
+            "ref_keyword" => {
+                cursor.next();
+                Some(DeclModifier::Ref)
+            }
+            _ => None,
+        };
+
         let inner = Box::new(Expression::read_cursor(cursor, source)?);
 
         cursor.next();
         cursor_expect!(cursor, "paren_close");
         cursor.goto_parent();
 
-        Ok(Group { inner })
+        Ok(Group { inner, modifier })
     }
 }
 
@@ -81,6 +93,31 @@ impl ReadCursor for InfixExpression {
         };
 
         Ok(infix)
+    }
+}
+
+impl ReadCursor for ModifiedExpression {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "argument_modifier_expression");
+        let span = Span::from_node(node);
+
+        cursor.child();
+        let inner = Expression::read_cursor(cursor, source)?;
+        cursor.next();
+        cursor_expect!(cursor, "member_call_operator");
+        cursor.next();
+        let modifier = match cursor.kind()? {
+            "mut_keyword" => DeclModifier::Mut,
+            "ref_keyword" => DeclModifier::Ref,
+            unknown => unreachable!("Unknown argument modifier: {unknown}"),
+        };
+        cursor.goto_parent();
+
+        Ok(Self {
+            inner,
+            modifier,
+            span,
+        })
     }
 }
 

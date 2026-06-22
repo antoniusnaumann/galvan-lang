@@ -1,13 +1,14 @@
-use crate::items::{read_free_function_call, read_trailing_closure_call};
-use crate::result::CursorUtil;
-use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
     Declaration, ElseExpression, EnumAccess, EnumConstructor, Expression, ExpressionKind,
-    FunctionCall, Group, Ident, InfixExpression, Literal, PostfixExpression, Span, Statement,
-    TypeElement,
+    FunctionCall, Group, Ident, InfixExpression, Literal, ModifiedExpression, PostfixExpression,
+    Span, Statement, TypeElement,
 };
 use galvan_parse::TreeCursor;
+
+use crate::items::{read_free_function_call, read_trailing_closure_call};
+use crate::result::CursorUtil;
+use crate::{cursor_expect, AstError, ReadCursor, SpanExt};
 
 impl ReadCursor for Statement {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
@@ -144,6 +145,9 @@ impl ReadCursor for Expression {
             "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),
             "postfix_expression" => {
                 ExpressionKind::Postfix(PostfixExpression::read_cursor(cursor, source)?.into())
+            }
+            "argument_modifier_expression" => {
+                ExpressionKind::Modified(ModifiedExpression::read_cursor(cursor, source)?.into())
             }
             "constructor_call" => ConstructorCall::read_cursor(cursor, source)?.into(),
             "enum_constructor" => EnumConstructor::read_cursor(cursor, source)?.into(),

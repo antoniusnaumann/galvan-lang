@@ -28,8 +28,6 @@ stored in them.
 
 - **Parameter modifiers in calls** (galvan-hir/src/typecheck/expr.rs `lower_call_args`)
   - Arguments for `let`-modified parameters are not implemented
-  - Arguments for `ref`-modified parameters without a call-site modifier are
-    not implemented
 
 ## High Priority - Language Completeness
 
@@ -40,7 +38,6 @@ stored in them.
 
 - **`ref` variables**
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
-  - Index and field access through ref variables
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
 
@@ -89,5 +86,5 @@ stored in them.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-19*
+*Last updated: 2026-06-22*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

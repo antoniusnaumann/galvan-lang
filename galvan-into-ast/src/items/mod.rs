@@ -4,7 +4,6 @@ mod type_element;
 
 mod struct_declaration;
 
-
 mod statement;
 
 mod literal;

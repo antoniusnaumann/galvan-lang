@@ -1,7 +1,8 @@
 use galvan_ast::{
-    AliasTypeDecl, Body, CmdDecl, CmdSignature, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl, FnSignature, Ident,
-    MainDecl, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl, TestDecl,
-    TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility, WhereBound, WhereClause,
+    AliasTypeDecl, Body, CmdDecl, CmdSignature, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl,
+    FnSignature, Ident, MainDecl, Param, ParamList, RootItem, Span, Statement, StringLiteral,
+    StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility,
+    WhereBound, WhereClause,
 };
 use galvan_parse::TreeCursor;
 

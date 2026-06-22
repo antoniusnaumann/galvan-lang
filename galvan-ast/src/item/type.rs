@@ -32,25 +32,25 @@ impl TypeDecl {
                 for member in &t.members {
                     member.r#type.collect_generics_recursive(&mut generics);
                 }
-            },
+            }
             TypeDecl::Struct(s) => {
                 for member in &s.members {
                     member.r#type.collect_generics_recursive(&mut generics);
                 }
-            },
+            }
             TypeDecl::Alias(a) => {
                 a.r#type.collect_generics_recursive(&mut generics);
-            },
+            }
             TypeDecl::Enum(e) => {
                 for member in &e.members {
                     for field in &member.fields {
                         field.r#type.collect_generics_recursive(&mut generics);
                     }
                 }
-            },
+            }
             TypeDecl::Empty(_) => {
                 // Empty types have no generics
-            },
+            }
         }
         generics
     }
@@ -114,7 +114,7 @@ pub struct EnumTypeMember {
 
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct EnumVariantField {
-    pub name: Option<Ident>,  // None for anonymous fields
+    pub name: Option<Ident>, // None for anonymous fields
     pub r#type: TypeElement,
     pub span: Span,
 }

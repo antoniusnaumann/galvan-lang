@@ -34,7 +34,7 @@ macro_rules! setup {
 macro_rules! main {
     () => {
         ::galvan::include!();
-        
+
         fn main() {
             if galvan_module::__HAS_CLI_COMMANDS {
                 galvan_module::__cli_main();

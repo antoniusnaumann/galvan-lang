@@ -65,7 +65,9 @@ pub fn types_compatible(expected: &TypeElement, actual: &TypeElement) -> bool {
             // (rustc decides whether the literal actually fits)
             matches!(expected, TypeElement::Plain(_)) && matches!(actual, TypeElement::Plain(_))
         }
-        (TypeElement::Array(a), TypeElement::Array(b)) => types_compatible(&a.elements, &b.elements),
+        (TypeElement::Array(a), TypeElement::Array(b)) => {
+            types_compatible(&a.elements, &b.elements)
+        }
         (TypeElement::Set(a), TypeElement::Set(b)) => types_compatible(&a.elements, &b.elements),
         (TypeElement::Dictionary(a), TypeElement::Dictionary(b)) => {
             types_compatible(&a.key, &b.key) && types_compatible(&a.value, &b.value)
@@ -138,10 +140,8 @@ pub(crate) fn concat_kind(lhs: &TypeElement, rhs: &TypeElement) -> ConcatKind {
 /// meaning a collection-typed right-hand side is appended as a single element
 /// (e.g. pushing a `[Int]` row into a `[[Int]]` matrix)
 fn value_matches_concrete_element(element_ty: &TypeElement, value_ty: &TypeElement) -> bool {
-    !matches!(
-        element_ty,
-        TypeElement::Infer(_) | TypeElement::Generic(_)
-    ) && types_compatible(element_ty, value_ty)
+    !matches!(element_ty, TypeElement::Infer(_) | TypeElement::Generic(_))
+        && types_compatible(element_ty, value_ty)
 }
 
 /// The element type a `++` element append consumes for the given collection
@@ -267,7 +267,10 @@ impl Checker<'_> {
                 );
                 expr
             }
-            (MutBorrowed, Ref) => expr.adjusted(Adjustment::LockRef),
+            (MutBorrowed, Ref) => expr
+                .adjusted(Adjustment::LockRef)
+                .adjusted(Adjustment::Deref)
+                .adjusted(Adjustment::MutBorrow),
 
             // `ref` declarations wrap the initializer at the declaration site,
             // `ref` arguments are wrapped with Arc::clone at the call site
