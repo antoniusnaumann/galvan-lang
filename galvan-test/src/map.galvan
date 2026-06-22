@@ -39,6 +39,19 @@ test "Modify map element" {
     assert map["brussel sprouts"] == 14
 }
 
+test "Access and modify map through ref variable" {
+    ref map = {
+        "oranges": 4,
+        "apples": 5,
+    }
+
+    assert map["oranges"] == 4
+    map["oranges"] = 16
+    map["kiwis"] = 21
+    assert map["oranges"] == 16
+    assert map["kiwis"] == 21
+}
+
 test "Map with type annotation" {
     let map: {String: Int} = {
         "oranges": 4,

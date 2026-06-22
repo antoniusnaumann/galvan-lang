@@ -54,6 +54,16 @@ test "Pass ref variable as mut argument" {
     assert counter == 1
 }
 
+test "Mutate array elements through mut and ref variables" {
+    mut mut_values = ["one", "two"]
+    mut_values[0] = "changed"
+    assert mut_values[0] == "changed"
+
+    ref ref_values = ["three", "four"]
+    ref_values[1] = "changed"
+    assert ref_values[1] == "changed"
+}
+
 test "Assign to ref variable" {
     ref counter = 0
     counter = 42

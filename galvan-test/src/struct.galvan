@@ -49,10 +49,18 @@ test "Call ref self method" {
     assert dog.age == 6
 }
 
-test "Mutate struct" {
-    mut dog = Dog(name: "Rex", age: 3)
-    dog.name = "Bello"
-    assert dog.name == "Bello"
+test "Mutate struct fields through mut and ref variables" {
+    mut mut_dog = Dog(name: "Rex", age: 3)
+    mut_dog.name = "Bello"
+    mut_dog.age = 4
+    assert mut_dog.name == "Bello"
+    assert mut_dog.age == 4
+
+    ref ref_dog = Dog(name: "Hasso", age: 5)
+    ref_dog.name = "Lassie"
+    ref_dog.age = 6
+    assert ref_dog.name == "Lassie"
+    assert ref_dog.age == 6
 }
 
 fn new_dog(name: String) -> Dog {

@@ -468,6 +468,69 @@ fn field_access_locks_ref_receiver() {
 }
 
 #[test]
+fn index_access_locks_ref_base() {
+    let module = lower(
+        "fn first() -> String {
+             ref names = [\"Rex\"]
+             names[0]
+         }",
+    );
+    let tail = trailing(function(&module, "first"));
+    let HirExpressionKind::Index(access) = &tail.kind else {
+        panic!("expected index access");
+    };
+    assert_eq!(access.base.adjustments, vec![Adjustment::LockRef]);
+    assert_eq!(tail.ownership, Ownership::SharedOwned);
+    assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn field_and_index_assignments_preserve_mutable_places() {
+    let module = lower(
+        "type Dog { age: Int }
+         fn check() {
+             mut mut_dog = Dog(age: 1)
+             ref ref_dog = Dog(age: 2)
+             mut mut_values = [3]
+             ref ref_values = [4]
+             mut_dog.age = 5
+             ref_dog.age = 6
+             mut_values[0] = 7
+             ref_values[0] = 8
+         }",
+    );
+    let check = function(&module, "check");
+    let assignments = check.body.statements[4..]
+        .iter()
+        .map(|statement| match statement {
+            HirStatement::Assignment(assignment) => assignment,
+            _ => panic!("expected assignment"),
+        })
+        .collect::<Vec<_>>();
+
+    let HirExpressionKind::FieldAccess(mut_field) = &assignments[0].target.kind else {
+        panic!("expected field assignment");
+    };
+    assert!(mut_field.receiver.adjustments.is_empty());
+
+    let HirExpressionKind::FieldAccess(ref_field) = &assignments[1].target.kind else {
+        panic!("expected field assignment");
+    };
+    assert_eq!(ref_field.receiver.adjustments, vec![Adjustment::LockRef]);
+
+    let HirExpressionKind::Index(mut_index) = &assignments[2].target.kind else {
+        panic!("expected index assignment");
+    };
+    assert!(mut_index.base.adjustments.is_empty());
+
+    let HirExpressionKind::Index(ref_index) = &assignments[3].target.kind else {
+        panic!("expected index assignment");
+    };
+    assert_eq!(ref_index.base.adjustments, vec![Adjustment::LockRef]);
+    assert!(assignments.iter().all(|assignment| !assignment.deref_target));
+}
+
+#[test]
 fn constructor_ref_field_modifier_shares_existing_ref() {
     let module = lower(
         "type Dog { name: String }

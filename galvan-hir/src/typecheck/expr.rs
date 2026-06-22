@@ -1486,11 +1486,7 @@ impl Checker<'_> {
                     )
                 }
                 ExpressionKind::Ident(field) => {
-                    let mut receiver = self.lower_expression(&operation.lhs, &Expected::free());
-                    let locks_ref = receiver.adjusted_ownership() == Ownership::Ref;
-                    if locks_ref {
-                        receiver = receiver.adjusted(Adjustment::LockRef);
-                    }
+                    let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
                     let ownership = if self.is_copy(&field_ty) {
                         Ownership::UniqueOwned
@@ -1519,6 +1515,15 @@ impl Checker<'_> {
             },
             MemberOperator::SafeCall => self.lower_safe_access(operation, span),
         }
+    }
+
+    fn lower_access_base(&mut self, expression: &Expression) -> (HirExpression, bool) {
+        let mut base = self.lower_expression(expression, &Expected::free());
+        let locks_ref = base.adjusted_ownership() == Ownership::Ref;
+        if locks_ref {
+            base = base.adjusted(Adjustment::LockRef);
+        }
+        (base, locks_ref)
     }
 
     /// Resolves the type of a field on a receiver type
@@ -1710,7 +1715,7 @@ impl Checker<'_> {
                 )
             }
             PostfixExpression::AccessExpression(access) => {
-                let base = self.lower_expression(&access.base, &Expected::free());
+                let (base, locks_ref) = self.lower_access_base(&access.base);
                 let index = self.lower_expression(&access.index, &Expected::free());
                 let ty = match &base.ty {
                     TypeElement::Array(array) => array.elements.clone(),
@@ -1728,6 +1733,8 @@ impl Checker<'_> {
                 };
                 let ownership = if self.is_copy(&ty) {
                     Ownership::UniqueOwned
+                } else if locks_ref {
+                    Ownership::SharedOwned
                 } else {
                     base.adjusted_ownership()
                 };
