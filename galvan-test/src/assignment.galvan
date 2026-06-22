@@ -18,7 +18,7 @@ fn rename(mut dog: Dog, name: String) {
 test "Assign borrowed value to field of mut parameter" {
     mut dog = Dog(name: "Rex", age: 3)
     let new_name = "Bello"
-    rename(dog.mut, new_name)
+    rename(mut dog, new_name)
     assert dog.name == "Bello"
 }
 
@@ -29,7 +29,7 @@ fn push_name(mut names: [String], name: String) {
 test "Concat-assign borrowed element to list" {
     mut names = ["Rex"]
     let name = "Bello"
-    push_name(names.mut, name)
+    push_name(mut names, name)
     assert names == ["Rex", "Bello"]
 }
 
