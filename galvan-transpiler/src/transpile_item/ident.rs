@@ -1,6 +1,6 @@
 use crate::context::Context;
-use crate::ErrorCollector;
 use crate::sanitize::sanitize_name;
+use crate::ErrorCollector;
 use crate::Transpile;
 use galvan_ast::{Ident, TypeIdent};
 

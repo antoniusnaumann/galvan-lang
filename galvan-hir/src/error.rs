@@ -53,10 +53,18 @@ pub enum TranspilerError {
     ImmutableAssignment { name: String },
 
     #[error("Invalid operation: {operation} on types {left} and {right}")]
-    InvalidOperation { operation: String, left: String, right: String },
+    InvalidOperation {
+        operation: String,
+        left: String,
+        right: String,
+    },
 
     #[error("Function {name} expects {expected} arguments, found {found}")]
-    ArgumentCountMismatch { name: String, expected: usize, found: usize },
+    ArgumentCountMismatch {
+        name: String,
+        expected: usize,
+        found: usize,
+    },
 
     #[error("Argument {parameter} requires {expected} passing mode, found {found} passing mode")]
     ArgumentPassingMode {
@@ -81,10 +89,16 @@ pub enum TranspilerError {
     InvalidModifier { modifier: String, context: String },
 
     #[error("Missing argument: {operation} requires a {argument_type}")]
-    MissingArgument { operation: String, argument_type: String },
+    MissingArgument {
+        operation: String,
+        argument_type: String,
+    },
 
     #[error("Invalid operation: {operation} can only be used on {allowed_types}")]
-    InvalidOperationOnType { operation: String, allowed_types: String },
+    InvalidOperationOnType {
+        operation: String,
+        allowed_types: String,
+    },
 
     #[error("Enum access error: {message}")]
     EnumAccessError { message: String },
@@ -96,7 +110,10 @@ pub enum TranspilerError {
     IncompatibleOwnership { message: String },
 
     #[error("Unsupported assignment operation: {operation} is not supported on {type_name} types. Only plain assignment (=) is supported for indexed dictionary and set access.")]
-    UnsupportedDictSetAssignment { operation: String, type_name: String },
+    UnsupportedDictSetAssignment {
+        operation: String,
+        type_name: String,
+    },
 }
 
 /// Collects errors and warnings during compilation
@@ -129,7 +146,12 @@ impl ErrorCollector {
     }
 
     /// Add an error with a suggestion
-    pub fn error_with_suggestion(&mut self, error: TranspilerError, span: Option<Span>, suggestion: String) {
+    pub fn error_with_suggestion(
+        &mut self,
+        error: TranspilerError,
+        span: Option<Span>,
+        suggestion: String,
+    ) {
         self.diagnostics.push(Diagnostic {
             severity: DiagnosticSeverity::Error,
             message: error.to_string(),
@@ -182,12 +204,16 @@ impl ErrorCollector {
 
     /// Get only errors
     pub fn errors(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == DiagnosticSeverity::Error)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
     }
 
     /// Get only warnings
     pub fn warnings(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == DiagnosticSeverity::Warning)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Warning)
     }
 
     /// Merge another ErrorCollector into this one
@@ -207,32 +233,50 @@ impl ErrorCollector {
     }
 
     /// Suggest similar identifiers using Levenshtein distance
-    pub fn suggest_similar_identifier(&mut self, unknown: &str, available: &[String], span: Option<Span>) {
+    pub fn suggest_similar_identifier(
+        &mut self,
+        unknown: &str,
+        available: &[String],
+        span: Option<Span>,
+    ) {
         if let Some(suggestion) = find_closest_match(unknown, available) {
             self.error_with_suggestion(
-                TranspilerError::UnknownIdentifier { name: unknown.to_string() },
+                TranspilerError::UnknownIdentifier {
+                    name: unknown.to_string(),
+                },
                 span,
                 format!("Did you mean '{}'?", suggestion),
             );
         } else {
             self.error_with_span(
-                TranspilerError::UnknownIdentifier { name: unknown.to_string() },
+                TranspilerError::UnknownIdentifier {
+                    name: unknown.to_string(),
+                },
                 span,
             );
         }
     }
 
     /// Suggest similar types
-    pub fn suggest_similar_type(&mut self, unknown: &str, available: &[String], span: Option<Span>) {
+    pub fn suggest_similar_type(
+        &mut self,
+        unknown: &str,
+        available: &[String],
+        span: Option<Span>,
+    ) {
         if let Some(suggestion) = find_closest_match(unknown, available) {
             self.error_with_suggestion(
-                TranspilerError::UnknownType { name: unknown.to_string() },
+                TranspilerError::UnknownType {
+                    name: unknown.to_string(),
+                },
                 span,
                 format!("Did you mean '{}'?", suggestion),
             );
         } else {
             self.error_with_span(
-                TranspilerError::UnknownType { name: unknown.to_string() },
+                TranspilerError::UnknownType {
+                    name: unknown.to_string(),
+                },
                 span,
             );
         }
@@ -243,7 +287,7 @@ impl ErrorCollector {
 fn find_closest_match(target: &str, candidates: &[String]) -> Option<String> {
     let mut best_match = None;
     let mut best_distance = usize::MAX;
-    
+
     for candidate in candidates {
         let distance = levenshtein_distance(target, candidate);
         // Only suggest if the distance is reasonable (less than half the length)
@@ -252,7 +296,7 @@ fn find_closest_match(target: &str, candidates: &[String]) -> Option<String> {
             best_match = Some(candidate.clone());
         }
     }
-    
+
     best_match
 }
 
@@ -262,12 +306,16 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     let b_chars: Vec<char> = b.chars().collect();
     let a_len = a_chars.len();
     let b_len = b_chars.len();
-    
-    if a_len == 0 { return b_len; }
-    if b_len == 0 { return a_len; }
-    
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
     let mut matrix = vec![vec![0; b_len + 1]; a_len + 1];
-    
+
     // Initialize first row and column
     for i in 0..=a_len {
         matrix[i][0] = i;
@@ -275,17 +323,21 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     for j in 0..=b_len {
         matrix[0][j] = j;
     }
-    
+
     // Fill the matrix
     for i in 1..=a_len {
         for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);
         }
     }
-    
+
     matrix[a_len][b_len]
 }
 
@@ -297,9 +349,9 @@ impl fmt::Display for ErrorCollector {
                 DiagnosticSeverity::Warning => write!(f, "warning: ")?,
                 DiagnosticSeverity::Info => write!(f, "info: ")?,
             }
-            
+
             writeln!(f, "{}", diagnostic.message)?;
-            
+
             if let Some(ref suggestion) = diagnostic.suggestion {
                 writeln!(f, "  help: {}", suggestion)?;
             }
@@ -315,12 +367,14 @@ mod tests {
     #[test]
     fn test_error_collector_basic() {
         let mut collector = ErrorCollector::new();
-        
+
         assert!(!collector.has_errors());
         assert_eq!(collector.error_count(), 0);
-        
-        collector.error(TranspilerError::UnknownIdentifier { name: "foo".to_string() });
-        
+
+        collector.error(TranspilerError::UnknownIdentifier {
+            name: "foo".to_string(),
+        });
+
         assert!(collector.has_errors());
         assert_eq!(collector.error_count(), 1);
     }
@@ -337,13 +391,21 @@ mod tests {
     #[test]
     fn test_suggest_similar_identifier() {
         let mut collector = ErrorCollector::new();
-        let available = vec!["variable".to_string(), "function".to_string(), "method".to_string()];
-        
+        let available = vec![
+            "variable".to_string(),
+            "function".to_string(),
+            "method".to_string(),
+        ];
+
         collector.suggest_similar_identifier("variabe", &available, None);
-        
+
         assert!(collector.has_errors());
         let diagnostics = collector.diagnostics();
         assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].suggestion.as_ref().unwrap().contains("variable"));
+        assert!(diagnostics[0]
+            .suggestion
+            .as_ref()
+            .unwrap()
+            .contains("variable"));
     }
 }

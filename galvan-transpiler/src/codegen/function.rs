@@ -6,9 +6,9 @@ use galvan_hir::hir::{HirFunction, HirMain, HirTest};
 use itertools::Itertools;
 
 use crate::context::Context;
-use crate::ErrorCollector;
 use crate::sanitize::sanitize_name;
 use crate::transpile_item::ident::{TranspileType, TypeOwnership};
+use crate::ErrorCollector;
 use crate::Transpile;
 
 /// Transpiles a function. Generic parameters that are already declared by a
@@ -177,11 +177,7 @@ pub(crate) fn transpile_test(
     format!("#[test]\nfn {name}() {{\n{body};\n}}")
 }
 
-pub(crate) fn transpile_main(
-    main: &HirMain,
-    ctx: &Context,
-    errors: &mut ErrorCollector,
-) -> String {
+pub(crate) fn transpile_main(main: &HirMain, ctx: &Context, errors: &mut ErrorCollector) -> String {
     let body = main.body.transpile(ctx, errors);
     format!("pub(crate) fn __main__() {body}")
 }

@@ -1,5 +1,6 @@
 use galvan_ast::{
-    BooleanLiteral, CharLiteral, Expression, ExpressionKind, Ident, Literal, NoneLiteral, NumberLiteral, Span, StringLiteral
+    BooleanLiteral, CharLiteral, Expression, ExpressionKind, Ident, Literal, NoneLiteral,
+    NumberLiteral, Span, StringLiteral,
 };
 use galvan_parse::TreeCursor;
 
@@ -11,13 +12,13 @@ fn parse_interpolation_expression(expr_content: &str, span: &Span) -> Result<Exp
     // We'll wrap it in a simple statement that we can parse
     let wrapper_source = format!("fn __temp() {{ let __x = {}; }}", expr_content);
     let source = galvan_files::Source::Str(wrapper_source.clone().into());
-    
+
     // Parse the wrapper source
     match galvan_parse::parse_source(&source) {
         Ok(parsed_tree) => {
             // Create a cursor from the parsed tree
             let mut cursor = parsed_tree.root_node().walk();
-            
+
             // Navigate to find the expression we want
             // Structure: source -> function -> body -> statement -> declaration -> expression
             if cursor.child() && // Enter source
@@ -27,8 +28,8 @@ fn parse_interpolation_expression(expr_content: &str, span: &Span) -> Result<Exp
                cursor.child() && // Enter statement
                cursor_goto_named(&mut cursor, "declaration") &&
                cursor.child() && // Enter declaration
-               cursor_goto_named(&mut cursor, "expression") {
-                
+               cursor_goto_named(&mut cursor, "expression")
+            {
                 // Found the expression, parse it
                 match Expression::read_cursor(&mut cursor, &wrapper_source) {
                     Ok(expr) => Ok(expr),
@@ -63,7 +64,10 @@ fn cursor_goto_named(cursor: &mut TreeCursor<'_>, name: &str) -> bool {
 
 // Helper function to create fallback expressions
 fn create_fallback_expression(expr_content: &str, span: &Span) -> Result<Expression, AstError> {
-    if expr_content.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    if expr_content
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_')
+    {
         // Simple identifier
         Ok(Expression {
             kind: ExpressionKind::Ident(Ident::new(expr_content)),
@@ -133,25 +137,25 @@ impl ReadCursor for StringLiteral {
         let full_text = source[node.start_byte()..node.end_byte()].to_owned();
 
         let mut interpolations = Vec::new();
-        
+
         // Simple approach: manually parse the string and replace interpolations with placeholders
         if full_text.contains('{') && full_text.contains('}') {
             let mut template = String::new();
             let mut chars = full_text.chars().peekable();
             let mut placeholder_index = 0;
-            
+
             // Skip opening quote
             if chars.peek() == Some(&'"') {
-                chars.next(); 
+                chars.next();
                 template.push('"');
             }
-            
+
             while let Some(ch) = chars.next() {
                 if ch == '{' {
                     // Found interpolation - find the closing brace
                     let mut expr_content = String::new();
                     let mut brace_depth = 1;
-                    
+
                     while let Some(inner_ch) = chars.next() {
                         if inner_ch == '{' {
                             brace_depth += 1;
@@ -163,11 +167,11 @@ impl ReadCursor for StringLiteral {
                         }
                         expr_content.push(inner_ch);
                     }
-                    
+
                     // Parse arbitrary expressions within interpolations
                     let expr = parse_interpolation_expression(&expr_content, &span)?;
                     interpolations.push(expr);
-                    
+
                     // Add placeholder to template
                     template.push_str(&format!("{{{}}}", placeholder_index));
                     placeholder_index += 1;
@@ -175,7 +179,7 @@ impl ReadCursor for StringLiteral {
                     template.push(ch);
                 }
             }
-            
+
             Ok(Self {
                 value: template,
                 interpolations,
@@ -198,10 +202,10 @@ impl ReadCursor for CharLiteral {
         let span = Span::from_node(node);
 
         let text = &source[node.start_byte()..node.end_byte()];
-        
+
         // Remove quotes and parse character
-        let char_content = &text[1..text.len()-1]; // Remove surrounding quotes
-        
+        let char_content = &text[1..text.len() - 1]; // Remove surrounding quotes
+
         let value = if char_content.starts_with('\\') {
             // Handle escape sequences
             match char_content {
@@ -213,22 +217,21 @@ impl ReadCursor for CharLiteral {
                 "\\\"" => '"',
                 _ if char_content.starts_with("\\u{") && char_content.ends_with('}') => {
                     // Unicode escape: \u{1F600}
-                    let hex_str = &char_content[3..char_content.len()-1];
+                    let hex_str = &char_content[3..char_content.len() - 1];
                     let code_point = u32::from_str_radix(hex_str, 16)
                         .map_err(|_| AstError::InvalidCharacterLiteral(span))?;
-                    char::from_u32(code_point)
-                        .ok_or(AstError::InvalidCharacterLiteral(span))?
+                    char::from_u32(code_point).ok_or(AstError::InvalidCharacterLiteral(span))?
                 }
                 _ => return Err(AstError::InvalidCharacterLiteral(span)),
             }
         } else {
             // Regular character
-            char_content.chars().next()
+            char_content
+                .chars()
+                .next()
                 .ok_or(AstError::InvalidCharacterLiteral(span))?
         };
 
         Ok(CharLiteral { value, span })
     }
 }
-
-

@@ -868,10 +868,10 @@ mod macros {
     pub(crate) use {impl_transpile, impl_transpile_variants, punct, transpile};
 }
 
-use galvan_hir::builtins::{builtin_fns, builtins};
 use crate::context::{predefined_from, Context};
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
+use galvan_hir::builtins::{builtin_fns, builtins};
 use macros::punct;
 
 punct!(", ", TypeElement, TupleTypeMember);

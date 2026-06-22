@@ -527,7 +527,9 @@ fn field_and_index_assignments_preserve_mutable_places() {
         panic!("expected index assignment");
     };
     assert_eq!(ref_index.base.adjustments, vec![Adjustment::LockRef]);
-    assert!(assignments.iter().all(|assignment| !assignment.deref_target));
+    assert!(assignments
+        .iter()
+        .all(|assignment| !assignment.deref_target));
 }
 
 #[test]
