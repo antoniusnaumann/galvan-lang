@@ -1486,10 +1486,16 @@ impl Checker<'_> {
                     )
                 }
                 ExpressionKind::Ident(field) => {
-                    let receiver = self.lower_expression(&operation.lhs, &Expected::free());
+                    let mut receiver = self.lower_expression(&operation.lhs, &Expected::free());
+                    let locks_ref = receiver.adjusted_ownership() == Ownership::Ref;
+                    if locks_ref {
+                        receiver = receiver.adjusted(Adjustment::LockRef);
+                    }
                     let field_ty = self.field_type(&receiver.ty, field, span);
                     let ownership = if self.is_copy(&field_ty) {
                         Ownership::UniqueOwned
+                    } else if locks_ref {
+                        Ownership::SharedOwned
                     } else {
                         receiver.adjusted_ownership()
                     };

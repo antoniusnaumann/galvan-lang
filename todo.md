@@ -38,7 +38,7 @@ stored in them.
 
 - **`ref` variables**
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
-  - Index and field access through ref variables
+  - Index access through ref variables
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
 

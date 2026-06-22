@@ -267,7 +267,10 @@ impl Checker<'_> {
                 );
                 expr
             }
-            (MutBorrowed, Ref) => expr.adjusted(Adjustment::LockRef),
+            (MutBorrowed, Ref) => expr
+                .adjusted(Adjustment::LockRef)
+                .adjusted(Adjustment::Deref)
+                .adjusted(Adjustment::MutBorrow),
 
             // `ref` declarations wrap the initializer at the declaration site,
             // `ref` arguments are wrapped with Arc::clone at the call site

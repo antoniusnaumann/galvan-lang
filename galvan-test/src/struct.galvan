@@ -34,20 +34,19 @@ fn replace(ref self: Dog, replacement: Dog) {
     self = replacement
 }
 
-fn copy_into(ref self: Dog, mut target: Dog) {
-    target = self
-}
-
 test "Call ref self method" {
     ref dog = Dog(name: "Rex", age: 3)
     dog.ref.replace(Dog(name: "Bello", age: 4))
-    (ref dog).replace(Dog(name: "Hasso", age: 5))
-    replace(ref dog, Dog(name: "Lassie", age: 6))
+    assert dog.name == "Bello"
+    assert dog.age == 4
 
-    mut observed = Dog(name: "", age: 0)
-    dog.ref.copy_into(observed.mut)
-    assert observed.name == "Lassie"
-    assert observed.age == 6
+    (ref dog).replace(Dog(name: "Hasso", age: 5))
+    assert dog.name == "Hasso"
+    assert dog.age == 5
+
+    replace(ref dog, Dog(name: "Lassie", age: 6))
+    assert dog.name == "Lassie"
+    assert dog.age == 6
 }
 
 test "Mutate struct" {

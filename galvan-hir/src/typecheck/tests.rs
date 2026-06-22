@@ -261,6 +261,32 @@ fn ref_argument_modifier_supports_postfix_syntax() {
 }
 
 #[test]
+fn ref_variables_can_be_passed_as_mutable_arguments() {
+    let module = lower(
+        "fn bump(mut value: Int) { value += 1 }
+         fn check() {
+             ref counter = 0
+             bump(counter.mut)
+         }",
+    );
+    let check = function(&module, "check");
+    let HirStatement::Expression(call) = &check.body.statements[1] else {
+        panic!("expected call statement");
+    };
+    let HirExpressionKind::FunctionCall(call) = &call.kind else {
+        panic!("expected function call");
+    };
+    assert_eq!(
+        call.args[0].adjustments,
+        vec![
+            Adjustment::LockRef,
+            Adjustment::Deref,
+            Adjustment::MutBorrow
+        ]
+    );
+}
+
+#[test]
 fn mutable_method_receivers_accept_all_explicit_call_forms() {
     let module = lower(
         "type Dog { age: Int }
@@ -421,6 +447,24 @@ fn constructor_defaults_are_materialized() {
     };
     assert_eq!(constructor.args.len(), 1);
     assert_eq!(constructor.args[0].field.as_str(), "title");
+}
+
+#[test]
+fn field_access_locks_ref_receiver() {
+    let module = lower(
+        "type Dog { name: String }
+         fn name() -> String {
+             ref dog = Dog(name: \"Rex\")
+             dog.name
+         }",
+    );
+    let tail = trailing(function(&module, "name"));
+    let HirExpressionKind::FieldAccess(access) = &tail.kind else {
+        panic!("expected field access");
+    };
+    assert_eq!(access.receiver.adjustments, vec![Adjustment::LockRef]);
+    assert_eq!(tail.ownership, Ownership::SharedOwned);
+    assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
 }
 
 #[test]

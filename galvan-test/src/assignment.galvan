@@ -37,11 +37,21 @@ fn increment_ref(ref counter: Int) {
     counter += 1
 }
 
+fn bump(mut value: Int) {
+    value += 1
+}
+
 test "Pass ref arguments with prefix and postfix syntax" {
     ref counter = 0
     increment_ref(ref counter)
     increment_ref(counter.ref)
     assert counter == 2
+}
+
+test "Pass ref variable as mut argument" {
+    ref counter = 0
+    bump(counter.mut)
+    assert counter == 1
 }
 
 test "Assign to ref variable" {
