@@ -1,6 +1,6 @@
 use galvan_ast::{
-    ArithmeticOperator, CollectionOperator, ComparisonOperator, CustomInfix, EnumAccess,
-    Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
+    ArithmeticOperator, BitwiseOperator, CollectionOperator, ComparisonOperator, CustomInfix,
+    EnumAccess, Expression, Group, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
     MemberOperator, RangeOperator, Span, TypeIdent,
 };
 use galvan_parse::TreeCursor;
@@ -58,6 +58,9 @@ impl ReadCursor for InfixExpression {
                     cursor, source,
                 )?)
             }
+            "bitwise_expression" => InfixExpression::Bitwise(
+                InfixOperation::<BitwiseOperator>::read_cursor(cursor, source)?,
+            ),
             "collection_expression" => {
                 InfixExpression::Collection(InfixOperation::<CollectionOperator>::read_cursor(
                     cursor, source,
@@ -134,6 +137,21 @@ impl ReadCursor for ArithmeticOperator {
             "remainder" => Self::Rem,
             "power" => Self::Exp,
             unknown => unreachable!("Unknown arithmetic operator: {unknown}"),
+        };
+
+        Ok(op)
+    }
+}
+
+impl ReadCursor for BitwiseOperator {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
+        let op = match cursor.kind()? {
+            "pipe" => Self::Or,
+            "bitwise_and" => Self::And,
+            "bitwise_xor" => Self::Xor,
+            "shift_left" => Self::ShiftLeft,
+            "shift_right" => Self::ShiftRight,
+            unknown => unreachable!("Unknown bitwise operator: {unknown}"),
         };
 
         Ok(op)

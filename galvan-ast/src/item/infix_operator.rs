@@ -13,6 +13,7 @@ pub trait InfixOperator {
 pub enum InfixExpression {
     Logical(InfixOperation<LogicalOperator>),
     Arithmetic(InfixOperation<ArithmeticOperator>),
+    Bitwise(InfixOperation<BitwiseOperator>),
     Collection(InfixOperation<CollectionOperator>),
     Range(InfixOperation<RangeOperator>),
     Comparison(InfixOperation<ComparisonOperator>),
@@ -85,7 +86,7 @@ impl InfixOperator for LogicalOperator {
         match self {
             LogicalOperator::Or => "||",
             LogicalOperator::And => "&&",
-            LogicalOperator::Xor => "^",
+            LogicalOperator::Xor => "xor",
         }
     }
 }
@@ -109,6 +110,27 @@ impl InfixOperator for ArithmeticOperator {
             ArithmeticOperator::Div => "/",
             ArithmeticOperator::Rem => "%",
             ArithmeticOperator::Exp => "^",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BitwiseOperator {
+    Or,
+    And,
+    Xor,
+    ShiftLeft,
+    ShiftRight,
+}
+
+impl InfixOperator for BitwiseOperator {
+    fn symbol(&self) -> &str {
+        match self {
+            BitwiseOperator::Or => "|",
+            BitwiseOperator::And => "&",
+            BitwiseOperator::Xor => "~",
+            BitwiseOperator::ShiftLeft => "<<",
+            BitwiseOperator::ShiftRight => ">>",
         }
     }
 }

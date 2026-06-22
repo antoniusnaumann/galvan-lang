@@ -71,6 +71,6 @@ fn needs_parens(kind: &HirExpressionKind) -> bool {
         | SafeAccess(_) | ConstructorCall(_) | EnumAccess(_) | EnumConstructor(_)
         | Collection(_) | Index(_) | Group(_) | Yeet(_) | Print(_) | Assert(_) | Error(_) => false,
         If(_) | ElseUnwrap(_) | Try(_) | For(_) | Closure(_) | Logical(_) | Arithmetic(_)
-        | Comparison(_) | CollectionOp(_) | Range(_) => true,
+        | Bitwise(_) | Comparison(_) | CollectionOp(_) | Range(_) => true,
     }
 }

@@ -16,9 +16,9 @@
 //! therefore *is* the ownership of the generated Rust expression.
 
 use galvan_ast::{
-    ArithmeticOperator, CmdSignature, ComparisonOperator, DeclModifier, FnSignature, Ident,
-    LogicalOperator, Ownership, RangeOperator, Span, StringLiteral, ToplevelItem, TypeDecl,
-    TypeElement, TypeIdent,
+    ArithmeticOperator, BitwiseOperator, CmdSignature, ComparisonOperator, DeclModifier,
+    FnSignature, Ident, LogicalOperator, Ownership, RangeOperator, Span, StringLiteral,
+    ToplevelItem, TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_files::Source;
 
@@ -259,6 +259,7 @@ pub enum HirExpressionKind {
     Closure(Box<HirClosure>),
     Logical(Box<HirBinary<LogicalOperator>>),
     Arithmetic(Box<HirBinary<ArithmeticOperator>>),
+    Bitwise(Box<HirBinary<BitwiseOperator>>),
     Comparison(Box<HirBinary<ComparisonOperator>>),
     CollectionOp(Box<HirBinary<CollectionOperator>>),
     Range(Box<HirBinary<RangeOperator>>),

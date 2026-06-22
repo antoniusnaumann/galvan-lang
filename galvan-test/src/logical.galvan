@@ -21,3 +21,10 @@ test "Logical OR" {
 
     assert a or b == false
 }
+
+test "Logical XOR" {
+    assert(true xor false)
+    assert(false xor true)
+    assert(true xor true == false)
+    assert(false xor false == false)
+}

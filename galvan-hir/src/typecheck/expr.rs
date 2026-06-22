@@ -1193,6 +1193,27 @@ impl Checker<'_> {
                     span,
                 )
             }
+            InfixExpression::Bitwise(operation) => {
+                let lhs = self.lower_expression(&operation.lhs, &Expected::free());
+                let rhs = self.lower_expression(&operation.rhs, &Expected::free());
+
+                let ty = if lhs.ty.is_infer() || lhs.ty.is_number() {
+                    rhs.ty.clone()
+                } else {
+                    lhs.ty.clone()
+                };
+
+                HirExpression::new(
+                    HirExpressionKind::Bitwise(Box::new(HirBinary {
+                        lhs,
+                        operator: operation.operator.clone(),
+                        rhs,
+                    })),
+                    ty,
+                    Ownership::UniqueOwned,
+                    span,
+                )
+            }
             InfixExpression::Comparison(operation) => {
                 let lhs = self.lower_expression(&operation.lhs, &Expected::free());
                 let rhs = self.lower_expression(&operation.rhs, &Expected::free());

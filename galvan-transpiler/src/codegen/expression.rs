@@ -1,5 +1,6 @@
 use galvan_ast::{
-    ArithmeticOperator, ComparisonOperator, LogicalOperator, RangeOperator, TypeElement,
+    ArithmeticOperator, BitwiseOperator, ComparisonOperator, LogicalOperator, RangeOperator,
+    TypeElement,
 };
 use galvan_hir::hir::*;
 use itertools::Itertools;
@@ -34,6 +35,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::Closure(closure) => closure.transpile(ctx, errors),
             HirExpressionKind::Logical(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Arithmetic(operation) => operation.transpile(ctx, errors),
+            HirExpressionKind::Bitwise(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Comparison(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::CollectionOp(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Range(operation) => operation.transpile(ctx, errors),
@@ -457,6 +459,18 @@ impl Transpile for HirBinary<ArithmeticOperator> {
             ArithmeticOperator::Div => transpile!(ctx, errors, "{} / {}", self.lhs, self.rhs),
             ArithmeticOperator::Rem => transpile!(ctx, errors, "{} % {}", self.lhs, self.rhs),
             ArithmeticOperator::Exp => transpile!(ctx, errors, "{}.pow({})", self.lhs, self.rhs),
+        }
+    }
+}
+
+impl Transpile for HirBinary<BitwiseOperator> {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        match self.operator {
+            BitwiseOperator::Or => transpile!(ctx, errors, "{} | {}", self.lhs, self.rhs),
+            BitwiseOperator::And => transpile!(ctx, errors, "{} & {}", self.lhs, self.rhs),
+            BitwiseOperator::Xor => transpile!(ctx, errors, "{} ^ {}", self.lhs, self.rhs),
+            BitwiseOperator::ShiftLeft => transpile!(ctx, errors, "{} << {}", self.lhs, self.rhs),
+            BitwiseOperator::ShiftRight => transpile!(ctx, errors, "{} >> {}", self.lhs, self.rhs),
         }
     }
 }
