@@ -1,4 +1,7 @@
-use galvan_ast::{Ast, Point, RootItem, SegmentedAsts, Span, ToplevelItem};
+use galvan_ast::{
+    Ast, FnDecl, MainDecl, MainKind, Point, RootItem, SegmentedAsts, Span, ToplevelItem,
+    TypeElement, VisibilityKind,
+};
 use galvan_files::Source;
 use galvan_parse::*;
 
@@ -73,6 +76,16 @@ impl SegmentAst for Ast {
                     item,
                     source: self.source.clone(),
                 }),
+                RootItem::Fn(item) if item.signature.identifier.as_str() == "main" => {
+                    if main.is_some() {
+                        return Err(AstError::DuplicateMain);
+                    }
+
+                    main = Some(ToplevelItem {
+                        item: main_decl(item)?,
+                        source: self.source.clone(),
+                    });
+                }
                 RootItem::Fn(item) => functions.push(ToplevelItem {
                     item,
                     source: self.source.clone(),
@@ -81,15 +94,19 @@ impl SegmentAst for Ast {
                     item,
                     source: self.source.clone(),
                 }),
-                RootItem::Main(item) => {
+                RootItem::Cmd(item) if item.signature.identifier.as_str() == "main" => {
                     if main.is_some() {
                         return Err(AstError::DuplicateMain);
                     }
 
                     main = Some(ToplevelItem {
-                        item,
+                        item: MainDecl {
+                            kind: MainKind::Command(item.signature),
+                            body: item.body,
+                            span: item.span,
+                        },
                         source: self.source.clone(),
-                    })
+                    });
                 }
                 RootItem::Cmd(item) => cmds.push(ToplevelItem {
                     item,
@@ -106,6 +123,44 @@ impl SegmentAst for Ast {
             cmds,
         })
     }
+}
+
+fn main_decl(function: FnDecl) -> Result<MainDecl, AstError> {
+    let FnDecl {
+        signature,
+        body,
+        span,
+    } = function;
+    let mut parameters = signature.parameters.params.into_iter();
+    let argument = parameters.next();
+
+    let valid_argument = argument.as_ref().is_none_or(|parameter| {
+        parameter.decl_modifier.is_none()
+            && parameter.short_name.is_none()
+            && matches!(
+                &parameter.param_type,
+                TypeElement::Array(array)
+                    if matches!(
+                        &array.elements,
+                        TypeElement::Plain(string) if string.ident.as_str() == "String"
+                    )
+            )
+    });
+    let valid_signature = parameters.next().is_none()
+        && valid_argument
+        && signature.visibility.kind == VisibilityKind::Inherited
+        && matches!(signature.return_type, TypeElement::Void(_))
+        && signature.where_clause.is_none();
+
+    if !valid_signature {
+        return Err(AstError::InvalidMainSignature);
+    }
+
+    Ok(MainDecl {
+        kind: MainKind::Function { argument },
+        body,
+        span,
+    })
 }
 
 impl SegmentAst for Vec<Ast> {

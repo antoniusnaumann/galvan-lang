@@ -11,8 +11,8 @@ mod expr;
 mod scope;
 
 use galvan_ast::{
-    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, Ownership,
-    SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, MainKind,
+    Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
 };
 use galvan_resolver::{LookupContext, LookupError};
 
@@ -56,9 +56,46 @@ pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), Loo
             })
             .collect::<Vec<_>>();
 
-        let main = asts.main.as_ref().map(|main| HirMain {
-            body: checker.lower_toplevel_body(&main.item.body),
-            source: main.source.clone(),
+        let main = asts.main.as_ref().map(|main| {
+            checker.scopes.push();
+            let kind = match &main.item.kind {
+                MainKind::Command(signature) => {
+                    for param in &signature.parameters.params {
+                        checker.scopes.declare(Variable {
+                            ident: param.identifier.clone(),
+                            modifier: param.decl_modifier.unwrap_or(DeclModifier::Let),
+                            ty: param.param_type.clone(),
+                            ownership: Ownership::UniqueOwned,
+                        });
+                    }
+                    HirMainKind::Command {
+                        signature: signature.clone(),
+                    }
+                }
+                MainKind::Function { argument } => {
+                    if let Some(argument) = argument {
+                        checker.scopes.declare(Variable {
+                            ident: argument.identifier.clone(),
+                            modifier: DeclModifier::Let,
+                            ty: argument.param_type.clone(),
+                            ownership: Ownership::UniqueOwned,
+                        });
+                    }
+                    HirMainKind::Function {
+                        argument: argument
+                            .as_ref()
+                            .map(|argument| argument.identifier.clone()),
+                    }
+                }
+            };
+            let body = checker.lower_toplevel_body(&main.item.body);
+            checker.scopes.pop();
+
+            HirMain {
+                kind,
+                body,
+                source: main.source.clone(),
+            }
         });
 
         let cmd_bodies = asts

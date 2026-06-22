@@ -15,6 +15,8 @@ pub enum AstError {
     NodeError,
     #[error("Duplicate main function")]
     DuplicateMain,
+    #[error("Main must have signature `fn main()` or `fn main(args: [String])`")]
+    InvalidMainSignature,
     #[error("Invalid character literal at {0:?}")]
     InvalidCharacterLiteral(Span),
     #[error(transparent)]

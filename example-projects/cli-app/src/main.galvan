@@ -1,5 +1,13 @@
-main {
-    print "Hello World! ..."
+// A command named main defines top-level flags instead of a subcommand.
+cmd main(
+    /// Optional name to greet when no subcommand is selected
+    n name: String?
+) {
+    try name |name| {
+        print "Hello {name}!"
+    } else {
+        print "Hello World! ..."
+    }
 }
 
 // commands automatically get added to the CLI application as subcommands, including doc comments being shown in the -h argument

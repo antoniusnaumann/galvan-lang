@@ -8,6 +8,10 @@ HIR (`galvan-hir/src/typecheck/`) and mechanical code generation from the HIR
 belong in the typechecker; codegen only renders nodes and the adjustments
 stored in them.
 
+Program entry points are declared as `fn main()`, `fn main(args: [String])`,
+or `cmd main(...)`. The latter supplies top-level CLI flags while other
+commands remain subcommands.
+
 ## Critical - Core Language Features
 
 - **Typechecker improvements** (galvan-hir/src/typecheck/)

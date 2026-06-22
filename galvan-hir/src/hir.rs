@@ -55,8 +55,15 @@ pub struct HirTest {
 
 #[derive(Debug)]
 pub struct HirMain {
+    pub kind: HirMainKind,
     pub body: HirBlock,
     pub source: Source,
+}
+
+#[derive(Debug)]
+pub enum HirMainKind {
+    Function { argument: Option<Ident> },
+    Command { signature: CmdSignature },
 }
 
 #[derive(Debug)]

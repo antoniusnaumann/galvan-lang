@@ -60,3 +60,65 @@ generate_code_tests!(test_transpilation, TRANSPILE, trim_all {
     let transpilation = transpile(vec![source]).unwrap();
     merge_outputs(transpilation)
 });
+
+fn transpile_source(code: &str) -> String {
+    transpile(vec![Source::from_string(code)])
+        .unwrap()
+        .into_iter()
+        .map(|output| output.content.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn transpiles_main_as_a_normal_function() {
+    let output = transpile_source("fn main() { print \"Hello\" }");
+
+    assert!(output.contains("pub(crate) fn __main__()"));
+    assert!(!output.contains("std::env::args()"));
+}
+
+#[test]
+fn collects_argv_for_main_function_argument() {
+    let output = transpile_source("fn main(args: [String]) { print args }");
+
+    assert!(output.contains("let args: ::std::vec::Vec<String> = ::std::env::args().collect()"));
+}
+
+#[test]
+fn transpiles_command_main_arguments_as_top_level_flags() {
+    let output = transpile_source(
+        "cmd main(
+            n name: String,
+            count: Int?
+        ) {
+            print name
+        }",
+    );
+
+    assert!(output.contains("fn __main_command(name: String, count: Option<i64>)"));
+    assert!(output.contains("pub name: String"));
+    assert!(output.contains("pub count: Option<i64>"));
+    assert!(output.contains("let Cli { name, count } = cli"));
+    assert!(output.contains("__main_command(name, count)"));
+    assert!(!output.contains("enum Commands"));
+}
+
+#[test]
+fn command_main_coexists_with_subcommands() {
+    let output = transpile_source(
+        "cmd main(verbose: Bool?) {}
+         cmd greet(name: String) { print name }",
+    );
+
+    assert!(output.contains("subcommand_negates_reqs = true"));
+    assert!(output.contains("enum Commands"));
+    assert!(output.contains("None => __main_command(verbose)"));
+}
+
+#[test]
+fn rejects_invalid_main_function_signatures() {
+    assert!(transpile(vec![Source::from_string("fn main(value: Int) {}")]).is_err());
+    assert!(transpile(vec![Source::from_string("main {}")]).is_err());
+    assert!(transpile(vec![Source::from_string("fn main() {} cmd main() {}")]).is_err());
+}

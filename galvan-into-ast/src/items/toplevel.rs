@@ -1,8 +1,7 @@
 use galvan_ast::{
     AliasTypeDecl, Body, CmdDecl, CmdSignature, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl,
-    FnSignature, Ident, MainDecl, Param, ParamList, RootItem, Span, Statement, StringLiteral,
-    StructTypeDecl, TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility,
-    WhereBound, WhereClause,
+    FnSignature, Ident, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl,
+    TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility, WhereBound, WhereClause,
 };
 use galvan_parse::TreeCursor;
 
@@ -11,33 +10,13 @@ use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 impl ReadCursor for RootItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         Ok(match cursor.kind()? {
-            "main" => MainDecl::read_cursor(cursor, source)?.into(),
             "build" => todo!("Implement build entry point!"),
             "test" => TestDecl::read_cursor(cursor, source)?.into(),
             "function" => FnDecl::read_cursor(cursor, source)?.into(),
             "cmd" => CmdDecl::read_cursor(cursor, source)?.into(),
             "type_declaration" => TypeDecl::read_cursor(cursor, source)?.into(),
-            "entry_point" => todo!("Implement custom tasks!"),
             other => unreachable!("Unexpected node in root item: {other}"),
         })
-    }
-}
-
-impl ReadCursor for MainDecl {
-    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
-        let main = cursor_expect!(cursor, "main");
-        let span = Span::from_node(main);
-        cursor.child();
-        cursor_expect!(cursor, "main_keyword");
-
-        cursor.next();
-        let body = Body::read_cursor(cursor, source)?;
-
-        assert!(!cursor.next(), "Unexpected token in main");
-
-        cursor.goto_parent();
-
-        Ok(MainDecl { body, span })
     }
 }
 
