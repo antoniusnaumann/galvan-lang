@@ -30,6 +30,26 @@ test "Call method with mutation" {
     assert dog.age == 6
 }
 
+fn replace(ref self: Dog, replacement: Dog) {
+    self = replacement
+}
+
+fn copy_into(ref self: Dog, mut target: Dog) {
+    target = self
+}
+
+test "Call ref self method" {
+    ref dog = Dog(name: "Rex", age: 3)
+    dog.ref.replace(Dog(name: "Bello", age: 4))
+    (ref dog).replace(Dog(name: "Hasso", age: 5))
+    replace(ref dog, Dog(name: "Lassie", age: 6))
+
+    mut observed = Dog(name: "", age: 0)
+    dog.ref.copy_into(observed.mut)
+    assert observed.name == "Lassie"
+    assert observed.age == 6
+}
+
 test "Mutate struct" {
     mut dog = Dog(name: "Rex", age: 3)
     dog.name = "Bello"

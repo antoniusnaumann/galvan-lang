@@ -127,11 +127,7 @@ impl Transpile for Param {
             }
             Some(DeclModifier::Ref) => {
                 if is_self {
-                    errors.error(crate::TranspilerError::InvalidModifier {
-                        modifier: "ref".to_string(),
-                        context: "self parameters".to_string(),
-                    });
-                    return "/* invalid ref self */".into();
+                    return "__self: std::sync::Arc<std::sync::Mutex<Self>>".into();
                 }
 
                 format!(

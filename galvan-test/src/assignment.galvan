@@ -3,9 +3,12 @@ fn overwrite(mut value: Int) {
 }
 
 test "Assign to mut parameter" {
-    mut a = 1
-    overwrite(mut a)
-    assert a == 42
+    mut prefix = 1
+    mut postfix = 2
+    overwrite(mut prefix)
+    overwrite(postfix.mut)
+    assert prefix == 42
+    assert postfix == 42
 }
 
 fn rename(mut dog: Dog, name: String) {
@@ -15,7 +18,7 @@ fn rename(mut dog: Dog, name: String) {
 test "Assign borrowed value to field of mut parameter" {
     mut dog = Dog(name: "Rex", age: 3)
     let new_name = "Bello"
-    rename(mut dog, new_name)
+    rename(dog.mut, new_name)
     assert dog.name == "Bello"
 }
 
@@ -26,8 +29,19 @@ fn push_name(mut names: [String], name: String) {
 test "Concat-assign borrowed element to list" {
     mut names = ["Rex"]
     let name = "Bello"
-    push_name(mut names, name)
+    push_name(names.mut, name)
     assert names == ["Rex", "Bello"]
+}
+
+fn increment_ref(ref counter: Int) {
+    counter += 1
+}
+
+test "Pass ref arguments with prefix and postfix syntax" {
+    ref counter = 0
+    increment_ref(ref counter)
+    increment_ref(counter.ref)
+    assert counter == 2
 }
 
 test "Assign to ref variable" {

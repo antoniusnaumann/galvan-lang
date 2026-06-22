@@ -118,6 +118,7 @@ pub(crate) struct Checker<'a> {
     pub(crate) errors: ErrorCollector,
     /// Return type of the function currently being lowered
     pub(crate) fn_return: TypeElement,
+    pub(crate) ref_self: bool,
 }
 
 impl<'a> Checker<'a> {
@@ -128,6 +129,7 @@ impl<'a> Checker<'a> {
             scopes: ScopeStack::new(),
             errors: ErrorCollector::new(),
             fn_return: TypeElement::void(),
+            ref_self: false,
         }
     }
 
@@ -160,6 +162,9 @@ impl<'a> Checker<'a> {
             });
         }
 
+        self.ref_self = signature
+            .receiver()
+            .is_some_and(|receiver| receiver.decl_modifier == Some(DeclModifier::Ref));
         self.fn_return = signature.return_type.clone();
         let expected = if signature.return_type.is_void() || signature.return_type.is_infer() {
             Expected::void()
@@ -170,6 +175,7 @@ impl<'a> Checker<'a> {
 
         self.scopes.pop();
         self.fn_return = TypeElement::void();
+        self.ref_self = false;
 
         HirFunction {
             signature,
@@ -374,10 +380,10 @@ impl<'a> Checker<'a> {
         // borrowed places are dereferenced and `ref` places go through the
         // mutex (`*x.lock().unwrap() = value`)
         let mut deref_target = false;
-        if let HirExpressionKind::Variable(ident) = &target.kind {
-            match self.scopes.get(ident).map(|variable| variable.ownership) {
-                Some(Ownership::MutBorrowed) => deref_target = true,
-                Some(Ownership::Ref) => {
+        if matches!(target.kind, HirExpressionKind::Variable(_)) {
+            match target.ownership {
+                Ownership::MutBorrowed => deref_target = true,
+                Ownership::Ref => {
                     if !rebinds_ref {
                         target = target.adjusted(Adjustment::LockRef);
                         deref_target = true;

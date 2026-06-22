@@ -125,12 +125,19 @@ impl Checker<'_> {
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {
         match self.variable(ident, span) {
-            Some(variable) => HirExpression::new(
-                HirExpressionKind::Variable(ident.clone()),
-                variable.ty,
-                variable.ownership,
-                span,
-            ),
+            Some(variable) => {
+                let ident = if ident.is_self() && self.ref_self {
+                    Ident::new("__self")
+                } else {
+                    ident.clone()
+                };
+                HirExpression::new(
+                    HirExpressionKind::Variable(ident),
+                    variable.ty,
+                    variable.ownership,
+                    span,
+                )
+            }
             None => HirExpression::new(
                 HirExpressionKind::Variable(ident.clone()),
                 TypeElement::infer(),
@@ -329,6 +336,9 @@ impl Checker<'_> {
                     return HirExpression::new(
                         HirExpressionKind::MethodCall(Box::new(HirMethodCall {
                             receiver,
+                            receiver_modifier: signature
+                                .receiver()
+                                .and_then(|receiver| receiver.decl_modifier),
                             ident: ident.clone(),
                             args,
                         })),
@@ -355,6 +365,9 @@ impl Checker<'_> {
                         );
                         HirExpressionKind::MethodCall(Box::new(HirMethodCall {
                             receiver,
+                            receiver_modifier: signature
+                                .receiver()
+                                .and_then(|receiver| receiver.decl_modifier),
                             ident: ident.clone(),
                             args,
                         }))
@@ -376,6 +389,7 @@ impl Checker<'_> {
                         let receiver = self.lower_unknown_receiver(receiver, modifier, span);
                         HirExpressionKind::MethodCall(Box::new(HirMethodCall {
                             receiver,
+                            receiver_modifier: modifier,
                             ident: ident.clone(),
                             args,
                         }))
