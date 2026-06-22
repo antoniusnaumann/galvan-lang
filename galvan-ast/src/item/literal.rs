@@ -12,7 +12,7 @@ pub type Literal = StringLiteral + NumberLiteral + BooleanLiteral + NoneLiteral 
 #[derive(Clone, Debug, PartialEq, Eq, From)]
 pub struct StringLiteral {
     pub value: String,
-    pub interpolations: Vec<Expression>, // Expressions found in {expr} within the string
+    pub interpolations: Vec<Expression>,
     pub span: Span,
 }
 

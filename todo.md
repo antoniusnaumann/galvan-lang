@@ -65,11 +65,6 @@ stored in them.
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
     multithreading
 
-- **String interpolation** (galvan-into-ast/src/items/literal.rs)
-  - Parse interpolation expressions directly in the grammar instead of
-    re-parsing them with a function wrapper and falling back to verbatim
-    identifiers
-
 - **Tree-sitter grammar completeness** (tree-sitter-galvan/)
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation

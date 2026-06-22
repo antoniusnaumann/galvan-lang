@@ -14,8 +14,8 @@ cmd greet(
     s surname: String?
 ) {
     try surname |surname| {
-        print "Hello {name} {surname}!"
+        print "Hello \(name) \(surname)!"
     } else {
-        print "Hello {name}!"
+        print "Hello \(name)!"
     }
 }

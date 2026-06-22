@@ -1,5 +1,5 @@
 fn greet(name: String) -> String {
-    "Hello, {name}!"
+    "Hello, \(name)!"
 }
 
 test "String interpolation" {
@@ -11,7 +11,7 @@ test "Interpolation with Integers" {
     let x = 3
     let y = 7
     let sum = x + y
-    assert "3 + 7 = 10" == "{x} + {y} = {sum}"
+    assert "3 + 7 = 10" == "\(x) + \(y) = \(sum)"
 }
 
 test "Escaped quotes in strings" {
@@ -28,10 +28,15 @@ test "Escaped quotes in strings" {
 test "Format string with member access" {
     let dog = Dog(name: "Bello", age: 7)
 
-    assert "Hi, {dog.name}!" == "Hi, Bello!"
+    assert "Hi, \(dog.name)!" == "Hi, Bello!"
 }
 
 test "Format string with arithmetic" {
-    assert "3 + 7 = {3 + 7}" == "3 + 7 = 10"
+    assert "3 + 7 = \(3 + 7)" == "3 + 7 = 10"
 }
 
+test "Literal braces in strings" {
+    assert "Set syntax uses { and }" == "Set syntax uses { and }"
+    assert "{\(3 + 7)}" == "{10}"
+    assert "😀" == "\u{1F600}"
+}
