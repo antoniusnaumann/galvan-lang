@@ -15,16 +15,16 @@ impl ReadCursor for Group {
         cursor_expect!(cursor, "paren_open");
         cursor.next();
 
-        let modifier = if matches!(cursor.kind()?, "mut_keyword" | "ref_keyword") {
-            let modifier = match cursor.kind()? {
-                "mut_keyword" => DeclModifier::Mut,
-                "ref_keyword" => DeclModifier::Ref,
-                unknown => unreachable!("Unknown argument modifier: {unknown}"),
-            };
-            cursor.next();
-            Some(modifier)
-        } else {
-            None
+        let modifier = match cursor.kind()? {
+            "mut_keyword" => {
+                cursor.next();
+                Some(DeclModifier::Mut)
+            }
+            "ref_keyword" => {
+                cursor.next();
+                Some(DeclModifier::Ref)
+            }
+            _ => None,
         };
 
         let inner = Box::new(Expression::read_cursor(cursor, source)?);
