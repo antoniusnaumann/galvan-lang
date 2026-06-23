@@ -4,9 +4,9 @@ cmd main(
     n name: String?
 ) {
     try name |name| {
-        print "Hello \(name)!"
+        println "Hello \(name)!"
     } else {
-        print "Hello World! ..."
+        println "Hello World! ..."
     }
 }
 
@@ -22,8 +22,8 @@ cmd greet(
     s surname: String?
 ) {
     try surname |surname| {
-        print "Hello \(name) \(surname)!"
+        println "Hello \(name) \(surname)!"
     } else {
-        print "Hello \(name)!"
+        println "Hello \(name)!"
     }
 }

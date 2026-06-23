@@ -316,6 +316,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "galvan-hir"
+version = "0.0.3"
+dependencies = [
+ "galvan-ast",
+ "galvan-files",
+ "galvan-resolver",
+ "itertools",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "galvan-into-ast"
 version = "0.0.3"
 dependencies = [
@@ -355,6 +366,7 @@ dependencies = [
  "derive_more",
  "galvan-ast",
  "galvan-files",
+ "galvan-hir",
  "galvan-into-ast",
  "galvan-resolver",
  "itertools",
