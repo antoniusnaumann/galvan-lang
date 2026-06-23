@@ -480,7 +480,8 @@ pub enum HirLiteral {
 
 #[derive(Clone, Debug)]
 pub struct HirStringLiteral {
-    /// The raw string literal including quotes and `{}` placeholders
+    /// The Rust format string literal including quotes and `{}` placeholders.
+    /// Literal braces are escaped as `{{` and `}}`.
     pub value: String,
     pub interpolations: Vec<HirExpression>,
 }

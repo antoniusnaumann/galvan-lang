@@ -69,15 +69,12 @@ commands remain subcommands.
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
     multithreading
 
-- **String interpolation** (galvan-into-ast/src/items/literal.rs)
-  - Parse interpolation expressions directly in the grammar instead of
-    re-parsing them with a function wrapper and falling back to verbatim
-    identifiers
-
 - **Tree-sitter grammar completeness** (tree-sitter-galvan/)
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
+  - Move literal corpus fixtures into a valid top-level context; bare literals
+    currently parse as errors because `source` only accepts top-level items
 
 ## Future Enhancements
 
@@ -90,5 +87,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-22*
+*Last updated: 2026-06-23*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

@@ -31,7 +31,7 @@ Galvan programs use a regular `main` function.
 ```galvan
 fn main() {
     let name = "Galvan"
-    print("Welcome to {name}, the modern language!")
+    print("Welcome to \(name), the modern language!")
 }
 ```
 The main function can optionally receive the process argument vector. Like C's
@@ -94,7 +94,7 @@ All functions are declared top-level. If their first parameter is named `self`, 
 pub type Dog { name: String }
 
 fn bark(self: Dog) {
-    print("{self.name} barks")
+    print("\(self.name) barks")
 }
 
 fn main() {
@@ -161,7 +161,7 @@ Galvan supports union types everywhere where a type identifier is expected:
 > Union types are not implemented yet
 ```rust
 fn print_value(value: Int | String) {
-    print("Value: {value}")
+    print("Value: \(value)")
 }
 ```
 
@@ -184,7 +184,7 @@ Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan do
 // No copy is happening here as the value is not mutated
 // Arguments are passed by value by default
 fn bark_at(self: Dog, other: Dog) {
-    print("{self.name} barks at {other.name}")
+    print("\(self.name) barks at \(other.name)")
 }
 ```
 
@@ -195,7 +195,7 @@ fn shout_at(self: Dog, other: Dog) {
     mut other = other
     // Copy is happening here
     other.name = other.name.uppercase()
-    print("{self.name} shouts at {other.name}")
+    print("\(self.name) shouts at \(other.name)")
 }
 ```
 
@@ -348,23 +348,23 @@ You can use try to unwrap a result or optional:
 > Implicit arguments via `it` are not implemented yet
 ```rust
 try potential_error {
-    print("Optional was {it}")
+    print("Optional was \(it)")
 } else {
-    print("Error occured: {it}")
+    print("Error occured: \(it)")
 }
 ```
 The unwrapped variant is available via the it keyword, like in closures. You can also name it using closure parameter syntax to declare them explicitly:
 ```rust
 try potential_error |value| {
-    print("Optional was {value}")
+    print("Optional was \(value)")
 } else |error| {
-    print("Error occured: {error}")
+    print("Error occured: \(error)")
 }
 ```
 Like `if`, you can also use `try` without an else branch:
 ```rust
 try potential_error |value| {
-    print("Optional was {value}")
+    print("Optional was \(value)")
 }
 
 let optional = try potential_error |successful| { successful }
@@ -579,7 +579,7 @@ cmd main(
     n name: String?
 ) {
     try name |name| {
-        print "Hello {name}!"
+        print "Hello \(name)!"
     } else {
         print "Hello World! ..."
     }
@@ -597,9 +597,9 @@ cmd greet(
     s surname: String?
 ) {
     try surname |surname| {
-        print "Hello {name} {surname}!"
+        print "Hello \(name) \(surname)!"
     } else {
-        print "Hello {name}!"
+        print "Hello \(name)!"
     }
 }
 ```
