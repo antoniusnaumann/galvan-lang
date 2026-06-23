@@ -1,13 +1,20 @@
 use derive_more::From;
 use galvan_ast_macro::AstNode;
 
-use super::{Body, FnDecl, Ident, ParamList, StringLiteral, TypeDecl};
+use super::{Body, FnDecl, Ident, Param, ParamList, StringLiteral, TypeDecl};
 use crate::{AstNode, PrintAst, Span};
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MainDecl {
+    pub kind: MainKind,
     pub body: Body,
     pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum MainKind {
+    Function { argument: Option<Param> },
+    Command(CmdSignature),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -23,7 +30,7 @@ pub struct CmdDecl {
     pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq, AstNode)]
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct CmdSignature {
     pub identifier: Ident,
     pub parameters: ParamList,
@@ -41,7 +48,6 @@ pub struct TaskDecl {
 pub enum RootItem {
     Fn(FnDecl),
     Type(TypeDecl),
-    Main(MainDecl),
     Test(TestDecl),
     Cmd(CmdDecl),
     // CustomTask(TaskDecl),

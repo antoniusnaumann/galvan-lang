@@ -27,11 +27,18 @@ This is where Galvan comes in: It provides a concise syntax and simplified way o
 Galvan is a modern programming language that transpiles to Rust. It provides a concise syntax while leveraging the full power of Rust's ecosystem.
 
 ### Basic Syntax and String Formatting
-In Galvan, `main` is not a function but an "entry point".
+Galvan programs use a regular `main` function.
 ```galvan
-main {
+fn main() {
     let name = "Galvan"
-    print("Welcome to {name}, the modern language!")
+    print("Welcome to \(name), the modern language!")
+}
+```
+The main function can optionally receive the process argument vector. Like C's
+`argv`, the first element is the executable name.
+```galvan
+fn main(args: [String]) {
+    print args
 }
 ```
 Note that Galvan strings always support inline format arguments.
@@ -87,10 +94,10 @@ All functions are declared top-level. If their first parameter is named `self`, 
 pub type Dog { name: String }
 
 fn bark(self: Dog) {
-    print("{self.name} barks")
+    print("\(self.name) barks")
 }
 
-main {
+fn main() {
     let dog = Dog(name: "Bello")
     dog.bark()
 }
@@ -105,7 +112,7 @@ type Book {
     content: String = "Lorem ipsum dolor sit amet..."
 }
 
-main {
+fn main() {
     let book = Book()
 }
 ```
@@ -154,7 +161,7 @@ Galvan supports union types everywhere where a type identifier is expected:
 > Union types are not implemented yet
 ```rust
 fn print_value(value: Int | String) {
-    print("Value: {value}")
+    print("Value: \(value)")
 }
 ```
 
@@ -177,7 +184,7 @@ Galvan's `mut value: T` would be equivalent to Rust's `value: &mut T`. Galvan do
 // No copy is happening here as the value is not mutated
 // Arguments are passed by value by default
 fn bark_at(self: Dog, other: Dog) {
-    print("{self.name} barks at {other.name}")
+    print("\(self.name) barks at \(other.name)")
 }
 ```
 
@@ -188,7 +195,7 @@ fn shout_at(self: Dog, other: Dog) {
     mut other = other
     // Copy is happening here
     other.name = other.name.uppercase()
-    print("{self.name} shouts at {other.name}")
+    print("\(self.name) shouts at \(other.name)")
 }
 ```
 
@@ -209,7 +216,7 @@ pub type Person {
     ref dog: Dog
 }
 
-main {
+fn main() {
     // Note that constructors use '(' with named arguments
     ref dog = Dog(name: "Bello", age: 5)
     // The `dog` field now points to the same entity as the `dog` variable 
@@ -235,7 +242,7 @@ fn store(ref arg: String) {
     // ...
 }
 
-main {
+fn main() {
     ref my_string = "This is a heap ref"
     
     // Argument must be annotated as mutable
@@ -253,7 +260,7 @@ Only variables and members declared as `ref` can be passed as `ref`
 Ref variables can be assigned to each other by reference
 
 ```galvan
-main {
+fn main() {
     ref msg = "Hello World!"
     ref say = ref msg // now say points to msg
 
@@ -341,23 +348,23 @@ You can use try to unwrap a result or optional:
 > Implicit arguments via `it` are not implemented yet
 ```rust
 try potential_error {
-    print("Optional was {it}")
+    print("Optional was \(it)")
 } else {
-    print("Error occured: {it}")
+    print("Error occured: \(it)")
 }
 ```
 The unwrapped variant is available via the it keyword, like in closures. You can also name it using closure parameter syntax to declare them explicitly:
 ```rust
 try potential_error |value| {
-    print("Optional was {value}")
+    print("Optional was \(value)")
 } else |error| {
-    print("Error occured: {error}")
+    print("Error occured: \(error)")
 }
 ```
 Like `if`, you can also use `try` without an else branch:
 ```rust
 try potential_error |value| {
-    print("Optional was {value}")
+    print("Optional was \(value)")
 }
 
 let optional = try potential_error |successful| { successful }
@@ -529,7 +536,7 @@ fn add(a: Int, b: Int) -> Int {
     a + b
 }
 
-main {
+fn main() {
     let result = add 2, 3
     print result // 5
 }
@@ -559,15 +566,23 @@ test "Ensure that addition works correctly" {
     assert 2 + 2 == 4
 }
 ```
-Like 'main', 'test' is not a function but an entry point. Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
+Tests can take a string as a description. Although this is optional, adding a brief description to your unit tests is highly encouraged.
 
 ### CLI argument parsing
 Galvan has built-in support for creating CLI apps with arguments and subcommands by integrating the popular *clap* crate.
 This code:
 
 ```galvan
-main {
-    print "Hello World! ..."
+// cmd main arguments are top-level flags rather than a subcommand
+cmd main(
+    /// Optional name to greet when no subcommand is selected
+    n name: String?
+) {
+    try name |name| {
+        print "Hello \(name)!"
+    } else {
+        print "Hello World! ..."
+    }
 }
 
 // commands automatically get added to the CLI application as subcommands, including doc comments being shown in the -h argument
@@ -582,9 +597,9 @@ cmd greet(
     s surname: String?
 ) {
     try surname |surname| {
-        print "Hello {name} {surname}!"
+        print "Hello \(name) \(surname)!"
     } else {
-        print "Hello {name}!"
+        print "Hello \(name)!"
     }
 }
 ```

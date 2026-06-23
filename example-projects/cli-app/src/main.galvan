@@ -1,5 +1,13 @@
-main {
-    print "Hello World! ..."
+// A command named main defines top-level flags instead of a subcommand.
+cmd main(
+    /// Optional name to greet when no subcommand is selected
+    n name: String?
+) {
+    try name |name| {
+        println "Hello \(name)!"
+    } else {
+        println "Hello World! ..."
+    }
 }
 
 // commands automatically get added to the CLI application as subcommands, including doc comments being shown in the -h argument
@@ -14,8 +22,8 @@ cmd greet(
     s surname: String?
 ) {
     try surname |surname| {
-        print "Hello \(name) \(surname)!"
+        println "Hello \(name) \(surname)!"
     } else {
-        print "Hello \(name)!"
+        println "Hello \(name)!"
     }
 }

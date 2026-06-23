@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
-use galvan_hir::hir::{HirCmd, HirFunction, HirModule, HirTest};
+use galvan_hir::hir::{HirCmd, HirFunction, HirMain, HirMainKind, HirModule, HirTest};
 use galvan_hir::typecheck::typecheck;
 use galvan_into_ast::{AstError, SegmentAst, SourceIntoAst};
 use galvan_resolver::LookupError;
@@ -90,9 +90,59 @@ fn extract_param_doc_comment(source_content: &str, param: &Param) -> Option<Stri
     extract_doc_comment(source_content, &param.span)
 }
 
-/// Generate CLI structure with subcommands
+struct CliArguments {
+    fields: Vec<String>,
+    values: Vec<String>,
+}
+
+fn cli_arguments(
+    parameters: &ParamList,
+    source: &Source,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> CliArguments {
+    let mut fields = Vec::new();
+    let mut values = Vec::new();
+
+    for param in &parameters.params {
+        let field_name = param.identifier.as_str();
+        let param_type = param.param_type.transpile(ctx, errors);
+        let help_text = extract_param_doc_comment(source.content(), param);
+        let clap_attr = match (&param.short_name, &help_text) {
+            (Some(short_name), Some(help)) => {
+                format!(
+                    "#[arg(short = '{}', long = \"{}\", help = \"{}\")]",
+                    short_name.as_str(),
+                    field_name,
+                    help
+                )
+            }
+            (Some(short_name), None) => {
+                format!(
+                    "#[arg(short = '{}', long = \"{}\")]",
+                    short_name.as_str(),
+                    field_name
+                )
+            }
+            (None, Some(help)) => {
+                format!("#[arg(long = \"{}\", help = \"{}\")]", field_name, help)
+            }
+            (None, None) => format!("#[arg(long = \"{}\")]", field_name),
+        };
+
+        fields.push(format!(
+            "    {clap_attr}\n    pub {field_name}: {param_type}"
+        ));
+        values.push(field_name.to_owned());
+    }
+
+    CliArguments { fields, values }
+}
+
+/// Generate CLI structure with top-level arguments and subcommands.
 fn generate_cli_structure(
     commands: &[HirCmd],
+    main: Option<&HirMain>,
     ctx: &Context,
     errors: &mut ErrorCollector,
 ) -> (String, String) {
@@ -111,49 +161,9 @@ fn generate_cli_structure(
         command_functions.push(format!("{signature} {body}"));
 
         // Generate args struct for this command
-        let mut args_fields = Vec::new();
-        let mut function_params = Vec::new();
+        let arguments = cli_arguments(&cmd.signature.parameters, &cmd.source, ctx, errors);
 
-        for param in &cmd.signature.parameters.params {
-            let field_name = param.identifier.as_str();
-            let param_type = param.param_type.transpile(ctx, errors);
-
-            // Extract doc comment for this parameter
-            let help_text = extract_param_doc_comment(cmd.source.content(), param);
-
-            // Generate clap attribute based on short_name and help text
-            let clap_attr = match (&param.short_name, &help_text) {
-                (Some(short_name), Some(help)) => {
-                    format!(
-                        "#[arg(short = '{}', long = \"{}\", help = \"{}\")]",
-                        short_name.as_str(),
-                        field_name,
-                        help
-                    )
-                }
-                (Some(short_name), None) => {
-                    format!(
-                        "#[arg(short = '{}', long = \"{}\")]",
-                        short_name.as_str(),
-                        field_name
-                    )
-                }
-                (None, Some(help)) => {
-                    format!("#[arg(long = \"{}\", help = \"{}\")]", field_name, help)
-                }
-                (None, None) => {
-                    format!("#[arg(long = \"{}\")]", field_name)
-                }
-            };
-
-            args_fields.push(format!(
-                "    {}\n    pub {}: {}",
-                clap_attr, field_name, param_type
-            ));
-            function_params.push(format!("args.{}", field_name));
-        }
-
-        let args_struct = if args_fields.is_empty() {
+        let args_struct = if arguments.fields.is_empty() {
             format!(
                 "#[derive(clap::Args, Debug)]\nstruct {}Args {{}}",
                 cmd_name_pascal
@@ -162,7 +172,7 @@ fn generate_cli_structure(
             format!(
                 "#[derive(clap::Args, Debug)]\nstruct {}Args {{\n{}\n}}",
                 cmd_name_pascal,
-                args_fields.join(",\n")
+                arguments.fields.join(",\n")
             )
         };
 
@@ -183,10 +193,18 @@ fn generate_cli_structure(
         subcommand_variants.push(variant);
 
         // Generate match arm
-        let function_call = if function_params.is_empty() {
+        let function_call = if arguments.values.is_empty() {
             format!("{}()", cmd_name)
         } else {
-            format!("{}({})", cmd_name, function_params.join(", "))
+            format!(
+                "{}({})",
+                cmd_name,
+                arguments
+                    .values
+                    .iter()
+                    .map(|field| format!("args.{field}"))
+                    .join(", ")
+            )
         };
 
         match_arms.push(format!(
@@ -195,13 +213,67 @@ fn generate_cli_structure(
         ));
     }
 
-    let cli_code = format!(
-        r#"
-use clap::{{Parser, Subcommand, Args}};
+    let main_arguments = match main {
+        Some(HirMain {
+            kind: HirMainKind::Command { signature },
+            source,
+            ..
+        }) => Some(cli_arguments(&signature.parameters, source, ctx, errors)),
+        _ => None,
+    };
+    let main_call = match &main_arguments {
+        Some(arguments) if arguments.values.is_empty() => "__main_command()".to_owned(),
+        Some(arguments) => format!("__main_command({})", arguments.values.join(", ")),
+        None if main.is_some() => "__main__()".to_owned(),
+        None => "{}".to_owned(),
+    };
+    let main_fields = main_arguments
+        .as_ref()
+        .map(|arguments| arguments.fields.join(",\n"))
+        .unwrap_or_default();
+    let main_bindings = main_arguments
+        .as_ref()
+        .map(|arguments| arguments.values.join(", "))
+        .unwrap_or_default();
+    let cli_bindings = if main_bindings.is_empty() {
+        "command".to_owned()
+    } else {
+        format!("{main_bindings}, command")
+    };
+
+    let cli_code = if commands.is_empty() {
+        format!(
+            r#"
+use clap::Parser;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {{
+{main_fields}
+}}
+
+pub(crate) fn __cli_main() {{
+    let cli = Cli::parse();
+    let Cli {{ {} }} = cli;
+    {main_call};
+}}
+"#,
+            main_bindings
+        )
+    } else {
+        let main_fields = if main_fields.is_empty() {
+            String::new()
+        } else {
+            format!("{main_fields},")
+        };
+        format!(
+            r#"
+use clap::{{Parser, Subcommand, Args}};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None, subcommand_negates_reqs = true)]
+struct Cli {{
+{main_fields}
     #[command(subcommand)]
     command: Option<Commands>,
 }}
@@ -214,17 +286,18 @@ enum Commands {{
 {}
 
 pub(crate) fn __cli_main() {{
-    let cli = Cli::parse();
-    match cli.command {{
+    let Cli {{ {cli_bindings} }} = Cli::parse();
+    match command {{
 {}
-        None => __main__(),
+        None => {main_call},
     }}
 }}
 "#,
-        subcommand_variants.join(",\n"),
-        subcommand_args.join("\n\n"),
-        match_arms.join("\n")
-    );
+            subcommand_variants.join(",\n"),
+            subcommand_args.join("\n\n"),
+            match_arms.join("\n")
+        )
+    };
 
     (command_functions.join("\n\n"), cli_code)
 }
@@ -382,10 +455,21 @@ fn transpile_module(
         .main
         .as_ref()
         .map(|main| transpile_main(main, ctx, errors))
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            if module.cmds.is_empty() {
+                String::new()
+            } else {
+                "pub(crate) fn __main__() { unreachable!(\"No default main command\") }".to_owned()
+            }
+        });
 
-    let (cmds, cli_main) = if !module.cmds.is_empty() {
-        let (command_functions, cli_code) = generate_cli_structure(&module.cmds, ctx, errors);
+    let has_command_main = module
+        .main
+        .as_ref()
+        .is_some_and(|main| matches!(&main.kind, HirMainKind::Command { .. }));
+    let (cmds, cli_main) = if !module.cmds.is_empty() || has_command_main {
+        let (command_functions, cli_code) =
+            generate_cli_structure(&module.cmds, module.main.as_ref(), ctx, errors);
         (command_functions, cli_code)
     } else {
         (
@@ -398,7 +482,7 @@ fn transpile_module(
         )
     };
 
-    let has_cli_commands = !module.cmds.is_empty();
+    let has_cli_commands = !module.cmds.is_empty() || has_command_main;
     let cli_flag = if has_cli_commands {
         "pub(crate) const __HAS_CLI_COMMANDS: bool = true;"
     } else {

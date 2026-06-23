@@ -1,6 +1,4 @@
-use galvan_ast::{
-    FnDecl, Ident, MainDecl, SegmentedAsts, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
-};
+use galvan_ast::{FnDecl, Ident, SegmentedAsts, ToplevelItem, TypeDecl, TypeElement, TypeIdent};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -16,7 +14,6 @@ pub struct LookupContext<'a> {
     pub functions: HashMap<FunctionId, &'a ToplevelItem<FnDecl>>,
     // TODO: Nested contexts for resolving names from imported modules
     // pub imports: HashMap<String, LookupContext<'a>>,
-    pub main: Option<&'a ToplevelItem<MainDecl>>,
 }
 
 pub trait Lookup {

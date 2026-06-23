@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use galvan_ast::{CmdSignature, DeclModifier, FnSignature, Ident, Param, TypeElement};
 use galvan_hir::builtins::CheckBuiltins;
-use galvan_hir::hir::{HirFunction, HirMain, HirTest};
+use galvan_hir::hir::{HirFunction, HirMain, HirMainKind, HirTest};
 use itertools::Itertools;
 
 use crate::context::Context;
@@ -179,7 +179,36 @@ pub(crate) fn transpile_test(
 
 pub(crate) fn transpile_main(main: &HirMain, ctx: &Context, errors: &mut ErrorCollector) -> String {
     let body = main.body.transpile(ctx, errors);
-    format!("pub(crate) fn __main__() {body}")
+    match &main.kind {
+        HirMainKind::Function { argument: None } => {
+            format!("pub(crate) fn __main__() {body}")
+        }
+        HirMainKind::Function {
+            argument: Some(argument),
+        } => {
+            let argument = sanitize_name(argument.as_str());
+            format!(
+                "pub(crate) fn __main__() {{ let {argument}: ::std::vec::Vec<String> = ::std::env::args().collect(); {body}; }}"
+            )
+        }
+        HirMainKind::Command { signature } => {
+            let parameters = signature
+                .parameters
+                .params
+                .iter()
+                .map(|param| {
+                    format!(
+                        "{}: {}",
+                        sanitize_name(param.identifier.as_str()),
+                        param.param_type.transpile(ctx, errors)
+                    )
+                })
+                .join(", ");
+            format!(
+                "pub(crate) fn __main__() {{ unreachable!(\"CLI entry point dispatches through __cli_main\") }}\nfn __main_command({parameters}) {body}"
+            )
+        }
+    }
 }
 
 impl Transpile for CmdSignature {
