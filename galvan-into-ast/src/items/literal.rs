@@ -1,84 +1,50 @@
 use galvan_ast::{
-    BooleanLiteral, CharLiteral, Expression, ExpressionKind, Ident, Literal, NoneLiteral,
-    NumberLiteral, Span, StringLiteral,
+    BooleanLiteral, CharLiteral, Expression, Literal, NoneLiteral, NumberLiteral, Span,
+    StringLiteral,
 };
 use galvan_parse::TreeCursor;
 
 use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 
-// Function to parse an arbitrary expression from string content
-fn parse_interpolation_expression(expr_content: &str, span: &Span) -> Result<Expression, AstError> {
-    // Create a minimal wrapper to parse the expression
-    // We'll wrap it in a simple statement that we can parse
-    let wrapper_source = format!("fn __temp() {{ let __x = {}; }}", expr_content);
-    let source = galvan_files::Source::Str(wrapper_source.clone().into());
+fn push_escaped_format_text(output: &mut String, text: &str) {
+    let mut chars = text.chars().peekable();
 
-    // Parse the wrapper source
-    match galvan_parse::parse_source(&source) {
-        Ok(parsed_tree) => {
-            // Create a cursor from the parsed tree
-            let mut cursor = parsed_tree.root_node().walk();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                output.push(ch);
+                let Some(escaped) = chars.next() else {
+                    continue;
+                };
+                output.push(escaped);
 
-            // Navigate to find the expression we want
-            // Structure: source -> function -> body -> statement -> declaration -> expression
-            if cursor.child() && // Enter source
-               cursor.child() && // Enter function
-               cursor_goto_named(&mut cursor, "body") &&
-               cursor.child() && // Enter body
-               cursor.child() && // Enter statement
-               cursor_goto_named(&mut cursor, "declaration") &&
-               cursor.child() && // Enter declaration
-               cursor_goto_named(&mut cursor, "expression")
-            {
-                // Found the expression, parse it
-                match Expression::read_cursor(&mut cursor, &wrapper_source) {
-                    Ok(expr) => Ok(expr),
-                    Err(_) => {
-                        // Fallback to creating identifier
-                        create_fallback_expression(expr_content, span)
+                if escaped == 'u' && chars.peek() == Some(&'{') {
+                    for unicode_char in chars.by_ref() {
+                        output.push(unicode_char);
+                        if unicode_char == '}' {
+                            break;
+                        }
                     }
                 }
-            } else {
-                // Navigation failed, create fallback
-                create_fallback_expression(expr_content, span)
             }
-        }
-        Err(_) => {
-            // Parsing failed, create fallback
-            create_fallback_expression(expr_content, span)
+            '{' => output.push_str("{{"),
+            '}' => output.push_str("}}"),
+            _ => output.push(ch),
         }
     }
 }
 
-// Helper function to navigate to a named child node
-fn cursor_goto_named(cursor: &mut TreeCursor<'_>, name: &str) -> bool {
+fn read_interpolation(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Expression, AstError> {
+    cursor_expect!(cursor, "string_interpolation");
+    cursor.child();
+
     loop {
-        if cursor.kind().unwrap_or("") == name {
-            return true;
+        if cursor.kind()? == "expression" {
+            return Expression::read_cursor(cursor, source);
         }
-        if !cursor.goto_next_sibling() {
-            return false;
+        if !cursor.next() {
+            return Err(AstError::ConversionError);
         }
-    }
-}
-
-// Helper function to create fallback expressions
-fn create_fallback_expression(expr_content: &str, span: &Span) -> Result<Expression, AstError> {
-    if expr_content
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '_')
-    {
-        // Simple identifier
-        Ok(Expression {
-            kind: ExpressionKind::Ident(Ident::new(expr_content)),
-            span: span.clone(),
-        })
-    } else {
-        // Treat as identifier anyway - let the transpiler handle complex syntax
-        Ok(Expression {
-            kind: ExpressionKind::Ident(Ident::new(expr_content)),
-            span: span.clone(),
-        })
     }
 }
 
@@ -134,65 +100,35 @@ impl ReadCursor for StringLiteral {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let node = cursor_expect!(cursor, "string_literal");
         let span = Span::from_node(node);
-        let full_text = source[node.start_byte()..node.end_byte()].to_owned();
-
+        let mut value = String::new();
         let mut interpolations = Vec::new();
+        let mut last_byte = node.start_byte();
+        let mut child_cursor = node.walk();
 
-        // Simple approach: manually parse the string and replace interpolations with placeholders
-        if full_text.contains('{') && full_text.contains('}') {
-            let mut template = String::new();
-            let mut chars = full_text.chars().peekable();
-            let mut placeholder_index = 0;
+        if child_cursor.goto_first_child() {
+            loop {
+                let child = child_cursor.node();
+                if child.kind() == "string_interpolation" {
+                    push_escaped_format_text(&mut value, &source[last_byte..child.start_byte()]);
+                    let mut interpolation_cursor = child.walk();
+                    interpolations.push(read_interpolation(&mut interpolation_cursor, source)?);
+                    value.push_str("{}");
+                    last_byte = child.end_byte();
+                }
 
-            // Skip opening quote
-            if chars.peek() == Some(&'"') {
-                chars.next();
-                template.push('"');
-            }
-
-            while let Some(ch) = chars.next() {
-                if ch == '{' {
-                    // Found interpolation - find the closing brace
-                    let mut expr_content = String::new();
-                    let mut brace_depth = 1;
-
-                    while let Some(inner_ch) = chars.next() {
-                        if inner_ch == '{' {
-                            brace_depth += 1;
-                        } else if inner_ch == '}' {
-                            brace_depth -= 1;
-                            if brace_depth == 0 {
-                                break;
-                            }
-                        }
-                        expr_content.push(inner_ch);
-                    }
-
-                    // Parse arbitrary expressions within interpolations
-                    let expr = parse_interpolation_expression(&expr_content, &span)?;
-                    interpolations.push(expr);
-
-                    // Add placeholder to template
-                    template.push_str(&format!("{{{}}}", placeholder_index));
-                    placeholder_index += 1;
-                } else {
-                    template.push(ch);
+                if !child_cursor.goto_next_sibling() {
+                    break;
                 }
             }
-
-            Ok(Self {
-                value: template,
-                interpolations,
-                span,
-            })
-        } else {
-            // No interpolation - return as-is
-            Ok(Self {
-                value: full_text,
-                interpolations,
-                span,
-            })
         }
+
+        push_escaped_format_text(&mut value, &source[last_byte..node.end_byte()]);
+
+        Ok(Self {
+            value,
+            interpolations,
+            span,
+        })
     }
 }
 

@@ -171,7 +171,7 @@ impl Checker<'_> {
                 let interpolations = string
                     .interpolations
                     .iter()
-                    .map(|interpolation| self.lower_interpolation(interpolation))
+                    .map(|interpolation| self.lower_expression(interpolation, &Expected::free()))
                     .collect();
                 (
                     HirLiteral::String(HirStringLiteral {
@@ -189,28 +189,6 @@ impl Checker<'_> {
             Ownership::UniqueOwned,
             span,
         )
-    }
-
-    /// Lowers a string interpolation argument. When parsing the interpolated
-    /// source failed, the AST falls back to an identifier containing the raw
-    /// expression source (e.g. `dog.name`); such identifiers are rendered
-    /// verbatim instead of being resolved as variables.
-    fn lower_interpolation(&mut self, interpolation: &Expression) -> HirExpression {
-        if let ExpressionKind::Ident(ident) = &interpolation.kind {
-            let is_fallback = ident
-                .as_str()
-                .contains(|c: char| !c.is_alphanumeric() && c != '_');
-            if is_fallback {
-                return HirExpression::new(
-                    HirExpressionKind::Variable(ident.clone()),
-                    TypeElement::infer(),
-                    Ownership::Borrowed,
-                    interpolation.span,
-                );
-            }
-        }
-
-        self.lower_expression(interpolation, &Expected::free())
     }
 
     // ------------------------------------------------------------------
