@@ -73,8 +73,6 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
-  - Move literal corpus fixtures into a valid top-level context; bare literals
-    currently parse as errors because `source` only accepts top-level items
 
 ## Future Enhancements
 
