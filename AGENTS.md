@@ -67,3 +67,7 @@ pub enum MyError {
     #[error(transparent)]
     Upstream(#[from] UpstreamError),
 }
+```
+
+### Tree-Sitter Grammar
+For the tree-sitter grammar, you should always directly work on the main branch rather than creating paralell feature branches.
