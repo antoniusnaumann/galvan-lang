@@ -2,6 +2,7 @@ pub type Color {
     Transparent
     Gray(U8)
     Rgb(r: U8, g: U8, b: U8)
+    Sepia
 }
 
 test "Create enum variant" {

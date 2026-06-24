@@ -21,6 +21,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::ElseUnwrap(unwrap) => unwrap.transpile(ctx, errors),
             HirExpressionKind::Try(try_expr) => try_expr.transpile(ctx, errors),
             HirExpressionKind::For(for_expr) => for_expr.transpile(ctx, errors),
+            HirExpressionKind::Match(match_expr) => match_expr.transpile(ctx, errors),
             HirExpressionKind::Assert(assert) => assert.transpile(ctx, errors),
             HirExpressionKind::Print(print) => print.transpile(ctx, errors),
             HirExpressionKind::FunctionCall(call) => call.transpile(ctx, errors),
@@ -167,6 +168,78 @@ impl Transpile for HirFor {
             }}"
                 )
             }
+        }
+    }
+}
+
+impl Transpile for HirMatch {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let scrutinee = self.scrutinee.transpile(ctx, errors);
+        let arms = self
+            .arms
+            .iter()
+            .map(|arm| arm.transpile(ctx, errors))
+            .join(",\n");
+
+        format!("match {scrutinee} {{\n{arms}\n}}")
+    }
+}
+
+impl Transpile for HirMatchArm {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        transpile!(ctx, errors, "{} => {}", self.pattern, self.body)
+    }
+}
+
+impl Transpile for HirMatchPattern {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        match self {
+            HirMatchPattern::Wildcard => "_".to_string(),
+            HirMatchPattern::EnumVariant(pattern) => pattern.transpile(ctx, errors),
+        }
+    }
+}
+
+impl Transpile for HirEnumMatchPattern {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let access = format!(
+            "{}::{}",
+            self.target.transpile(ctx, errors),
+            self.case.as_str()
+        );
+
+        match &self.arguments {
+            HirMatchPatternArguments::None => access,
+            HirMatchPatternArguments::Tuple(arguments) => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| argument.transpile(ctx, errors))
+                    .join(", ");
+                format!("{access}({arguments})")
+            }
+            HirMatchPatternArguments::Named(arguments) => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| argument.transpile(ctx, errors))
+                    .join(", ");
+                format!("{access} {{ {arguments} }}")
+            }
+        }
+    }
+}
+
+impl Transpile for HirNamedMatchBinding {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let binding = self.binding.transpile(ctx, errors);
+        format!("{}: {binding}", sanitize_name(self.field.as_str()))
+    }
+}
+
+impl Transpile for HirMatchBindingPattern {
+    fn transpile(&self, _ctx: &Context, _errors: &mut ErrorCollector) -> String {
+        match self {
+            HirMatchBindingPattern::Binding(ident) => sanitize_name(ident.as_str()).into_owned(),
+            HirMatchBindingPattern::Wildcard => "_".to_string(),
         }
     }
 }

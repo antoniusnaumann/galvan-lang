@@ -35,11 +35,6 @@ commands remain subcommands.
 
 ## High Priority - Language Completeness
 
-- **Match expressions**
-  - Add parser, AST, HIR/typechecking, and code generation support for
-    enum variant patterns, tuple payload destructuring, named-field payload
-    destructuring, ignored fields, wildcard arms, and expression-valued arms
-
 - **Iteration** (galvan-hir/src/typecheck/expr.rs `lower_for`)
   - For loop on dictionaries and ordered dictionaries
   - For loop on optional and result types

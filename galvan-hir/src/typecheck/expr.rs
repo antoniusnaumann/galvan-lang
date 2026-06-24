@@ -4,8 +4,10 @@ use galvan_ast::{
     BasicTypeItem, Closure, ClosureParameter, ClosureTypeItem, CollectionLiteral,
     ComparisonOperator, ConstructorCall, DeclModifier, DictLiteralElement, ElseExpression,
     EnumConstructor, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident,
-    InfixExpression, InfixOperation, Literal, MemberOperator, NeverTypeItem, OptionalTypeItem,
-    Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl, TypeElement, TypeIdent,
+    InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
+    MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
+    OptionalTypeItem, Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl,
+    TypeElement, TypeIdent,
 };
 use galvan_resolver::Lookup;
 
@@ -25,6 +27,9 @@ impl Checker<'_> {
         let lowered = match &expression.kind {
             ExpressionKind::ElseExpression(else_expression) => {
                 self.lower_else_expression(else_expression, expected, span)
+            }
+            ExpressionKind::Match(match_expression) => {
+                self.lower_match_expression(match_expression, expected, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
@@ -656,6 +661,395 @@ impl Checker<'_> {
     // ------------------------------------------------------------------
     // Control flow
     // ------------------------------------------------------------------
+
+    fn lower_match_expression(
+        &mut self,
+        match_expression: &MatchExpression,
+        expected: &Expected,
+        span: Span,
+    ) -> HirExpression {
+        let scrutinee = self.lower_expression(&match_expression.scrutinee, &Expected::free());
+        let scrutinee_ty = scrutinee.ty.clone();
+        let target = self.match_target_type(&scrutinee_ty, span);
+        let scrutinee = self.coerce(scrutinee, &Expected::owned(scrutinee_ty.clone()));
+
+        let branch_expected = if expected.is_void() {
+            Expected::void()
+        } else {
+            expected.clone()
+        };
+
+        let mut unified_ty: Option<TypeElement> = None;
+        let mut arms = Vec::with_capacity(match_expression.arms.len());
+
+        for arm in &match_expression.arms {
+            let lowered = self.lower_match_arm(arm, target.as_ref(), &branch_expected);
+            if branch_expected.is_free() {
+                unified_ty = self.unify_match_type(unified_ty, &lowered.body.ty, span);
+            }
+            arms.push(lowered);
+        }
+
+        let ty = if branch_expected.is_free() {
+            unified_ty.unwrap_or_else(TypeElement::infer)
+        } else {
+            branch_expected.ty.clone()
+        };
+
+        HirExpression::new(
+            HirExpressionKind::Match(Box::new(HirMatch { scrutinee, arms })),
+            ty,
+            Ownership::UniqueOwned,
+            span,
+        )
+    }
+
+    fn lower_match_arm(
+        &mut self,
+        arm: &MatchArm,
+        target: Option<&TypeIdent>,
+        expected: &Expected,
+    ) -> HirMatchArm {
+        let (pattern, bindings) = self.lower_match_pattern(&arm.pattern, target);
+
+        self.scopes.push();
+        for binding in bindings {
+            self.scopes.declare(binding);
+        }
+        let body = self.lower_block(&arm.body.body, expected);
+        self.scopes.pop();
+
+        HirMatchArm { pattern, body }
+    }
+
+    fn lower_match_pattern(
+        &mut self,
+        pattern: &MatchPattern,
+        target: Option<&TypeIdent>,
+    ) -> (HirMatchPattern, Vec<Variable>) {
+        match pattern {
+            MatchPattern::Wildcard(_) => (HirMatchPattern::Wildcard, Vec::new()),
+            MatchPattern::EnumVariant(pattern) => {
+                let target = target
+                    .cloned()
+                    .unwrap_or_else(|| TypeIdent::new("__UnknownMatchTarget"));
+                let fields = self
+                    .resolve_match_variant_fields(&target, &pattern.case, pattern.span)
+                    .unwrap_or_default();
+                let (arguments, bindings) =
+                    self.lower_match_pattern_arguments(&pattern.arguments, &fields, pattern.span);
+
+                (
+                    HirMatchPattern::EnumVariant(HirEnumMatchPattern {
+                        target,
+                        case: pattern.case.clone(),
+                        arguments,
+                    }),
+                    bindings,
+                )
+            }
+        }
+    }
+
+    fn lower_match_pattern_arguments(
+        &mut self,
+        arguments: &[MatchPatternArg],
+        fields: &[(Option<Ident>, TypeElement)],
+        span: Span,
+    ) -> (HirMatchPatternArguments, Vec<Variable>) {
+        let has_named = arguments
+            .iter()
+            .any(|argument| matches!(argument, MatchPatternArg::Named(_)));
+        let has_positional = arguments
+            .iter()
+            .any(|argument| matches!(argument, MatchPatternArg::Binding(_)));
+
+        if has_named && has_positional {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: "Match pattern cannot mix named and positional bindings".to_string(),
+                },
+                Some(span.into()),
+            );
+        }
+
+        if arguments.is_empty() {
+            return (self.wildcard_match_arguments(fields), Vec::new());
+        }
+
+        if has_named {
+            self.lower_named_match_arguments(arguments, fields, span)
+        } else {
+            self.lower_positional_match_arguments(arguments, fields, span)
+        }
+    }
+
+    fn lower_positional_match_arguments(
+        &mut self,
+        arguments: &[MatchPatternArg],
+        fields: &[(Option<Ident>, TypeElement)],
+        span: Span,
+    ) -> (HirMatchPatternArguments, Vec<Variable>) {
+        if fields.iter().any(|(name, _)| name.is_some()) {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: "Named enum variants must be matched with named fields".to_string(),
+                },
+                Some(span.into()),
+            );
+        }
+
+        if arguments.len() != fields.len() {
+            self.errors.error_with_span(
+                TranspilerError::ArgumentCountMismatch {
+                    name: "match pattern".to_string(),
+                    expected: fields.len(),
+                    found: arguments.len(),
+                },
+                Some(span.into()),
+            );
+        }
+
+        let mut bindings = Vec::new();
+        let mut patterns = Vec::with_capacity(fields.len());
+
+        for (i, (_, ty)) in fields.iter().enumerate() {
+            let binding = arguments.get(i).and_then(|argument| match argument {
+                MatchPatternArg::Binding(binding) => Some(binding),
+                MatchPatternArg::Named(_) => None,
+            });
+
+            let (pattern, variable) = match binding {
+                Some(binding) => self.lower_match_binding(binding, ty),
+                None => (HirMatchBindingPattern::Wildcard, None),
+            };
+            if let Some(variable) = variable {
+                bindings.push(variable);
+            }
+            patterns.push(pattern);
+        }
+
+        if fields.is_empty() {
+            (HirMatchPatternArguments::None, bindings)
+        } else {
+            (HirMatchPatternArguments::Tuple(patterns), bindings)
+        }
+    }
+
+    fn lower_named_match_arguments(
+        &mut self,
+        arguments: &[MatchPatternArg],
+        fields: &[(Option<Ident>, TypeElement)],
+        span: Span,
+    ) -> (HirMatchPatternArguments, Vec<Variable>) {
+        if fields.iter().any(|(name, _)| name.is_none()) {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: "Tuple enum variants must be matched with positional fields"
+                        .to_string(),
+                },
+                Some(span.into()),
+            );
+        }
+
+        let named_arguments: Vec<&MatchNamedPatternArg> = arguments
+            .iter()
+            .filter_map(|argument| match argument {
+                MatchPatternArg::Named(argument) => Some(argument),
+                MatchPatternArg::Binding(_) => None,
+            })
+            .collect();
+
+        for argument in &named_arguments {
+            let found = fields
+                .iter()
+                .any(|(name, _)| name.as_ref() == Some(&argument.field));
+            if !found {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!("Unknown enum variant field `{}`", argument.field),
+                    },
+                    Some(argument.span.into()),
+                );
+            }
+        }
+
+        let mut bindings = Vec::new();
+        let mut patterns = Vec::with_capacity(fields.len());
+
+        for (field, ty) in fields {
+            let Some(field) = field else {
+                continue;
+            };
+
+            let binding = named_arguments
+                .iter()
+                .find(|argument| argument.field == *field)
+                .map(|argument| &argument.binding);
+            let (binding, variable) = match binding {
+                Some(binding) => self.lower_match_binding(binding, ty),
+                None => (HirMatchBindingPattern::Wildcard, None),
+            };
+            if let Some(variable) = variable {
+                bindings.push(variable);
+            }
+            patterns.push(HirNamedMatchBinding {
+                field: field.clone(),
+                binding,
+            });
+        }
+
+        if fields.is_empty() {
+            (HirMatchPatternArguments::None, bindings)
+        } else {
+            (HirMatchPatternArguments::Named(patterns), bindings)
+        }
+    }
+
+    fn lower_match_binding(
+        &self,
+        binding: &MatchBindingPattern,
+        ty: &TypeElement,
+    ) -> (HirMatchBindingPattern, Option<Variable>) {
+        match binding {
+            MatchBindingPattern::Ident(ident) => {
+                let ownership = if self.is_copy(ty) || ty.is_infer() {
+                    Ownership::UniqueOwned
+                } else {
+                    Ownership::SharedOwned
+                };
+                (
+                    HirMatchBindingPattern::Binding(ident.clone()),
+                    Some(Variable {
+                        ident: ident.clone(),
+                        modifier: DeclModifier::Let,
+                        ty: ty.clone(),
+                        ownership,
+                    }),
+                )
+            }
+            MatchBindingPattern::Wildcard(_) => (HirMatchBindingPattern::Wildcard, None),
+        }
+    }
+
+    fn wildcard_match_arguments(
+        &self,
+        fields: &[(Option<Ident>, TypeElement)],
+    ) -> HirMatchPatternArguments {
+        if fields.is_empty() {
+            return HirMatchPatternArguments::None;
+        }
+
+        if fields.iter().all(|(field, _)| field.is_some()) {
+            HirMatchPatternArguments::Named(
+                fields
+                    .iter()
+                    .filter_map(|(field, _)| {
+                        field.as_ref().map(|field| HirNamedMatchBinding {
+                            field: field.clone(),
+                            binding: HirMatchBindingPattern::Wildcard,
+                        })
+                    })
+                    .collect(),
+            )
+        } else {
+            HirMatchPatternArguments::Tuple(
+                fields
+                    .iter()
+                    .map(|_| HirMatchBindingPattern::Wildcard)
+                    .collect(),
+            )
+        }
+    }
+
+    fn match_target_type(&mut self, ty: &TypeElement, span: Span) -> Option<TypeIdent> {
+        match ty {
+            TypeElement::Plain(basic) => Some(basic.ident.clone()),
+            TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
+            TypeElement::Infer(_) => None,
+            _ => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidOperationOnType {
+                        operation: "match".to_string(),
+                        allowed_types: "enum types".to_string(),
+                    },
+                    Some(span.into()),
+                );
+                None
+            }
+        }
+    }
+
+    fn resolve_match_variant_fields(
+        &mut self,
+        target: &TypeIdent,
+        case: &TypeIdent,
+        span: Span,
+    ) -> Option<Vec<(Option<Ident>, TypeElement)>> {
+        let Some(decl) = self.lookup.resolve_type(target) else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: target.to_string(),
+                },
+                Some(span.into()),
+            );
+            return None;
+        };
+
+        let TypeDecl::Enum(enum_decl) = &decl.item else {
+            self.errors.error_with_span(
+                TranspilerError::InvalidOperationOnType {
+                    operation: "match".to_string(),
+                    allowed_types: "enum types".to_string(),
+                },
+                Some(span.into()),
+            );
+            return None;
+        };
+
+        let Some(member) = enum_decl
+            .members
+            .iter()
+            .find(|member| member.ident == *case)
+        else {
+            self.errors.error_with_span(
+                TranspilerError::EnumAccessError {
+                    message: format!("Enum `{target}` does not have variant `{case}`"),
+                },
+                Some(span.into()),
+            );
+            return None;
+        };
+
+        Some(
+            member
+                .fields
+                .iter()
+                .map(|field| (field.name.clone(), field.r#type.clone()))
+                .collect(),
+        )
+    }
+
+    fn unify_match_type(
+        &mut self,
+        current: Option<TypeElement>,
+        next: &TypeElement,
+        span: Span,
+    ) -> Option<TypeElement> {
+        match current {
+            None => Some(next.clone()),
+            Some(current) => unify_types(&current, next).or_else(|| {
+                self.errors.warning(
+                    format!(
+                        "Types of match arms don't match: previous: {}, next: {}",
+                        current, next
+                    ),
+                    Some(span.into()),
+                );
+                Some(TypeElement::infer())
+            }),
+        }
+    }
 
     fn lower_else_expression(
         &mut self,
