@@ -251,6 +251,7 @@ pub enum HirExpressionKind {
     ElseUnwrap(Box<HirElseUnwrap>),
     Try(Box<HirTry>),
     For(Box<HirFor>),
+    Match(Box<HirMatch>),
     Assert(Box<HirAssert>),
     Print(HirPrint),
     FunctionCall(HirFunctionCall),
@@ -365,6 +366,50 @@ pub struct HirFor {
     /// `Some(element_type)` when the loop is used as an expression and
     /// collects the value of each iteration into a vector
     pub collect: Option<TypeElement>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirMatch {
+    pub scrutinee: HirExpression,
+    pub arms: Vec<HirMatchArm>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirMatchArm {
+    pub pattern: HirMatchPattern,
+    pub body: HirBlock,
+}
+
+#[derive(Clone, Debug)]
+pub enum HirMatchPattern {
+    Wildcard,
+    EnumVariant(HirEnumMatchPattern),
+}
+
+#[derive(Clone, Debug)]
+pub struct HirEnumMatchPattern {
+    pub target: TypeIdent,
+    pub case: TypeIdent,
+    pub arguments: HirMatchPatternArguments,
+}
+
+#[derive(Clone, Debug)]
+pub enum HirMatchPatternArguments {
+    None,
+    Tuple(Vec<HirMatchBindingPattern>),
+    Named(Vec<HirNamedMatchBinding>),
+}
+
+#[derive(Clone, Debug)]
+pub struct HirNamedMatchBinding {
+    pub field: Ident,
+    pub binding: HirMatchBindingPattern,
+}
+
+#[derive(Clone, Debug)]
+pub enum HirMatchBindingPattern {
+    Binding(Ident),
+    Wildcard,
 }
 
 #[derive(Clone, Debug)]

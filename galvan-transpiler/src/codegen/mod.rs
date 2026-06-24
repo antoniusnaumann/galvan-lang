@@ -70,7 +70,7 @@ fn needs_parens(kind: &HirExpressionKind) -> bool {
         Variable(_) | Literal(_) | FunctionCall(_) | MethodCall(_) | FieldAccess(_)
         | SafeAccess(_) | ConstructorCall(_) | EnumAccess(_) | EnumConstructor(_)
         | Collection(_) | Index(_) | Group(_) | Yeet(_) | Print(_) | Assert(_) | Error(_) => false,
-        If(_) | ElseUnwrap(_) | Try(_) | For(_) | Closure(_) | Logical(_) | Arithmetic(_)
-        | Bitwise(_) | Comparison(_) | CollectionOp(_) | Range(_) => true,
+        If(_) | ElseUnwrap(_) | Try(_) | For(_) | Match(_) | Closure(_) | Logical(_)
+        | Arithmetic(_) | Bitwise(_) | Comparison(_) | CollectionOp(_) | Range(_) => true,
     }
 }

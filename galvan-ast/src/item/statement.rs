@@ -55,6 +55,7 @@ pub struct Continue {
 }
 
 type Infix = Box<InfixExpression>;
+type Match = Box<MatchExpression>;
 type Postfix = Box<PostfixExpression>;
 type Modified = Box<ModifiedExpression>;
 
@@ -73,6 +74,7 @@ pub struct Expression {
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub type ExpressionKind = ElseExpression
+    + Match
     + FunctionCall
     + Infix
     + Postfix

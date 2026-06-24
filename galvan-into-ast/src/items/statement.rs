@@ -1,8 +1,8 @@
 use galvan_ast::{
     Assignment, AssignmentOperator, Closure, CollectionLiteral, ConstructorCall, DeclModifier,
     Declaration, ElseExpression, EnumAccess, EnumConstructor, Expression, ExpressionKind,
-    FunctionCall, Group, Ident, InfixExpression, Literal, ModifiedExpression, PostfixExpression,
-    Span, Statement, TypeElement,
+    FunctionCall, Group, Ident, InfixExpression, Literal, MatchExpression, ModifiedExpression,
+    PostfixExpression, Span, Statement, TypeElement,
 };
 use galvan_parse::TreeCursor;
 
@@ -141,6 +141,9 @@ impl ReadCursor for Expression {
 
         let kind: ExpressionKind = match cursor.kind()? {
             "else_expression" => ElseExpression::read_cursor(cursor, source)?.into(),
+            "match_expression" => {
+                ExpressionKind::Match(MatchExpression::read_cursor(cursor, source)?.into())
+            }
             "trailing_closure_expression" => read_trailing_closure_call(cursor, source)?.into(),
             "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),
             "postfix_expression" => {

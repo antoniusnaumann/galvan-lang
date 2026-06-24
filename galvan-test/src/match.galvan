@@ -1,0 +1,26 @@
+fn classify_color(color: Color) -> String {
+    match color {
+        Transparent { "transparent" }
+        Gray(value) { "gray \(value)" }
+        Rgb(r: red, b: blue, g: _) { "rgb \(red) \(blue)" }
+        _ { "unknown" }
+    }
+}
+
+test "Match expression returns branch value" {
+    let color = Color::Transparent
+    let result = match color {
+        Transparent { "transparent" }
+        Gray(value) { "gray \(value)" }
+        Rgb(r: _, g: _, b: _) { "rgb" }
+        _ { "unknown" }
+    }
+
+    assert result == "transparent"
+}
+
+test "Match expression destructures enum variants" {
+    assert classify_color(Color::Transparent) == "transparent"
+    assert classify_color(Color::Gray(42)) == "gray 42"
+    assert classify_color(Color::Rgb(r: 10, g: 20, b: 30)) == "rgb 10 30"
+}
