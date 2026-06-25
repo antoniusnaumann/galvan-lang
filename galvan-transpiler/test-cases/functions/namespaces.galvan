@@ -1,0 +1,19 @@
+//@TRANSPILE
+//"
+//#[derive(Clone, Debug, PartialEq)]
+//pub(crate) struct Book;
+//pub(crate) fn judge(book: &Book) { { { use reader::*; book.read_and_judge() }; { use reader::*; book.score__with(5) }; }; }
+//pub(crate) fn call_score() { { reader::score(); }; }
+//"
+//@end
+
+type Book
+
+fn judge(book: Book) {
+    book.reader::read_and_judge()
+    book.reader::score(with: 5)
+}
+
+fn call_score() {
+    reader::score()
+}

@@ -1,0 +1,35 @@
+fn pick(value: U8) -> U8 {
+    value
+}
+
+fn pick(value: U8, plus increment: U8) -> U8 {
+    value + increment
+}
+
+fn pick(value: U8, plus increment: U8, ~ fallback: U8) -> U8 {
+    value + increment + fallback
+}
+
+test "Overloaded functions resolve by labels" {
+    assert pick(1) == 1
+    assert pick(2, plus: 3) == 5
+    assert pick(4, plus: 5, fallback: 6) == 15
+}
+
+type Score {
+    value: U8
+}
+
+fn adjusted(self: Score) -> U8 {
+    self.value
+}
+
+fn adjusted(self: Score, by amount: U8) -> U8 {
+    self.value + amount
+}
+
+test "Overloaded methods resolve by labels" {
+    let score = Score(value: 10)
+    assert score.adjusted() == 10
+    assert score.adjusted(by: 5) == 15
+}

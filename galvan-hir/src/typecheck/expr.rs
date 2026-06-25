@@ -7,7 +7,7 @@ use galvan_ast::{
     InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
     MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
     OptionalTypeItem, Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl,
-    TypeElement, TypeIdent,
+    TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -206,20 +206,30 @@ impl Checker<'_> {
         expected: &Expected,
         span: Span,
     ) -> HirExpression {
-        match call.identifier.as_str() {
-            "panic" => self.lower_print(PrintKind::Panic, &call.arguments, span),
-            "println" => self.lower_print(PrintKind::Println, &call.arguments, span),
-            "print" => self.lower_print(PrintKind::Print, &call.arguments, span),
-            "debug" => self.lower_print(PrintKind::Debug, &call.arguments, span),
-            "if" => self.lower_if(call, expected, None, span),
-            "for" => self.lower_for(call, expected, span),
-            "try" => self.lower_try(call, expected, None, span),
-            "assert" => self.lower_assert(call, span),
-            name if BORROWED_ITERATOR_FNS.contains(&name) => {
-                self.lower_borrowed_iterator_call(call, span)
+        if call.namespace.is_none() {
+            match call.identifier.as_str() {
+                "panic" => return self.lower_print(PrintKind::Panic, &call.arguments, span),
+                "println" => return self.lower_print(PrintKind::Println, &call.arguments, span),
+                "print" => return self.lower_print(PrintKind::Print, &call.arguments, span),
+                "debug" => return self.lower_print(PrintKind::Debug, &call.arguments, span),
+                "if" => return self.lower_if(call, expected, None, span),
+                "for" => return self.lower_for(call, expected, span),
+                "try" => return self.lower_try(call, expected, None, span),
+                "assert" => return self.lower_assert(call, span),
+                name if BORROWED_ITERATOR_FNS.contains(&name) => {
+                    return self.lower_borrowed_iterator_call(call, span);
+                }
+                _ => {}
             }
-            _ => self.lower_call(None, &call.identifier, &call.arguments, span),
         }
+
+        self.lower_call(
+            None,
+            call.namespace.as_ref(),
+            &call.identifier,
+            &call.arguments,
+            span,
+        )
     }
 
     fn lower_print(
@@ -256,17 +266,51 @@ impl Checker<'_> {
     fn lower_call(
         &mut self,
         receiver: Option<(HirExpression, Option<DeclModifier>)>,
+        namespace: Option<&UsePath>,
         ident: &Ident,
         arguments: &[FunctionCallArg],
         span: Span,
     ) -> HirExpression {
+        if let Some(namespace) = namespace {
+            let labels = argument_labels(arguments);
+            let args = arguments
+                .iter()
+                .map(|argument| self.lower_unknown_argument(argument))
+                .collect();
+            let namespace = Some(namespace.clone());
+            let kind = match receiver {
+                Some((receiver, modifier)) => {
+                    let receiver = self.lower_unknown_receiver(receiver, modifier, span);
+                    HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                        receiver,
+                        receiver_modifier: modifier,
+                        namespace,
+                        ident: ident.clone(),
+                        labels,
+                        args,
+                    }))
+                }
+                None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                    namespace,
+                    ident: ident.clone(),
+                    labels,
+                    args,
+                }),
+            };
+
+            return HirExpression::new(kind, TypeElement::infer(), Ownership::UniqueOwned, span);
+        }
+
         if receiver.is_none() {
             if let Some(variable) = self.scopes.get(ident).cloned() {
                 if let TypeElement::Closure(closure) = variable.ty {
+                    self.validate_no_argument_labels(arguments, "closure calls");
                     let args = self.lower_closure_call_args(&closure.parameters, arguments);
                     return HirExpression::new(
                         HirExpressionKind::FunctionCall(HirFunctionCall {
+                            namespace: None,
                             ident: ident.clone(),
+                            labels: Vec::new(),
                             args,
                         }),
                         closure.return_ty.clone(),
@@ -287,11 +331,13 @@ impl Checker<'_> {
             });
 
         let lookup = self.lookup;
+        let labels = argument_labels(arguments);
+        let labels_ref = label_refs(&labels);
         let function = lookup
-            .resolve_function(receiver_ident.as_ref(), ident, &[])
+            .resolve_function(receiver_ident.as_ref(), ident, &labels_ref)
             // Extension functions on collection or generic receivers are
             // registered without a receiver type
-            .or_else(|| lookup.resolve_function(None, ident, &[]));
+            .or_else(|| lookup.resolve_function(None, ident, &labels_ref));
 
         if receiver.is_none() && function.is_none() {
             if let Some((receiver_argument, arguments)) = arguments.split_first() {
@@ -303,11 +349,12 @@ impl Checker<'_> {
                     receiver_argument.expression.span,
                 );
                 let receiver_ident = receiver_type_ident(&lowered_receiver.ty);
+                let receiver_labels = argument_labels(arguments);
+                let receiver_label_refs = label_refs(&receiver_labels);
 
-                if let Some(function) = receiver_ident
-                    .as_ref()
-                    .and_then(|receiver| lookup.resolve_function(Some(receiver), ident, &[]))
-                {
+                if let Some(function) = receiver_ident.as_ref().and_then(|receiver| {
+                    lookup.resolve_function(Some(receiver), ident, &receiver_label_refs)
+                }) {
                     let signature = function.item.signature.clone();
                     let receiver = self.lower_known_receiver(
                         lowered_receiver,
@@ -322,7 +369,9 @@ impl Checker<'_> {
                             receiver_modifier: signature
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
+                            namespace: None,
                             ident: ident.clone(),
+                            labels: receiver_labels,
                             args,
                         })),
                         signature.return_type,
@@ -351,12 +400,16 @@ impl Checker<'_> {
                             receiver_modifier: signature
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
+                            namespace: None,
                             ident: ident.clone(),
+                            labels: labels.clone(),
                             args,
                         }))
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                        namespace: None,
                         ident: ident.clone(),
+                        labels: labels.clone(),
                         args,
                     }),
                 };
@@ -373,12 +426,16 @@ impl Checker<'_> {
                         HirExpressionKind::MethodCall(Box::new(HirMethodCall {
                             receiver,
                             receiver_modifier: modifier,
+                            namespace: None,
                             ident: ident.clone(),
+                            labels: labels.clone(),
                             args,
                         }))
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                        namespace: None,
                         ident: ident.clone(),
+                        labels,
                         args,
                     }),
                 };
@@ -423,11 +480,26 @@ impl Checker<'_> {
         params: &[Param],
         arguments: &[FunctionCallArg],
     ) -> Vec<HirExpression> {
-        params
+        let params = params
             .iter()
             .skip_while(|param| param.identifier.is_self())
+            .collect::<Vec<_>>();
+
+        if params.len() != arguments.len() {
+            self.errors.error(TranspilerError::InvalidSyntax {
+                message: format!(
+                    "function expected {} arguments but found {}",
+                    params.len(),
+                    arguments.len()
+                ),
+            });
+        }
+
+        params
+            .into_iter()
             .zip(arguments)
             .map(|(param, argument)| {
+                self.validate_argument_label(param, argument);
                 let (lowered, expression_modifier) = self.lower_call_value(&argument.expression);
                 let modifier = self.merge_argument_modifiers(
                     argument.modifier,
@@ -437,6 +509,52 @@ impl Checker<'_> {
                 self.lower_known_argument(lowered, modifier, param, argument.expression.span)
             })
             .collect()
+    }
+
+    fn validate_argument_label(&mut self, param: &Param, argument: &FunctionCallArg) {
+        match (param.call_label(), &argument.label) {
+            (None, None) => {}
+            (Some(expected), Some(found)) if expected == found => {}
+            (Some(expected), Some(found)) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "expected argument label '{expected}' but found '{found}'"
+                        ),
+                    },
+                    Some(argument.expression.span.into()),
+                );
+            }
+            (Some(expected), None) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!("missing argument label '{expected}'"),
+                    },
+                    Some(argument.expression.span.into()),
+                );
+            }
+            (None, Some(found)) => {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!("unexpected argument label '{found}'"),
+                    },
+                    Some(argument.expression.span.into()),
+                );
+            }
+        }
+    }
+
+    fn validate_no_argument_labels(&mut self, arguments: &[FunctionCallArg], context: &str) {
+        for argument in arguments {
+            if let Some(label) = &argument.label {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!("argument label '{label}' is not valid in {context}"),
+                    },
+                    Some(argument.expression.span.into()),
+                );
+            }
+        }
     }
 
     fn lower_known_argument(
@@ -626,6 +744,7 @@ impl Checker<'_> {
     /// Borrowing iterator adapters like `filter` take closures whose
     /// parameters are references; the closure parameters destructure them
     fn lower_borrowed_iterator_call(&mut self, call: &FunctionCall, span: Span) -> HirExpression {
+        self.validate_no_argument_labels(&call.arguments, "borrowed iterator calls");
         let args = call
             .arguments
             .iter()
@@ -649,7 +768,9 @@ impl Checker<'_> {
 
         HirExpression::new(
             HirExpressionKind::FunctionCall(HirFunctionCall {
+                namespace: None,
                 ident: call.identifier.clone(),
+                labels: Vec::new(),
                 args,
             }),
             TypeElement::infer(),
@@ -1553,6 +1674,7 @@ impl Checker<'_> {
     fn lower_assert(&mut self, call: &FunctionCall, span: Span) -> HirExpression {
         let assert = match call.arguments.first() {
             Some(FunctionCallArg {
+                label,
                 modifier,
                 expression:
                     Expression {
@@ -1560,6 +1682,12 @@ impl Checker<'_> {
                         ..
                     },
             }) if infix.is_comparison() => {
+                if let Some(label) = label {
+                    self.errors.error(TranspilerError::InvalidSyntax {
+                        message: format!("argument label '{label}' is not valid in assert"),
+                    });
+                    return HirExpression::error("invalid assert label", span);
+                }
                 if modifier.is_some() {
                     self.errors.error(TranspilerError::InvalidModifier {
                         modifier: "assert".to_string(),
@@ -1852,6 +1980,7 @@ impl Checker<'_> {
                     let (receiver, modifier) = self.lower_call_value(&operation.lhs);
                     self.lower_call(
                         Some((receiver, modifier)),
+                        call.namespace.as_ref(),
                         &call.identifier,
                         &call.arguments,
                         span,
@@ -1974,35 +2103,54 @@ impl Checker<'_> {
                 (SafeAccessKind::Field(field.clone()), field_ty)
             }
             ExpressionKind::FunctionCall(call) => {
-                let receiver_ident = match &inner_ty {
-                    TypeElement::Plain(basic) => Some(basic.ident.clone()),
-                    TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
-                    _ => None,
-                };
-                let lookup = self.lookup;
-                let function = lookup
-                    .resolve_function(receiver_ident.as_ref(), &call.identifier, &[])
-                    .or_else(|| lookup.resolve_function(None, &call.identifier, &[]));
-                match function {
-                    Some(function) => {
-                        let signature = function.item.signature.clone();
-                        let args =
-                            self.lower_call_args(&signature.parameters.params, &call.arguments);
-                        (
-                            SafeAccessKind::Call(call.identifier.clone(), args),
-                            signature.return_type.clone(),
-                        )
-                    }
-                    None => {
-                        let args = call
-                            .arguments
-                            .iter()
-                            .map(|argument| self.lower_unknown_argument(argument))
-                            .collect();
-                        (
-                            SafeAccessKind::Call(call.identifier.clone(), args),
-                            TypeElement::infer(),
-                        )
+                let labels = argument_labels(&call.arguments);
+                if call.namespace.is_some() {
+                    let args = call
+                        .arguments
+                        .iter()
+                        .map(|argument| self.lower_unknown_argument(argument))
+                        .collect();
+                    (
+                        SafeAccessKind::Call(
+                            call.namespace.clone(),
+                            call.identifier.clone(),
+                            labels,
+                            args,
+                        ),
+                        TypeElement::infer(),
+                    )
+                } else {
+                    let receiver_ident = match &inner_ty {
+                        TypeElement::Plain(basic) => Some(basic.ident.clone()),
+                        TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
+                        _ => None,
+                    };
+                    let lookup = self.lookup;
+                    let label_refs = label_refs(&labels);
+                    let function = lookup
+                        .resolve_function(receiver_ident.as_ref(), &call.identifier, &label_refs)
+                        .or_else(|| lookup.resolve_function(None, &call.identifier, &label_refs));
+                    match function {
+                        Some(function) => {
+                            let signature = function.item.signature.clone();
+                            let args =
+                                self.lower_call_args(&signature.parameters.params, &call.arguments);
+                            (
+                                SafeAccessKind::Call(None, call.identifier.clone(), labels, args),
+                                signature.return_type.clone(),
+                            )
+                        }
+                        None => {
+                            let args = call
+                                .arguments
+                                .iter()
+                                .map(|argument| self.lower_unknown_argument(argument))
+                                .collect();
+                            (
+                                SafeAccessKind::Call(None, call.identifier.clone(), labels, args),
+                                TypeElement::infer(),
+                            )
+                        }
                     }
                 }
             }
@@ -2496,6 +2644,17 @@ fn closure_argument(argument: &FunctionCallArg) -> Option<&Closure> {
         ExpressionKind::Closure(closure) => Some(closure),
         _ => None,
     }
+}
+
+fn argument_labels(arguments: &[FunctionCallArg]) -> Vec<Ident> {
+    arguments
+        .iter()
+        .filter_map(|argument| argument.label.clone())
+        .collect()
+}
+
+fn label_refs(labels: &[Ident]) -> Vec<&str> {
+    labels.iter().map(|label| label.as_str()).collect()
 }
 
 /// Unifies the types of two branches of a conditional

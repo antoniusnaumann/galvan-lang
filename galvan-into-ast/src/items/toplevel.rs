@@ -1,7 +1,8 @@
 use galvan_ast::{
     AliasTypeDecl, Body, CmdDecl, CmdSignature, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl,
     FnSignature, Ident, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl,
-    TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility, WhereBound, WhereClause,
+    TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
+    WhereBound, WhereClause,
 };
 use galvan_parse::TreeCursor;
 
@@ -10,6 +11,7 @@ use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 impl ReadCursor for RootItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         Ok(match cursor.kind()? {
+            "use_declaration" => UseDecl::read_cursor(cursor, source)?.into(),
             "build" => todo!("Implement build entry point!"),
             "test" => TestDecl::read_cursor(cursor, source)?.into(),
             "function" => FnDecl::read_cursor(cursor, source)?.into(),
@@ -17,6 +19,43 @@ impl ReadCursor for RootItem {
             "type_declaration" => TypeDecl::read_cursor(cursor, source)?.into(),
             other => unreachable!("Unexpected node in root item: {other}"),
         })
+    }
+}
+
+impl ReadCursor for UseDecl {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let use_decl = cursor_expect!(cursor, "use_declaration");
+        let span = Span::from_node(use_decl);
+        cursor.child();
+        cursor_expect!(cursor, "use_keyword");
+
+        cursor.next();
+        let path = UsePath::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+        Ok(UseDecl { path, span })
+    }
+}
+
+impl ReadCursor for UsePath {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "use_path");
+        let span = Span::from_node(node);
+        cursor.child();
+
+        let mut segments = Vec::new();
+        loop {
+            segments.push(Ident::read_cursor(cursor, source)?);
+            if !cursor.next() {
+                break;
+            }
+            while cursor.kind()? == "double_colon" {
+                cursor.next();
+            }
+        }
+
+        cursor.goto_parent();
+        Ok(UsePath { segments, span })
     }
 }
 
@@ -305,19 +344,22 @@ impl ReadCursor for Param {
             None
         };
 
-        // For CLI commands, we might have two consecutive idents: short_name and identifier
-        // For regular functions, we only have the identifier
-        let first_ident = Ident::read_cursor(cursor, source)?;
-        cursor.next();
-
-        let (short_name, identifier) = if cursor.kind()? == "ident" {
-            // CLI syntax: "n name: String" -> short_name="n", identifier="name"
-            let second_ident = Ident::read_cursor(cursor, source)?;
+        let (short_name, identifier) = if cursor.kind()? == "bitwise_xor" {
             cursor.next();
-            (Some(first_ident), second_ident)
+            let identifier = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+            (Some(identifier.clone()), identifier)
         } else {
-            // Regular syntax: "name: String" -> short_name=None, identifier="name"
-            (None, first_ident)
+            let first_ident = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+
+            if cursor.kind()? == "ident" {
+                let second_ident = Ident::read_cursor(cursor, source)?;
+                cursor.next();
+                (Some(first_ident), second_ident)
+            } else {
+                (None, first_ident)
+            }
         };
 
         cursor_expect!(cursor, "colon");

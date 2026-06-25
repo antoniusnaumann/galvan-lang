@@ -117,6 +117,78 @@ fn command_main_coexists_with_subcommands() {
 }
 
 #[test]
+fn transpiles_labeled_function_overloads() {
+    let output = transpile_source(
+        "fn foo(bar: U8) -> U8 { bar }
+         fn foo(bar: U8, num baz: U8) -> U8 { baz }
+         fn foo(bar: U8, num baz: U8, ~ msg: U8) -> U8 { msg }
+         fn calls() -> U8 {
+             let one = foo(5)
+             let two = foo(6, num: 6)
+             foo(7, num: 8, msg: 9)
+         }",
+    );
+
+    assert!(output.contains("fn foo(bar: u8) -> u8"));
+    assert!(output.contains("fn foo__num(bar: u8, baz: u8) -> u8"));
+    assert!(output.contains("fn foo__num__msg(bar: u8, baz: u8, msg: u8) -> u8"));
+    assert!(output.contains("foo(5)"));
+    assert!(output.contains("foo__num(6, 6)"));
+    assert!(output.contains("foo__num__msg(7, 8, 9)"));
+}
+
+#[test]
+fn transpiles_labeled_method_overloads() {
+    let output = transpile_source(
+        "type Dog { age: U8 }
+         fn age(self: Dog) -> U8 { self.age }
+         fn age(self: Dog, by years: U8) -> U8 { self.age + years }
+         fn calls(dog: Dog) -> U8 {
+             dog.age(by: 2)
+         }",
+    );
+
+    assert!(output.contains("fn age(&self) -> u8"));
+    assert!(output.contains("fn age__by(&self, years: u8) -> u8"));
+    assert!(output.contains(".age__by(2)"));
+}
+
+#[test]
+fn transpiles_import_declarations() {
+    let output = transpile_source(
+        "use reader
+         use reader::score
+         fn call() {
+             reader::score()
+         }",
+    );
+
+    assert!(output.contains("use reader::*;"));
+    assert!(output.contains("use reader::score;"));
+    assert!(output.contains("reader::score()"));
+}
+
+#[test]
+fn transpiles_namespaced_method_calls_as_scoped_imports() {
+    let output = transpile_source(
+        "type Book
+         fn call(book: Book) {
+             book.reader::read_and_judge()
+             book.reader::score(with: 5)
+         }",
+    );
+
+    assert!(output.contains("{ use reader::*; book.read_and_judge() }"));
+    assert!(output.contains("{ use reader::*; book.score__with(5) }"));
+}
+
+#[test]
+fn rejects_double_underscore_identifiers() {
+    assert!(transpile(vec![Source::from_string("fn bad__name() {}")]).is_err());
+    assert!(transpile(vec![Source::from_string("type Bad__Name {}")]).is_err());
+}
+
+#[test]
 fn rejects_invalid_main_function_signatures() {
     assert!(transpile(vec![Source::from_string("fn main(value: Int) {}")]).is_err());
     assert!(transpile(vec![Source::from_string("main {}")]).is_err());

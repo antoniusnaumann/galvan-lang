@@ -18,13 +18,14 @@
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, CmdSignature, ComparisonOperator, DeclModifier,
     FnSignature, Ident, LogicalOperator, Ownership, RangeOperator, Span, StringLiteral,
-    ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+    ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath,
 };
 use galvan_files::Source;
 
 /// A fully typechecked Galvan program.
 #[derive(Debug)]
 pub struct HirModule {
+    pub uses: Vec<ToplevelItem<UseDecl>>,
     pub types: Vec<ToplevelItem<TypeDecl>>,
     pub functions: Vec<HirFunction>,
     pub tests: Vec<HirTest>,
@@ -438,7 +439,9 @@ pub struct HirPrint {
 
 #[derive(Clone, Debug)]
 pub struct HirFunctionCall {
+    pub namespace: Option<UsePath>,
     pub ident: Ident,
+    pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
 }
 
@@ -446,7 +449,9 @@ pub struct HirFunctionCall {
 pub struct HirMethodCall {
     pub receiver: HirExpression,
     pub receiver_modifier: Option<DeclModifier>,
+    pub namespace: Option<UsePath>,
     pub ident: Ident,
+    pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
 }
 
@@ -470,7 +475,7 @@ pub enum SafeAccessStyle {
 #[derive(Clone, Debug)]
 pub enum SafeAccessKind {
     Field(Ident),
-    Call(Ident, Vec<HirExpression>),
+    Call(Option<UsePath>, Ident, Vec<Ident>, Vec<HirExpression>),
 }
 
 #[derive(Clone, Debug)]

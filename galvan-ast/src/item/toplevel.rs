@@ -23,6 +23,18 @@ pub struct TestDecl {
     pub body: Body,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct UseDecl {
+    pub path: UsePath,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct UsePath {
+    pub segments: Vec<Ident>,
+    pub span: Span,
+}
+
 #[derive(Debug, PartialEq, Eq, AstNode)]
 pub struct CmdDecl {
     pub signature: CmdSignature,
@@ -46,6 +58,7 @@ pub struct TaskDecl {
 
 #[derive(Debug, PartialEq, Eq, From)]
 pub enum RootItem {
+    Use(UseDecl),
     Fn(FnDecl),
     Type(TypeDecl),
     Test(TestDecl),
@@ -78,4 +91,8 @@ impl RootItemMarker for TestDecl {}
 impl private::Seal for CmdDecl {}
 
 impl RootItemMarker for CmdDecl {}
+
+impl private::Seal for UseDecl {}
+
+impl RootItemMarker for UseDecl {}
 // impl RootItemMarker for TaskDecl {}

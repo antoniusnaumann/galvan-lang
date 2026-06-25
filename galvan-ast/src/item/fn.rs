@@ -58,6 +58,15 @@ impl FnSignature {
             .filter(|param| param.identifier.is_self())
     }
 
+    pub fn overload_labels(&self) -> Vec<&Ident> {
+        self.parameters
+            .params
+            .iter()
+            .skip_while(|param| param.identifier.is_self())
+            .filter_map(Param::call_label)
+            .collect()
+    }
+
     /// Collect all generic type parameters from this function signature
     pub fn collect_generics(&self) -> std::collections::HashSet<Ident> {
         let mut generics = std::collections::HashSet::new();
@@ -92,10 +101,17 @@ pub struct ParamList {
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct Param {
     pub decl_modifier: Option<DeclModifier>,
+    /// CLI short name for commands, external argument label for functions.
     pub short_name: Option<Ident>,
     pub identifier: Ident,
     pub param_type: TypeElement,
     pub span: Span,
+}
+
+impl Param {
+    pub fn call_label(&self) -> Option<&Ident> {
+        self.short_name.as_ref()
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

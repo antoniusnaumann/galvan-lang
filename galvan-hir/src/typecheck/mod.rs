@@ -121,7 +121,9 @@ pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), Loo
         (functions, tests, main, cmd_bodies, checker.errors)
     };
 
-    let SegmentedAsts { types, cmds, .. } = asts;
+    let SegmentedAsts {
+        uses, types, cmds, ..
+    } = asts;
     let cmds = cmds
         .into_iter()
         .zip(cmd_bodies)
@@ -138,6 +140,7 @@ pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), Loo
 
     Ok((
         HirModule {
+            uses,
             types,
             functions,
             tests,
