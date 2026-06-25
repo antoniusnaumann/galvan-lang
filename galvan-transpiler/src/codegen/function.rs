@@ -6,7 +6,7 @@ use galvan_hir::hir::{HirFunction, HirMain, HirMainKind, HirTest};
 use itertools::Itertools;
 
 use crate::context::Context;
-use crate::sanitize::sanitize_name;
+use crate::sanitize::{mangle_function_name, sanitize_name};
 use crate::transpile_item::ident::{TranspileType, TypeOwnership};
 use crate::ErrorCollector;
 use crate::Transpile;
@@ -37,7 +37,8 @@ pub(crate) fn transpile_signature(
     skip_generics: &HashSet<Ident>,
 ) -> String {
     let visibility = signature.visibility.transpile(ctx, errors);
-    let identifier = sanitize_name(signature.identifier.as_str());
+    let identifier =
+        mangle_function_name(signature.identifier.as_str(), signature.overload_labels());
 
     let generics = signature.collect_generics();
     let mut generics = generics

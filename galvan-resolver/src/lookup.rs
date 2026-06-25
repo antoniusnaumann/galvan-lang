@@ -57,7 +57,12 @@ impl<'a> LookupContext<'a> {
                     None
                 }
             });
-            let func_id = FunctionId::new(receiver, &func.signature.identifier, &[]);
+            let labels = func.item.signature.overload_labels();
+            let labels = labels
+                .iter()
+                .map(|label| label.as_str())
+                .collect::<Vec<_>>();
+            let func_id = FunctionId::new(receiver, &func.signature.identifier, &labels);
             if self.functions.insert(func_id, func).is_some() {
                 return Err(LookupError::DuplicateFunction);
             }

@@ -307,6 +307,9 @@ impl ReadCursor for TypeIdent {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let ident = cursor_expect!(cursor, "type_ident");
         let inner = &source[ident.start_byte()..ident.end_byte()];
+        if inner.contains("__") {
+            return Err(AstError::InvalidIdentifier(inner.to_owned()));
+        }
 
         Ok(Self::new(inner))
     }
@@ -316,6 +319,9 @@ impl ReadCursor for Ident {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         let ident = cursor_expect!(cursor, "ident");
         let inner = &source[ident.start_byte()..ident.end_byte()];
+        if inner.contains("__") {
+            return Err(AstError::InvalidIdentifier(inner.to_owned()));
+        }
 
         Ok(Self::new(inner))
     }

@@ -19,6 +19,8 @@ pub enum AstError {
     InvalidMainSignature,
     #[error("Invalid character literal at {0:?}")]
     InvalidCharacterLiteral(Span),
+    #[error("Invalid identifier `{0}`: Galvan identifiers cannot contain `__`")]
+    InvalidIdentifier(String),
     #[error(transparent)]
     Parse(#[from] ParseError),
 }

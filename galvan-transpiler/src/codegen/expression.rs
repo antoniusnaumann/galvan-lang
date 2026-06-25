@@ -8,7 +8,7 @@ use galvan_hir::hir::*;
 
 use crate::context::Context;
 use crate::macros::transpile;
-use crate::sanitize::sanitize_name;
+use crate::sanitize::{mangle_function_name, sanitize_name};
 use crate::ErrorCollector;
 use crate::Transpile;
 
@@ -304,7 +304,11 @@ impl Transpile for HirFunctionCall {
             .iter()
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
-        format!("{}({})", sanitize_name(self.ident.as_str()), args)
+        format!(
+            "{}({})",
+            mangle_function_name(self.ident.as_str(), &self.labels),
+            args
+        )
     }
 }
 
@@ -323,7 +327,7 @@ impl Transpile for HirMethodCall {
             return format!(
                 "{}::{}({})",
                 receiver_ty,
-                sanitize_name(self.ident.as_str()),
+                mangle_function_name(self.ident.as_str(), &self.labels),
                 args
             );
         }
@@ -341,7 +345,7 @@ impl Transpile for HirMethodCall {
         format!(
             "{}.{}({})",
             receiver,
-            sanitize_name(self.ident.as_str()),
+            mangle_function_name(self.ident.as_str(), &self.labels),
             args
         )
     }
@@ -364,12 +368,12 @@ impl Transpile for HirSafeAccess {
         let receiver = self.receiver.transpile(ctx, errors);
         let access = match &self.access {
             SafeAccessKind::Field(field) => sanitize_name(field.as_str()).into_owned(),
-            SafeAccessKind::Call(ident, args) => {
+            SafeAccessKind::Call(ident, labels, args) => {
                 let args = args
                     .iter()
                     .map(|argument| argument.transpile(ctx, errors))
                     .join(", ");
-                format!("{}({})", sanitize_name(ident.as_str()), args)
+                format!("{}({})", mangle_function_name(ident.as_str(), labels), args)
             }
         };
 

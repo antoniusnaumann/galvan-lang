@@ -10,6 +10,7 @@ pub struct FunctionCall {
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct FunctionCallArg {
+    pub label: Option<Ident>,
     pub modifier: Option<DeclModifier>,
     pub expression: Expression,
 }

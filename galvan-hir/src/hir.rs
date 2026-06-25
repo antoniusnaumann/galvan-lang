@@ -439,6 +439,7 @@ pub struct HirPrint {
 #[derive(Clone, Debug)]
 pub struct HirFunctionCall {
     pub ident: Ident,
+    pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
 }
 
@@ -447,6 +448,7 @@ pub struct HirMethodCall {
     pub receiver: HirExpression,
     pub receiver_modifier: Option<DeclModifier>,
     pub ident: Ident,
+    pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
 }
 
@@ -470,7 +472,7 @@ pub enum SafeAccessStyle {
 #[derive(Clone, Debug)]
 pub enum SafeAccessKind {
     Field(Ident),
-    Call(Ident, Vec<HirExpression>),
+    Call(Ident, Vec<Ident>, Vec<HirExpression>),
 }
 
 #[derive(Clone, Debug)]

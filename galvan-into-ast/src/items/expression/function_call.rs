@@ -68,6 +68,7 @@ pub fn read_trailing_closure_call(
     // TODO: Insert correct span here that only goes from arguments to closure
     let closure_span = span;
     arguments.push(FunctionCallArg {
+        label: None,
         modifier: None,
         expression: Expression {
             kind: closure.into(),
@@ -151,6 +152,16 @@ impl ReadCursor for FunctionCallArg {
         cursor_expect!(cursor, "function_call_arg");
 
         cursor.child();
+        let label = if cursor.kind()? == "ident" {
+            let label = Some(Ident::read_cursor(cursor, source)?);
+            cursor.next();
+            cursor_expect!(cursor, "colon");
+            cursor.next();
+            label
+        } else {
+            None
+        };
+
         let modifier = if cursor.kind()? == "declaration_modifier" {
             let decl_mod = Some(DeclModifier::read_cursor(cursor, source)?);
             cursor.next();
@@ -164,6 +175,7 @@ impl ReadCursor for FunctionCallArg {
         cursor.goto_parent();
 
         let arg = FunctionCallArg {
+            label,
             modifier,
             expression,
         };

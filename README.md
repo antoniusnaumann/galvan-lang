@@ -153,7 +153,7 @@ fn main() {
 The `~` signifies that the label should be the same as the parameter name.
 
 > [!HINT]
-> In the generated Rust code this would become `foo`, `foo__baz` and `foo__num__msg`. Galvan names forbid double _ to avoid nameclashes with generated names. 
+> In the generated Rust code this would become `foo`, `foo__num` and `foo__num__msg`. Galvan names forbid double _ to avoid nameclashes with generated names. 
 
 ### Default Values
 Struct types in Galvan can allow ommitting certain attributes when created with the default initializer. To do so, 

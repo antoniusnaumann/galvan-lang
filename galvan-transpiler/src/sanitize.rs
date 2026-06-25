@@ -1,11 +1,25 @@
 use std::borrow::Cow;
 
+use galvan_ast::Ident;
+
 pub(crate) fn sanitize_name(name: &str) -> Cow<'_, str> {
     if RUST_KEYWORDS.contains(&name) {
         format!("r#{}", name).into()
     } else {
         name.into()
     }
+}
+
+pub(crate) fn mangle_function_name<'a>(
+    name: &str,
+    labels: impl IntoIterator<Item = &'a Ident>,
+) -> String {
+    let mut name = sanitize_name(name).into_owned();
+    for label in labels {
+        name.push_str("__");
+        name.push_str(&sanitize_name(label.as_str()));
+    }
+    name
 }
 
 const RUST_KEYWORDS: [&str; 49] = [

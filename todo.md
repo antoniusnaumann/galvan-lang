@@ -76,6 +76,8 @@ commands remain subcommands.
 
 ## Future Enhancements
 
+- Implement cross-crate Galvan namespace metadata, `use` imports, and
+  qualified method calls such as `value.crate_name::method()`
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)
@@ -85,5 +87,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-24*
+*Last updated: 2026-06-25*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

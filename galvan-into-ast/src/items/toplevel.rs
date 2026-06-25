@@ -305,19 +305,22 @@ impl ReadCursor for Param {
             None
         };
 
-        // For CLI commands, we might have two consecutive idents: short_name and identifier
-        // For regular functions, we only have the identifier
-        let first_ident = Ident::read_cursor(cursor, source)?;
-        cursor.next();
-
-        let (short_name, identifier) = if cursor.kind()? == "ident" {
-            // CLI syntax: "n name: String" -> short_name="n", identifier="name"
-            let second_ident = Ident::read_cursor(cursor, source)?;
+        let (short_name, identifier) = if cursor.kind()? == "bitwise_xor" {
             cursor.next();
-            (Some(first_ident), second_ident)
+            let identifier = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+            (Some(identifier.clone()), identifier)
         } else {
-            // Regular syntax: "name: String" -> short_name=None, identifier="name"
-            (None, first_ident)
+            let first_ident = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+
+            if cursor.kind()? == "ident" {
+                let second_ident = Ident::read_cursor(cursor, source)?;
+                cursor.next();
+                (Some(first_ident), second_ident)
+            } else {
+                (None, first_ident)
+            }
         };
 
         cursor_expect!(cursor, "colon");
