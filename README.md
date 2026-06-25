@@ -89,7 +89,7 @@ pub type Theme(name: String) {
 ```
 
 ### Member Functions
-All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions:
+All functions are declared top-level. If their first parameter is named `self`, they can be called as member functions (methods):
 ```galvan
 pub type Dog { name: String }
 
@@ -102,6 +102,58 @@ fn main() {
     dog.bark()
 }
 ```
+
+### Namespaces
+All items inside the same crate are accessible unqualified and items are qualified on a per-crate basis. If you wish to use items from other crates unqualified, you can import them using `use mycrate`. To import only a specific item, use path syntax such as `use mycrate::myfoo`.
+
+> [!HINT]
+> Galvan's `use mycrate` is equivalent to `use mycrate::*` in Rust
+
+### Namespaced Methods
+Galvan allows you to add methods also to types you do not own. When used outside the crate, you must import the name space via `use` or use the qualified method call syntax, such as
+
+```galvan
+fn foo() {
+    let book = Book()
+    let score = book.reader::read_and_judge()
+}
+
+// or
+use reader
+
+fn foo() {
+    let book = Book()
+    let score = book.read_and_judge()
+}
+```
+
+If method names from two imported crates clash, the qualified syntax must be used
+
+### Overloading
+Limited overloading is supported via named parameters.
+
+```galvan
+fn foo(bar: U8) {}
+fn foo(bar: U8, num baz: U8) {
+    assert bar == baz
+    foo(bar)
+}
+fn foo(bar: U8, num baz: U8, ~ msg: U8) {
+    assert bar == baz, msg
+    foo(bar)
+}
+
+fn main() {
+    foo(5)
+    foo(6, num: 6)
+    foo(7, num: 8, msg: "They were not equal!")
+}
+```
+
+The `~` signifies that the label should be the same as the parameter name.
+
+> [!HINT]
+> In the generated Rust code this would become `foo`, `foo__baz` and `foo__num__msg`. Galvan names forbid double _ to avoid nameclashes with generated names. 
 
 ### Default Values
 Struct types in Galvan can allow ommitting certain attributes when created with the default initializer. To do so, 
