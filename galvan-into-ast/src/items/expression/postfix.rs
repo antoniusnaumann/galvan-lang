@@ -74,11 +74,24 @@ impl ReadCursor for ElseExpression {
         }
 
         cursor.next();
-        let body = Body::read_cursor(cursor, source)?;
-        let body_span = body.span;
-        let block = Block {
-            body,
-            span: body_span,
+        let block = match cursor.kind()? {
+            "body" => {
+                let body = Body::read_cursor(cursor, source)?;
+                let span = body.span;
+                Block { body, span }
+            }
+            "expression" => {
+                let expression = Expression::read_cursor(cursor, source)?;
+                let span = expression.span;
+                Block {
+                    body: Body {
+                        statements: vec![expression.into()],
+                        span,
+                    },
+                    span,
+                }
+            }
+            unknown => unreachable!("Expected else body or expression, got: {unknown}"),
         };
 
         cursor.goto_parent();

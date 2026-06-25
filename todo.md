@@ -36,8 +36,6 @@ commands remain subcommands.
 ## High Priority - Language Completeness
 
 - **Iteration** (galvan-hir/src/typecheck/expr.rs `lower_for`)
-  - For loop on dictionaries and ordered dictionaries
-  - For loop on optional and result types
   - Tuple iteration
 
 - **`ref` variables**

@@ -71,19 +71,30 @@ impl Transpile for HirIf {
 
 impl Transpile for HirElseUnwrap {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        let pattern = if self.by_ref {
+        let value_pattern = if self.by_ref {
             "ref __value"
         } else {
             "__value"
         };
-        transpile!(
-            ctx,
-            errors,
-            "if let Some({pattern}) = {} {{ {} }} else {}",
-            self.receiver,
-            self.value,
-            self.else_block,
-        )
+        let receiver = self.receiver.transpile(ctx, errors);
+        let value = self.value.transpile(ctx, errors);
+        let else_block = self.else_block.transpile(ctx, errors);
+
+        match self.kind {
+            HirElseUnwrapKind::Optional => {
+                format!("if let Some({value_pattern}) = {receiver} {{ {value} }} else {else_block}")
+            }
+            HirElseUnwrapKind::Result => {
+                let err_binding = self
+                    .err_binding
+                    .as_ref()
+                    .map(|binding| sanitize_name(binding.as_str()).into_owned())
+                    .unwrap_or_else(|| "_".into());
+                format!(
+                    "match {receiver} {{ Ok({value_pattern}) => {{ {value} }}, Err({err_binding}) => {else_block} }}"
+                )
+            }
+        }
     }
 }
 
@@ -127,19 +138,7 @@ impl Transpile for HirTry {
 impl Transpile for HirFor {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let iterable = self.iterable.transpile(ctx, errors);
-
-        let element = if self.bindings.is_empty() {
-            "it".to_string()
-        } else {
-            format!(
-                "({})",
-                self.bindings
-                    .iter()
-                    .map(|binding| sanitize_name(binding.as_str()))
-                    .join(", ")
-            )
-        };
-        let prefix = if self.bind_by_ref { "&" } else { "" };
+        let element = for_pattern(&self.bindings);
 
         let mut statements: Vec<String> = self
             .body
@@ -151,7 +150,12 @@ impl Transpile for HirFor {
         match &self.collect {
             None => {
                 let block = statements.join(";\n");
-                format!("for {prefix}{element} in {iterable} {{ {block}; }}")
+                render_for_loop(
+                    self.iterable_kind,
+                    iterable,
+                    element,
+                    format!("{{ {block}; }}"),
+                )
             }
             Some(elem_ty) => {
                 // Collect the value of each iteration into a result vector
@@ -160,15 +164,48 @@ impl Transpile for HirFor {
                 }
                 let block = statements.join(";\n");
                 let elem_ty = elem_ty.transpile(ctx, errors);
+                let loop_body = format!("{{ {block} }}");
+                let loop_expr = render_for_loop(self.iterable_kind, iterable, element, loop_body);
                 format!(
                     "{{
                 let mut __result: ::std::vec::Vec<{elem_ty}> = ::std::vec::Vec::new(); 
-                for {prefix}{element} in {iterable} {{ {block} }}
+                {loop_expr}
                 __result
             }}"
                 )
             }
         }
+    }
+}
+
+fn render_for_loop(
+    kind: HirForIterableKind,
+    iterable: String,
+    element: String,
+    body: String,
+) -> String {
+    match kind {
+        HirForIterableKind::Normal => format!("for {element} in {iterable} {body}"),
+        HirForIterableKind::Tuple { len } => {
+            let fields = (0..len).map(|i| format!("__iterable.{i}")).join(", ");
+            format!("{{ let __iterable = {iterable}; for {element} in [{fields}] {body} }}")
+        }
+    }
+}
+
+fn for_pattern(bindings: &[HirForBinding]) -> String {
+    let parts = bindings
+        .iter()
+        .map(|binding| {
+            let prefix = if binding.deref { "&" } else { "" };
+            format!("{prefix}{}", sanitize_name(binding.ident.as_str()))
+        })
+        .join(", ");
+
+    if bindings.len() <= 1 {
+        parts
+    } else {
+        format!("({parts})")
     }
 }
 

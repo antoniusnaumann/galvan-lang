@@ -64,6 +64,22 @@ test "Map with type annotation" {
     assert map["brussel sprouts"] == 14
 }
 
+test "For loop on map" {
+    let map: {String: Int} = {
+        "oranges": 4,
+        "apples": 5,
+        "brussel sprouts": 14,
+    }
+    mut total = 0
+
+    for map |fruit, count| {
+        assert fruit.len() > 0
+        total += count
+    }
+
+    assert total == 23
+}
+
 test "Access ordered map" {
     let map = [
         "oranges": 4,
@@ -74,6 +90,22 @@ test "Access ordered map" {
     assert map["oranges"] == 4
     assert map["apples"] == 5
     assert map["brussel sprouts"] == 14
+}
+
+test "For loop on ordered map" {
+    let map: [String: Int] = [
+        "oranges": 4,
+        "apples": 5,
+        "brussel sprouts": 14,
+    ]
+    mut total = 0
+
+    for map |fruit, count| {
+        assert fruit.len() > 0
+        total += count
+    }
+
+    assert total == 23
 }
 
 test "Insert into ordered map" {

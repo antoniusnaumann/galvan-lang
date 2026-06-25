@@ -327,13 +327,21 @@ pub struct HirIf {
 /// surrounding context.
 #[derive(Clone, Debug)]
 pub struct HirElseUnwrap {
+    pub kind: HirElseUnwrapKind,
     pub receiver: HirExpression,
     /// Bind with a `ref` pattern (`Some(ref __value)`) to avoid moving out of
     /// a receiver that is used again later
     pub by_ref: bool,
     /// The unwrapped value (a `__value` variable with coercion adjustments)
     pub value: HirExpression,
+    pub err_binding: Option<Ident>,
     pub else_block: HirBlock,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HirElseUnwrapKind {
+    Optional,
+    Result,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -358,15 +366,28 @@ pub struct HirTry {
 
 #[derive(Clone, Debug)]
 pub struct HirFor {
-    /// Loop variables; the implicit `it` parameter is materialized here
-    pub bindings: Vec<Ident>,
-    /// Destructure the loop reference with a `&` pattern (used for `Copy` elements)
-    pub bind_by_ref: bool,
+    /// Loop variables; the implicit `it` parameter is materialized here.
+    pub bindings: Vec<HirForBinding>,
+    pub iterable_kind: HirForIterableKind,
     pub iterable: HirExpression,
     pub body: HirBlock,
     /// `Some(element_type)` when the loop is used as an expression and
     /// collects the value of each iteration into a vector
     pub collect: Option<TypeElement>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirForBinding {
+    pub ident: Ident,
+    /// Destructure this binding with a `&` pattern when iterating borrowed
+    /// collections of `Copy` values.
+    pub deref: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HirForIterableKind {
+    Normal,
+    Tuple { len: usize },
 }
 
 #[derive(Clone, Debug)]

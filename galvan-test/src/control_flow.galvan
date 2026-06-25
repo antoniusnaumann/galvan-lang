@@ -23,6 +23,18 @@ test "If-Else expression" {
     assert result == "Wrong"
 }
 
+test "Nested else-if expression" {
+    let result = if false {
+        "wrong"
+    } else if true {
+        "correct"
+    } else {
+        "also wrong"
+    }
+
+    assert result == "correct"
+}
+
 test "Try expression" {
     let optional = if true { 6 }
 
@@ -33,6 +45,35 @@ test "Try expression" {
     }
 
     assert result == 7
+}
+
+test "Try expression with implicit it" {
+    let optional = if true { 6 }
+    let optional_result = try optional {
+        it + 1
+    } else {
+        0
+    }
+
+    assert optional_result == 7
+
+    let ok = returns_result(true)
+    let ok_result = try ok {
+        it + 1
+    } else {
+        it
+    }
+
+    assert ok_result == 43
+
+    let err = returns_result(false)
+    let err_result = try err {
+        it
+    } else {
+        it + 1
+    }
+
+    assert err_result == 22
 }
 
 test "Try expression does not own the value" {
@@ -92,6 +133,20 @@ fn double_or_minus_one(maybe: Int?) -> Int {
 test "Return from else on optional" {
     let result = double_or_minus_one(none)
     assert result == -1
+}
+
+fn result_or_fallback(ok: Bool) -> Int {
+    returns_result(ok) else { 99 }
+}
+
+fn result_or_error_plus_one(ok: Bool) -> Int {
+    returns_result(ok) else |err| { err + 1 }
+}
+
+test "Else unwrap on result" {
+    assert result_or_fallback(true) == 42
+    assert result_or_fallback(false) == 99
+    assert result_or_error_plus_one(false) == 22
 }
 
 test "Safe-call -> else on struct member" {

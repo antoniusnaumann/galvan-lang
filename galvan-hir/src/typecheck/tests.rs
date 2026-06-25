@@ -157,8 +157,9 @@ fn for_loops_reify_into_hir_nodes() {
     let HirExpressionKind::For(for_expr) = &tail.kind else {
         panic!("expected for expression");
     };
-    // Copy elements are destructured by reference
-    assert!(for_expr.bind_by_ref);
+    // Copy elements from borrowed iterables are destructured by reference.
+    assert_eq!(for_expr.bindings.len(), 1);
+    assert!(for_expr.bindings[0].deref);
     assert!(for_expr.collect.is_some());
     // The borrowed parameter is iterated without further adjustment
     assert!(for_expr.iterable.adjustments.is_empty());
