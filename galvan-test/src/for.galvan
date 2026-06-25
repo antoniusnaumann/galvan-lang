@@ -87,3 +87,33 @@ test "implicit it parameter works" {
     
     assert sum == 6
 }
+
+test "for loop on optional and result" {
+    let maybe: Int? = 3
+    let nothing: Int? = none
+    let ok: Int!Int = 5
+    let err: Int!Int = throw_in_for_test()
+    mut sum = 0
+
+    for maybe {
+        sum += it
+    }
+
+    for nothing {
+        sum += 100
+    }
+
+    for ok {
+        sum += it
+    }
+
+    for err {
+        sum += 100
+    }
+
+    assert sum == 8
+}
+
+fn throw_in_for_test() -> Int!Int {
+    throw 4
+}

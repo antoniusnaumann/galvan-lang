@@ -12,7 +12,7 @@ use galvan_ast::{
 use galvan_resolver::Lookup;
 
 use crate::builtins::{CheckBuiltins, BORROWED_ITERATOR_FNS};
-use crate::error::TranspilerError;
+use crate::error::{ErrorCollector, TranspilerError};
 use crate::hir::*;
 
 use super::{concat_kind, types_compatible, Checker, Expected, Variable};
@@ -1198,9 +1198,16 @@ impl Checker<'_> {
     ) -> HirExpression {
         let receiver = self.lower_expression(&else_expression.receiver, &Expected::free());
 
-        let inner_ty = match &receiver.ty {
-            TypeElement::Optional(optional) => optional.inner.clone(),
-            other => other.clone(),
+        let (kind, inner_ty, err_ty) = match &receiver.ty {
+            TypeElement::Optional(optional) => {
+                (HirElseUnwrapKind::Optional, optional.inner.clone(), None)
+            }
+            TypeElement::Result(result) => (
+                HirElseUnwrapKind::Result,
+                result.success.clone(),
+                Some(result.error.clone().unwrap_or_else(TypeElement::infer)),
+            ),
+            other => (HirElseUnwrapKind::Optional, other.clone(), None),
         };
 
         let value_expected = if expected.is_free() || expected.is_void() {
@@ -1232,7 +1239,22 @@ impl Checker<'_> {
         let value = self.coerce(value, &value_expected);
         self.scopes.pop();
 
+        self.scopes.push();
+        let err_binding = else_unwrap_err_parameter(else_expression, err_ty.as_ref());
+        if let Some((ident, ty)) = &err_binding {
+            self.scopes.declare(Variable {
+                ident: ident.clone(),
+                modifier: DeclModifier::Let,
+                ty: ty.clone(),
+                ownership: if self.is_copy(ty) {
+                    Ownership::UniqueOwned
+                } else {
+                    Ownership::Borrowed
+                },
+            });
+        }
         let else_block = self.lower_block(&else_expression.block.body, &value_expected);
+        self.scopes.pop();
 
         let ty = if value_expected.is_free() {
             inner_ty
@@ -1242,9 +1264,11 @@ impl Checker<'_> {
 
         HirExpression::new(
             HirExpressionKind::ElseUnwrap(Box::new(HirElseUnwrap {
+                kind,
                 receiver,
                 by_ref,
                 value,
+                err_binding: err_binding.map(|(ident, _)| ident),
                 else_block,
             })),
             ty,
@@ -1417,17 +1441,17 @@ impl Checker<'_> {
                 let condition = self.coerce_unknown_argument(condition);
 
                 self.scopes.push();
-                let ok_bindings = body
-                    .parameters
-                    .iter()
-                    .map(|parameter| {
+                let ok_parameters = try_ok_parameters(body, &ok_ty);
+                let ok_bindings = ok_parameters
+                    .into_iter()
+                    .map(|(ident, ty)| {
                         self.scopes.declare(Variable {
-                            ident: parameter.ident.clone(),
+                            ident: ident.clone(),
                             modifier: DeclModifier::Let,
-                            ty: ok_ty.clone(),
+                            ty,
                             ownership: Ownership::Borrowed,
                         });
-                        parameter.ident.clone()
+                        ident
                     })
                     .collect();
                 let block = self.lower_block(&body.block.body, &Expected::free());
@@ -1500,33 +1524,32 @@ impl Checker<'_> {
 
         self.scopes.push();
         let ok_ownership = binding_ownership(self, &ok_ty, scrutinee_ownership);
-        let ok_bindings: Vec<Ident> = body
-            .parameters
-            .iter()
-            .map(|parameter| {
+        let ok_parameters = try_ok_parameters(body, &ok_ty);
+        let ok_bindings: Vec<Ident> = ok_parameters
+            .into_iter()
+            .map(|(ident, ty)| {
                 self.scopes.declare(Variable {
-                    ident: parameter.ident.clone(),
+                    ident: ident.clone(),
                     modifier: DeclModifier::Let,
-                    ty: ok_ty.clone(),
+                    ty,
                     ownership: ok_ownership,
                 });
-                parameter.ident.clone()
+                ident
             })
             .collect();
         let block = self.lower_block(&body.block.body, &branch_expected);
         self.scopes.pop();
 
         self.scopes.push();
-        let err_binding = else_expression.parameters.first().map(|parameter| {
-            let err_ty = err_ty.clone().unwrap_or_else(TypeElement::infer);
-            let err_ownership = binding_ownership(self, &err_ty, scrutinee_ownership);
+        let err_binding = try_err_parameter(else_expression, err_ty.as_ref()).map(|(ident, ty)| {
+            let err_ownership = binding_ownership(self, &ty, scrutinee_ownership);
             self.scopes.declare(Variable {
-                ident: parameter.ident.clone(),
+                ident: ident.clone(),
                 modifier: DeclModifier::Let,
-                ty: err_ty,
+                ty,
                 ownership: err_ownership,
             });
-            parameter.ident.clone()
+            ident
         });
         let else_block = self.lower_block(&else_expression.block.body, &branch_expected);
         self.scopes.pop();
@@ -1569,27 +1592,7 @@ impl Checker<'_> {
         };
 
         let iterable = self.lower_expression(&call.arguments[0].expression, &Expected::free());
-
-        let elem_ty = match &iterable.ty {
-            TypeElement::Array(array) => array.elements.clone(),
-            TypeElement::Set(set) => set.elements.clone(),
-            TypeElement::Dictionary(_) | TypeElement::OrderedDictionary(_) => {
-                self.errors.warning(
-                    "For loop on dictionary not yet implemented".to_string(),
-                    None,
-                );
-                TypeElement::infer()
-            }
-            TypeElement::Tuple(_) | TypeElement::Optional(_) | TypeElement::Result(_) => {
-                TypeElement::infer()
-            }
-            TypeElement::Infer(_) | TypeElement::Void(_) => TypeElement::infer(),
-            _ => {
-                self.errors
-                    .warning("For loop on type that is not an iterator".to_string(), None);
-                TypeElement::infer()
-            }
-        };
+        let iterable_info = self.for_iterable_info(&iterable.ty);
 
         // Borrow iterated locals so the loop does not consume them
         let iterable = match (&iterable.kind, iterable.adjusted_ownership()) {
@@ -1602,8 +1605,10 @@ impl Checker<'_> {
             _ => iterable,
         };
 
-        let is_range = matches!(iterable.kind, HirExpressionKind::Range(_));
-        let bind_by_ref = self.is_copy(&elem_ty) && !is_range && !elem_ty.is_infer();
+        let borrows_iterable = matches!(
+            iterable.adjusted_ownership(),
+            Ownership::Borrowed | Ownership::MutBorrowed
+        );
 
         let collect = if expected.is_void() {
             None
@@ -1611,33 +1616,45 @@ impl Checker<'_> {
             Some(iteration_type(&self.fn_return, &expected.ty))
         };
 
-        let element_ownership = if self.is_copy(&elem_ty) {
-            Ownership::UniqueOwned
-        } else {
-            Ownership::Borrowed
-        };
-
         self.scopes.push();
-        let bindings: Vec<Ident> = if body.parameters.is_empty() {
+        let bindings: Vec<HirForBinding> = if body.parameters.is_empty() {
             // Implicit `it` parameter
+            let binding_ty = iterable_info.item_ty.clone();
+            let deref = self.for_binding_deref(&binding_ty, borrows_iterable, &iterable_info);
             self.scopes.declare(Variable {
                 ident: Ident::new("it"),
                 modifier: DeclModifier::Let,
-                ty: elem_ty.clone(),
-                ownership: element_ownership,
+                ty: binding_ty,
+                ownership: for_binding_ownership(deref),
             });
-            vec![]
+            vec![HirForBinding {
+                ident: Ident::new("it"),
+                deref,
+            }]
         } else {
             body.parameters
                 .iter()
-                .map(|parameter| {
+                .enumerate()
+                .map(|(index, parameter)| {
+                    let binding_ty = for_parameter_type(
+                        parameter,
+                        iterable_info
+                            .binding_tys
+                            .get(index)
+                            .unwrap_or(&iterable_info.item_ty),
+                    );
+                    let deref =
+                        self.for_binding_deref(&binding_ty, borrows_iterable, &iterable_info);
                     self.scopes.declare(Variable {
                         ident: parameter.ident.clone(),
                         modifier: DeclModifier::Let,
-                        ty: elem_ty.clone(),
-                        ownership: element_ownership,
+                        ty: binding_ty,
+                        ownership: for_binding_ownership(deref),
                     });
-                    parameter.ident.clone()
+                    HirForBinding {
+                        ident: parameter.ident.clone(),
+                        deref,
+                    }
                 })
                 .collect()
         };
@@ -1660,7 +1677,7 @@ impl Checker<'_> {
         HirExpression::new(
             HirExpressionKind::For(Box::new(HirFor {
                 bindings,
-                bind_by_ref,
+                iterable_kind: iterable_info.kind,
                 iterable,
                 body: block,
                 collect,
@@ -1669,6 +1686,55 @@ impl Checker<'_> {
             Ownership::UniqueOwned,
             span,
         )
+    }
+
+    fn for_iterable_info(&mut self, iterable_ty: &TypeElement) -> ForIterableInfo {
+        match iterable_ty {
+            TypeElement::Array(array) => ForIterableInfo::single(array.elements.clone()),
+            TypeElement::Set(set) => ForIterableInfo::single(set.elements.clone()),
+            TypeElement::Dictionary(dict) => ForIterableInfo::key_value(
+                dict.key.clone(),
+                dict.value.clone(),
+                HirForIterableKind::Normal,
+            ),
+            TypeElement::OrderedDictionary(dict) => ForIterableInfo::key_value(
+                dict.key.clone(),
+                dict.value.clone(),
+                HirForIterableKind::Normal,
+            ),
+            TypeElement::Optional(optional) => ForIterableInfo::single(optional.inner.clone()),
+            TypeElement::Result(result) => ForIterableInfo::single(result.success.clone()),
+            TypeElement::Tuple(tuple) => {
+                let item_ty = unify_tuple_iteration_type(&tuple.elements, &mut self.errors);
+                ForIterableInfo {
+                    item_ty: item_ty.clone(),
+                    binding_tys: vec![item_ty],
+                    kind: HirForIterableKind::Tuple {
+                        len: tuple.elements.len(),
+                    },
+                }
+            }
+            TypeElement::Infer(_) | TypeElement::Void(_) => {
+                ForIterableInfo::single(TypeElement::infer())
+            }
+            _ => {
+                self.errors
+                    .warning("For loop on type that is not an iterator".to_string(), None);
+                ForIterableInfo::single(TypeElement::infer())
+            }
+        }
+    }
+
+    fn for_binding_deref(
+        &self,
+        binding_ty: &TypeElement,
+        borrows_iterable: bool,
+        iterable_info: &ForIterableInfo,
+    ) -> bool {
+        borrows_iterable
+            && iterable_info.kind == HirForIterableKind::Normal
+            && self.is_copy(binding_ty)
+            && !binding_ty.is_infer()
     }
 
     fn lower_assert(&mut self, call: &FunctionCall, span: Span) -> HirExpression {
@@ -2646,6 +2712,50 @@ fn closure_argument(argument: &FunctionCallArg) -> Option<&Closure> {
     }
 }
 
+fn try_ok_parameters(body: &Closure, ok_ty: &TypeElement) -> Vec<(Ident, TypeElement)> {
+    if body.parameters.is_empty() {
+        return vec![(Ident::new("it"), ok_ty.clone())];
+    }
+
+    body.parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.ident.clone(),
+                for_parameter_type(parameter, ok_ty),
+            )
+        })
+        .collect()
+}
+
+fn try_err_parameter(
+    else_expression: &ElseExpression,
+    err_ty: Option<&TypeElement>,
+) -> Option<(Ident, TypeElement)> {
+    match (else_expression.parameters.first(), err_ty) {
+        (Some(parameter), Some(err_ty)) => Some((
+            parameter.ident.clone(),
+            for_parameter_type(parameter, err_ty),
+        )),
+        (None, Some(err_ty)) => Some((Ident::new("it"), err_ty.clone())),
+        _ => None,
+    }
+}
+
+fn else_unwrap_err_parameter(
+    else_expression: &ElseExpression,
+    err_ty: Option<&TypeElement>,
+) -> Option<(Ident, TypeElement)> {
+    match (else_expression.parameters.first(), err_ty) {
+        (Some(parameter), Some(err_ty)) => Some((
+            parameter.ident.clone(),
+            for_parameter_type(parameter, err_ty),
+        )),
+        (None, Some(err_ty)) => Some((Ident::new("it"), err_ty.clone())),
+        _ => None,
+    }
+}
+
 fn argument_labels(arguments: &[FunctionCallArg]) -> Vec<Ident> {
     arguments
         .iter()
@@ -2684,6 +2794,75 @@ fn iteration_type(_fn_return: &TypeElement, expected: &TypeElement) -> TypeEleme
         TypeElement::Void(_) => TypeElement::void(),
         _ => TypeElement::infer(),
     }
+}
+
+struct ForIterableInfo {
+    item_ty: TypeElement,
+    binding_tys: Vec<TypeElement>,
+    kind: HirForIterableKind,
+}
+
+impl ForIterableInfo {
+    fn single(item_ty: TypeElement) -> Self {
+        Self {
+            item_ty: item_ty.clone(),
+            binding_tys: vec![item_ty],
+            kind: HirForIterableKind::Normal,
+        }
+    }
+
+    fn key_value(key: TypeElement, value: TypeElement, kind: HirForIterableKind) -> Self {
+        let item_ty = TypeElement::Tuple(Box::new(galvan_ast::TupleTypeItem {
+            elements: vec![key.clone(), value.clone()],
+            span: Span::default(),
+        }));
+
+        Self {
+            item_ty,
+            binding_tys: vec![key, value],
+            kind,
+        }
+    }
+}
+
+fn for_parameter_type(parameter: &ClosureParameter, inferred: &TypeElement) -> TypeElement {
+    if parameter.ty.is_infer() {
+        inferred.clone()
+    } else {
+        parameter.ty.clone()
+    }
+}
+
+fn for_binding_ownership(deref: bool) -> Ownership {
+    if deref {
+        Ownership::UniqueOwned
+    } else {
+        Ownership::Borrowed
+    }
+}
+
+fn unify_tuple_iteration_type(
+    elements: &[TypeElement],
+    errors: &mut ErrorCollector,
+) -> TypeElement {
+    let mut unified = None;
+    for element in elements {
+        unified = match unified {
+            None => Some(element.clone()),
+            Some(current) => unify_types(&current, element).or_else(|| {
+                errors.warning(
+                    format!(
+                        "Tuple iteration requires compatible element types, found {} and {}",
+                        current, element
+                    ),
+                    None,
+                );
+                Some(TypeElement::infer())
+            }),
+        };
+    }
+
+    unified.unwrap_or_else(TypeElement::infer)
 }
 
 /// Infer the most appropriate type for a number literal
