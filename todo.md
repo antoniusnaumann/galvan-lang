@@ -76,8 +76,9 @@ commands remain subcommands.
 
 ## Future Enhancements
 
-- Implement cross-crate Galvan namespace metadata, `use` imports, and
-  qualified method calls such as `value.crate_name::method()`
+- Add resolver-level checks for imported crates/items and namespaced method
+  calls. `use` declarations and `value.crate_name::method()` are currently
+  syntax/codegen only and cannot be checked by the Galvan compiler.
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)

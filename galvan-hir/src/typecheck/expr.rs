@@ -7,7 +7,7 @@ use galvan_ast::{
     InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
     MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
     OptionalTypeItem, Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl,
-    TypeElement, TypeIdent,
+    TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -206,20 +206,30 @@ impl Checker<'_> {
         expected: &Expected,
         span: Span,
     ) -> HirExpression {
-        match call.identifier.as_str() {
-            "panic" => self.lower_print(PrintKind::Panic, &call.arguments, span),
-            "println" => self.lower_print(PrintKind::Println, &call.arguments, span),
-            "print" => self.lower_print(PrintKind::Print, &call.arguments, span),
-            "debug" => self.lower_print(PrintKind::Debug, &call.arguments, span),
-            "if" => self.lower_if(call, expected, None, span),
-            "for" => self.lower_for(call, expected, span),
-            "try" => self.lower_try(call, expected, None, span),
-            "assert" => self.lower_assert(call, span),
-            name if BORROWED_ITERATOR_FNS.contains(&name) => {
-                self.lower_borrowed_iterator_call(call, span)
+        if call.namespace.is_none() {
+            match call.identifier.as_str() {
+                "panic" => return self.lower_print(PrintKind::Panic, &call.arguments, span),
+                "println" => return self.lower_print(PrintKind::Println, &call.arguments, span),
+                "print" => return self.lower_print(PrintKind::Print, &call.arguments, span),
+                "debug" => return self.lower_print(PrintKind::Debug, &call.arguments, span),
+                "if" => return self.lower_if(call, expected, None, span),
+                "for" => return self.lower_for(call, expected, span),
+                "try" => return self.lower_try(call, expected, None, span),
+                "assert" => return self.lower_assert(call, span),
+                name if BORROWED_ITERATOR_FNS.contains(&name) => {
+                    return self.lower_borrowed_iterator_call(call, span);
+                }
+                _ => {}
             }
-            _ => self.lower_call(None, &call.identifier, &call.arguments, span),
         }
+
+        self.lower_call(
+            None,
+            call.namespace.as_ref(),
+            &call.identifier,
+            &call.arguments,
+            span,
+        )
     }
 
     fn lower_print(
@@ -256,10 +266,41 @@ impl Checker<'_> {
     fn lower_call(
         &mut self,
         receiver: Option<(HirExpression, Option<DeclModifier>)>,
+        namespace: Option<&UsePath>,
         ident: &Ident,
         arguments: &[FunctionCallArg],
         span: Span,
     ) -> HirExpression {
+        if let Some(namespace) = namespace {
+            let labels = argument_labels(arguments);
+            let args = arguments
+                .iter()
+                .map(|argument| self.lower_unknown_argument(argument))
+                .collect();
+            let namespace = Some(namespace.clone());
+            let kind = match receiver {
+                Some((receiver, modifier)) => {
+                    let receiver = self.lower_unknown_receiver(receiver, modifier, span);
+                    HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                        receiver,
+                        receiver_modifier: modifier,
+                        namespace,
+                        ident: ident.clone(),
+                        labels,
+                        args,
+                    }))
+                }
+                None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                    namespace,
+                    ident: ident.clone(),
+                    labels,
+                    args,
+                }),
+            };
+
+            return HirExpression::new(kind, TypeElement::infer(), Ownership::UniqueOwned, span);
+        }
+
         if receiver.is_none() {
             if let Some(variable) = self.scopes.get(ident).cloned() {
                 if let TypeElement::Closure(closure) = variable.ty {
@@ -267,6 +308,7 @@ impl Checker<'_> {
                     let args = self.lower_closure_call_args(&closure.parameters, arguments);
                     return HirExpression::new(
                         HirExpressionKind::FunctionCall(HirFunctionCall {
+                            namespace: None,
                             ident: ident.clone(),
                             labels: Vec::new(),
                             args,
@@ -327,6 +369,7 @@ impl Checker<'_> {
                             receiver_modifier: signature
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
+                            namespace: None,
                             ident: ident.clone(),
                             labels: receiver_labels,
                             args,
@@ -357,12 +400,14 @@ impl Checker<'_> {
                             receiver_modifier: signature
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
+                            namespace: None,
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
                         }))
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                        namespace: None,
                         ident: ident.clone(),
                         labels: labels.clone(),
                         args,
@@ -381,12 +426,14 @@ impl Checker<'_> {
                         HirExpressionKind::MethodCall(Box::new(HirMethodCall {
                             receiver,
                             receiver_modifier: modifier,
+                            namespace: None,
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
                         }))
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                        namespace: None,
                         ident: ident.clone(),
                         labels,
                         args,
@@ -721,6 +768,7 @@ impl Checker<'_> {
 
         HirExpression::new(
             HirExpressionKind::FunctionCall(HirFunctionCall {
+                namespace: None,
                 ident: call.identifier.clone(),
                 labels: Vec::new(),
                 args,
@@ -1932,6 +1980,7 @@ impl Checker<'_> {
                     let (receiver, modifier) = self.lower_call_value(&operation.lhs);
                     self.lower_call(
                         Some((receiver, modifier)),
+                        call.namespace.as_ref(),
                         &call.identifier,
                         &call.arguments,
                         span,
@@ -2054,37 +2103,54 @@ impl Checker<'_> {
                 (SafeAccessKind::Field(field.clone()), field_ty)
             }
             ExpressionKind::FunctionCall(call) => {
-                let receiver_ident = match &inner_ty {
-                    TypeElement::Plain(basic) => Some(basic.ident.clone()),
-                    TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
-                    _ => None,
-                };
-                let lookup = self.lookup;
                 let labels = argument_labels(&call.arguments);
-                let label_refs = label_refs(&labels);
-                let function = lookup
-                    .resolve_function(receiver_ident.as_ref(), &call.identifier, &label_refs)
-                    .or_else(|| lookup.resolve_function(None, &call.identifier, &label_refs));
-                match function {
-                    Some(function) => {
-                        let signature = function.item.signature.clone();
-                        let args =
-                            self.lower_call_args(&signature.parameters.params, &call.arguments);
-                        (
-                            SafeAccessKind::Call(call.identifier.clone(), labels, args),
-                            signature.return_type.clone(),
-                        )
-                    }
-                    None => {
-                        let args = call
-                            .arguments
-                            .iter()
-                            .map(|argument| self.lower_unknown_argument(argument))
-                            .collect();
-                        (
-                            SafeAccessKind::Call(call.identifier.clone(), labels, args),
-                            TypeElement::infer(),
-                        )
+                if call.namespace.is_some() {
+                    let args = call
+                        .arguments
+                        .iter()
+                        .map(|argument| self.lower_unknown_argument(argument))
+                        .collect();
+                    (
+                        SafeAccessKind::Call(
+                            call.namespace.clone(),
+                            call.identifier.clone(),
+                            labels,
+                            args,
+                        ),
+                        TypeElement::infer(),
+                    )
+                } else {
+                    let receiver_ident = match &inner_ty {
+                        TypeElement::Plain(basic) => Some(basic.ident.clone()),
+                        TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
+                        _ => None,
+                    };
+                    let lookup = self.lookup;
+                    let label_refs = label_refs(&labels);
+                    let function = lookup
+                        .resolve_function(receiver_ident.as_ref(), &call.identifier, &label_refs)
+                        .or_else(|| lookup.resolve_function(None, &call.identifier, &label_refs));
+                    match function {
+                        Some(function) => {
+                            let signature = function.item.signature.clone();
+                            let args =
+                                self.lower_call_args(&signature.parameters.params, &call.arguments);
+                            (
+                                SafeAccessKind::Call(None, call.identifier.clone(), labels, args),
+                                signature.return_type.clone(),
+                            )
+                        }
+                        None => {
+                            let args = call
+                                .arguments
+                                .iter()
+                                .map(|argument| self.lower_unknown_argument(argument))
+                                .collect();
+                            (
+                                SafeAccessKind::Call(None, call.identifier.clone(), labels, args),
+                                TypeElement::infer(),
+                            )
+                        }
                     }
                 }
             }

@@ -357,6 +357,19 @@ struct ExtensionFileContent<'a> {
     pub fns: Vec<&'a HirFunction>,
 }
 
+fn transpile_uses(uses: &[ToplevelItem<UseDecl>]) -> String {
+    uses.iter()
+        .map(|use_decl| {
+            let path = crate::sanitize::sanitize_path(&use_decl.path);
+            if use_decl.path.segments.len() == 1 {
+                format!("use {path}::*;")
+            } else {
+                format!("use {path};")
+            }
+        })
+        .join("\n")
+}
+
 fn transpile_module(
     module: &HirModule,
     ctx: &Context,
@@ -432,6 +445,7 @@ fn transpile_module(
     }
 
     let no_generics = HashSet::new();
+    let imports = transpile_uses(&module.uses);
     let type_files = type_files;
     let toplevel_functions = toplevel_functions
         .iter()
@@ -440,7 +454,7 @@ fn transpile_module(
         .join("\n\n");
     let toplevel_functions = toplevel_functions.trim();
 
-    let tests = transpile_tests(&module.tests, ctx, errors);
+    let tests = transpile_tests(&module.tests, &imports, ctx, errors);
 
     let modules = type_files
         .keys()
@@ -492,9 +506,10 @@ fn transpile_module(
     let lib = TranspileOutput {
         file_name: galvan_module!("rs").into(),
         content: format!(
-            "extern crate galvan; #[allow(unused_imports)] pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n{}\n{}\n}}",
+            "extern crate galvan; #[allow(unused_imports)] pub(crate) use ::galvan::std::*;\n pub(crate) mod {} {{\n{}\nuse crate::*;\n{}\n{}\n{}\n{}\n}}",
             galvan_module!(),
             SUPPRESS_WARNINGS,
+            imports,
             cli_flag,
             [modules, toplevel_functions, &main, &cmds, &tests].join("\n\n"),
             cli_main
@@ -508,6 +523,7 @@ fn transpile_module(
             file_name: format!("{k}.rs").into(),
             content: [
                 "use crate::*;",
+                &imports,
                 &v.ty.transpile(ctx, errors),
                 &transpile_member_functions(v.ty, &v.fns, ctx, errors),
             ]
@@ -523,6 +539,7 @@ fn transpile_module(
             file_name: format!("{k}.rs").into(),
             content: [
                 "use crate::*;",
+                &imports,
                 &transpile_extension_functions(v.elem, &v.fns, ctx, errors),
             ]
             .join("\n\n")
@@ -552,7 +569,12 @@ fn transpile_module(
         .collect())
 }
 
-fn transpile_tests(tests: &[HirTest], ctx: &Context, errors: &mut ErrorCollector) -> String {
+fn transpile_tests(
+    tests: &[HirTest],
+    imports: &str,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
     fn test_name<'a>(desc: &Option<StringLiteral>) -> Cow<'a, str> {
         desc.as_ref().map_or("test".into(), |desc| {
             let snake = desc
@@ -599,7 +621,7 @@ fn transpile_tests(tests: &[HirTest], ctx: &Context, errors: &mut ErrorCollector
         return "".into();
     }
 
-    let test_mod = "#[cfg(test)]\nmod tests {\nuse crate::*;\n".to_owned()
+    let test_mod = format!("#[cfg(test)]\nmod tests {{\nuse crate::*;\n{imports}\n")
         + resolved_tests
             .iter()
             .map(|(name, test)| transpile_test(name, test, ctx, errors))

@@ -1,7 +1,8 @@
 use galvan_ast::{
     AliasTypeDecl, Body, CmdDecl, CmdSignature, DeclModifier, EmptyTypeDecl, EnumTypeDecl, FnDecl,
     FnSignature, Ident, Param, ParamList, RootItem, Span, Statement, StringLiteral, StructTypeDecl,
-    TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, Visibility, WhereBound, WhereClause,
+    TestDecl, TupleTypeDecl, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
+    WhereBound, WhereClause,
 };
 use galvan_parse::TreeCursor;
 
@@ -10,6 +11,7 @@ use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
 impl ReadCursor for RootItem {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
         Ok(match cursor.kind()? {
+            "use_declaration" => UseDecl::read_cursor(cursor, source)?.into(),
             "build" => todo!("Implement build entry point!"),
             "test" => TestDecl::read_cursor(cursor, source)?.into(),
             "function" => FnDecl::read_cursor(cursor, source)?.into(),
@@ -17,6 +19,43 @@ impl ReadCursor for RootItem {
             "type_declaration" => TypeDecl::read_cursor(cursor, source)?.into(),
             other => unreachable!("Unexpected node in root item: {other}"),
         })
+    }
+}
+
+impl ReadCursor for UseDecl {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let use_decl = cursor_expect!(cursor, "use_declaration");
+        let span = Span::from_node(use_decl);
+        cursor.child();
+        cursor_expect!(cursor, "use_keyword");
+
+        cursor.next();
+        let path = UsePath::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+        Ok(UseDecl { path, span })
+    }
+}
+
+impl ReadCursor for UsePath {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "use_path");
+        let span = Span::from_node(node);
+        cursor.child();
+
+        let mut segments = Vec::new();
+        loop {
+            segments.push(Ident::read_cursor(cursor, source)?);
+            if !cursor.next() {
+                break;
+            }
+            while cursor.kind()? == "double_colon" {
+                cursor.next();
+            }
+        }
+
+        cursor.goto_parent();
+        Ok(UsePath { segments, span })
     }
 }
 

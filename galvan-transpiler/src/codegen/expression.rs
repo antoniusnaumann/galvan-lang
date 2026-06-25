@@ -8,7 +8,7 @@ use galvan_hir::hir::*;
 
 use crate::context::Context;
 use crate::macros::transpile;
-use crate::sanitize::{mangle_function_name, sanitize_name};
+use crate::sanitize::{mangle_function_name, sanitize_name, sanitize_path};
 use crate::ErrorCollector;
 use crate::Transpile;
 
@@ -304,34 +304,18 @@ impl Transpile for HirFunctionCall {
             .iter()
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
-        format!(
-            "{}({})",
-            mangle_function_name(self.ident.as_str(), &self.labels),
-            args
-        )
+        let name = mangle_function_name(self.ident.as_str(), &self.labels);
+        if let Some(namespace) = &self.namespace {
+            return format!("{}::{}({})", sanitize_path(namespace), name, args);
+        }
+
+        format!("{}({})", name, args)
     }
 }
 
 impl Transpile for HirMethodCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let receiver = self.receiver.transpile(ctx, errors);
-        if self.receiver_modifier == Some(galvan_ast::DeclModifier::Ref) {
-            let receiver_ty = self.receiver.ty.transpile(ctx, errors);
-            let args = std::iter::once(receiver)
-                .chain(
-                    self.args
-                        .iter()
-                        .map(|argument| argument.transpile(ctx, errors)),
-                )
-                .join(", ");
-            return format!(
-                "{}::{}({})",
-                receiver_ty,
-                mangle_function_name(self.ident.as_str(), &self.labels),
-                args
-            );
-        }
-
         let receiver = if self.receiver.adjustments.is_empty() {
             receiver
         } else {
@@ -342,12 +326,31 @@ impl Transpile for HirMethodCall {
             .iter()
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
-        format!(
-            "{}.{}({})",
-            receiver,
-            mangle_function_name(self.ident.as_str(), &self.labels),
-            args
-        )
+        let ident = mangle_function_name(self.ident.as_str(), &self.labels);
+
+        if let Some(namespace) = &self.namespace {
+            return format!(
+                "{{ use {}::*; {}.{}({}) }}",
+                sanitize_path(namespace),
+                receiver,
+                ident,
+                args,
+            );
+        }
+
+        if self.receiver_modifier == Some(galvan_ast::DeclModifier::Ref) {
+            let receiver_ty = self.receiver.ty.transpile(ctx, errors);
+            let args = std::iter::once(receiver)
+                .chain(
+                    self.args
+                        .iter()
+                        .map(|argument| argument.transpile(ctx, errors)),
+                )
+                .join(", ");
+            return format!("{}::{}({})", receiver_ty, ident, args);
+        }
+
+        format!("{}.{}({})", receiver, ident, args)
     }
 }
 
@@ -367,24 +370,34 @@ impl Transpile for HirSafeAccess {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let receiver = self.receiver.transpile(ctx, errors);
         let access = match &self.access {
-            SafeAccessKind::Field(field) => sanitize_name(field.as_str()).into_owned(),
-            SafeAccessKind::Call(ident, labels, args) => {
+            SafeAccessKind::Field(field) => {
+                format!("__elem__.{}", sanitize_name(field.as_str()).into_owned())
+            }
+            SafeAccessKind::Call(namespace, ident, labels, args) => {
                 let args = args
                     .iter()
                     .map(|argument| argument.transpile(ctx, errors))
                     .join(", ");
-                format!("{}({})", mangle_function_name(ident.as_str(), labels), args)
+                let call = format!(
+                    "__elem__.{}({})",
+                    mangle_function_name(ident.as_str(), labels),
+                    args
+                );
+                match namespace {
+                    Some(namespace) => format!("{{ use {}::*; {call} }}", sanitize_path(namespace)),
+                    None => call,
+                }
             }
         };
 
         match self.style {
             SafeAccessStyle::RefClone => {
-                format!("{receiver}.as_ref().map(|__elem__| {{ __elem__.{access}.clone() }})")
+                format!("{receiver}.as_ref().map(|__elem__| {{ ({access}).clone() }})")
             }
             SafeAccessStyle::Clone => {
-                format!("{receiver}.map(|__elem__| {{ __elem__.{access}.clone() }})")
+                format!("{receiver}.map(|__elem__| {{ ({access}).clone() }})")
             }
-            SafeAccessStyle::Move => format!("{receiver}.map(|__elem__| {{ __elem__.{access} }})"),
+            SafeAccessStyle::Move => format!("{receiver}.map(|__elem__| {{ {access} }})"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use galvan_ast::{
     AstNode, Block, Body, Closure, ClosureParameter, ConstructorCall, ConstructorCallArg,
     DeclModifier, EnumAccess, EnumConstructor, EnumConstructorArg, Expression, FunctionCall,
-    FunctionCallArg, Ident, Return, Span, Statement, Throw, TypeElement, TypeIdent,
+    FunctionCallArg, Ident, Return, Span, Statement, Throw, TypeElement, TypeIdent, UsePath,
 };
 use galvan_parse::TreeCursor;
 
@@ -12,9 +12,22 @@ impl ReadCursor for FunctionCall {
         cursor_expect!(cursor, "function_call");
 
         cursor.child();
-        let identifier = Ident::read_cursor(cursor, source)?;
-
+        let first_ident = Ident::read_cursor(cursor, source)?;
         cursor.next();
+
+        let (namespace, identifier) = if cursor.kind()? == "double_colon" {
+            let namespace = Some(UsePath {
+                segments: vec![first_ident],
+                span: Span::default(),
+            });
+            cursor.next();
+            let identifier = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+            (namespace, identifier)
+        } else {
+            (None, first_ident)
+        };
+
         cursor_expect!(cursor, "paren_open");
 
         cursor.next();
@@ -22,6 +35,7 @@ impl ReadCursor for FunctionCall {
         cursor.goto_parent();
 
         Ok(FunctionCall {
+            namespace,
             identifier,
             arguments,
         })
@@ -78,6 +92,7 @@ pub fn read_trailing_closure_call(
 
     cursor.goto_parent();
     Ok(FunctionCall {
+        namespace: None,
         identifier,
         arguments,
     })
@@ -118,6 +133,7 @@ pub fn read_free_function_call(
         }
         _ => Statement::Expression(Expression {
             kind: FunctionCall {
+                namespace: None,
                 identifier,
                 arguments,
             }

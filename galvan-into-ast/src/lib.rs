@@ -64,6 +64,7 @@ pub trait SegmentAst {
 
 impl SegmentAst for Ast {
     fn segmented(self) -> Result<SegmentedAsts, AstError> {
+        let mut uses = Vec::new();
         let mut types = Vec::new();
         let mut functions = Vec::new();
         let mut tests = Vec::new();
@@ -72,6 +73,10 @@ impl SegmentAst for Ast {
 
         for item in self.toplevel {
             match item {
+                RootItem::Use(item) => uses.push(ToplevelItem {
+                    item,
+                    source: self.source.clone(),
+                }),
                 RootItem::Type(item) => types.push(ToplevelItem {
                     item,
                     source: self.source.clone(),
@@ -116,6 +121,7 @@ impl SegmentAst for Ast {
         }
 
         Ok(SegmentedAsts {
+            uses,
             types,
             functions,
             tests,
@@ -165,6 +171,7 @@ fn main_decl(function: FnDecl) -> Result<MainDecl, AstError> {
 
 impl SegmentAst for Vec<Ast> {
     fn segmented(self) -> Result<SegmentedAsts, AstError> {
+        let mut uses = Vec::new();
         let mut types = Vec::new();
         let mut functions = Vec::new();
         let mut tests = Vec::new();
@@ -174,6 +181,7 @@ impl SegmentAst for Vec<Ast> {
 
         for ast in segmented {
             let ast = ast?;
+            uses.extend(ast.uses);
             types.extend(ast.types);
             functions.extend(ast.functions);
             tests.extend(ast.tests);
@@ -188,6 +196,7 @@ impl SegmentAst for Vec<Ast> {
         }
 
         Ok(SegmentedAsts {
+            uses,
             types,
             functions,
             tests,

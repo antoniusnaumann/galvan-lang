@@ -49,6 +49,7 @@ where
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SegmentedAsts {
+    pub uses: Vec<ToplevelItem<UseDecl>>,
     pub types: Vec<ToplevelItem<TypeDecl>>,
     pub functions: Vec<ToplevelItem<FnDecl>>,
     pub tests: Vec<ToplevelItem<TestDecl>>,

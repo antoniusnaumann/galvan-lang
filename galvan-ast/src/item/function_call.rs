@@ -1,9 +1,10 @@
-use crate::{DeclModifier, EnumAccess, Expression, Ident, PrintAst, TypeIdent};
+use crate::{DeclModifier, EnumAccess, Expression, Ident, PrintAst, TypeIdent, UsePath};
 use derive_more::From;
 use galvan_ast_macro::PrintAst;
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct FunctionCall {
+    pub namespace: Option<UsePath>,
     pub identifier: Ident,
     pub arguments: Vec<FunctionCallArg>,
 }

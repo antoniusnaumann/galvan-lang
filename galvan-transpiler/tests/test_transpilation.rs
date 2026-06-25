@@ -154,6 +154,35 @@ fn transpiles_labeled_method_overloads() {
 }
 
 #[test]
+fn transpiles_import_declarations() {
+    let output = transpile_source(
+        "use reader
+         use reader::score
+         fn call() {
+             reader::score()
+         }",
+    );
+
+    assert!(output.contains("use reader::*;"));
+    assert!(output.contains("use reader::score;"));
+    assert!(output.contains("reader::score()"));
+}
+
+#[test]
+fn transpiles_namespaced_method_calls_as_scoped_imports() {
+    let output = transpile_source(
+        "type Book
+         fn call(book: Book) {
+             book.reader::read_and_judge()
+             book.reader::score(with: 5)
+         }",
+    );
+
+    assert!(output.contains("{ use reader::*; book.read_and_judge() }"));
+    assert!(output.contains("{ use reader::*; book.score__with(5) }"));
+}
+
+#[test]
 fn rejects_double_underscore_identifiers() {
     assert!(transpile(vec![Source::from_string("fn bad__name() {}")]).is_err());
     assert!(transpile(vec![Source::from_string("type Bad__Name {}")]).is_err());

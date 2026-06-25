@@ -101,6 +101,7 @@ pub fn predefined_from(mapping: &Mapping, functions: Vec<FnDecl>) -> SegmentedAs
         .collect();
     let main = None;
     SegmentedAsts {
+        uses: vec![],
         types,
         functions,
         tests,
