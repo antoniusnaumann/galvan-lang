@@ -7,24 +7,24 @@ fn get_value(self: Container<t>) -> t {
 }
 
 test "Simple generic container type" {
-    let container = Container(value: 42)
+    let shipment = Container(value: 42)
 
-    assert container.value == 42
-    assert container.get_value() == 42
+    assert shipment.value == 42
+    assert shipment.get_value() == 42
 }
 
-fn str(a: t) -> String where t: ToString {
-    a.to_string()
+fn str(value: t) -> String where t: ToString {
+    value.to_string()
 }
 
 test "Generic function with 'where' clause" {
-    let in = 15
-    let a = str(in)
-    assert a == "15"
+    let quantity = 15
+    let quantity_text = str(quantity)
+    assert quantity_text == "15"
 
-    let in = "string"
-    let b = str(in)
-    assert b == "string"
+    let label = "fragile"
+    let label_text = str(label)
+    assert label_text == "fragile"
 }
 
 fn repr(self: t) -> String where t: ToString {
@@ -32,11 +32,11 @@ fn repr(self: t) -> String where t: ToString {
 }
 
 test "Generic method with 'where' clause" {
-    let a = 15.repr()
-    assert a == "15"
+    let quantity_text = 15.repr()
+    assert quantity_text == "15"
 
-    let b = "string".repr()
-    assert b == "string"
+    let label_text = "fragile".repr()
+    assert label_text == "fragile"
 }
 
 fn concat_str(self: a, other: b) -> String where a, b: ToString {
@@ -44,8 +44,8 @@ fn concat_str(self: a, other: b) -> String where a, b: ToString {
 }
 
 test "Generic function with param list in 'where' clause" {
-    let concat = "some ".concat_str("string")
-    assert concat == "some string"
+    let tracking_label = "order ".concat_str("ready")
+    assert tracking_label == "order ready"
 }
 
 // test "Generic function with integer literal as argument" {

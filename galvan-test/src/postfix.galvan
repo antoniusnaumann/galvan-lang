@@ -1,15 +1,15 @@
 test "Use '!' operator on optional" {
-    let bailed = func_with_result()
-    assert bailed.unwrap_err() == 1
+    let missing_guest = find_guest_position()
+    assert missing_guest.unwrap_err() == 1
 }
 
-fn func_with_result() -> Int!USize {
-    let vec = ["H", "Z"]
-    vec.binary_search("Hi")!
-    let bail = vec.binary_search("Hi")!
+fn find_guest_position() -> Int!USize {
+    let guest_names = ["H", "Z"]
+    guest_names.binary_search("Hi")!
+    let position = guest_names.binary_search("Hi")!
 
-    let a = if true { 27 }
-    a.ok_or(27)
+    let fallback_position = if true { 27 }
+    fallback_position.ok_or(27)
 }
 
 fn double(self: Int) -> Int {
@@ -17,15 +17,15 @@ fn double(self: Int) -> Int {
 }
 
 test "Use safe-call operator '?.'" {
-    mut maybe: Int? = none
-    try maybe?.double() |i| {
+    mut maybe_score: Int? = none
+    try maybe_score?.double() |score| {
         panic "Expected optional to be none"
     }
 
-    maybe = 5
+    maybe_score = 5
 
-    try maybe?.double() |i| {
-        assert i == 10
+    try maybe_score?.double() |score| {
+        assert score == 10
     } else {
         panic "Expected optional to have a value"
     }

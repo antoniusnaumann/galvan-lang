@@ -1,150 +1,150 @@
 test "Access map" {
-    let map = {
+    let pantry = {
         "oranges": 4,
         "apples": 5,
-        "brussel sprouts": 14,
+        "coffee": 14,
     }
 
-    assert map["oranges"] == 4
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
+    assert pantry["oranges"] == 4
+    assert pantry["apples"] == 5
+    assert pantry["coffee"] == 14
 }
 
 test "Insert into map" {
-    mut map = {
+    mut pantry = {
         "oranges": 4,
         "apples": 5,
-        "brussel sprouts": 14,
+        "coffee": 14,
     }
 
-    map["kiwis"] = 21
+    pantry["kiwis"] = 21
 
-    assert map["oranges"] == 4
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
-    assert map["kiwis"] == 21
+    assert pantry["oranges"] == 4
+    assert pantry["apples"] == 5
+    assert pantry["coffee"] == 14
+    assert pantry["kiwis"] == 21
 }
 
 test "Modify map element" {
-    mut map = {
+    mut pantry = {
         "oranges": 4,
         "apples": 5,
-        "brussel sprouts": 14,
+        "coffee": 14,
     }
 
-    map["oranges"] = 16
+    pantry["oranges"] = 16
 
-    assert map["oranges"] == 16
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
+    assert pantry["oranges"] == 16
+    assert pantry["apples"] == 5
+    assert pantry["coffee"] == 14
 }
 
 test "Access and modify map through ref variable" {
-    ref map = {
+    ref pantry = {
         "oranges": 4,
         "apples": 5,
     }
 
-    assert map["oranges"] == 4
-    map["oranges"] = 16
-    map["kiwis"] = 21
-    assert map["oranges"] == 16
-    assert map["kiwis"] == 21
+    assert pantry["oranges"] == 4
+    pantry["oranges"] = 16
+    pantry["kiwis"] = 21
+    assert pantry["oranges"] == 16
+    assert pantry["kiwis"] == 21
 }
 
 test "Map with type annotation" {
-    let map: {String: Int} = {
+    let pantry: {String: Int} = {
         "oranges": 4,
         "apples": 5,
-        "brussel sprouts": 14,
+        "coffee": 14,
     }
 
-    assert map["oranges"] == 4
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
+    assert pantry["oranges"] == 4
+    assert pantry["apples"] == 5
+    assert pantry["coffee"] == 14
 }
 
 test "For loop on map" {
-    let map: {String: Int} = {
+    let pantry: {String: Int} = {
         "oranges": 4,
         "apples": 5,
-        "brussel sprouts": 14,
+        "coffee": 14,
     }
-    mut total = 0
+    mut total_items = 0
 
-    for map |fruit, count| {
-        assert fruit.len() > 0
-        total += count
+    for pantry |item, count| {
+        assert item.len() > 0
+        total_items += count
     }
 
-    assert total == 23
+    assert total_items == 23
 }
 
 test "Access ordered map" {
-    let map = [
-        "oranges": 4,
-        "apples": 5,
-        "brussel sprouts": 14,
+    let daily_menu = [
+        "breakfast": 4,
+        "lunch": 5,
+        "dinner": 14,
     ]
 
-    assert map["oranges"] == 4
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
+    assert daily_menu["breakfast"] == 4
+    assert daily_menu["lunch"] == 5
+    assert daily_menu["dinner"] == 14
 }
 
 test "For loop on ordered map" {
-    let map: [String: Int] = [
-        "oranges": 4,
-        "apples": 5,
-        "brussel sprouts": 14,
+    let daily_menu: [String: Int] = [
+        "breakfast": 4,
+        "lunch": 5,
+        "dinner": 14,
     ]
-    mut total = 0
+    mut total_servings = 0
 
-    for map |fruit, count| {
-        assert fruit.len() > 0
-        total += count
+    for daily_menu |meal, servings| {
+        assert meal.len() > 0
+        total_servings += servings
     }
 
-    assert total == 23
+    assert total_servings == 23
 }
 
 test "Insert into ordered map" {
-    mut map = [
-        "oranges": 4,
-        "apples": 5,
-        "brussel sprouts": 14,
+    mut daily_menu = [
+        "breakfast": 4,
+        "lunch": 5,
+        "dinner": 14,
     ]
 
-    map["kiwis"] = 21
+    daily_menu["dessert"] = 21
 
-    assert map["oranges"] == 4
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
-    assert map["kiwis"] == 21
+    assert daily_menu["breakfast"] == 4
+    assert daily_menu["lunch"] == 5
+    assert daily_menu["dinner"] == 14
+    assert daily_menu["dessert"] == 21
 }
 
 test "Modify ordered map element" {
-    mut map = [
-        "oranges": 4,
-        "apples": 5,
-        "brussel sprouts": 14,
+    mut daily_menu = [
+        "breakfast": 4,
+        "lunch": 5,
+        "dinner": 14,
     ]
 
-    map["oranges"] = 16
+    daily_menu["breakfast"] = 16
 
-    assert map["oranges"] == 16
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
+    assert daily_menu["breakfast"] == 16
+    assert daily_menu["lunch"] == 5
+    assert daily_menu["dinner"] == 14
 }
 
 test "Ordered map with type annotation" {
-    let map: [String: Int] = [
-        "oranges": 4,
-        "apples": 5,
-        "brussel sprouts": 14,
+    let daily_menu: [String: Int] = [
+        "breakfast": 4,
+        "lunch": 5,
+        "dinner": 14,
     ]
 
-    assert map["oranges"] == 4
-    assert map["apples"] == 5
-    assert map["brussel sprouts"] == 14
+    assert daily_menu["breakfast"] == 4
+    assert daily_menu["lunch"] == 5
+    assert daily_menu["dinner"] == 14
 }

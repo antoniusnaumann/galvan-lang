@@ -1,76 +1,75 @@
 test "Access set" {
-    let set = {
+    let pantry = {
         "oranges",
         "apples",
-        "brussel sprouts",
+        "coffee",
     }
 
-    assert "oranges" in set
-    assert "apples" in set
-    assert "brussel sprouts" in set
+    assert "oranges" in pantry
+    assert "apples" in pantry
+    assert "coffee" in pantry
 }
 
 test "Insert into set" {
-    mut set = {
+    mut pantry = {
         "oranges",
         "apples",
-        "brussel sprouts",
+        "coffee",
     }
 
-    set ++= "kiwis"
+    pantry ++= "kiwis"
 
-    assert "oranges" in set
-    assert "apples" in set
-    assert "brussel sprouts" in set
+    assert "oranges" in pantry
+    assert "apples" in pantry
+    assert "coffee" in pantry
 }
 
 test "Set with type annotation" {
-    let set: {String} = {
+    let pantry: {String} = {
         "oranges",
         "apples",
-        "brussel sprouts",
+        "coffee",
     }
 
-    assert "oranges" in set
-    assert "apples" in set
-    assert "brussel sprouts" in set
+    assert "oranges" in pantry
+    assert "apples" in pantry
+    assert "coffee" in pantry
 }
 
 test "Merge sets" {
-    let set: {String} = {
+    let stocked_items: {String} = {
         "apples",
         "pineapples"
     }
 
-    let other: {String} = {
+    let requested_items: {String} = {
         "bananas",
         "pears",
     }
 
-    let merged = set ++ other
+    let shopping_list = stocked_items ++ requested_items
 
-    assert "apples" in merged
-    assert "pineapples" in merged
-    assert "bananas" in merged
-    assert "pears" in merged
+    assert "apples" in shopping_list
+    assert "pineapples" in shopping_list
+    assert "bananas" in shopping_list
+    assert "pears" in shopping_list
 }
 
 test "Append sets" {
-    mut set: {String} = {
+    mut stocked_items: {String} = {
         "apples",
         "pineapples"
     }
 
-    let other: {String} = {
+    let requested_items: {String} = {
         "bananas",
         "pears",
     }
 
-    set ++= other
+    stocked_items ++= requested_items
 
-    assert "apples" in set
-    assert "pineapples" in set
-    assert "bananas" in set
-    assert "pears" in set
+    assert "apples" in stocked_items
+    assert "pineapples" in stocked_items
+    assert "bananas" in stocked_items
+    assert "pears" in stocked_items
 }
-

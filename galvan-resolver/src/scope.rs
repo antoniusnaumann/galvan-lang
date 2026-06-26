@@ -1,8 +1,10 @@
-use crate::{FunctionId, Lookup, LookupContext};
+use std::collections::HashMap;
+
 use galvan_ast::{
     DeclModifier, FnDecl, Ident, Ownership, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
 };
-use std::collections::HashMap;
+
+use crate::{FunctionId, Lookup, LookupContext};
 
 #[derive(Debug, Default)]
 pub struct Scope<'a> {
@@ -18,7 +20,7 @@ pub struct Scope<'a> {
 }
 
 impl Scope<'_> {
-    pub fn child(parent: &Self) -> Scope {
+    pub fn child(parent: &Self) -> Scope<'_> {
         Scope {
             parent: Some(parent),
             variables: HashMap::new(),

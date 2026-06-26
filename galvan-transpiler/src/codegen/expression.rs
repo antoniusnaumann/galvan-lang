@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use galvan_ast::{
-    ArithmeticOperator, BitwiseOperator, ComparisonOperator, LogicalOperator, RangeOperator,
+    ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, RangeOperator,
     TypeElement,
 };
 use galvan_hir::hir::*;
@@ -85,11 +85,7 @@ impl Transpile for HirElseUnwrap {
                 format!("if let Some({value_pattern}) = {receiver} {{ {value} }} else {else_block}")
             }
             HirElseUnwrapKind::Result => {
-                let err_binding = self
-                    .err_binding
-                    .as_ref()
-                    .map(|binding| sanitize_name(binding.as_str()).into_owned())
-                    .unwrap_or_else(|| "_".into());
+                let err_binding = fallback_binding(&self.err_binding);
                 format!(
                     "match {receiver} {{ Ok({value_pattern}) => {{ {value} }}, Err({err_binding}) => {else_block} }}"
                 )
@@ -118,11 +114,7 @@ impl Transpile for HirTry {
                         )
                     }
                     TryKind::Result => {
-                        let err_binding = self
-                            .err_binding
-                            .as_ref()
-                            .map(|binding| sanitize_name(binding.as_str()).into_owned())
-                            .unwrap_or_else(|| "_".into());
+                        let err_binding = fallback_binding(&self.err_binding);
                         format!(
                             "match {condition} {{ Ok({bindings}) => {body}, Err({err_binding}) => {else_block} }}"
                         )
@@ -133,6 +125,13 @@ impl Transpile for HirTry {
             None => format!("r#try({condition}, |{bindings}| {body})"),
         }
     }
+}
+
+fn fallback_binding(binding: &Option<Ident>) -> String {
+    binding
+        .as_ref()
+        .map(|binding| sanitize_name(binding.as_str()).into_owned())
+        .unwrap_or_else(|| "_".into())
 }
 
 impl Transpile for HirFor {

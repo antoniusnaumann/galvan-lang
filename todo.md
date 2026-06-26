@@ -63,6 +63,12 @@ commands remain subcommands.
 - **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)
   - Implement fully qualified name lookup / module paths
 
+- **Warning cleanup**
+  - Silence or handle unused-parameter warnings in the tree-sitter external
+    scanner stub (tree-sitter-galvan/src/scanner.c)
+  - Investigate the generic-container type mismatch warning emitted while
+    building `galvan-test`
+
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
     multithreading
