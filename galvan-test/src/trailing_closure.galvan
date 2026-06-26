@@ -48,7 +48,13 @@ fn floor_map(self: [Float], f: |Float| Float) -> [Float] {
     }
 }
 
-// TODO: This currently does not work because the extension function impl block is missing a <T>
+test "Generic trailing-closure helper as member function" {
+    let order_quantities = [1, 2, 3]
+    let doubled_quantities: [Int] = order_quantities.my_map |quantity| { quantity * 2 }
+
+    assert doubled_quantities == [2, 4, 6]
+}
+
 fn my_map(self: [t], f: |t| u) -> [u] {
     for self { f(it) }
 }

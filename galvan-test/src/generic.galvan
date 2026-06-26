@@ -48,7 +48,7 @@ test "Generic function with param list in 'where' clause" {
     assert tracking_label == "order ready"
 }
 
-// test "Generic function with integer literal as argument" {
-//     let concat = 15.concat_str(12)
-//     assert concat == "1512"
-// }
+test "Generic function with integer literal as argument" {
+    let concat = 15.concat_str(12)
+    assert concat == "1512"
+}

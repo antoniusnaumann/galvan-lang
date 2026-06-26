@@ -9,13 +9,11 @@ test "If clause" {
 test "If expression" {
     let available_label = if 6 == 6 { "in stock" }
 
-    // TODO: Auto-unwrap optionals in comparisons to make this work
-    // assert available_label == "in stock"
+    assert available_label == "in stock"
 
     let unavailable_label = if 6 == 7 { "in stock" }
 
-    // TODO: Introduce none keyword
-    // assert unavailable_label == none
+    assert unavailable_label == none
 }
 
 test "If-Else expression" {
