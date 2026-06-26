@@ -1,56 +1,56 @@
 test "for loop works" {
-    let numbers = [1, 2, 3, 4, 5]
-    mut i = 1
-    mut last = 0
+    let daily_orders = [1, 2, 3, 4, 5]
+    mut expected_orders = 1
+    mut last_day_orders = 0
 
-    for numbers |elem| {
-        assert elem == i
-        i += 1
-        last = elem
+    for daily_orders |orders| {
+        assert orders == expected_orders
+        expected_orders += 1
+        last_day_orders = orders
     }
 
-    assert last == 5
+    assert last_day_orders == 5
 }
 
 test "zipping iterators" {
-    let num1 = [6, 5, 4, 3, 2, 1, 0]
-    let num2 = [0, 1, 2, 3, 4, 5, 6]
+    let morning_slots = [6, 5, 4, 3, 2, 1, 0]
+    let evening_slots = [0, 1, 2, 3, 4, 5, 6]
 
-    for num1.iter().zip(num2) |a, b| {
-        assert a + b == 6
+    for morning_slots.iter().zip(evening_slots) |morning, evening| {
+        assert morning + evening == 6
     }
 }
 
 test "for expression" {
-    let numbers = [1, 4, 5, 7, 10]
-    let doubled = for numbers |num| {
-        num * 2
+    let prices = [1, 4, 5, 7, 10]
+    let doubled_prices = for prices |price| {
+        price * 2
     }
 
-    assert doubled.len() == 5
+    assert doubled_prices.len() == 5
 
-    assert doubled[2] == 10
-    assert doubled[4] == 20
+    assert doubled_prices[2] == 10
+    assert doubled_prices[4] == 20
 
-    for numbers.iter().zip(doubled) |a, b| {
-        assert a * 2 == b * 1
+    for prices.iter().zip(doubled_prices) |price, doubled| {
+        assert price * 2 == doubled * 1
     }
 }
 
 fn doubled(self: [Int]) -> [Int]? {
-    for self |elem| {
-        elem * 2
+    for self |amount| {
+        amount * 2
     }
 }
 
 test "autowrap for when optional is expected" {
-    let numbers = [1, 2, 3, 4, 5]
+    let invoice_amounts = [1, 2, 3, 4, 5]
 
-    let doubled = numbers.doubled()
+    let doubled_amounts = invoice_amounts.doubled()
 }
 
 test "ownership for iterators" {
-    let dogs = [Dog(name: "Bello", age: 4), Dog(name: "Hasso", age: 7)]
+    let dogs = [Dog(name: "Milo", age: 4), Dog(name: "Scout", age: 7)]
 
     for dogs.iter() |dog| {
         pet(dog)
@@ -60,60 +60,60 @@ test "ownership for iterators" {
 fn pet(dog: Dog) {}
 
 test "break works" {
-    let numbers = [1, 2, 3, 4]
+    let queue_positions = [1, 2, 3, 4]
 
-    for numbers |num| {
-        if num == 3 { break }
-        assert num < 3
+    for queue_positions |position| {
+        if position == 3 { break }
+        assert position < 3
     }
 }
 
 test "continue works" {
-    let numbers = [1, 2, 3, 4]
+    let queue_positions = [1, 2, 3, 4]
 
-    for numbers |num| {
-        if num % 2 == 1 { continue }
-        assert num % 2 == 0
+    for queue_positions |position| {
+        if position % 2 == 1 { continue }
+        assert position % 2 == 0
     }
 }
 
 test "implicit it parameter works" {
-    let numbers = [1, 2, 3]
-    mut sum = 0
-    
-    for numbers {
-        sum += it
+    let invoice_amounts = [1, 2, 3]
+    mut total = 0
+
+    for invoice_amounts {
+        total += it
     }
-    
-    assert sum == 6
+
+    assert total == 6
 }
 
 test "for loop on optional and result" {
-    let maybe: Int? = 3
-    let nothing: Int? = none
-    let ok: Int!Int = 5
-    let err: Int!Int = throw_in_for_test()
-    mut sum = 0
+    let coupon_value: Int? = 3
+    let missing_coupon: Int? = none
+    let loyalty_bonus: Int!Int = 5
+    let failed_bonus: Int!Int = load_missing_bonus()
+    mut total_discount = 0
 
-    for maybe {
-        sum += it
+    for coupon_value {
+        total_discount += it
     }
 
-    for nothing {
-        sum += 100
+    for missing_coupon {
+        total_discount += 100
     }
 
-    for ok {
-        sum += it
+    for loyalty_bonus {
+        total_discount += it
     }
 
-    for err {
-        sum += 100
+    for failed_bonus {
+        total_discount += 100
     }
 
-    assert sum == 8
+    assert total_discount == 8
 }
 
-fn throw_in_for_test() -> Int!Int {
+fn load_missing_bonus() -> Int!Int {
     throw 4
 }

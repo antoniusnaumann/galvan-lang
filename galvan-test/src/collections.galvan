@@ -1,22 +1,22 @@
 test "Collect iter into vector" {
-    let v = [1, 2, 3, 4, 5, 6, 7, 8]
-    let v = v
+    let order_quantities = [1, 2, 3, 4, 5, 6, 7, 8]
+    let packed_quantities = order_quantities
         .iter()
         .copied()
-        .map(|x| x * 2)
-        .filter(|x| x % 4 == 0)
+        .map(|quantity| quantity * 2)
+        .filter(|quantity| quantity % 4 == 0)
         .vec()
 
-    assert v == [4, 8, 12, 16]
+    assert packed_quantities == [4, 8, 12, 16]
 }
 
 test "Call functions on collection literal" {
-    let v = [1, 2, 3, 4, 5, 6, 7, 8]
+    let packed_quantities = [1, 2, 3, 4, 5, 6, 7, 8]
         .iter()
         .copied()
-        .map(|x| x * 2)
-        .filter(|x| x % 4 == 0)
+        .map(|quantity| quantity * 2)
+        .filter(|quantity| quantity % 4 == 0)
         .vec()
 
-    assert v == [4, 8, 12, 16]
+    assert packed_quantities == [4, 8, 12, 16]
 }

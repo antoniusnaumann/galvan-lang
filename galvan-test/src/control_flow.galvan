@@ -7,102 +7,100 @@ test "If clause" {
 }
 
 test "If expression" {
-    let some = if 6 == 6 { "Something" }
+    let available_label = if 6 == 6 { "in stock" }
 
-    // TODO: Auto-unwrap optionals in comparisons to make this work
-    // assert some == "Something"
+    assert available_label == "in stock"
 
-    let nothing = if 6 == 7 { "Something" }
+    let unavailable_label = if 6 == 7 { "in stock" }
 
-    // TODO: Introduce none keyword
-    // assert nothing == none
+    assert unavailable_label == none
 }
 
 test "If-Else expression" {
-    let result = if 6 == 7 { "Correct" } else { "Wrong" }
-    assert result == "Wrong"
+    let shipping_status = if 6 == 7 { "ready" } else { "delayed" }
+    assert shipping_status == "delayed"
 }
 
 test "Nested else-if expression" {
-    let result = if false {
-        "wrong"
+    let weather_alert = if false {
+        "storm warning"
     } else if true {
-        "correct"
+        "rain advisory"
     } else {
-        "also wrong"
+        "clear skies"
     }
 
-    assert result == "correct"
+    assert weather_alert == "rain advisory"
 }
 
 test "Try expression" {
-    let optional = if true { 6 }
+    let seats_available = if true { 6 }
 
-    let result = try optional |value| {
-        value + 1
+    let seats_after_booking = try seats_available |seats| {
+        seats + 1
     } else {
-        panic "Optional was none"
+        panic "Expected seat count"
     }
 
-    assert result == 7
+    assert seats_after_booking == 7
 }
 
 test "Try expression with implicit it" {
-    let optional = if true { 6 }
-    let optional_result = try optional {
+    let seats_available = if true { 6 }
+    let seats_after_booking = try seats_available {
         it + 1
     } else {
         0
     }
 
-    assert optional_result == 7
+    assert seats_after_booking == 7
 
-    let ok = returns_result(true)
-    let ok_result = try ok {
+    let loaded_points = load_reward_points(true)
+    let updated_points = try loaded_points {
         it + 1
     } else {
         it
     }
 
-    assert ok_result == 43
+    assert updated_points == 43
 
-    let err = returns_result(false)
-    let err_result = try err {
+    let failed_load = load_reward_points(false)
+    let retry_score = try failed_load {
         it
     } else {
         it + 1
     }
 
-    assert err_result == 22
+    assert retry_score == 22
 }
 
 test "Try expression does not own the value" {
-    let dog: Dog? = Dog(name: "Bello", age: 4)
-    try dog |bello| { assert bello.age == 4 } else { panic "Expected that dog is some" }
-    try dog |bello| { assert bello.name == "Bello" } else { panic "Expected that dog is some" }
+    let adopted_dog: Dog? = Dog(name: "Milo", age: 4)
+    try adopted_dog |dog| { assert dog.age == 4 } else { panic "Expected adopted dog" }
+    try adopted_dog |dog| { assert dog.name == "Milo" } else { panic "Expected adopted dog" }
 }
 
-type HasOpt {
-    a: String?
+type UserProfile {
+    nickname: String?
 }
 
 test "Try expression on member does not move" {
-    let maybe = HasOpt(a: "Something")
-    try maybe.a |s| { assert s == "Something" } else { panic "Expected some string" }
-    try maybe.a |s| { assert s == "Something" } else { panic "Expected some string" }
+    let profile = UserProfile(nickname: "pilot")
+    try profile.nickname |nickname| { assert nickname == "pilot" } else { panic "Expected nickname" }
+    try profile.nickname |nickname| { assert nickname == "pilot" } else { panic "Expected nickname" }
 }
 
 test "Try expression on borrowed member does not move" {
-    let maybe = HasOpt(a: "Something")
-    try_on_borrow(maybe)
+    let profile = UserProfile(nickname: "pilot")
+    validate_nickname(profile)
 }
 
-fn try_on_borrow(maybe: HasOpt) {
-    try maybe.a |s| { assert s == "Something" } else { panic "Expected some string" }
+fn validate_nickname(profile: UserProfile) {
+    try profile.nickname |nickname| { assert nickname == "pilot" } else { panic "Expected nickname" }
 }
 
-fn returns_result(ok: Bool) -> Int!Int {
-    if ok {
+fn load_reward_points(available: Bool) -> Int!Int {
+    if available {
         42
     } else {
         throw 21
@@ -110,57 +108,57 @@ fn returns_result(ok: Bool) -> Int!Int {
 }
 
 test "Try expression on result" {
-    let result = returns_result(true)
-    try result |ok| {
-        assert ok == 42
+    let points = load_reward_points(true)
+    try points |loaded| {
+        assert loaded == 42
     } else {
-        panic "Result value was expected to be okay but was error"
+        panic "Expected reward points"
     }
 
-    let result = returns_result(false)
-    try result |ok| {
-        panic "Result value was expected to be error but was ok"
-    } else |err| {
-        assert err == 21
+    let points = load_reward_points(false)
+    try points |loaded| {
+        panic "Expected reward loading to fail"
+    } else |error_code| {
+        assert error_code == 21
     }
 }
 
-fn double_or_minus_one(maybe: Int?) -> Int {
-    let num = maybe else { return -1 }
-    num * 2
+fn double_discount_or_missing(discount: Int?) -> Int {
+    let amount = discount else { return -1 }
+    amount * 2
 }
 
 test "Return from else on optional" {
-    let result = double_or_minus_one(none)
-    assert result == -1
+    let discount = double_discount_or_missing(none)
+    assert discount == -1
 }
 
-fn result_or_fallback(ok: Bool) -> Int {
-    returns_result(ok) else { 99 }
+fn points_or_signup_bonus(available: Bool) -> Int {
+    load_reward_points(available) else { 99 }
 }
 
-fn result_or_error_plus_one(ok: Bool) -> Int {
-    returns_result(ok) else |err| { err + 1 }
+fn points_or_retry_code(available: Bool) -> Int {
+    load_reward_points(available) else |error_code| { error_code + 1 }
 }
 
 test "Else unwrap on result" {
-    assert result_or_fallback(true) == 42
-    assert result_or_fallback(false) == 99
-    assert result_or_error_plus_one(false) == 22
+    assert points_or_signup_bonus(true) == 42
+    assert points_or_signup_bonus(false) == 99
+    assert points_or_retry_code(false) == 22
 }
 
 test "Safe-call -> else on struct member" {
-    let maybe_dog: Dog? = Dog(name: "Hugo", age: 8)
-    let dog_name: String = maybe_dog?.name else { "Bello" }
+    let shelter_dog: Dog? = Dog(name: "Hugo", age: 8)
+    let displayed_name: String = shelter_dog?.name else { "Unknown" }
 
-    assert dog_name == "Hugo"
-    assert maybe_dog?.name == "Hugo" 
+    assert displayed_name == "Hugo"
+    assert shelter_dog?.name == "Hugo" 
 }
 
 test "Try-expression on struct member" {
-    let maybe_dog: Dog? = Dog(name: "Hugo", age: 8)
-    let dog_name: String = try maybe_dog |dog| { dog.name } else { "Bello" }
+    let shelter_dog: Dog? = Dog(name: "Hugo", age: 8)
+    let displayed_name: String = try shelter_dog |dog| { dog.name } else { "Unknown" }
 
-    assert dog_name == "Hugo"
-    assert maybe_dog?.name == "Hugo" 
+    assert displayed_name == "Hugo"
+    assert shelter_dog?.name == "Hugo" 
 }

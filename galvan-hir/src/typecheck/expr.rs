@@ -582,11 +582,7 @@ impl Checker<'_> {
             Some(DeclModifier::Ref) => HirExpression::error("invalid ref passing mode", span),
             Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
             None => {
-                let ownership = if self.is_copy(&param.param_type) {
-                    Ownership::UniqueOwned
-                } else {
-                    Ownership::Borrowed
-                };
+                let ownership = value_argument_ownership(self.is_copy(&param.param_type));
                 let expected = Expected::with(param.param_type.clone(), ownership);
                 self.coerce(lowered, &expected)
             }
@@ -705,11 +701,7 @@ impl Checker<'_> {
                         unreachable!("let modifiers are rejected while merging")
                     }
                     None => {
-                        let ownership = if self.is_copy(param_ty) {
-                            Ownership::UniqueOwned
-                        } else {
-                            Ownership::Borrowed
-                        };
+                        let ownership = value_argument_ownership(self.is_copy(param_ty));
                         let expected = Expected::with(param_ty.clone(), ownership);
                         self.coerce(lowered, &expected)
                     }
@@ -1034,19 +1026,10 @@ impl Checker<'_> {
     ) -> (HirMatchBindingPattern, Option<Variable>) {
         match binding {
             MatchBindingPattern::Ident(ident) => {
-                let ownership = if self.is_copy(ty) || ty.is_infer() {
-                    Ownership::UniqueOwned
-                } else {
-                    Ownership::SharedOwned
-                };
+                let ownership = match_binding_ownership(self.is_copy(ty), ty.is_infer());
                 (
                     HirMatchBindingPattern::Binding(ident.clone()),
-                    Some(Variable {
-                        ident: ident.clone(),
-                        modifier: DeclModifier::Let,
-                        ty: ty.clone(),
-                        ownership,
-                    }),
+                    Some(let_variable(ident.clone(), ty.clone(), ownership)),
                 )
             }
             MatchBindingPattern::Wildcard(_) => (HirMatchBindingPattern::Wildcard, None),
@@ -1224,12 +1207,11 @@ impl Checker<'_> {
         };
 
         self.scopes.push();
-        self.scopes.declare(Variable {
-            ident: Ident::new("__value"),
-            modifier: DeclModifier::Let,
-            ty: inner_ty.clone(),
-            ownership: value_ownership,
-        });
+        self.scopes.declare(let_variable(
+            Ident::new("__value"),
+            inner_ty.clone(),
+            value_ownership,
+        ));
         let value = HirExpression::new(
             HirExpressionKind::Variable(Ident::new("__value")),
             inner_ty.clone(),
@@ -1240,18 +1222,11 @@ impl Checker<'_> {
         self.scopes.pop();
 
         self.scopes.push();
-        let err_binding = else_unwrap_err_parameter(else_expression, err_ty.as_ref());
+        let err_binding = fallback_parameter(else_expression, err_ty.as_ref());
         if let Some((ident, ty)) = &err_binding {
-            self.scopes.declare(Variable {
-                ident: ident.clone(),
-                modifier: DeclModifier::Let,
-                ty: ty.clone(),
-                ownership: if self.is_copy(ty) {
-                    Ownership::UniqueOwned
-                } else {
-                    Ownership::Borrowed
-                },
-            });
+            let ownership = value_argument_ownership(self.is_copy(ty));
+            self.scopes
+                .declare(let_variable(ident.clone(), ty.clone(), ownership));
         }
         let else_block = self.lower_block(&else_expression.block.body, &value_expected);
         self.scopes.pop();
@@ -1445,12 +1420,8 @@ impl Checker<'_> {
                 let ok_bindings = ok_parameters
                     .into_iter()
                     .map(|(ident, ty)| {
-                        self.scopes.declare(Variable {
-                            ident: ident.clone(),
-                            modifier: DeclModifier::Let,
-                            ty,
-                            ownership: Ownership::Borrowed,
-                        });
+                        self.scopes
+                            .declare(let_variable(ident.clone(), ty, Ownership::Borrowed));
                         ident
                     })
                     .collect();
@@ -1507,33 +1478,16 @@ impl Checker<'_> {
             expected.clone()
         };
 
-        let binding_ownership = |checker: &Self, ty: &TypeElement, scrutinee: Ownership| {
-            // `Infer` is assumed to be copy here, matching the unwrap of
-            // optionals with unknown inner type
-            if checker.is_copy(ty) || ty.is_infer() {
-                Ownership::UniqueOwned
-            } else {
-                match scrutinee {
-                    Ownership::UniqueOwned | Ownership::SharedOwned => Ownership::SharedOwned,
-                    _ => Ownership::Borrowed,
-                }
-            }
-        };
-
         let scrutinee_ownership = condition.adjusted_ownership();
 
         self.scopes.push();
-        let ok_ownership = binding_ownership(self, &ok_ty, scrutinee_ownership);
+        let ok_ownership = self.unwrap_binding_ownership(&ok_ty, scrutinee_ownership);
         let ok_parameters = try_ok_parameters(body, &ok_ty);
         let ok_bindings: Vec<Ident> = ok_parameters
             .into_iter()
             .map(|(ident, ty)| {
-                self.scopes.declare(Variable {
-                    ident: ident.clone(),
-                    modifier: DeclModifier::Let,
-                    ty,
-                    ownership: ok_ownership,
-                });
+                self.scopes
+                    .declare(let_variable(ident.clone(), ty, ok_ownership));
                 ident
             })
             .collect();
@@ -1541,16 +1495,13 @@ impl Checker<'_> {
         self.scopes.pop();
 
         self.scopes.push();
-        let err_binding = try_err_parameter(else_expression, err_ty.as_ref()).map(|(ident, ty)| {
-            let err_ownership = binding_ownership(self, &ty, scrutinee_ownership);
-            self.scopes.declare(Variable {
-                ident: ident.clone(),
-                modifier: DeclModifier::Let,
-                ty,
-                ownership: err_ownership,
+        let err_binding =
+            fallback_parameter(else_expression, err_ty.as_ref()).map(|(ident, ty)| {
+                let err_ownership = self.unwrap_binding_ownership(&ty, scrutinee_ownership);
+                self.scopes
+                    .declare(let_variable(ident.clone(), ty, err_ownership));
+                ident
             });
-            ident
-        });
         let else_block = self.lower_block(&else_expression.block.body, &branch_expected);
         self.scopes.pop();
 
@@ -1619,18 +1570,12 @@ impl Checker<'_> {
         self.scopes.push();
         let bindings: Vec<HirForBinding> = if body.parameters.is_empty() {
             // Implicit `it` parameter
-            let binding_ty = iterable_info.item_ty.clone();
-            let deref = self.for_binding_deref(&binding_ty, borrows_iterable, &iterable_info);
-            self.scopes.declare(Variable {
-                ident: Ident::new("it"),
-                modifier: DeclModifier::Let,
-                ty: binding_ty,
-                ownership: for_binding_ownership(deref),
-            });
-            vec![HirForBinding {
-                ident: Ident::new("it"),
-                deref,
-            }]
+            vec![self.lower_for_binding(
+                Ident::new("it"),
+                iterable_info.item_ty.clone(),
+                borrows_iterable,
+                &iterable_info,
+            )]
         } else {
             body.parameters
                 .iter()
@@ -1643,18 +1588,12 @@ impl Checker<'_> {
                             .get(index)
                             .unwrap_or(&iterable_info.item_ty),
                     );
-                    let deref =
-                        self.for_binding_deref(&binding_ty, borrows_iterable, &iterable_info);
-                    self.scopes.declare(Variable {
-                        ident: parameter.ident.clone(),
-                        modifier: DeclModifier::Let,
-                        ty: binding_ty,
-                        ownership: for_binding_ownership(deref),
-                    });
-                    HirForBinding {
-                        ident: parameter.ident.clone(),
-                        deref,
-                    }
+                    self.lower_for_binding(
+                        parameter.ident.clone(),
+                        binding_ty,
+                        borrows_iterable,
+                        &iterable_info,
+                    )
                 })
                 .collect()
         };
@@ -1735,6 +1674,40 @@ impl Checker<'_> {
             && iterable_info.kind == HirForIterableKind::Normal
             && self.is_copy(binding_ty)
             && !binding_ty.is_infer()
+    }
+
+    fn lower_for_binding(
+        &mut self,
+        ident: Ident,
+        binding_ty: TypeElement,
+        borrows_iterable: bool,
+        iterable_info: &ForIterableInfo,
+    ) -> HirForBinding {
+        let deref = self.for_binding_deref(&binding_ty, borrows_iterable, iterable_info);
+        self.scopes.declare(let_variable(
+            ident.clone(),
+            binding_ty,
+            for_binding_ownership(deref),
+        ));
+
+        HirForBinding { ident, deref }
+    }
+
+    fn unwrap_binding_ownership(
+        &self,
+        ty: &TypeElement,
+        scrutinee_ownership: Ownership,
+    ) -> Ownership {
+        // `Infer` is assumed to be copy here, matching optional/result unwraps
+        // with unknown inner types.
+        if self.is_copy(ty) || ty.is_infer() {
+            return Ownership::UniqueOwned;
+        }
+
+        match scrutinee_ownership {
+            Ownership::UniqueOwned | Ownership::SharedOwned => Ownership::SharedOwned,
+            _ => Ownership::Borrowed,
+        }
     }
 
     fn lower_assert(&mut self, call: &FunctionCall, span: Span) -> HirExpression {
@@ -2728,7 +2701,7 @@ fn try_ok_parameters(body: &Closure, ok_ty: &TypeElement) -> Vec<(Ident, TypeEle
         .collect()
 }
 
-fn try_err_parameter(
+fn fallback_parameter(
     else_expression: &ElseExpression,
     err_ty: Option<&TypeElement>,
 ) -> Option<(Ident, TypeElement)> {
@@ -2742,17 +2715,28 @@ fn try_err_parameter(
     }
 }
 
-fn else_unwrap_err_parameter(
-    else_expression: &ElseExpression,
-    err_ty: Option<&TypeElement>,
-) -> Option<(Ident, TypeElement)> {
-    match (else_expression.parameters.first(), err_ty) {
-        (Some(parameter), Some(err_ty)) => Some((
-            parameter.ident.clone(),
-            for_parameter_type(parameter, err_ty),
-        )),
-        (None, Some(err_ty)) => Some((Ident::new("it"), err_ty.clone())),
-        _ => None,
+fn let_variable(ident: Ident, ty: TypeElement, ownership: Ownership) -> Variable {
+    Variable {
+        ident,
+        modifier: DeclModifier::Let,
+        ty,
+        ownership,
+    }
+}
+
+fn value_argument_ownership(is_copy: bool) -> Ownership {
+    if is_copy {
+        Ownership::UniqueOwned
+    } else {
+        Ownership::Borrowed
+    }
+}
+
+fn match_binding_ownership(is_copy: bool, is_infer: bool) -> Ownership {
+    if is_copy || is_infer {
+        Ownership::UniqueOwned
+    } else {
+        Ownership::SharedOwned
     }
 }
 

@@ -382,7 +382,6 @@ impl ReadCursor for EnumConstructorArg {
             _ => {
                 // Look for the pattern: if we have ident followed by colon, it's a named field
                 if first_kind == "ident" {
-                    let current_position = cursor.node();
                     let ident = Ident::read_cursor(cursor, source)?;
                     cursor.next();
 
