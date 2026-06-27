@@ -917,8 +917,7 @@ fn borrowed_rust_returns_are_cloned_in_hir() {
     );
 
     let module = lower_with_interop(
-        "use borrowed
-         fn call() -> String {
+        "fn call() -> String {
              borrowed::name()
          }",
         &rust_interop,
@@ -930,11 +929,53 @@ fn borrowed_rust_returns_are_cloned_in_hir() {
 }
 
 #[test]
+fn qualified_rust_functions_are_typechecked_without_imports() {
+    let rust_interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
+    let module = lower_with_interop(
+        "fn call(scores: [Int]) -> String {
+             serde_json::to_string(scores) else |error| {
+                 \"encoding failed\"
+             }
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert!(matches!(tail.kind, HirExpressionKind::ElseUnwrap(_)));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
 fn imported_rust_functions_are_typechecked_unqualified() {
     let uses = [use_decl(&["serde_json", "to_string"])];
     let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
     let module = lower_with_interop(
         "use serde_json::to_string
+         fn call(scores: [Int]) -> String {
+             to_string(scores) else |error| {
+                 \"encoding failed\"
+             }
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert!(matches!(tail.kind, HirExpressionKind::ElseUnwrap(_)));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn namespace_use_imports_rust_functions_unqualified() {
+    let uses = [use_decl(&["serde_json"])];
+    let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let module = lower_with_interop(
+        "use serde_json
          fn call(scores: [Int]) -> String {
              to_string(scores) else |error| {
                  \"encoding failed\"
