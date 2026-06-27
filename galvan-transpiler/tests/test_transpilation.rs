@@ -194,6 +194,39 @@ fn transpiles_namespaced_method_calls_as_scoped_imports() {
 }
 
 #[test]
+fn clones_implicitly_for_move_parameters() {
+    let output = transpile_source(
+        "fn keep(move message: String) -> String {
+             message
+         }
+         fn call() -> String {
+             let message = \"hello\"
+             keep(message)
+         }",
+    );
+
+    assert!(output.contains("fn keep(message: String) -> String"));
+    assert!(output.contains("keep(message.to_owned())"));
+}
+
+#[test]
+fn passes_move_arguments_without_implicit_clone() {
+    let output = transpile_source(
+        "fn keep(move message: String) -> String {
+             message
+         }
+         fn call() -> String {
+             let message = \"hello\"
+             keep(move message)
+         }",
+    );
+
+    assert!(output.contains("fn keep(message: String) -> String"));
+    assert!(output.contains("keep(message)"));
+    assert!(!output.contains("keep(message.to_owned())"));
+}
+
+#[test]
 fn rejects_double_underscore_identifiers() {
     assert!(transpile(vec![Source::from_string("fn bad__name() {}")]).is_err());
     assert!(transpile(vec![Source::from_string("type Bad__Name {}")]).is_err());

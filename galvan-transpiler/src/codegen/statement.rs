@@ -70,13 +70,14 @@ impl Transpile for HirDeclaration {
             DeclModifier::Let => "let",
             DeclModifier::Ref => "let mut",
             DeclModifier::Mut => "let mut",
+            DeclModifier::Move => "let",
         };
 
         let identifier = sanitize_name(self.identifier.as_str());
 
         let ty = self.ty.transpile(ctx, errors);
         let ty = match self.modifier {
-            DeclModifier::Let | DeclModifier::Mut => format!(": {ty}"),
+            DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => format!(": {ty}"),
             DeclModifier::Ref => format!(": std::sync::Arc<std::sync::Mutex<{ty}>>"),
         };
 

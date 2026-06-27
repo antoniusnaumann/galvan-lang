@@ -23,6 +23,7 @@ galvan-ast.workspace = true
 galvan-resolver.workspace = true
 galvan-hir.workspace = true
 galvan-into-ast.workspace = true
+galvan-rustdoc.workspace = true
 
 [dev-dependencies]
 galvan-test-macro.workspace = true

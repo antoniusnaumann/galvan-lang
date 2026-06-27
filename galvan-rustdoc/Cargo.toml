@@ -1,0 +1,15 @@
+[package]
+name = "galvan-rustdoc"
+description = "Rustdoc JSON interop metadata for the Galvan compiler"
+
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+galvan-ast.workspace = true
+galvan-files.workspace = true
+
+serde_json.workspace = true
+thiserror.workspace = true

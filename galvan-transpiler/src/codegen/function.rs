@@ -119,6 +119,13 @@ impl Transpile for Param {
                     transpile_param(self, ctx, ownership, errors)
                 }
             }
+            Some(DeclModifier::Move) => {
+                if is_self {
+                    "self".into()
+                } else {
+                    transpile_param(self, ctx, TypeOwnership::Owned, errors)
+                }
+            }
             Some(DeclModifier::Mut) => {
                 if is_self {
                     "&mut self".into()

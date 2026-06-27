@@ -461,6 +461,7 @@ pub struct HirPrint {
 #[derive(Clone, Debug)]
 pub struct HirFunctionCall {
     pub namespace: Option<UsePath>,
+    pub rust_path: Option<Box<str>>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
@@ -471,6 +472,7 @@ pub struct HirMethodCall {
     pub receiver: HirExpression,
     pub receiver_modifier: Option<DeclModifier>,
     pub namespace: Option<UsePath>,
+    pub rust_path: Option<Box<str>>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,

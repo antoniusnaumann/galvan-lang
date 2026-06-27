@@ -1,11 +1,15 @@
-use galvan_ast::{Ownership, TypeElement};
+use galvan_ast::{
+    BasicTypeItem, FnSignature, Ident, Ownership, ParamList, Span, TypeElement, TypeIdent,
+    Visibility,
+};
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
+use galvan_rustdoc::RustInterop;
 
 use crate::builtins::CheckBuiltins;
 use crate::error::ErrorCollector;
 use crate::hir::*;
-use crate::typecheck::typecheck;
+use crate::typecheck::{typecheck, typecheck_with_interop};
 
 fn lower_with_diagnostics(code: &str) -> (HirModule, ErrorCollector) {
     let ast = Source::from_string(code)
@@ -17,6 +21,20 @@ fn lower_with_diagnostics(code: &str) -> (HirModule, ErrorCollector) {
 
 fn lower(code: &str) -> HirModule {
     let (module, errors) = lower_with_diagnostics(code);
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    module
+}
+
+fn lower_with_interop(code: &str, rust_interop: &RustInterop) -> HirModule {
+    let ast = Source::from_string(code)
+        .try_into_ast()
+        .expect("test code should parse");
+    let segmented = vec![ast].segmented().expect("test code should segment");
+    let (module, errors) =
+        typecheck_with_interop(segmented, rust_interop).expect("test code should typecheck");
     assert!(
         !errors.has_errors(),
         "expected no type errors, got: {errors}"
@@ -855,4 +873,42 @@ fn ownership_matches_generated_rust_for_locals() {
     // exactly what the generated Rust needs to compile
     assert_eq!(value.ownership, Ownership::SharedOwned);
     assert_eq!(value.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn borrowed_rust_returns_are_cloned_in_hir() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_function_decl(
+        "borrowed",
+        "name",
+        "::borrowed::name",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("name"),
+            parameters: ParamList {
+                params: Vec::new(),
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("String"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        true,
+    );
+
+    let module = lower_with_interop(
+        "use borrowed
+         fn call() -> String {
+             borrowed::name()
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert_eq!(tail.ownership, Ownership::Borrowed);
+    assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
 }

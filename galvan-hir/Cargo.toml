@@ -11,6 +11,7 @@ license.workspace = true
 galvan-ast = { workspace = true }
 galvan-files = { workspace = true }
 galvan-resolver = { workspace = true }
+galvan-rustdoc = { workspace = true }
 
 itertools = { workspace = true }
 thiserror = { workspace = true }

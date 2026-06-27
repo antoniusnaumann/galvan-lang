@@ -38,6 +38,7 @@ impl ReadCursor for DeclModifier {
             "ref_keyword" => Self::Ref,
             "let_keyword" => Self::Let,
             "mut_keyword" => Self::Mut,
+            "move_keyword" => Self::Move,
             _ => unreachable!("Unexpected declaration modifier!"),
         };
 

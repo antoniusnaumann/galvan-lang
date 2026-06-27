@@ -80,9 +80,11 @@ commands remain subcommands.
 
 ## Future Enhancements
 
-- Add resolver-level checks for imported crates/items and namespaced method
-  calls. `use` declarations and `value.crate_name::method()` are currently
-  syntax/codegen only and cannot be checked by the Galvan compiler.
+- Extend Rust interop beyond rustdoc-backed free functions:
+  - Typecheck namespaced method calls such as `value.crate_name::method()`
+  - Resolve trait methods, associated functions, constants, and re-exports from
+    rustdoc JSON
+  - Improve generic substitution and trait-bound handling for external Rust APIs
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)
@@ -92,5 +94,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-25*
+*Last updated: 2026-06-27*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

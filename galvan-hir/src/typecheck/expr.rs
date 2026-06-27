@@ -273,6 +273,39 @@ impl Checker<'_> {
     ) -> HirExpression {
         if let Some(namespace) = namespace {
             let labels = argument_labels(arguments);
+            let labels_ref = label_refs(&labels);
+            if let Some(function) = namespace.segments.first().and_then(|segment| {
+                self.rust_interop
+                    .function(Some(segment.as_str()), None, ident, &labels_ref)
+            }) {
+                let signature = function.decl.item.signature.clone();
+                let args = self.lower_call_args(&signature.parameters.params, arguments);
+                let kind = HirExpressionKind::FunctionCall(HirFunctionCall {
+                    namespace: Some(namespace.clone()),
+                    rust_path: Some(function.rust_path.clone()),
+                    ident: ident.clone(),
+                    labels,
+                    args,
+                });
+                let expression = HirExpression::new(
+                    kind,
+                    signature.return_type,
+                    if function.borrowed_return {
+                        Ownership::Borrowed
+                    } else {
+                        Ownership::UniqueOwned
+                    },
+                    span,
+                );
+
+                return if function.borrowed_return {
+                    self.ensure_owned(expression)
+                } else {
+                    expression
+                };
+            }
+
+            let labels = argument_labels(arguments);
             let args = arguments
                 .iter()
                 .map(|argument| self.lower_unknown_argument(argument))
@@ -285,6 +318,7 @@ impl Checker<'_> {
                         receiver,
                         receiver_modifier: modifier,
                         namespace,
+                        rust_path: None,
                         ident: ident.clone(),
                         labels,
                         args,
@@ -292,6 +326,7 @@ impl Checker<'_> {
                 }
                 None => HirExpressionKind::FunctionCall(HirFunctionCall {
                     namespace,
+                    rust_path: None,
                     ident: ident.clone(),
                     labels,
                     args,
@@ -309,6 +344,7 @@ impl Checker<'_> {
                     return HirExpression::new(
                         HirExpressionKind::FunctionCall(HirFunctionCall {
                             namespace: None,
+                            rust_path: None,
                             ident: ident.clone(),
                             labels: Vec::new(),
                             args,
@@ -370,6 +406,7 @@ impl Checker<'_> {
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
+                            rust_path: None,
                             ident: ident.clone(),
                             labels: receiver_labels,
                             args,
@@ -401,6 +438,7 @@ impl Checker<'_> {
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
+                            rust_path: None,
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -408,6 +446,7 @@ impl Checker<'_> {
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
+                        rust_path: None,
                         ident: ident.clone(),
                         labels: labels.clone(),
                         args,
@@ -427,6 +466,7 @@ impl Checker<'_> {
                             receiver,
                             receiver_modifier: modifier,
                             namespace: None,
+                            rust_path: None,
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -434,6 +474,7 @@ impl Checker<'_> {
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
+                        rust_path: None,
                         ident: ident.clone(),
                         labels,
                         args,
@@ -467,6 +508,7 @@ impl Checker<'_> {
         match modifier {
             Some(DeclModifier::Mut) => self.adjust_ownership(receiver, Ownership::MutBorrowed),
             Some(DeclModifier::Ref) => self.lower_ref_value(receiver, span),
+            Some(DeclModifier::Move) => self.adjust_ownership(receiver, Ownership::UniqueOwned),
             Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
             None => receiver,
         }
@@ -567,6 +609,7 @@ impl Checker<'_> {
         let expected_modifier = match param.decl_modifier {
             Some(DeclModifier::Mut) => Some(DeclModifier::Mut),
             Some(DeclModifier::Ref) => Some(DeclModifier::Ref),
+            Some(DeclModifier::Move) => Some(DeclModifier::Move),
             Some(DeclModifier::Let) | None => None,
         };
         self.validate_argument_modifier(param, expected_modifier, modifier, span);
@@ -580,6 +623,16 @@ impl Checker<'_> {
                 self.lower_ref_value(lowered, span)
             }
             Some(DeclModifier::Ref) => HirExpression::error("invalid ref passing mode", span),
+            Some(DeclModifier::Move) if modifier == Some(DeclModifier::Move) => {
+                let expected = Expected::with(param.param_type.clone(), Ownership::Ref);
+                self.coerce(lowered, &expected)
+            }
+            Some(DeclModifier::Move) => {
+                let expected =
+                    Expected::with(param.param_type.clone(), lowered.adjusted_ownership());
+                let typed = self.coerce(lowered, &expected);
+                self.ensure_owned(typed)
+            }
             Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
             None => {
                 let ownership = value_argument_ownership(self.is_copy(&param.param_type));
@@ -597,6 +650,9 @@ impl Checker<'_> {
         span: Span,
     ) {
         if expected == found {
+            return;
+        }
+        if expected == Some(DeclModifier::Move) && found.is_none() {
             return;
         }
 
@@ -697,6 +753,10 @@ impl Checker<'_> {
                     Some(DeclModifier::Ref) => {
                         self.lower_ref_value(lowered, argument.expression.span)
                     }
+                    Some(DeclModifier::Move) => {
+                        let expected = Expected::with(param_ty.clone(), Ownership::Ref);
+                        self.coerce(lowered, &expected)
+                    }
                     Some(DeclModifier::Let) => {
                         unreachable!("let modifiers are rejected while merging")
                     }
@@ -722,6 +782,7 @@ impl Checker<'_> {
         match modifier {
             Some(DeclModifier::Mut) => self.adjust_ownership(lowered, Ownership::MutBorrowed),
             Some(DeclModifier::Ref) => self.lower_ref_value(lowered, argument.expression.span),
+            Some(DeclModifier::Move) => self.adjust_ownership(lowered, Ownership::UniqueOwned),
             Some(DeclModifier::Let) => {
                 self.errors.error(TranspilerError::InvalidModifier {
                     modifier: "let".to_string(),
@@ -761,6 +822,7 @@ impl Checker<'_> {
         HirExpression::new(
             HirExpressionKind::FunctionCall(HirFunctionCall {
                 namespace: None,
+                rust_path: None,
                 ident: call.identifier.clone(),
                 labels: Vec::new(),
                 args,
@@ -2925,6 +2987,7 @@ fn modifier_name(modifier: DeclModifier) -> &'static str {
         DeclModifier::Let => "let",
         DeclModifier::Mut => "mut",
         DeclModifier::Ref => "ref",
+        DeclModifier::Move => "move",
     }
 }
 
@@ -2932,6 +2995,7 @@ fn passing_mode_name(modifier: Option<DeclModifier>) -> &'static str {
     match modifier {
         Some(DeclModifier::Mut) => "`mut`",
         Some(DeclModifier::Ref) => "`ref`",
+        Some(DeclModifier::Move) => "`move`",
         Some(DeclModifier::Let) => "`let`",
         None => "unmodified",
     }

@@ -340,6 +340,10 @@ impl Transpile for HirFunctionCall {
             .iter()
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
+        if let Some(rust_path) = &self.rust_path {
+            return format!("{rust_path}({args})");
+        }
+
         let name = mangle_function_name(self.ident.as_str(), &self.labels);
         if let Some(namespace) = &self.namespace {
             return format!("{}::{}({})", sanitize_path(namespace), name, args);
@@ -363,6 +367,17 @@ impl Transpile for HirMethodCall {
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
+
+        if let Some(rust_path) = &self.rust_path {
+            let args = std::iter::once(receiver)
+                .chain(
+                    self.args
+                        .iter()
+                        .map(|argument| argument.transpile(ctx, errors)),
+                )
+                .join(", ");
+            return format!("{rust_path}({args})");
+        }
 
         if let Some(namespace) = &self.namespace {
             return format!(

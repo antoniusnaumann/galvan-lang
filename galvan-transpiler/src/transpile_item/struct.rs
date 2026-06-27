@@ -95,9 +95,9 @@ impl_transpile!(TupleTypeMember, "{}", r#type);
 impl Transpile for StructTypeMember {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.decl_modifier {
-            Some(DeclModifier::Let) | Some(DeclModifier::Mut) => {
+            Some(DeclModifier::Let) | Some(DeclModifier::Mut) | Some(DeclModifier::Move) => {
                 errors.error(crate::TranspilerError::InvalidModifier {
-                    modifier: "let/mut".to_string(),
+                    modifier: "let/mut/move".to_string(),
                     context: "struct fields".to_string(),
                 });
                 transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
