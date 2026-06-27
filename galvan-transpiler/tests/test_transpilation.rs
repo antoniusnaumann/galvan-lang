@@ -159,12 +159,23 @@ fn transpiles_import_declarations() {
         "use reader
          use reader::score
          fn call() {
-             reader::score()
+             score()
          }",
     );
 
     assert!(output.contains("use reader::*;"));
     assert!(output.contains("use reader::score;"));
+    assert!(output.contains("score()"));
+}
+
+#[test]
+fn transpiles_qualified_function_calls_without_imports() {
+    let output = transpile_source(
+        "fn call() {
+             reader::score()
+         }",
+    );
+
     assert!(output.contains("reader::score()"));
 }
 

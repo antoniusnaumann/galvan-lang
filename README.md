@@ -178,16 +178,18 @@ fn main() {
 
 ### Namespaces
 
-Items in the same crate are available unqualified. Items from other crates can
-be imported with `use mycrate`, or more narrowly with path syntax such as
-`use mycrate::my_item`.
+Items in the same crate are available unqualified. Items from dependency crates
+are automatically available through namespace-qualified syntax such as
+`mycrate::my_item()`.
 
 > [!NOTE]
-> `use mycrate` imports all public items from that crate, similar to
-> `use mycrate::*` in Rust.
+> `use mycrate` imports all public items from that crate for unqualified use,
+> similar to `use mycrate::*` in Rust. Path imports such as
+> `use mycrate::my_item` import only that item for unqualified use.
 
 Galvan also allows methods to be added to types you do not own. Outside the
-defining crate, use either a namespace-qualified call or import the namespace:
+defining crate, namespace-qualified calls are available without an import. Use
+the namespace only when you want the methods available unqualified:
 
 ```galvan
 fn score_book() {
