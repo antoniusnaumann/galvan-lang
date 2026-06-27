@@ -274,35 +274,26 @@ impl Checker<'_> {
         if let Some(namespace) = namespace {
             let labels = argument_labels(arguments);
             let labels_ref = label_refs(&labels);
+            let receiver_ident = receiver
+                .as_ref()
+                .and_then(|(receiver, _)| receiver_type_ident(&receiver.ty));
             if let Some(function) = namespace.segments.first().and_then(|segment| {
-                self.rust_interop
-                    .function(Some(segment.as_str()), None, ident, &labels_ref)
+                self.rust_interop.function(
+                    Some(segment.as_str()),
+                    receiver_ident.as_ref(),
+                    ident,
+                    &labels_ref,
+                )
             }) {
-                let signature = function.decl.item.signature.clone();
-                let args = self.lower_call_args(&signature.parameters.params, arguments);
-                let kind = HirExpressionKind::FunctionCall(HirFunctionCall {
-                    namespace: Some(namespace.clone()),
-                    rust_path: Some(function.rust_path.clone()),
-                    ident: ident.clone(),
+                return self.lower_rust_call(
+                    function,
+                    receiver,
+                    Some(namespace.clone()),
+                    ident,
                     labels,
-                    args,
-                });
-                let expression = HirExpression::new(
-                    kind,
-                    signature.return_type,
-                    if function.borrowed_return {
-                        Ownership::Borrowed
-                    } else {
-                        Ownership::UniqueOwned
-                    },
+                    arguments,
                     span,
                 );
-
-                return if function.borrowed_return {
-                    self.ensure_owned(expression)
-                } else {
-                    expression
-                };
             }
 
             let labels = argument_labels(arguments);
@@ -374,6 +365,13 @@ impl Checker<'_> {
             // Extension functions on collection or generic receivers are
             // registered without a receiver type
             .or_else(|| lookup.resolve_function(None, ident, &labels_ref));
+
+        if let Some(function) =
+            self.rust_interop
+                .function(None, receiver_ident.as_ref(), ident, &labels_ref)
+        {
+            return self.lower_rust_call(function, receiver, None, ident, labels, arguments, span);
+        }
 
         if receiver.is_none() && function.is_none() {
             if let Some((receiver_argument, arguments)) = arguments.split_first() {
@@ -482,6 +480,60 @@ impl Checker<'_> {
                 };
                 HirExpression::new(kind, TypeElement::infer(), Ownership::UniqueOwned, span)
             }
+        }
+    }
+
+    fn lower_rust_call(
+        &mut self,
+        function: &galvan_rustdoc::RustFunctionDecl,
+        receiver: Option<(HirExpression, Option<DeclModifier>)>,
+        namespace: Option<UsePath>,
+        ident: &Ident,
+        labels: Vec<Ident>,
+        arguments: &[FunctionCallArg],
+        span: Span,
+    ) -> HirExpression {
+        let signature = function.decl.item.signature.clone();
+        let args = self.lower_call_args(&signature.parameters.params, arguments);
+        let kind = match receiver {
+            Some((receiver, modifier)) => {
+                let receiver =
+                    self.lower_known_receiver(receiver, modifier, signature.receiver(), span);
+                HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                    receiver,
+                    receiver_modifier: signature
+                        .receiver()
+                        .and_then(|receiver| receiver.decl_modifier),
+                    namespace,
+                    rust_path: Some(function.rust_path.clone()),
+                    ident: ident.clone(),
+                    labels,
+                    args,
+                }))
+            }
+            None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                namespace,
+                rust_path: Some(function.rust_path.clone()),
+                ident: ident.clone(),
+                labels,
+                args,
+            }),
+        };
+        let expression = HirExpression::new(
+            kind,
+            signature.return_type,
+            if function.borrowed_return {
+                Ownership::Borrowed
+            } else {
+                Ownership::UniqueOwned
+            },
+            span,
+        );
+
+        if function.borrowed_return {
+            self.ensure_owned(expression)
+        } else {
+            expression
         }
     }
 

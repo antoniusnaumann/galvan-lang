@@ -471,16 +471,36 @@ impl RustdocCache {
             return;
         }
 
-        let target_dir = self.root.join("target");
         let _ = fs::create_dir_all(&self.root);
+        let manifest_path = match dependency_manifest_path(&self.crate_name) {
+            Ok(Some(path)) => path,
+            Ok(None) => {
+                let _ = fs::write(
+                    self.root.join(format!("{}.stderr", self.crate_name)),
+                    format!(
+                        "crate '{}' was not found in cargo metadata",
+                        self.crate_name
+                    ),
+                );
+                return;
+            }
+            Err(error) => {
+                let _ = fs::write(
+                    self.root.join(format!("{}.stderr", self.crate_name)),
+                    error.to_string(),
+                );
+                return;
+            }
+        };
 
+        let target_dir = self.root.join("target");
         let output = Command::new("rustup")
             .arg("run")
             .arg("nightly")
             .arg("cargo")
             .arg("rustdoc")
-            .arg("-p")
-            .arg(&self.crate_name)
+            .arg("--manifest-path")
+            .arg(&manifest_path)
             .arg("--lib")
             .arg("--target-dir")
             .arg(&target_dir)
@@ -537,6 +557,38 @@ impl RustdocCache {
         let _ = fs::remove_file(self.root.join(format!("{}.stderr", self.crate_name)));
         let _ = fs::remove_file(self.root.join(format!("{}.stdout", self.crate_name)));
     }
+}
+
+fn dependency_manifest_path(crate_name: &str) -> Result<Option<PathBuf>, RustdocError> {
+    let manifest_dir = env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let manifest_path = manifest_dir.join("Cargo.toml");
+    let output = Command::new("cargo")
+        .arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .arg("--manifest-path")
+        .arg(manifest_path)
+        .env_remove("RUSTC")
+        .env_remove("RUSTDOC")
+        .env_remove("RUSTC_WRAPPER")
+        .output()
+        .map_err(RustdocError::CargoMetadata)?;
+
+    let metadata: Value =
+        serde_json::from_slice(&output.stdout).map_err(RustdocError::InvalidCargoMetadata)?;
+    let manifest_path = metadata
+        .get("packages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|package| package.get("name").and_then(Value::as_str) == Some(crate_name))
+        .and_then(|package| package.get("manifest_path"))
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+
+    Ok(manifest_path)
 }
 
 fn imported_crates(uses: &[ToplevelItem<UseDecl>]) -> HashSet<String> {
@@ -650,4 +702,64 @@ fn crate_type_prefix(crate_name: &str) -> String {
             }
         })
         .collect::<String>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ident(name: &str) -> Ident {
+        Ident::new(name)
+    }
+
+    fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
+        ToplevelItem {
+            item: UseDecl {
+                path: galvan_ast::UsePath {
+                    segments: segments
+                        .iter()
+                        .map(|segment| Ident::new(*segment))
+                        .collect(),
+                    span: Span::default(),
+                },
+                span: Span::default(),
+            },
+            source: Source::Builtin,
+        }
+    }
+
+    #[test]
+    fn loading_a_crate_does_not_import_its_functions_unqualified() {
+        let interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
+
+        assert!(interop
+            .function(Some("serde_json"), None, &ident("to_string"), &[])
+            .is_some());
+        assert!(interop
+            .function(None, None, &ident("to_string"), &[])
+            .is_none());
+    }
+
+    #[test]
+    fn use_declarations_import_functions_unqualified() {
+        let uses = [use_decl(&["serde_json"])];
+        let interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+
+        assert!(interop
+            .function(None, None, &ident("to_string"), &[])
+            .is_some());
+    }
+
+    #[test]
+    fn path_use_declarations_import_only_the_named_item() {
+        let uses = [use_decl(&["serde_json", "to_string"])];
+        let interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+
+        assert!(interop
+            .function(None, None, &ident("to_string"), &[])
+            .is_some());
+        assert!(interop
+            .function(None, None, &ident("from_str"), &[])
+            .is_none());
+    }
 }

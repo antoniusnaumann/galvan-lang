@@ -1,6 +1,6 @@
 use galvan_ast::{
-    BasicTypeItem, FnSignature, Ident, Ownership, ParamList, Span, TypeElement, TypeIdent,
-    Visibility,
+    BasicTypeItem, FnSignature, Ident, Ownership, Param, ParamList, Span, ToplevelItem,
+    TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -40,6 +40,22 @@ fn lower_with_interop(code: &str, rust_interop: &RustInterop) -> HirModule {
         "expected no type errors, got: {errors}"
     );
     module
+}
+
+fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
+    ToplevelItem {
+        item: UseDecl {
+            path: UsePath {
+                segments: segments
+                    .iter()
+                    .map(|segment| Ident::new(*segment))
+                    .collect(),
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    }
 }
 
 fn function<'m>(module: &'m HirModule, name: &str) -> &'m HirFunction {
@@ -911,4 +927,78 @@ fn borrowed_rust_returns_are_cloned_in_hir() {
 
     assert_eq!(tail.ownership, Ownership::Borrowed);
     assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn imported_rust_functions_are_typechecked_unqualified() {
+    let uses = [use_decl(&["serde_json", "to_string"])];
+    let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let module = lower_with_interop(
+        "use serde_json::to_string
+         fn call(scores: [Int]) -> String {
+             to_string(scores) else |error| {
+                 \"encoding failed\"
+             }
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert!(matches!(tail.kind, HirExpressionKind::ElseUnwrap(_)));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn qualified_rust_methods_are_typechecked_with_receivers() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_function_decl(
+        "external",
+        "nickname",
+        "::external::nickname",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("nickname"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: None,
+                    short_name: None,
+                    identifier: Ident::new("self"),
+                    param_type: TypeElement::Plain(BasicTypeItem {
+                        ident: TypeIdent::new("Dog"),
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("String"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    let module = lower_with_interop(
+        "type Dog
+         fn call(dog: Dog) -> String {
+             dog.external::nickname()
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    let HirExpressionKind::MethodCall(call) = &tail.kind else {
+        panic!("expected method call, got {:?}", tail.kind);
+    };
+    assert_eq!(call.rust_path.as_deref(), Some("::external::nickname"));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
 }
