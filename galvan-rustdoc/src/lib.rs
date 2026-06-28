@@ -8,11 +8,11 @@ use serde_json::Value;
 use thiserror::Error;
 
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember,
-    EnumVariantField, FnDecl, FnSignature, Ident, OptionalTypeItem, OrderedDictionaryTypeItem,
-    Param, ParamList, ParametricTypeItem, ResultTypeItem, SetTypeItem, Span, StructTypeDecl,
-    StructTypeMember, ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
-    TypeIdent, UseDecl, Visibility,
+    AliasTypeDecl, ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, EnumTypeDecl,
+    EnumTypeMember, EnumVariantField, FnDecl, FnSignature, Ident, OptionalTypeItem,
+    OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem, ResultTypeItem, SetTypeItem,
+    Span, StructTypeDecl, StructTypeMember, ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl,
+    TypeElement, TypeIdent, UseDecl, Visibility,
 };
 use galvan_files::Source;
 
@@ -270,8 +270,25 @@ impl RustInterop {
         if let Some(enum_item) = inner.get("enum") {
             return Some(self.enum_decl_from_json(crate_name, name, enum_item, index));
         }
+        if let Some(alias_item) = inner.get("type_alias") {
+            return self.alias_decl_from_json(crate_name, name, alias_item);
+        }
 
         None
+    }
+
+    fn alias_decl_from_json(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        alias_item: &Value,
+    ) -> Option<TypeDecl> {
+        Some(TypeDecl::Alias(AliasTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new(name),
+            r#type: self.type_from_json(crate_name, alias_item)?,
+            span: Span::default(),
+        }))
     }
 
     fn struct_decl_from_json(
@@ -1675,6 +1692,35 @@ mod tests {
             event.members[2].fields[0].r#type,
             TypeElement::Optional(_)
         ));
+    }
+
+    #[test]
+    fn rustdoc_imports_type_aliases_with_lifted_targets() {
+        let json = json!({
+            "index": {
+                "0": public_item("UserId", json!({
+                    "type_alias": primitive("u64")
+                })),
+                "1": public_item("Names", json!({
+                    "type_alias": resolved("Vec", vec![primitive("str")])
+                }))
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let TypeDecl::Alias(user_id) = imported_type(&interop, "UserId") else {
+            panic!("expected UserId alias");
+        };
+        assert_eq!(user_id.r#type, u64_type());
+
+        let TypeDecl::Alias(names) = imported_type(&interop, "Names") else {
+            panic!("expected Names alias");
+        };
+        let TypeElement::Array(names) = &names.r#type else {
+            panic!("expected lifted Vec alias, got {:?}", names.r#type);
+        };
+        assert_eq!(names.elements, string_type());
     }
 
     #[test]

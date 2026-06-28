@@ -99,8 +99,8 @@ commands remain subcommands.
     `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover more standard-library and
     ecosystem wrapper types
   - Extend imported public Rust data declarations beyond the current named
-    struct fields, tuple struct fields, and enum variants to cover constants,
-    type aliases, unions, repr details, and generic declarations
+    struct fields, tuple struct fields, enum variants, and type aliases to
+    cover constants, unions, repr details, and generic declarations
   - Infer all Galvan passing modes from lifted Rust signatures, including
     wrapper conversions at call boundaries and the remaining mutable
     receiver/argument cases not covered by rustdoc mutable borrowed refs
