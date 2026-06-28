@@ -46,7 +46,7 @@ impl Checker<'_> {
             }
             ExpressionKind::CollectionLiteral(literal) => self.lower_collection(literal, span),
             ExpressionKind::ConstructorCall(constructor) => {
-                self.lower_constructor(constructor, span)
+                self.lower_constructor(constructor, expected, span)
             }
             ExpressionKind::EnumConstructor(constructor) => {
                 self.lower_enum_constructor(constructor, span)
@@ -2678,7 +2678,12 @@ impl Checker<'_> {
         unified.unwrap_or_else(TypeElement::infer)
     }
 
-    fn lower_constructor(&mut self, constructor: &ConstructorCall, span: Span) -> HirExpression {
+    fn lower_constructor(
+        &mut self,
+        constructor: &ConstructorCall,
+        expected: &Expected,
+        span: Span,
+    ) -> HirExpression {
         let lookup = self.lookup;
         let type_decl = lookup.resolve_type(&constructor.identifier);
         let mut kind = HirConstructorKind::Struct;
@@ -2787,7 +2792,7 @@ impl Checker<'_> {
                 kind,
                 args,
             }),
-            plain_type(constructor.identifier.clone()),
+            constructor_result_type(&constructor.identifier, expected),
             Ownership::UniqueOwned,
             span,
         )
@@ -2912,6 +2917,16 @@ fn plain_type(ident: TypeIdent) -> TypeElement {
         ident,
         span: Span::default(),
     })
+}
+
+fn constructor_result_type(identifier: &TypeIdent, expected: &Expected) -> TypeElement {
+    match &expected.ty {
+        TypeElement::Plain(plain) if plain.ident == *identifier => expected.ty.clone(),
+        TypeElement::Parametric(parametric) if parametric.base_type == *identifier => {
+            expected.ty.clone()
+        }
+        _ => plain_type(identifier.clone()),
+    }
 }
 
 fn closure_argument(argument: &FunctionCallArg) -> Option<&Closure> {

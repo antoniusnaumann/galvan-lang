@@ -1,8 +1,8 @@
 use galvan_ast::{
-    BasicTypeItem, Body, EmptyTypeDecl, Expression, ExpressionKind, FnDecl, FnSignature, Ident,
-    InfixExpression, InfixOperation, MemberOperator, Ownership, Param, ParamList, SegmentedAsts,
-    Span, StringLiteral, ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
-    TypeIdent, UseDecl, UsePath, Visibility,
+    BasicTypeItem, Body, EmptyTypeDecl, Expression, ExpressionKind, FnDecl, FnSignature,
+    GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator, Ownership, Param,
+    ParamList, ParametricTypeItem, SegmentedAsts, Span, StringLiteral, ToplevelItem, TupleTypeDecl,
+    TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -1372,6 +1372,99 @@ fn imported_rust_tuple_struct_constructors_are_typechecked_as_tuple_constructors
         );
     };
     assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn imported_rust_tuple_struct_constructors_preserve_expected_parametric_type() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("T"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
+            identifier: TypeIdent::new("Json"),
+            arguments: vec![galvan_ast::ConstructorCallArg {
+                ident: Ident::new("value"),
+                modifier: None,
+                expression: Expression {
+                    kind: ExpressionKind::Literal(
+                        StringLiteral {
+                            value: "ok".to_string(),
+                            interpolations: vec![],
+                            span: Span::default(),
+                        }
+                        .into(),
+                    ),
+                    span: Span::default(),
+                },
+            }],
+        }),
+        span: Span::default(),
+    };
+    let return_type = TypeElement::Parametric(ParametricTypeItem {
+        base_type: TypeIdent::new("Json"),
+        type_args: vec![TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("String"),
+            span: Span::default(),
+        })],
+        span: Span::default(),
+    });
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("response"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: return_type.clone(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![constructor_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Json"])],
+            types: vec![],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "response"));
+
+    assert_eq!(tail.ty, return_type);
 }
 
 #[test]

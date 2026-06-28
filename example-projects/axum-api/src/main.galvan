@@ -73,7 +73,6 @@ async fn main() {
 // TODO(async): Allow async handler functions and external generic return types
 // such as Json<HealthResponse>.
 async fn health() -> Json<HealthResponse> {
-    // TODO(rust-interop): Infer generic arguments for external tuple constructors.
     Json(HealthResponse(
         service: "galvan-axum-api",
         status: "ok",
