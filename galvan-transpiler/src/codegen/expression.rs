@@ -5,6 +5,7 @@ use galvan_ast::{
     TypeElement,
 };
 use galvan_hir::hir::*;
+use galvan_resolver::Lookup;
 
 use crate::context::Context;
 use crate::macros::transpile;
@@ -462,7 +463,11 @@ impl Transpile for HirConstructorCall {
             .map(|argument| {
                 let value = argument.value.transpile(ctx, errors);
                 let value = if argument.store_as_ref {
-                    wrap_ref_storage_value(value, &argument.value)
+                    if let Some(field_ty) = constructor_field_type(self, &argument.field, ctx) {
+                        wrap_ref_storage_value(value, &argument.value, field_ty)
+                    } else {
+                        wrap_ref_storage_value(value, &argument.value, &argument.value.ty)
+                    }
                 } else {
                     value
                 };
@@ -471,6 +476,21 @@ impl Transpile for HirConstructorCall {
             .join(", ");
         format!("{ident} {{ {args} }}")
     }
+}
+
+fn constructor_field_type<'a>(
+    constructor: &HirConstructorCall,
+    field: &Ident,
+    ctx: &'a Context<'_>,
+) -> Option<&'a TypeElement> {
+    let ty = ctx.lookup.resolve_type(&constructor.ident)?;
+    let galvan_ast::TypeDecl::Struct(decl) = &ty.item else {
+        return None;
+    };
+    decl.members
+        .iter()
+        .find(|member| member.ident == *field)
+        .map(|member| &member.r#type)
 }
 
 impl Transpile for HirEnumConstructor {

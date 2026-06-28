@@ -8,8 +8,6 @@ use crate::sanitize::sanitize_name;
 use crate::ErrorCollector;
 use crate::Transpile;
 
-use super::wrap_ref_storage_value;
-
 impl Transpile for HirBlock {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         // Only blocks that produce a value keep their trailing expression
@@ -85,7 +83,11 @@ impl Transpile for HirDeclaration {
             Some(value) => {
                 let rendered = value.transpile(ctx, errors);
                 let value = if matches!(self.modifier, DeclModifier::Ref) {
-                    wrap_ref_storage_value(rendered, value)
+                    if value.adjustments.last() == Some(&Adjustment::ArcClone) {
+                        rendered
+                    } else {
+                        format!("(&({rendered})).__to_ref()")
+                    }
                 } else {
                     rendered
                 };

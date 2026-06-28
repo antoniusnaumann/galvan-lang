@@ -194,6 +194,46 @@ fn transpiles_namespaced_method_calls_as_scoped_imports() {
 }
 
 #[test]
+fn primitive_ref_struct_fields_use_atomic_storage() {
+    let output = transpile_source(
+        "type State {
+             ref next_id: U64,
+             ref active: Bool,
+         }
+         fn state() -> State {
+             State(next_id: 1, active: true)
+         }",
+    );
+
+    assert!(output.contains("pub(crate) next_id: std::sync::Arc<std::sync::atomic::AtomicU64>"));
+    assert!(output.contains("pub(crate) active: std::sync::Arc<std::sync::atomic::AtomicBool>"));
+    assert!(output.contains("next_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1))"));
+    assert!(
+        output.contains("active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))")
+    );
+}
+
+#[test]
+fn non_primitive_ref_struct_fields_keep_mutex_storage() {
+    let output = transpile_source(
+        "type Dog {
+             name: String,
+         }
+         type Shelter {
+             ref dog: Dog,
+         }
+         fn shelter() -> Shelter {
+             Shelter(dog: Dog(name: \"Rex\"))
+         }",
+    );
+
+    assert!(output.contains("pub(crate) dog: std::sync::Arc<std::sync::Mutex<Dog>>"));
+    assert!(output.contains("dog:"));
+    assert!(output.contains(".__to_ref()"));
+    assert!(!output.contains("Atomic"));
+}
+
+#[test]
 fn clones_implicitly_for_move_parameters() {
     let output = transpile_source(
         "fn keep(move message: String) -> String {

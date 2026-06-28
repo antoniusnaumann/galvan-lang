@@ -1,3 +1,4 @@
+use crate::codegen::ref_storage_type;
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::{ErrorCollector, Transpile};
@@ -103,13 +104,9 @@ impl Transpile for StructTypeMember {
                 transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
             }
             Some(DeclModifier::Ref) => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "pub(crate) {}: std::sync::Arc<std::sync::Mutex<{}>>",
-                    self.ident,
-                    self.r#type
-                )
+                let ty = self.r#type.transpile(ctx, errors);
+                let storage_ty = ref_storage_type(&self.r#type, ty);
+                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, storage_ty)
             }
             None => {
                 transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)

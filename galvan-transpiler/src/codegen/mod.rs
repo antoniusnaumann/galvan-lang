@@ -12,6 +12,7 @@ pub(crate) use function::{
     transpile_function, transpile_main, transpile_signature, transpile_test,
 };
 
+use galvan_ast::TypeElement;
 use galvan_hir::hir::{Adjustment, HirExpression, HirExpressionKind};
 
 use crate::context::Context;
@@ -25,11 +26,44 @@ impl Transpile for HirExpression {
     }
 }
 
-pub(crate) fn wrap_ref_storage_value(rendered: String, value: &HirExpression) -> String {
+pub(crate) fn ref_storage_type(ty: &TypeElement, rendered: String) -> String {
+    atomic_ref_storage_type(ty)
+        .map(|atomic| format!("std::sync::Arc<std::sync::atomic::{atomic}>"))
+        .unwrap_or_else(|| format!("std::sync::Arc<std::sync::Mutex<{rendered}>>"))
+}
+
+pub(crate) fn wrap_ref_storage_value(
+    rendered: String,
+    value: &HirExpression,
+    storage_ty: &TypeElement,
+) -> String {
     if value.adjustments.last() == Some(&Adjustment::ArcClone) {
         rendered
+    } else if let Some(atomic) = atomic_ref_storage_type(storage_ty) {
+        format!("std::sync::Arc::new(std::sync::atomic::{atomic}::new({rendered}))")
     } else {
         format!("(&({rendered})).__to_ref()")
+    }
+}
+
+fn atomic_ref_storage_type(ty: &TypeElement) -> Option<&'static str> {
+    let TypeElement::Plain(plain) = ty else {
+        return None;
+    };
+
+    match plain.ident.as_str() {
+        "Bool" => Some("AtomicBool"),
+        "I8" => Some("AtomicI8"),
+        "I16" => Some("AtomicI16"),
+        "I32" => Some("AtomicI32"),
+        "I64" | "Int" => Some("AtomicI64"),
+        "ISize" => Some("AtomicIsize"),
+        "U8" => Some("AtomicU8"),
+        "U16" => Some("AtomicU16"),
+        "U32" => Some("AtomicU32"),
+        "U64" => Some("AtomicU64"),
+        "USize" => Some("AtomicUsize"),
+        _ => None,
     }
 }
 
