@@ -8,10 +8,11 @@ use serde_json::Value;
 use thiserror::Error;
 
 use galvan_ast::{
-    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, FnDecl, FnSignature, Ident,
-    OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem,
-    ResultTypeItem, SetTypeItem, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl,
-    Visibility,
+    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, EnumTypeDecl, EnumTypeMember,
+    EnumVariantField, FnDecl, FnSignature, Ident, OptionalTypeItem, OrderedDictionaryTypeItem,
+    Param, ParamList, ParametricTypeItem, ResultTypeItem, SetTypeItem, Span, StructTypeDecl,
+    StructTypeMember, ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
+    TypeIdent, UseDecl, Visibility,
 };
 use galvan_files::Source;
 
@@ -79,18 +80,18 @@ impl RustInterop {
             return;
         };
 
-        let mut type_names = HashSet::new();
+        let mut type_item_ids = Vec::new();
         for item in index.values() {
             if !is_public(item) {
                 continue;
             }
-            if let Some(name) = public_type_name(item) {
-                type_names.insert(name.to_string());
+            if public_type_name(item).is_some() {
+                type_item_ids.push(item);
             }
         }
 
-        for name in type_names {
-            self.push_type(crate_name, &name);
+        for item in type_item_ids {
+            self.push_type_from_item(crate_name, item, index);
         }
 
         let mut found_function = false;
@@ -168,6 +169,213 @@ impl RustInterop {
                 source: Source::Builtin,
             },
         });
+    }
+
+    fn push_type_from_item(
+        &mut self,
+        crate_name: &str,
+        item: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) {
+        let Some(name) = public_type_name(item) else {
+            return;
+        };
+
+        let decl = self
+            .type_decl_from_item(crate_name, name, item, index)
+            .unwrap_or_else(|| empty_type_decl(name));
+        let rust_path = rust_path(crate_name, name, item);
+        let type_decl = RustTypeDecl {
+            name: TypeIdent::new(name),
+            rust_path,
+            decl: ToplevelItem {
+                item: decl,
+                source: Source::Builtin,
+            },
+        };
+
+        if let Some(existing) = self.types.iter_mut().find(|ty| ty.name.as_str() == name) {
+            if matches!(existing.decl.item, TypeDecl::Empty(_)) {
+                *existing = type_decl;
+            }
+            return;
+        }
+
+        self.types.push(type_decl);
+    }
+
+    fn type_decl_from_item(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        item: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) -> Option<TypeDecl> {
+        let inner = item.get("inner")?;
+        if let Some(struct_item) = inner.get("struct") {
+            return self.struct_decl_from_json(crate_name, name, struct_item, index);
+        }
+        if let Some(enum_item) = inner.get("enum") {
+            return Some(self.enum_decl_from_json(crate_name, name, enum_item, index));
+        }
+
+        None
+    }
+
+    fn struct_decl_from_json(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        struct_item: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) -> Option<TypeDecl> {
+        let field_ids = item_ids(struct_item, "fields");
+        let kind = struct_item.get("kind").and_then(Value::as_str);
+        if kind == Some("tuple") {
+            let members = field_ids
+                .into_iter()
+                .filter_map(|id| index.get(id))
+                .filter_map(|field| self.tuple_member_from_json(crate_name, field))
+                .collect::<Vec<_>>();
+            return Some(TypeDecl::Tuple(TupleTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new(name),
+                members,
+                span: Span::default(),
+            }));
+        }
+
+        let members = field_ids
+            .into_iter()
+            .filter_map(|id| index.get(id))
+            .filter(|field| is_public(field))
+            .filter_map(|field| self.struct_member_from_json(crate_name, field))
+            .collect::<Vec<_>>();
+
+        if members.is_empty() && kind != Some("plain") {
+            return None;
+        }
+
+        Some(TypeDecl::Struct(StructTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new(name),
+            members,
+            span: Span::default(),
+        }))
+    }
+
+    fn struct_member_from_json(
+        &mut self,
+        crate_name: &str,
+        field: &Value,
+    ) -> Option<StructTypeMember> {
+        let name = field.get("name").and_then(Value::as_str)?;
+        let field_type = item_inner(field, "struct_field")?;
+        let lifted = self.lift_type_from_json(crate_name, field_type)?;
+
+        Some(StructTypeMember {
+            decl_modifier: lifted.decl_modifier,
+            ident: Ident::new(name),
+            r#type: lifted.ty,
+            default_value: None,
+            span: Span::default(),
+        })
+    }
+
+    fn tuple_member_from_json(
+        &mut self,
+        crate_name: &str,
+        field: &Value,
+    ) -> Option<TupleTypeMember> {
+        let field_type = item_inner(field, "struct_field")?;
+        Some(TupleTypeMember {
+            r#type: self.type_from_json(crate_name, field_type)?,
+            span: Span::default(),
+        })
+    }
+
+    fn enum_decl_from_json(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        enum_item: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) -> TypeDecl {
+        let members = item_ids(enum_item, "variants")
+            .into_iter()
+            .filter_map(|id| index.get(id))
+            .filter_map(|variant| self.enum_member_from_json(crate_name, variant, index))
+            .collect::<Vec<_>>();
+
+        TypeDecl::Enum(EnumTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new(name),
+            members,
+            span: Span::default(),
+        })
+    }
+
+    fn enum_member_from_json(
+        &mut self,
+        crate_name: &str,
+        variant: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) -> Option<EnumTypeMember> {
+        let name = variant.get("name").and_then(Value::as_str)?;
+        let variant = item_inner(variant, "variant")?;
+        let fields = match variant.get("kind") {
+            Some(Value::String(kind)) if kind == "plain" => Vec::new(),
+            Some(kind) => self.enum_variant_fields_from_kind(crate_name, kind, index),
+            None => Vec::new(),
+        };
+
+        Some(EnumTypeMember {
+            ident: TypeIdent::new(name),
+            fields,
+            span: Span::default(),
+        })
+    }
+
+    fn enum_variant_fields_from_kind(
+        &mut self,
+        crate_name: &str,
+        kind: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) -> Vec<EnumVariantField> {
+        if let Some(tuple) = inner(kind, "tuple") {
+            return item_ids(tuple, "fields")
+                .into_iter()
+                .filter_map(|id| index.get(id))
+                .filter_map(|field| self.enum_variant_field_from_json(crate_name, None, field))
+                .collect();
+        }
+
+        if let Some(struct_variant) = inner(kind, "struct") {
+            return item_ids(struct_variant, "fields")
+                .into_iter()
+                .filter_map(|id| index.get(id))
+                .filter_map(|field| {
+                    let name = field.get("name").and_then(Value::as_str).map(Ident::new);
+                    self.enum_variant_field_from_json(crate_name, name, field)
+                })
+                .collect();
+        }
+
+        Vec::new()
+    }
+
+    fn enum_variant_field_from_json(
+        &mut self,
+        crate_name: &str,
+        name: Option<Ident>,
+        field: &Value,
+    ) -> Option<EnumVariantField> {
+        let field_type = item_inner(field, "struct_field")?;
+        Some(EnumVariantField {
+            name,
+            r#type: self.type_from_json(crate_name, field_type)?,
+            span: Span::default(),
+        })
     }
 
     fn push_function(
@@ -707,6 +915,10 @@ fn inner_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     inner(value, key).and_then(Value::as_str)
 }
 
+fn item_inner<'a>(item: &'a Value, key: &str) -> Option<&'a Value> {
+    item.get("inner").and_then(|inner| inner.get(key))
+}
+
 fn is_public(item: &Value) -> bool {
     item.get("visibility")
         .is_some_and(|visibility| match visibility {
@@ -723,6 +935,23 @@ fn public_type_name(item: &Value) -> Option<&str> {
         .iter()
         .any(|kind| inner.get(*kind).is_some())
         .then_some(name)
+}
+
+fn empty_type_decl(name: &str) -> TypeDecl {
+    TypeDecl::Empty(EmptyTypeDecl {
+        visibility: Visibility::public(),
+        ident: TypeIdent::new(name),
+        span: Span::default(),
+    })
+}
+
+fn item_ids<'a>(item: &'a Value, key: &str) -> Vec<&'a str> {
+    item.get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect()
 }
 
 fn rust_path(crate_name: &str, name: &str, item: &Value) -> Box<str> {
@@ -918,6 +1147,35 @@ mod tests {
         plain_type(TypeIdent::new("U64"))
     }
 
+    fn public_item(name: &str, inner: Value) -> Value {
+        json!({
+            "name": name,
+            "visibility": "public",
+            "path": ["demo", name],
+            "inner": inner
+        })
+    }
+
+    fn public_field(name: &str, ty: Value) -> Value {
+        json!({
+            "name": name,
+            "visibility": "public",
+            "inner": {
+                "struct_field": ty
+            }
+        })
+    }
+
+    fn imported_type<'a>(interop: &'a RustInterop, name: &str) -> &'a TypeDecl {
+        &interop
+            .types
+            .iter()
+            .find(|ty| ty.name.as_str() == name)
+            .unwrap_or_else(|| panic!("expected imported type {name}"))
+            .decl
+            .item
+    }
+
     #[test]
     fn loading_a_crate_does_not_import_its_functions_unqualified() {
         let interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
@@ -1046,5 +1304,126 @@ mod tests {
 
         assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
         assert_eq!(param.param_type, u64_type());
+    }
+
+    #[test]
+    fn rustdoc_imports_public_struct_fields() {
+        let json = json!({
+            "index": {
+                "0": public_item("Ticket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": ["1", "2", "3"]
+                    }
+                })),
+                "1": public_field("id", primitive("u64")),
+                "2": public_field("title", primitive("str")),
+                "3": public_field(
+                    "state",
+                    resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketState", vec![])])])
+                )
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let TypeDecl::Struct(ticket) = imported_type(&interop, "Ticket") else {
+            panic!("expected Ticket struct");
+        };
+        assert_eq!(ticket.ident.as_str(), "Ticket");
+        assert_eq!(ticket.members.len(), 3);
+        assert_eq!(ticket.members[0].ident.as_str(), "id");
+        assert_eq!(ticket.members[0].r#type, u64_type());
+        assert_eq!(ticket.members[1].ident.as_str(), "title");
+        assert_eq!(ticket.members[1].r#type, string_type());
+        assert_eq!(
+            ticket.members[2].decl_modifier,
+            Some(galvan_ast::DeclModifier::Ref)
+        );
+        assert_eq!(
+            ticket.members[2].r#type,
+            plain_type(TypeIdent::new("TicketState"))
+        );
+    }
+
+    #[test]
+    fn rustdoc_imports_tuple_struct_fields() {
+        let json = json!({
+            "index": {
+                "0": public_item("UserId", json!({
+                    "struct": {
+                        "kind": "tuple",
+                        "fields": ["1"]
+                    }
+                })),
+                "1": public_field("0", primitive("u64"))
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let TypeDecl::Tuple(user_id) = imported_type(&interop, "UserId") else {
+            panic!("expected UserId tuple struct");
+        };
+        assert_eq!(user_id.ident.as_str(), "UserId");
+        assert_eq!(user_id.members.len(), 1);
+        assert_eq!(user_id.members[0].r#type, u64_type());
+    }
+
+    #[test]
+    fn rustdoc_imports_enum_variants() {
+        let json = json!({
+            "index": {
+                "0": public_item("TicketEvent", json!({
+                    "enum": {
+                        "variants": ["1", "2", "4"]
+                    }
+                })),
+                "1": public_item("Created", json!({
+                    "variant": {
+                        "kind": "plain"
+                    }
+                })),
+                "2": public_item("Renamed", json!({
+                    "variant": {
+                        "kind": {
+                            "tuple": {
+                                "fields": ["3"]
+                            }
+                        }
+                    }
+                })),
+                "3": public_field("0", primitive("str")),
+                "4": public_item("Closed", json!({
+                    "variant": {
+                        "kind": {
+                            "struct": {
+                                "fields": ["5"]
+                            }
+                        }
+                    }
+                })),
+                "5": public_field("reason", resolved("Option", vec![primitive("str")]))
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let TypeDecl::Enum(event) = imported_type(&interop, "TicketEvent") else {
+            panic!("expected TicketEvent enum");
+        };
+        assert_eq!(event.ident.as_str(), "TicketEvent");
+        assert_eq!(event.members.len(), 3);
+        assert_eq!(event.members[0].ident.as_str(), "Created");
+        assert!(event.members[0].fields.is_empty());
+        assert_eq!(event.members[1].ident.as_str(), "Renamed");
+        assert_eq!(event.members[1].fields[0].name, None);
+        assert_eq!(event.members[1].fields[0].r#type, string_type());
+        assert_eq!(event.members[2].ident.as_str(), "Closed");
+        assert_eq!(event.members[2].fields[0].name, Some(Ident::new("reason")));
+        assert!(matches!(
+            event.members[2].fields[0].r#type,
+            TypeElement::Optional(_)
+        ));
     }
 }

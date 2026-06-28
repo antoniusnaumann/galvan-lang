@@ -84,19 +84,21 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve trait methods, type-associated methods, associated constants, and
-    re-exports from rustdoc JSON
+  - Resolve inherent impl methods, trait methods, type-associated methods,
+    associated constants, and re-exports from rustdoc JSON
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
     `Vec<T>`, maps, sets, `Result<T, E>`, generic wrappers, `Mutex<T>`, and
     `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover more standard-library and
     ecosystem wrapper types
-  - Import public Rust struct fields, tuple struct constructors, and enum
-    variants/constants so external data types can be constructed and accessed
-    from Galvan
+  - Extend imported public Rust data declarations beyond the current named
+    struct fields, tuple struct fields, and enum variants to cover constants,
+    type aliases, unions, repr details, and generic declarations
   - Infer all Galvan passing modes from lifted Rust signatures, including
     mutable receiver/argument requirements and wrapper conversions at call
     boundaries
   - Improve generic substitution and trait-bound handling for external Rust APIs
+  - Preserve namespace/module paths on imported data declarations so
+    same-named types from different Rust modules do not collapse together
 - Support full Axum-style API declarations in Galvan:
   - Add async functions and `.await`
   - Generate async `main` with the default Tokio runtime

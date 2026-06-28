@@ -58,7 +58,8 @@ fn main(args: [String]) {
 ```
 
 Async functions use `async fn` and await futures with `.await`. Functions that
-use postfix `!` still return a result type:
+use postfix `!` still return a result type; a bare `!` return is shorthand for
+`Void!`:
 
 ```galvan
 async fn main() -> ! {
