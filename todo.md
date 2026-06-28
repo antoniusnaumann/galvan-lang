@@ -85,6 +85,12 @@ commands remain subcommands.
   - Resolve trait methods, associated functions, constants, and re-exports from
     rustdoc JSON
   - Improve generic substitution and trait-bound handling for external Rust APIs
+- Support full Axum-style API declarations in Galvan:
+  - Add async functions
+  - Resolve associated Rust functions and constants such as `Router::new` and
+    `StatusCode::CREATED`
+  - Forward derive and attribute metadata needed by crates such as serde
+  - Support shared-state interop for types such as `Arc<Mutex<T>>`
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)
@@ -94,5 +100,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-27*
+*Last updated: 2026-06-28*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

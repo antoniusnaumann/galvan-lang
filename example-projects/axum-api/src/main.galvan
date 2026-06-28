@@ -1,0 +1,53 @@
+// This example keeps the Axum runtime glue in Rust and the small domain layer in Galvan.
+//
+// TODO(axum-direct): Let Galvan express async functions so handlers can be written in Galvan.
+// TODO(axum-direct): Resolve Rust associated functions and types such as Router::new, Json<T>,
+// State<T>, Path<T>, and StatusCode::CREATED directly from Galvan.
+// TODO(axum-direct): Support Rust derive/attribute forwarding so Galvan API structs can derive
+// serde::Serialize and serde::Deserialize without Rust-side mirror DTOs.
+// TODO(axum-direct): Support thread-safe shared state helpers or direct interop for Arc<Mutex<T>>
+// so the in-memory repository can be declared in Galvan.
+
+type Ticket {
+    id: U64,
+    title: String,
+    priority: String,
+    status: String,
+}
+
+fn service_name() -> String {
+    "galvan-axum-api"
+}
+
+fn health_status() -> String {
+    "ok"
+}
+
+fn open_status() -> String {
+    "open"
+}
+
+fn closed_status() -> String {
+    "closed"
+}
+
+fn normalized_priority(priority: String?) -> String {
+    try priority |priority| {
+        priority
+    } else {
+        "normal"
+    }
+}
+
+fn open_ticket(id: U64, title: String, priority: String?) -> Ticket {
+    Ticket(
+        id: id,
+        title: title,
+        priority: normalized_priority(priority),
+        status: open_status(),
+    )
+}
+
+fn ticket_summary(id: U64, title: String, priority: String, status: String) -> String {
+    "[\(status)] #\(id) \(title) (\(priority))"
+}
