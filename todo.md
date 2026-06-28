@@ -79,6 +79,8 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
+  - Allow type identifiers in member-call receiver position so
+    `TypeName.associated_function()` parses as an expression
 
 ## Future Enhancements
 
@@ -86,9 +88,8 @@ commands remain subcommands.
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve trait methods, associated constants, and re-exports from rustdoc
     JSON
-  - Connect imported inherent associated functions to Galvan's type-member call
-    syntax, e.g. `Ticket.new()` / `Router.new()`, instead of only importing
-    callable Rust paths
+  - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
+    typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
     `Vec<T>`, maps, sets, `Result<T, E>`, generic wrappers, `Mutex<T>`, and
     `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover more standard-library and

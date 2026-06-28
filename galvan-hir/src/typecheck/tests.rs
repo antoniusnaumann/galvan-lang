@@ -1,6 +1,8 @@
 use galvan_ast::{
-    BasicTypeItem, FnSignature, Ident, Ownership, Param, ParamList, Span, ToplevelItem,
-    TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
+    BasicTypeItem, Body, EmptyTypeDecl, Expression, ExpressionKind, FnDecl, FnSignature, Ident,
+    InfixExpression, InfixOperation, MemberOperator, Ownership, Param, ParamList, SegmentedAsts,
+    Span, StringLiteral, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath,
+    Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -1042,4 +1044,130 @@ fn qualified_rust_methods_are_typechecked_with_receivers() {
         panic!("expected string result, got {:?}", tail.ty);
     };
     assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn rust_associated_functions_are_typechecked_as_type_member_calls() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Dog"),
+        "new",
+        "::external::Dog::new",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("new"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                    short_name: None,
+                    identifier: Ident::new("name"),
+                    param_type: TypeElement::Plain(BasicTypeItem {
+                        ident: TypeIdent::new("String"),
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("Dog"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    let dog_type = ToplevelItem {
+        item: TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Dog"),
+            span: Span::default(),
+        }),
+        source: Source::Builtin,
+    };
+    let call_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("Dog")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("new"),
+                    arguments: vec![galvan_ast::FunctionCallArg {
+                        label: None,
+                        modifier: None,
+                        expression: Expression {
+                            kind: ExpressionKind::Literal(
+                                StringLiteral {
+                                    value: "Scout".to_string(),
+                                    interpolations: vec![],
+                                    span: Span::default(),
+                                }
+                                .into(),
+                            ),
+                            span: Span::default(),
+                        },
+                    }],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("call"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Dog"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![call_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![],
+            types: vec![dog_type],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "call"));
+
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected associated function call, got {:?}", tail.kind);
+    };
+    assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected Dog result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "Dog");
 }

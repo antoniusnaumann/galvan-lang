@@ -34,6 +34,7 @@ pub struct RustInterop {
     pub functions: Vec<RustFunctionDecl>,
     by_namespace_function: HashMap<(String, RustFunctionId), usize>,
     by_imported_function: HashMap<(String, RustFunctionId), usize>,
+    by_namespace_associated_function: HashMap<(String, TypeIdent, RustFunctionId), usize>,
 }
 
 impl RustInterop {
@@ -140,6 +141,25 @@ impl RustInterop {
         self.push_function(namespace, name, rust_path.into(), decl, borrowed_return);
     }
 
+    pub fn add_associated_function_decl(
+        &mut self,
+        namespace: &str,
+        receiver: TypeIdent,
+        name: &str,
+        rust_path: impl Into<Box<str>>,
+        decl: FnDecl,
+        borrowed_return: bool,
+    ) {
+        self.push_function_with_associated_receiver(
+            namespace,
+            name,
+            rust_path.into(),
+            decl,
+            borrowed_return,
+            Some(receiver),
+        );
+    }
+
     pub fn function(
         &self,
         namespace: Option<&str>,
@@ -158,6 +178,29 @@ impl RustInterop {
         self.by_imported_function
             .get(&("".to_string(), id))
             .and_then(|idx| self.functions.get(*idx))
+    }
+
+    pub fn associated_function(
+        &self,
+        namespace: Option<&str>,
+        receiver: &TypeIdent,
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&RustFunctionDecl> {
+        let id = RustFunctionId::new(None, name.as_str(), labels);
+        if let Some(namespace) = namespace {
+            return self
+                .by_namespace_associated_function
+                .get(&(namespace.to_string(), receiver.clone(), id))
+                .and_then(|idx| self.functions.get(*idx));
+        }
+
+        self.by_namespace_associated_function
+            .iter()
+            .find(|((_, stored_receiver, stored_id), _)| {
+                stored_receiver == receiver && stored_id == &id
+            })
+            .and_then(|(_, idx)| self.functions.get(*idx))
     }
 
     fn push_type(&mut self, crate_name: &str, name: &str) {
@@ -421,10 +464,21 @@ impl RustInterop {
                     continue;
                 };
 
+                let associated_receiver = impl_inner
+                    .get("for")
+                    .and_then(|ty| self.type_from_json(crate_name, ty))
+                    .and_then(|ty| receiver_type_ident(&ty));
                 let decl = self.impl_function_decl(crate_name, name, signature, impl_inner);
                 let rust_path = impl_function_rust_path(crate_name, name, item, impl_inner);
                 let borrowed_return = return_is_borrowed(signature);
-                self.push_function(crate_name, name, rust_path, decl, borrowed_return);
+                self.push_function_with_associated_receiver(
+                    crate_name,
+                    name,
+                    rust_path,
+                    decl,
+                    borrowed_return,
+                    associated_receiver,
+                );
                 found_function = true;
             }
         }
@@ -440,20 +494,43 @@ impl RustInterop {
         decl: FnDecl,
         borrowed_return: bool,
     ) {
+        self.push_function_with_associated_receiver(
+            crate_name,
+            name,
+            rust_path,
+            decl,
+            borrowed_return,
+            None,
+        );
+    }
+
+    fn push_function_with_associated_receiver(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        rust_path: Box<str>,
+        decl: FnDecl,
+        borrowed_return: bool,
+        associated_receiver: Option<TypeIdent>,
+    ) {
         let labels = decl.signature.overload_labels();
         let labels = labels
             .iter()
             .map(|label| label.as_str())
             .collect::<Vec<_>>();
-        let receiver = decl
+        let has_receiver = decl
             .signature
             .receiver()
-            .and_then(|param| match &param.param_type {
-                TypeElement::Plain(plain) => Some(&plain.ident),
-                TypeElement::Parametric(parametric) => Some(&parametric.base_type),
-                _ => None,
-            });
-        let id = RustFunctionId::new(receiver, name, &labels);
+            .and_then(|param| receiver_type_ident(&param.param_type))
+            .is_some();
+        let id = RustFunctionId::new(
+            decl.signature
+                .receiver()
+                .and_then(|param| receiver_type_ident(&param.param_type))
+                .as_ref(),
+            name,
+            &labels,
+        );
         let idx = self.functions.len();
         self.functions.push(RustFunctionDecl {
             namespace: crate_name.into(),
@@ -464,8 +541,20 @@ impl RustInterop {
                 source: Source::Builtin,
             },
         });
-        self.by_namespace_function
-            .insert((crate_name.to_string(), id.clone()), idx);
+        if !has_receiver {
+            if let Some(associated_receiver) = associated_receiver {
+                self.by_namespace_associated_function.insert(
+                    (crate_name.to_string(), associated_receiver, id.clone()),
+                    idx,
+                );
+            } else {
+                self.by_namespace_function
+                    .insert((crate_name.to_string(), id.clone()), idx);
+            }
+        } else {
+            self.by_namespace_function
+                .insert((crate_name.to_string(), id.clone()), idx);
+        }
     }
 
     fn import_uses(&mut self, uses: &[ToplevelItem<UseDecl>]) {
@@ -1091,6 +1180,15 @@ fn resolved_type_name(ty: &Value) -> Option<&str> {
     inner(ty, "resolved_path").and_then(|resolved| resolved.get("name").and_then(Value::as_str))
 }
 
+fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {
+    match ty {
+        TypeElement::Plain(plain) => Some(plain.ident.clone()),
+        TypeElement::Parametric(parametric) => Some(parametric.base_type.clone()),
+        TypeElement::Generic(generic) => Some(TypeIdent::new(generic.ident.as_str())),
+        _ => None,
+    }
+}
+
 fn return_is_borrowed(signature: &Value) -> bool {
     signature
         .get("output")
@@ -1683,8 +1781,11 @@ mod tests {
         let mut interop = RustInterop::empty();
         interop.add_crate("demo", &json);
 
-        let function = interop
+        assert!(interop
             .function(Some("demo"), None, &ident("new"), &[])
+            .is_none());
+        let function = interop
+            .associated_function(Some("demo"), &TypeIdent::new("Ticket"), &ident("new"), &[])
             .expect("expected imported Ticket.new associated function");
         assert_eq!(function.rust_path.as_ref(), "::demo::Ticket::new");
         assert!(function.decl.item.signature.receiver().is_none());

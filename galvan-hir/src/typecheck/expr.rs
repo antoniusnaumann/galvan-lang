@@ -2130,6 +2130,11 @@ impl Checker<'_> {
         match operation.operator {
             MemberOperator::Dot => match &operation.rhs.kind {
                 ExpressionKind::FunctionCall(call) => {
+                    if let Some(associated) =
+                        self.lower_associated_rust_call(&operation.lhs, call, span)
+                    {
+                        return associated;
+                    }
                     let (receiver, modifier) = self.lower_call_value(&operation.lhs);
                     self.lower_call(
                         Some((receiver, modifier)),
@@ -2169,6 +2174,46 @@ impl Checker<'_> {
             },
             MemberOperator::SafeCall => self.lower_safe_access(operation, span),
         }
+    }
+
+    fn lower_associated_rust_call(
+        &mut self,
+        lhs: &Expression,
+        call: &FunctionCall,
+        span: Span,
+    ) -> Option<HirExpression> {
+        let ExpressionKind::Ident(type_name) = &lhs.kind else {
+            return None;
+        };
+        let receiver = TypeIdent::new(type_name.as_str());
+        self.lookup.resolve_type(&receiver)?;
+
+        let labels = argument_labels(&call.arguments);
+        let labels_ref = label_refs(&labels);
+        let namespace = call.namespace.as_ref().cloned();
+        let function = if let Some(namespace) = call.namespace.as_ref() {
+            namespace.segments.first().and_then(|segment| {
+                self.rust_interop.associated_function(
+                    Some(segment.as_str()),
+                    &receiver,
+                    &call.identifier,
+                    &labels_ref,
+                )
+            })
+        } else {
+            self.rust_interop
+                .associated_function(None, &receiver, &call.identifier, &labels_ref)
+        }?;
+
+        Some(self.lower_rust_call(
+            function,
+            None,
+            namespace,
+            &call.identifier,
+            labels,
+            &call.arguments,
+            span,
+        ))
     }
 
     fn lower_access_base(&mut self, expression: &Expression) -> (HirExpression, bool) {
