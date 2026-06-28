@@ -519,7 +519,14 @@ pub struct HirSafeAccess {
 #[derive(Clone, Debug)]
 pub struct HirConstructorCall {
     pub ident: TypeIdent,
+    pub kind: HirConstructorKind,
     pub args: Vec<HirConstructorArg>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HirConstructorKind {
+    Struct,
+    Tuple,
 }
 
 #[derive(Clone, Debug)]

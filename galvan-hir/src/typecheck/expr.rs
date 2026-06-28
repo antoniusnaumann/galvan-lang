@@ -2681,6 +2681,7 @@ impl Checker<'_> {
     fn lower_constructor(&mut self, constructor: &ConstructorCall, span: Span) -> HirExpression {
         let lookup = self.lookup;
         let type_decl = lookup.resolve_type(&constructor.identifier);
+        let mut kind = HirConstructorKind::Struct;
 
         let args = match type_decl.map(|decl| &decl.item) {
             Some(TypeDecl::Struct(decl)) => {
@@ -2729,6 +2730,37 @@ impl Checker<'_> {
                 }
                 args
             }
+            Some(TypeDecl::Tuple(decl)) => {
+                kind = HirConstructorKind::Tuple;
+                if constructor.arguments.len() != decl.members.len() {
+                    self.errors.error(TranspilerError::ArgumentCountMismatch {
+                        name: format!("{}()", constructor.identifier.as_str()),
+                        expected: decl.members.len(),
+                        found: constructor.arguments.len(),
+                    });
+                }
+
+                constructor
+                    .arguments
+                    .iter()
+                    .zip(&decl.members)
+                    .map(|(argument, member)| {
+                        let value = self.lower_modified_value(
+                            &argument.expression,
+                            argument.modifier,
+                            false,
+                            "constructor arguments",
+                        );
+                        let expected = Expected::owned(member.r#type.clone());
+                        let value = self.coerce(value, &expected);
+                        HirConstructorArg {
+                            field: argument.ident.clone(),
+                            value,
+                            store_as_ref: false,
+                        }
+                    })
+                    .collect()
+            }
             _ => constructor
                 .arguments
                 .iter()
@@ -2752,6 +2784,7 @@ impl Checker<'_> {
         HirExpression::new(
             HirExpressionKind::ConstructorCall(HirConstructorCall {
                 ident: constructor.identifier.clone(),
+                kind,
                 args,
             }),
             plain_type(constructor.identifier.clone()),

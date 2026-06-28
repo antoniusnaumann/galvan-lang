@@ -1,8 +1,8 @@
 use galvan_ast::{
     BasicTypeItem, Body, EmptyTypeDecl, Expression, ExpressionKind, FnDecl, FnSignature, Ident,
     InfixExpression, InfixOperation, MemberOperator, Ownership, Param, ParamList, SegmentedAsts,
-    Span, StringLiteral, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath,
-    Visibility,
+    Span, StringLiteral, ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
+    TypeIdent, UseDecl, UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -1273,6 +1273,105 @@ fn imported_rust_types_are_available_to_typecheck_after_use() {
         panic!("expected associated function call, got {:?}", tail.kind);
     };
     assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+}
+
+#[test]
+fn imported_rust_tuple_struct_constructors_are_typechecked_as_tuple_constructors() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("String"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
+            identifier: TypeIdent::new("Json"),
+            arguments: vec![galvan_ast::ConstructorCallArg {
+                ident: Ident::new("value"),
+                modifier: None,
+                expression: Expression {
+                    kind: ExpressionKind::Literal(
+                        StringLiteral {
+                            value: "ok".to_string(),
+                            interpolations: vec![],
+                            span: Span::default(),
+                        }
+                        .into(),
+                    ),
+                    span: Span::default(),
+                },
+            }],
+        }),
+        span: Span::default(),
+    };
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("response"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Json"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![constructor_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Json"])],
+            types: vec![],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "response"));
+
+    let HirExpressionKind::ConstructorCall(constructor) = &tail.kind else {
+        panic!("expected constructor call, got {:?}", tail.kind);
+    };
+    assert_eq!(constructor.kind, HirConstructorKind::Tuple);
+    assert_eq!(constructor.args.len(), 1);
+    let TypeElement::Plain(ty) = &constructor.args[0].value.ty else {
+        panic!(
+            "expected String argument, got {:?}",
+            constructor.args[0].value.ty
+        );
+    };
+    assert_eq!(ty.ident.as_str(), "String");
 }
 
 #[test]

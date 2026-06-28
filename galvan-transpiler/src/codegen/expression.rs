@@ -458,6 +458,15 @@ impl Transpile for HirSafeAccess {
 impl Transpile for HirConstructorCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let ident = self.ident.transpile(ctx, errors);
+        if self.kind == HirConstructorKind::Tuple {
+            let args = self
+                .args
+                .iter()
+                .map(|argument| argument.value.transpile(ctx, errors))
+                .join(", ");
+            return format!("{ident}({args})");
+        }
+
         let args = self
             .args
             .iter()
@@ -834,5 +843,36 @@ impl Transpile for HirIndex {
                 "/* invalid index access */".to_string()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use galvan_ast::{Ident, Ownership, Span, TypeElement, TypeIdent};
+    use galvan_hir::mapping::Mapping;
+
+    use super::*;
+
+    #[test]
+    fn tuple_struct_constructors_transpile_as_tuple_calls() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("UserId"),
+            kind: HirConstructorKind::Tuple,
+            args: vec![HirConstructorArg {
+                field: Ident::new("value"),
+                value: HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("42".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                store_as_ref: false,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 }
