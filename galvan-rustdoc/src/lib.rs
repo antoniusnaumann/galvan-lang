@@ -8,8 +8,10 @@ use serde_json::Value;
 use thiserror::Error;
 
 use galvan_ast::{
-    BasicTypeItem, EmptyTypeDecl, FnDecl, FnSignature, Ident, Param, ParamList, ResultTypeItem,
-    Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl, Visibility,
+    ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, FnDecl, FnSignature, Ident,
+    OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem,
+    ResultTypeItem, SetTypeItem, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl,
+    Visibility,
 };
 use galvan_files::Source;
 
@@ -299,12 +301,15 @@ impl RustInterop {
         let pair = param.as_array()?;
         let name = pair.first().and_then(Value::as_str).unwrap_or("_");
         let ty = pair.get(1)?;
-        let decl_modifier = if type_is_owned(ty) {
-            Some(galvan_ast::DeclModifier::Move)
-        } else {
-            None
-        };
-        let param_type = self.type_from_json(crate_name, ty)?;
+        let lifted = self.lift_type_from_json(crate_name, ty)?;
+        let decl_modifier = lifted.decl_modifier.or_else(|| {
+            if type_is_owned(ty) {
+                Some(galvan_ast::DeclModifier::Move)
+            } else {
+                None
+            }
+        });
+        let param_type = lifted.ty;
 
         Some(Param {
             decl_modifier,
@@ -316,54 +321,125 @@ impl RustInterop {
     }
 
     fn type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<TypeElement> {
+        self.lift_type_from_json(crate_name, ty)
+            .map(|lifted| lifted.ty)
+    }
+
+    fn lift_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedType> {
         if let Some(primitive) = inner_string(ty, "primitive") {
-            return Some(primitive_type(primitive));
+            return Some(LiftedType::new(primitive_type(primitive)));
         }
         if let Some(generic) = inner_string(ty, "generic") {
-            return Some(generic_type(generic));
+            return Some(LiftedType::new(generic_type(generic)));
         }
         if let Some(borrowed) = inner(ty, "borrowed_ref") {
             return borrowed
                 .get("type")
-                .and_then(|inner| self.type_from_json(crate_name, inner));
+                .and_then(|inner| self.lift_type_from_json(crate_name, inner));
         }
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved.get("name").and_then(Value::as_str)?;
-            if name == "Result" {
-                let args = resolved
-                    .get("args")
-                    .and_then(|args| inner(args, "angle_bracketed"))
-                    .and_then(|args| args.get("args"))
-                    .and_then(Value::as_array);
-                let success = args
-                    .and_then(|args| args.first())
-                    .and_then(|arg| inner(arg, "type"))
-                    .and_then(|arg| self.type_from_json(crate_name, arg))
-                    .unwrap_or_else(TypeElement::infer);
-                return Some(TypeElement::Result(Box::new(ResultTypeItem {
-                    success,
-                    error: Some(plain_type(TypeIdent::new(format!(
-                        "{}Error",
-                        crate_type_prefix(crate_name)
-                    )))),
-                    span: Span::default(),
-                })));
+            let args = resolved_type_args(resolved)
+                .into_iter()
+                .filter_map(|arg| self.lift_type_from_json(crate_name, arg))
+                .collect::<Vec<_>>();
+
+            if let Some(lifted) = self.lift_known_resolved_type(name, args.as_slice()) {
+                return Some(lifted);
             }
 
             self.push_type(crate_name, name);
-            return Some(plain_type(TypeIdent::new(name)));
+            return Some(LiftedType::new(parametric_or_plain_type(name, args)));
         }
         if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
-            return Some(TypeElement::Tuple(Box::new(galvan_ast::TupleTypeItem {
-                elements: tuple
-                    .iter()
-                    .filter_map(|ty| self.type_from_json(crate_name, ty))
-                    .collect(),
-                span: Span::default(),
-            })));
+            return Some(LiftedType::new(TypeElement::Tuple(Box::new(
+                galvan_ast::TupleTypeItem {
+                    elements: tuple
+                        .iter()
+                        .filter_map(|ty| self.type_from_json(crate_name, ty))
+                        .collect(),
+                    span: Span::default(),
+                },
+            ))));
         }
 
-        Some(TypeElement::infer())
+        Some(LiftedType::new(TypeElement::infer()))
+    }
+
+    fn lift_known_resolved_type(&mut self, name: &str, args: &[LiftedType]) -> Option<LiftedType> {
+        match name {
+            "Option" => Some(LiftedType::new(TypeElement::Optional(Box::new(
+                OptionalTypeItem {
+                    inner: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                },
+            )))),
+            "Result" => Some(LiftedType::new(TypeElement::Result(Box::new(
+                ResultTypeItem {
+                    success: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    error: args
+                        .get(1)
+                        .map(|arg| arg.ty.clone())
+                        .or_else(|| Some(plain_type(TypeIdent::new("__UnknownRustError")))),
+                    span: Span::default(),
+                },
+            )))),
+            "Vec" => Some(LiftedType::new(TypeElement::Array(Box::new(
+                ArrayTypeItem {
+                    elements: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                },
+            )))),
+            "HashSet" => Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
+                elements: args
+                    .first()
+                    .map(|arg| arg.ty.clone())
+                    .unwrap_or_else(TypeElement::infer),
+                span: Span::default(),
+            })))),
+            "HashMap" => Some(LiftedType::new(TypeElement::Dictionary(Box::new(
+                DictionaryTypeItem {
+                    key: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    value: args
+                        .get(1)
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                },
+            )))),
+            "BTreeMap" | "IndexMap" => Some(LiftedType::new(TypeElement::OrderedDictionary(
+                Box::new(OrderedDictionaryTypeItem {
+                    key: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    value: args
+                        .get(1)
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                }),
+            ))),
+            "Arc" => lift_arc(args.first()),
+            "Mutex" => lift_ref(args.first()),
+            atomic if atomic_type(atomic).is_some() => Some(LiftedType::with_modifier(
+                atomic_type(atomic).unwrap(),
+                galvan_ast::DeclModifier::Ref,
+            )),
+            _ => None,
+        }
     }
 
     fn add_curated_crate(&mut self, crate_name: &str) {
@@ -417,6 +493,28 @@ pub struct RustFunctionDecl {
     pub rust_path: Box<str>,
     pub borrowed_return: bool,
     pub decl: ToplevelItem<FnDecl>,
+}
+
+#[derive(Clone, Debug)]
+struct LiftedType {
+    ty: TypeElement,
+    decl_modifier: Option<galvan_ast::DeclModifier>,
+}
+
+impl LiftedType {
+    fn new(ty: TypeElement) -> Self {
+        Self {
+            ty,
+            decl_modifier: None,
+        }
+    }
+
+    fn with_modifier(ty: TypeElement, decl_modifier: galvan_ast::DeclModifier) -> Self {
+        Self {
+            ty,
+            decl_modifier: Some(decl_modifier),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -652,6 +750,79 @@ fn type_is_owned(ty: &Value) -> bool {
     inner(ty, "borrowed_ref").is_none()
 }
 
+fn resolved_type_args(resolved: &Value) -> Vec<&Value> {
+    resolved
+        .get("args")
+        .and_then(|args| inner(args, "angle_bracketed"))
+        .and_then(|args| args.get("args"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|arg| inner(arg, "type"))
+        .collect()
+}
+
+fn parametric_or_plain_type(name: &str, args: Vec<LiftedType>) -> TypeElement {
+    if args.is_empty() {
+        return plain_type(TypeIdent::new(name));
+    }
+
+    TypeElement::Parametric(ParametricTypeItem {
+        base_type: TypeIdent::new(name),
+        type_args: args.into_iter().map(|arg| arg.ty).collect(),
+        span: Span::default(),
+    })
+}
+
+fn lift_arc(inner: Option<&LiftedType>) -> Option<LiftedType> {
+    let inner = inner?;
+    match &inner.ty {
+        TypeElement::Parametric(parametric) if parametric.base_type.as_str() == "Mutex" => {
+            parametric
+                .type_args
+                .first()
+                .cloned()
+                .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
+        }
+        _ if inner.decl_modifier == Some(galvan_ast::DeclModifier::Ref) => Some(inner.clone()),
+        TypeElement::Plain(plain) => atomic_type(plain.ident.as_str())
+            .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref)),
+        _ => Some(LiftedType::new(TypeElement::Parametric(
+            ParametricTypeItem {
+                base_type: TypeIdent::new("Arc"),
+                type_args: vec![inner.ty.clone()],
+                span: Span::default(),
+            },
+        ))),
+    }
+}
+
+fn lift_ref(inner: Option<&LiftedType>) -> Option<LiftedType> {
+    let inner = inner?;
+    Some(LiftedType::with_modifier(
+        inner.ty.clone(),
+        galvan_ast::DeclModifier::Ref,
+    ))
+}
+
+fn atomic_type(name: &str) -> Option<TypeElement> {
+    let galvan = match name {
+        "AtomicBool" => "Bool",
+        "AtomicI8" => "I8",
+        "AtomicI16" => "I16",
+        "AtomicI32" => "I32",
+        "AtomicI64" => "I64",
+        "AtomicIsize" => "ISize",
+        "AtomicU8" => "U8",
+        "AtomicU16" => "U16",
+        "AtomicU32" => "U32",
+        "AtomicU64" => "U64",
+        "AtomicUsize" => "USize",
+        _ => return None,
+    };
+    Some(plain_type(TypeIdent::new(galvan)))
+}
+
 fn plain_type(ident: TypeIdent) -> TypeElement {
     TypeElement::Plain(BasicTypeItem {
         ident,
@@ -690,23 +861,10 @@ fn primitive_type(name: &str) -> TypeElement {
     plain_type(TypeIdent::new(galvan))
 }
 
-fn crate_type_prefix(crate_name: &str) -> String {
-    crate_name
-        .split('_')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
-                None => String::new(),
-            }
-        })
-        .collect::<String>()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn ident(name: &str) -> Ident {
         Ident::new(name)
@@ -726,6 +884,38 @@ mod tests {
             },
             source: Source::Builtin,
         }
+    }
+
+    fn primitive(name: &str) -> Value {
+        json!({ "primitive": name })
+    }
+
+    fn generic(name: &str) -> Value {
+        json!({ "generic": name })
+    }
+
+    fn resolved(name: &str, args: Vec<Value>) -> Value {
+        json!({
+            "resolved_path": {
+                "name": name,
+                "args": {
+                    "angle_bracketed": {
+                        "args": args
+                            .into_iter()
+                            .map(|arg| json!({ "type": arg }))
+                            .collect::<Vec<_>>()
+                    }
+                }
+            }
+        })
+    }
+
+    fn string_type() -> TypeElement {
+        plain_type(TypeIdent::new("String"))
+    }
+
+    fn u64_type() -> TypeElement {
+        plain_type(TypeIdent::new("U64"))
     }
 
     #[test]
@@ -761,5 +951,100 @@ mod tests {
         assert!(interop
             .function(None, None, &ident("from_str"), &[])
             .is_none());
+    }
+
+    #[test]
+    fn rustdoc_preserves_generic_resolved_paths() {
+        let mut interop = RustInterop::empty();
+        let ty = interop
+            .type_from_json(
+                "axum",
+                &resolved("Json", vec![resolved("Vec", vec![primitive("u64")])]),
+            )
+            .unwrap();
+
+        let TypeElement::Parametric(parametric) = ty else {
+            panic!("expected Json<T>, got {ty:?}");
+        };
+        assert_eq!(parametric.base_type.as_str(), "Json");
+        assert_eq!(parametric.type_args.len(), 1);
+        assert!(matches!(parametric.type_args[0], TypeElement::Array(_)));
+    }
+
+    #[test]
+    fn rustdoc_lifts_common_collections_and_results() {
+        let mut interop = RustInterop::empty();
+
+        let optional = interop
+            .type_from_json("std", &resolved("Option", vec![primitive("u64")]))
+            .unwrap();
+        let TypeElement::Optional(optional) = optional else {
+            panic!("expected optional, got {optional:?}");
+        };
+        assert_eq!(optional.inner, u64_type());
+
+        let map = interop
+            .type_from_json(
+                "std",
+                &resolved("HashMap", vec![primitive("str"), primitive("u64")]),
+            )
+            .unwrap();
+        let TypeElement::Dictionary(map) = map else {
+            panic!("expected dictionary, got {map:?}");
+        };
+        assert_eq!(map.key, string_type());
+        assert_eq!(map.value, u64_type());
+
+        let result = interop
+            .type_from_json(
+                "serde_json",
+                &resolved(
+                    "Result",
+                    vec![
+                        resolved("Vec", vec![primitive("u8")]),
+                        resolved("Error", vec![]),
+                    ],
+                ),
+            )
+            .unwrap();
+        let TypeElement::Result(result) = result else {
+            panic!("expected result, got {result:?}");
+        };
+        assert!(matches!(result.success, TypeElement::Array(_)));
+        assert_eq!(result.error, Some(plain_type(TypeIdent::new("Error"))));
+    }
+
+    #[test]
+    fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
+        let mut interop = RustInterop::empty();
+        let param = interop
+            .param_from_json(
+                "std",
+                &json!([
+                    "tickets",
+                    resolved("Arc", vec![resolved("Mutex", vec![generic("T")])])
+                ]),
+            )
+            .unwrap();
+
+        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
+        assert_eq!(param.param_type, generic_type("T"));
+    }
+
+    #[test]
+    fn rustdoc_lifts_shared_atomic_primitives_to_ref_parameters() {
+        let mut interop = RustInterop::empty();
+        let param = interop
+            .param_from_json(
+                "std",
+                &json!([
+                    "next_id",
+                    resolved("Arc", vec![resolved("AtomicU64", vec![])])
+                ]),
+            )
+            .unwrap();
+
+        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
+        assert_eq!(param.param_type, u64_type());
     }
 }
