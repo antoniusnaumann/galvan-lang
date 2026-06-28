@@ -61,9 +61,9 @@ Async functions use `async fn` and await futures with `.await`. Functions that
 use postfix `!` still return a result type:
 
 ```galvan
-async fn fetch_homepage(client: HttpClient) -> String! {
+async fn main() -> ! {
     let response = client.get("https://example.com").send().await!
-    response.text().await!
+    print response.text().await!
 }
 ```
 

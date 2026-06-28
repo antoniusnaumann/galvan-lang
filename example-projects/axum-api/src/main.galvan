@@ -142,7 +142,7 @@ async fn close_ticket(
     // TODO(ref-codegen): Mutating an item from a ref array inside async shared
     // state should borrow only for the duration of the update and then release
     // the guard.
-    for state.tickets |ticket| {
+    for state.tickets |mut ticket| {
         if ticket.id == id {
             ticket.status = "closed"
             ticket.summary = ticket_summary(
