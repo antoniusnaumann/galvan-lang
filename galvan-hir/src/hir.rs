@@ -262,6 +262,7 @@ pub enum HirExpressionKind {
     ConstructorCall(HirConstructorCall),
     EnumConstructor(HirEnumConstructor),
     EnumAccess(HirEnumAccess),
+    RustConstant(HirRustConstant),
     Literal(HirLiteral),
     Variable(Ident),
     Collection(HirCollection),
@@ -476,6 +477,11 @@ pub struct HirMethodCall {
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirRustConstant {
+    pub rust_path: Box<str>,
 }
 
 #[derive(Clone, Debug)]

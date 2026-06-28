@@ -32,6 +32,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::ConstructorCall(constructor) => constructor.transpile(ctx, errors),
             HirExpressionKind::EnumConstructor(constructor) => constructor.transpile(ctx, errors),
             HirExpressionKind::EnumAccess(access) => access.transpile(ctx, errors),
+            HirExpressionKind::RustConstant(constant) => constant.rust_path.to_string(),
             HirExpressionKind::Literal(literal) => literal.transpile(ctx, errors),
             HirExpressionKind::Variable(ident) => sanitize_name(ident.as_str()).into_owned(),
             HirExpressionKind::Collection(collection) => collection.transpile(ctx, errors),

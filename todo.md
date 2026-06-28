@@ -91,8 +91,8 @@ commands remain subcommands.
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve glob and external-target re-exports from rustdoc JSON
-  - Wire imported top-level and associated Rust constants into expression
-    lowering once Galvan has syntax/AST support for constant access
+  - Support parser/grammar syntax for imported Rust constants with uppercase
+    names and qualified constant paths
   - Support qualified external Rust type paths in Galvan type syntax; imported
     Rust types currently become unqualified only through `use`
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing

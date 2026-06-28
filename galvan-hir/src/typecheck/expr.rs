@@ -129,7 +129,7 @@ impl Checker<'_> {
     }
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {
-        match self.variable(ident, span) {
+        match self.scopes.get(ident).cloned() {
             Some(variable) => {
                 let ident = if ident.is_self() && self.ref_self {
                     Ident::new("__self")
@@ -143,12 +143,26 @@ impl Checker<'_> {
                     span,
                 )
             }
-            None => HirExpression::new(
-                HirExpressionKind::Variable(ident.clone()),
-                TypeElement::infer(),
-                Ownership::Borrowed,
-                span,
-            ),
+            None => {
+                if let Some(constant) = self.rust_interop.constant(None, ident) {
+                    return HirExpression::new(
+                        HirExpressionKind::RustConstant(HirRustConstant {
+                            rust_path: constant.rust_path.clone(),
+                        }),
+                        constant.ty.clone(),
+                        Ownership::UniqueOwned,
+                        span,
+                    );
+                }
+
+                self.variable(ident, span);
+                HirExpression::new(
+                    HirExpressionKind::Variable(ident.clone()),
+                    TypeElement::infer(),
+                    Ownership::Borrowed,
+                    span,
+                )
+            }
         }
     }
 
@@ -2145,6 +2159,11 @@ impl Checker<'_> {
                     )
                 }
                 ExpressionKind::Ident(field) => {
+                    if let Some(constant) =
+                        self.lower_associated_rust_constant(&operation.lhs, field, span)
+                    {
+                        return constant;
+                    }
                     let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
                     let ownership = if self.is_copy(&field_ty) {
@@ -2174,6 +2193,31 @@ impl Checker<'_> {
             },
             MemberOperator::SafeCall => self.lower_safe_access(operation, span),
         }
+    }
+
+    fn lower_associated_rust_constant(
+        &mut self,
+        lhs: &Expression,
+        constant_name: &Ident,
+        span: Span,
+    ) -> Option<HirExpression> {
+        let ExpressionKind::Ident(type_name) = &lhs.kind else {
+            return None;
+        };
+        let receiver = TypeIdent::new(type_name.as_str());
+        self.lookup.resolve_type(&receiver)?;
+        let constant = self
+            .rust_interop
+            .associated_constant(None, &receiver, constant_name)?;
+
+        Some(HirExpression::new(
+            HirExpressionKind::RustConstant(HirRustConstant {
+                rust_path: constant.rust_path.clone(),
+            }),
+            constant.ty.clone(),
+            Ownership::UniqueOwned,
+            span,
+        ))
     }
 
     fn lower_associated_rust_call(

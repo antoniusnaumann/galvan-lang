@@ -1274,3 +1274,167 @@ fn imported_rust_types_are_available_to_typecheck_after_use() {
     };
     assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
 }
+
+#[test]
+fn imported_rust_constants_are_typechecked_as_identifiers() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_constant_decl(
+        "external",
+        "DEFAULT_LIMIT",
+        "::external::DEFAULT_LIMIT",
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("U64"),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "DEFAULT_LIMIT"])]);
+
+    let limit_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("limit"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("U64"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Expression {
+                    kind: ExpressionKind::Ident(Ident::new("DEFAULT_LIMIT")),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "DEFAULT_LIMIT"])],
+            types: vec![],
+            functions: vec![limit_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "limit"));
+
+    let HirExpressionKind::RustConstant(constant) = &tail.kind else {
+        panic!("expected Rust constant, got {:?}", tail.kind);
+    };
+    assert_eq!(constant.rust_path.as_ref(), "::external::DEFAULT_LIMIT");
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected U64 result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "U64");
+}
+
+#[test]
+fn rust_associated_constants_are_typechecked_as_type_member_access() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "StatusCode",
+        "::external::StatusCode",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("StatusCode"),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_constant_decl(
+        "external",
+        TypeIdent::new("StatusCode"),
+        "CREATED",
+        "::external::StatusCode::CREATED",
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("StatusCode"),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "StatusCode"])]);
+
+    let access_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("StatusCode")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("CREATED")),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let created_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("created"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("StatusCode"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![access_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "StatusCode"])],
+            types: vec![],
+            functions: vec![created_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "created"));
+
+    let HirExpressionKind::RustConstant(constant) = &tail.kind else {
+        panic!("expected Rust associated constant, got {:?}", tail.kind);
+    };
+    assert_eq!(
+        constant.rust_path.as_ref(),
+        "::external::StatusCode::CREATED"
+    );
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected StatusCode result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "StatusCode");
+}

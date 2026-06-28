@@ -172,6 +172,27 @@ impl RustInterop {
         }
     }
 
+    pub fn add_constant_decl(
+        &mut self,
+        namespace: &str,
+        name: &str,
+        rust_path: impl Into<Box<str>>,
+        ty: TypeElement,
+    ) {
+        self.push_constant(namespace, None, name, rust_path.into(), ty);
+    }
+
+    pub fn add_associated_constant_decl(
+        &mut self,
+        namespace: &str,
+        receiver: TypeIdent,
+        name: &str,
+        rust_path: impl Into<Box<str>>,
+        ty: TypeElement,
+    ) {
+        self.push_constant(namespace, Some(receiver), name, rust_path.into(), ty);
+    }
+
     pub fn add_associated_function_decl(
         &mut self,
         namespace: &str,
