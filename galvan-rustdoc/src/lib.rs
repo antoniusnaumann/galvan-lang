@@ -1100,22 +1100,24 @@ impl RustInterop {
                     span: Span::default(),
                 },
             )))),
-            "Vec" => Some(LiftedType::new(TypeElement::Array(Box::new(
-                ArrayTypeItem {
+            "Vec" | "VecDeque" | "LinkedList" => Some(LiftedType::new(TypeElement::Array(
+                Box::new(ArrayTypeItem {
                     elements: args
                         .first()
                         .map(|arg| arg.ty.clone())
                         .unwrap_or_else(TypeElement::infer),
                     span: Span::default(),
-                },
-            )))),
-            "HashSet" => Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
-                elements: args
-                    .first()
-                    .map(|arg| arg.ty.clone())
-                    .unwrap_or_else(TypeElement::infer),
-                span: Span::default(),
-            })))),
+                }),
+            ))),
+            "HashSet" | "BTreeSet" | "IndexSet" => {
+                Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
+                    elements: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                }))))
+            }
             "HashMap" => Some(LiftedType::new(TypeElement::Dictionary(Box::new(
                 DictionaryTypeItem {
                     key: args
@@ -2020,6 +2022,34 @@ mod tests {
         };
         assert_eq!(map.key, string_type());
         assert_eq!(map.value, u64_type());
+
+        let ordered_map = interop
+            .type_from_json(
+                "std",
+                &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
+            )
+            .unwrap();
+        let TypeElement::OrderedDictionary(ordered_map) = ordered_map else {
+            panic!("expected ordered dictionary, got {ordered_map:?}");
+        };
+        assert_eq!(ordered_map.key, string_type());
+        assert_eq!(ordered_map.value, u64_type());
+
+        let set = interop
+            .type_from_json("std", &resolved("BTreeSet", vec![primitive("str")]))
+            .unwrap();
+        let TypeElement::Set(set) = set else {
+            panic!("expected set, got {set:?}");
+        };
+        assert_eq!(set.elements, string_type());
+
+        let deque = interop
+            .type_from_json("std", &resolved("VecDeque", vec![primitive("u64")]))
+            .unwrap();
+        let TypeElement::Array(deque) = deque else {
+            panic!("expected array, got {deque:?}");
+        };
+        assert_eq!(deque.elements, u64_type());
 
         let result = interop
             .type_from_json(

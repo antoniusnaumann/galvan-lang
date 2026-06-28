@@ -98,9 +98,9 @@ commands remain subcommands.
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
-    `Vec<T>`, maps, sets, `Result<T, E>`, generic wrappers, `Mutex<T>`, and
-    `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover more standard-library and
-    ecosystem wrapper types
+    Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
+    and `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover generic wrapper-conversion
+    types such as `Box<T>` and `Rc<T>`
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
