@@ -130,6 +130,7 @@ impl RustInterop {
         }
         self.import_top_level_constants(crate_name, index, &impl_constant_ids);
         found_function |= self.import_impl_functions(crate_name, index);
+        found_function |= self.import_public_reexports(crate_name, index);
 
         if !found_function {
             self.add_curated_crate(crate_name);
@@ -294,6 +295,35 @@ impl RustInterop {
         }
 
         self.types.push(type_decl);
+    }
+
+    fn push_reexported_type_from_item(
+        &mut self,
+        crate_name: &str,
+        exported_name: &str,
+        rust_path: Box<str>,
+        item: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) {
+        if self
+            .types
+            .iter()
+            .any(|ty| ty.name.as_str() == exported_name)
+        {
+            return;
+        }
+
+        let decl = self
+            .type_decl_from_item(crate_name, exported_name, item, index)
+            .unwrap_or_else(|| empty_type_decl(exported_name));
+        self.types.push(RustTypeDecl {
+            name: TypeIdent::new(exported_name),
+            rust_path,
+            decl: ToplevelItem {
+                item: decl,
+                source: Source::Builtin,
+            },
+        });
     }
 
     fn type_decl_from_item(
@@ -535,6 +565,70 @@ impl RustInterop {
             }
         }
 
+        found_function
+    }
+
+    fn import_public_reexports(
+        &mut self,
+        crate_name: &str,
+        index: &serde_json::Map<String, Value>,
+    ) -> bool {
+        let mut found_function = false;
+        for item in index.values() {
+            if !is_public(item) {
+                continue;
+            }
+            let Some(use_item) = item_inner(item, "use") else {
+                continue;
+            };
+            if use_item.get("is_glob").and_then(Value::as_bool) == Some(true) {
+                continue;
+            }
+            let Some(exported_name) = item
+                .get("name")
+                .and_then(Value::as_str)
+                .or_else(|| use_item.get("name").and_then(Value::as_str))
+            else {
+                continue;
+            };
+            let Some(target_id) = use_item.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(target) = index.get(target_id) else {
+                continue;
+            };
+            let rust_path = callable_rust_path(crate_name, exported_name, item);
+
+            if public_type_name(target).is_some() {
+                self.push_reexported_type_from_item(
+                    crate_name,
+                    exported_name,
+                    rust_path,
+                    target,
+                    index,
+                );
+                continue;
+            }
+
+            if let Some(function) = item_inner(target, "function") {
+                if let Some(signature) = function.get("sig") {
+                    let decl = self.function_decl(crate_name, exported_name, signature);
+                    let borrowed_return = return_is_borrowed(signature);
+                    self.push_function(crate_name, exported_name, rust_path, decl, borrowed_return);
+                    found_function = true;
+                }
+                continue;
+            }
+
+            if let Some(constant) = constant_inner(target) {
+                let Some(ty) =
+                    constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
+                else {
+                    continue;
+                };
+                self.push_constant(crate_name, None, exported_name, rust_path, ty);
+            }
+        }
         found_function
     }
 
@@ -1652,6 +1746,23 @@ mod tests {
         })
     }
 
+    fn public_function(name: &str, inputs: Vec<Value>, output: Value) -> Value {
+        json!({
+            "id": name,
+            "name": name,
+            "visibility": "public",
+            "path": ["demo"],
+            "inner": {
+                "function": {
+                    "sig": {
+                        "inputs": inputs,
+                        "output": output
+                    }
+                }
+            }
+        })
+    }
+
     fn public_constant(name: &str, ty: Value) -> Value {
         json!({
             "id": name,
@@ -1661,6 +1772,23 @@ mod tests {
             "inner": {
                 "constant": {
                     "type": ty
+                }
+            }
+        })
+    }
+
+    fn public_use(id: &str, name: &str, target_id: &str) -> Value {
+        json!({
+            "id": id,
+            "name": name,
+            "visibility": "public",
+            "path": ["demo"],
+            "inner": {
+                "use": {
+                    "source": format!("demo::{name}"),
+                    "name": name,
+                    "id": target_id,
+                    "is_glob": false
                 }
             }
         })
@@ -2055,6 +2183,76 @@ mod tests {
             .expect("expected associated constant");
         assert_eq!(constant.rust_path.as_ref(), "::demo::StatusCode::CREATED");
         assert_eq!(constant.ty, plain_type(TypeIdent::new("StatusCode")));
+    }
+
+    #[test]
+    fn rustdoc_imports_reexported_type_aliases() {
+        let json = json!({
+            "index": {
+                "0": public_item("OriginalTicket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": ["1"]
+                    }
+                })),
+                "1": public_field("title", primitive("str")),
+                "2": public_use("2", "Ticket", "0")
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let imported = interop
+            .types
+            .iter()
+            .find(|ty| ty.name.as_str() == "Ticket")
+            .expect("expected re-exported type alias");
+        assert_eq!(imported.rust_path.as_ref(), "::demo::Ticket");
+        let TypeDecl::Struct(ticket) = &imported.decl.item else {
+            panic!("expected re-exported struct type");
+        };
+        assert_eq!(ticket.ident, TypeIdent::new("Ticket"));
+        assert_eq!(ticket.members[0].ident, ident("title"));
+    }
+
+    #[test]
+    fn rustdoc_imports_reexported_functions() {
+        let json = json!({
+            "index": {
+                "0": public_function("nickname", vec![], primitive("str")),
+                "1": public_use("1", "display_name", "0")
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let function = interop
+            .function(Some("demo"), None, &ident("display_name"), &[])
+            .expect("expected re-exported function");
+        assert_eq!(function.rust_path.as_ref(), "::demo::display_name");
+        assert_eq!(
+            function.decl.item.signature.identifier,
+            ident("display_name")
+        );
+        assert_eq!(function.decl.item.signature.return_type, string_type());
+    }
+
+    #[test]
+    fn rustdoc_imports_reexported_constants() {
+        let json = json!({
+            "index": {
+                "0": public_constant("DEFAULT_LIMIT", primitive("u64")),
+                "1": public_use("1", "LIMIT", "0")
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let constant = interop
+            .constant(Some("demo"), &ident("LIMIT"))
+            .expect("expected re-exported constant");
+        assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
+        assert_eq!(constant.ty, u64_type());
     }
 
     #[test]
