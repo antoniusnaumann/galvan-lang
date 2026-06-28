@@ -6,8 +6,8 @@ use galvan_ast::{
     EnumConstructor, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident,
     InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
     MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
-    OptionalTypeItem, Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl,
-    TypeElement, TypeIdent, UsePath,
+    OptionalTypeItem, Ownership, Param, ParametricTypeItem, PostfixExpression, ResultTypeItem,
+    Span, TypeDecl, TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -2687,6 +2687,7 @@ impl Checker<'_> {
         let lookup = self.lookup;
         let type_decl = lookup.resolve_type(&constructor.identifier);
         let mut kind = HirConstructorKind::Struct;
+        let mut inferred_type_args = Vec::new();
 
         let args = match type_decl.map(|decl| &decl.item) {
             Some(TypeDecl::Struct(decl)) => {
@@ -2745,7 +2746,7 @@ impl Checker<'_> {
                     });
                 }
 
-                constructor
+                let args = constructor
                     .arguments
                     .iter()
                     .zip(&decl.members)
@@ -2758,13 +2759,19 @@ impl Checker<'_> {
                         );
                         let expected = Expected::owned(member.r#type.clone());
                         let value = self.coerce(value, &expected);
+                        collect_generic_constructor_arg_types(
+                            &member.r#type,
+                            &value.ty,
+                            &mut inferred_type_args,
+                        );
                         HirConstructorArg {
                             field: argument.ident.clone(),
                             value,
                             store_as_ref: false,
                         }
                     })
-                    .collect()
+                    .collect();
+                args
             }
             _ => constructor
                 .arguments
@@ -2792,7 +2799,7 @@ impl Checker<'_> {
                 kind,
                 args,
             }),
-            constructor_result_type(&constructor.identifier, expected),
+            constructor_result_type(&constructor.identifier, expected, inferred_type_args),
             Ownership::UniqueOwned,
             span,
         )
@@ -2919,13 +2926,62 @@ fn plain_type(ident: TypeIdent) -> TypeElement {
     })
 }
 
-fn constructor_result_type(identifier: &TypeIdent, expected: &Expected) -> TypeElement {
+fn constructor_result_type(
+    identifier: &TypeIdent,
+    expected: &Expected,
+    inferred_type_args: Vec<(Ident, TypeElement)>,
+) -> TypeElement {
     match &expected.ty {
         TypeElement::Plain(plain) if plain.ident == *identifier => expected.ty.clone(),
         TypeElement::Parametric(parametric) if parametric.base_type == *identifier => {
             expected.ty.clone()
         }
+        _ if !inferred_type_args.is_empty() => TypeElement::Parametric(ParametricTypeItem {
+            base_type: identifier.clone(),
+            type_args: inferred_type_args.into_iter().map(|(_, ty)| ty).collect(),
+            span: Span::default(),
+        }),
         _ => plain_type(identifier.clone()),
+    }
+}
+
+fn collect_generic_constructor_arg_types(
+    declared: &TypeElement,
+    actual: &TypeElement,
+    inferred: &mut Vec<(Ident, TypeElement)>,
+) {
+    match (declared, actual) {
+        (TypeElement::Generic(generic), actual) => {
+            if inferred.iter().any(|(ident, _)| ident == &generic.ident) {
+                return;
+            }
+            inferred.push((generic.ident.clone(), actual.clone()));
+        }
+        (TypeElement::Array(declared), TypeElement::Array(actual)) => {
+            collect_generic_constructor_arg_types(&declared.elements, &actual.elements, inferred);
+        }
+        (TypeElement::Optional(declared), TypeElement::Optional(actual)) => {
+            collect_generic_constructor_arg_types(&declared.inner, &actual.inner, inferred);
+        }
+        (TypeElement::Result(declared), TypeElement::Result(actual)) => {
+            collect_generic_constructor_arg_types(&declared.success, &actual.success, inferred);
+            if let (Some(declared), Some(actual)) = (&declared.error, &actual.error) {
+                collect_generic_constructor_arg_types(declared, actual, inferred);
+            }
+        }
+        (TypeElement::Tuple(declared), TypeElement::Tuple(actual)) => {
+            for (declared, actual) in declared.elements.iter().zip(&actual.elements) {
+                collect_generic_constructor_arg_types(declared, actual, inferred);
+            }
+        }
+        (TypeElement::Parametric(declared), TypeElement::Parametric(actual))
+            if declared.base_type == actual.base_type =>
+        {
+            for (declared, actual) in declared.type_args.iter().zip(&actual.type_args) {
+                collect_generic_constructor_arg_types(declared, actual, inferred);
+            }
+        }
+        _ => {}
     }
 }
 

@@ -97,8 +97,6 @@ commands remain subcommands.
     Rust types currently become unqualified only through `use`
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
-  - Infer generic arguments for imported Rust tuple struct constructors when
-    no expected parametric result type is available
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
     `Vec<T>`, maps, sets, `Result<T, E>`, generic wrappers, `Mutex<T>`, and
     `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover more standard-library and

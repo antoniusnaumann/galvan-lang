@@ -1,8 +1,9 @@
 use galvan_ast::{
-    BasicTypeItem, Body, EmptyTypeDecl, Expression, ExpressionKind, FnDecl, FnSignature,
-    GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator, Ownership, Param,
-    ParamList, ParametricTypeItem, SegmentedAsts, Span, StringLiteral, ToplevelItem, TupleTypeDecl,
-    TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
+    BasicTypeItem, Body, Declaration, EmptyTypeDecl, Expression, ExpressionKind, FnDecl,
+    FnSignature, GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator,
+    Ownership, Param, ParamList, ParametricTypeItem, SegmentedAsts, Span, StringLiteral,
+    ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl,
+    UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -1465,6 +1466,115 @@ fn imported_rust_tuple_struct_constructors_preserve_expected_parametric_type() {
     let tail = trailing(function(&module, "response"));
 
     assert_eq!(tail.ty, return_type);
+}
+
+#[test]
+fn imported_rust_tuple_struct_constructors_infer_parametric_type_from_arguments() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("T"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
+            identifier: TypeIdent::new("Json"),
+            arguments: vec![galvan_ast::ConstructorCallArg {
+                ident: Ident::new("value"),
+                modifier: None,
+                expression: Expression {
+                    kind: ExpressionKind::Literal(
+                        StringLiteral {
+                            value: "ok".to_string(),
+                            interpolations: vec![],
+                            span: Span::default(),
+                        }
+                        .into(),
+                    ),
+                    span: Span::default(),
+                },
+            }],
+        }),
+        span: Span::default(),
+    };
+    let check_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("check"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::void(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Declaration {
+                    decl_modifier: galvan_ast::DeclModifier::Let,
+                    identifier: Ident::new("response"),
+                    type_annotation: None,
+                    assignment_modifier: None,
+                    assignment: Some(constructor_expr),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Json"])],
+            types: vec![],
+            functions: vec![check_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let check = function(&module, "check");
+    let HirStatement::Declaration(declaration) = &check.body.statements[0] else {
+        panic!("expected declaration");
+    };
+    let TypeElement::Parametric(parametric) = &declaration.ty else {
+        panic!(
+            "expected inferred parametric Json type, got {:?}",
+            declaration.ty
+        );
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Json"));
+    assert_eq!(parametric.type_args.len(), 1);
+    let TypeElement::Plain(arg) = &parametric.type_args[0] else {
+        panic!(
+            "expected String type argument, got {:?}",
+            parametric.type_args[0]
+        );
+    };
+    assert_eq!(arg.ident.as_str(), "String");
 }
 
 #[test]
