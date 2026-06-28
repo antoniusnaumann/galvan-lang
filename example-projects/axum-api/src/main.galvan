@@ -1,34 +1,145 @@
-// This example keeps the Axum runtime glue in Rust and the small domain layer in Galvan.
-//
-// TODO(axum-direct): Let Galvan express async functions so handlers can be written in Galvan.
-// TODO(axum-direct): Resolve Rust associated functions and types such as Router::new, Json<T>,
-// State<T>, Path<T>, and StatusCode::CREATED directly from Galvan.
-// TODO(axum-direct): Support Rust derive/attribute forwarding so Galvan API structs can derive
-// serde::Serialize and serde::Deserialize without Rust-side mirror DTOs.
-// TODO(axum-direct): Support thread-safe shared state helpers or direct interop for Arc<Mutex<T>>
-// so the in-memory repository can be declared in Galvan.
+use axum
+use axum::extract::Path
+use axum::extract::State
+use axum::http::StatusCode
+use axum::routing::get
+use axum::routing::post
+use std::net::SocketAddr
+use std::sync::Arc
+use std::sync::Mutex
+use std::sync::atomic::AtomicU64
+use std::sync::atomic::Ordering
 
-type Ticket {
+// TODO(axum-direct): Support Rust derive and attribute forwarding so API DTOs
+// can derive serde traits without mirror structs in Rust.
+#[derive(Clone, Debug, serde::Deserialize)]
+type CreateTicketRequest {
+    title: String,
+    priority: String?,
+}
+
+// TODO(axum-direct): Support Rust derive and attribute forwarding so response
+// structs can derive serde::Serialize from Galvan declarations.
+#[derive(Clone, Debug, serde::Serialize)]
+type HealthResponse {
+    service: String,
+    status: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+type TicketResponse {
     id: U64,
     title: String,
     priority: String,
     status: String,
+    summary: String,
 }
 
-fn service_name() -> String {
-    "galvan-axum-api"
+#[derive(Clone, Debug, serde::Serialize)]
+type ErrorResponse {
+    error: String,
 }
 
-fn health_status() -> String {
-    "ok"
+// TODO(axum-direct): Resolve external generic Rust types in Galvan declarations.
+type ApiState {
+    next_ticket_id: Arc<AtomicU64>,
+    tickets: Arc<Mutex<[TicketResponse]>>,
 }
 
-fn open_status() -> String {
-    "open"
+// TODO(axum-direct): Allow async main functions and macro attributes such as
+// #[tokio::main] to be declared in Galvan.
+#[tokio::main]
+async fn main() {
+    // TODO(axum-direct): Resolve associated Rust functions such as Arc::new,
+    // AtomicU64::new, Mutex::new, Vec::new, Router::new, and SocketAddr::from.
+    let state = ApiState(
+        next_ticket_id: Arc::new(AtomicU64::new(1)),
+        tickets: Arc::new(Mutex::new([])),
+    )
+
+    // TODO(axum-direct): Typecheck Axum's generic Router builder chain,
+    // method-valued handlers, and associated route registration functions.
+    let app = axum::Router::new()
+        .route("/health", get(health))
+        .route("/tickets", get(list_tickets).post(create_ticket))
+        .route("/tickets/{id}", get(get_ticket))
+        .route("/tickets/{id}/close", post(close_ticket))
+        .with_state(state)
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000))
+    println "listening on http://\(addr)"
+
+    // TODO(axum-direct): Support await expressions and Result unwrap-style
+    // handling for Rust async APIs.
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap()
+    axum::serve(listener, app).await.unwrap()
 }
 
-fn closed_status() -> String {
-    "closed"
+// TODO(axum-direct): Allow async handler functions and external generic return
+// types such as Json<HealthResponse>.
+async fn health() -> axum::Json<HealthResponse> {
+    axum::Json(HealthResponse(
+        service: "galvan-axum-api",
+        status: "ok",
+    ))
+}
+
+async fn list_tickets(State(state): State<ApiState>) -> axum::Json<[TicketResponse]> {
+    // TODO(axum-direct): Support destructuring extractor parameters such as
+    // State(state), and lock/clone interop for Arc<Mutex<T>>.
+    let tickets = state.tickets.lock().unwrap()
+    axum::Json(tickets.clone())
+}
+
+async fn create_ticket(
+    State(state): State<ApiState>,
+    axum::Json(request): axum::Json<CreateTicketRequest>,
+) -> (StatusCode, axum::Json<TicketResponse>) {
+    // TODO(axum-direct): Resolve Rust methods and constants such as fetch_add
+    // and Ordering::Relaxed from external crate metadata.
+    let id = state.next_ticket_id.fetch_add(1, Ordering::Relaxed)
+    let response = TicketResponse(
+        id: id,
+        title: request.title,
+        priority: normalized_priority(request.priority),
+        status: "open",
+        summary: ticket_summary(id, request.title, normalized_priority(request.priority), "open"),
+    )
+
+    state.tickets.lock().unwrap().push(response)
+
+    // TODO(axum-direct): Resolve associated constants such as StatusCode::CREATED.
+    (StatusCode::CREATED, axum::Json(response))
+}
+
+async fn get_ticket(
+    State(state): State<ApiState>,
+    Path(id): Path<U64>,
+) -> Result<axum::Json<TicketResponse>, (StatusCode, axum::Json<ErrorResponse>)> {
+    // TODO(axum-direct): Support iterator adapters and closure-heavy Rust APIs
+    // from dependency types without handwritten Galvan shims.
+    let tickets = state.tickets.lock().unwrap()
+    tickets
+        .iter()
+        .find(|ticket| ticket.id == id)
+        .cloned()
+        .map(axum::Json)
+        .ok_or_else(|| not_found(id))
+}
+
+async fn close_ticket(
+    State(state): State<ApiState>,
+    Path(id): Path<U64>,
+) -> Result<axum::Json<TicketResponse>, (StatusCode, axum::Json<ErrorResponse>)> {
+    let tickets = state.tickets.lock().unwrap()
+    let ticket = tickets.iter_mut().find(|ticket| ticket.id == id) else {
+        return Err(not_found(id))
+    }
+
+    ticket.status = "closed"
+    ticket.summary = ticket_summary(ticket.id, ticket.title, ticket.priority, ticket.status)
+
+    Ok(axum::Json(ticket.clone()))
 }
 
 fn normalized_priority(priority: String?) -> String {
@@ -39,15 +150,13 @@ fn normalized_priority(priority: String?) -> String {
     }
 }
 
-fn open_ticket(id: U64, title: String, priority: String?) -> Ticket {
-    Ticket(
-        id: id,
-        title: title,
-        priority: normalized_priority(priority),
-        status: open_status(),
-    )
-}
-
 fn ticket_summary(id: U64, title: String, priority: String, status: String) -> String {
     "[\(status)] #\(id) \(title) (\(priority))"
+}
+
+fn not_found(id: U64) -> (StatusCode, axum::Json<ErrorResponse>) {
+    (
+        StatusCode::NOT_FOUND,
+        axum::Json(ErrorResponse(error: "ticket \(id) was not found")),
+    )
 }
