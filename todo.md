@@ -42,6 +42,8 @@ commands remain subcommands.
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
+  - Lower primitive `ref` storage to atomic shared state where appropriate
+    instead of `Arc<Mutex<T>>`
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)
@@ -82,15 +84,17 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve trait methods, associated functions, constants, and re-exports from
-    rustdoc JSON
+  - Resolve trait methods, type-associated methods, associated constants, and
+    re-exports from rustdoc JSON
   - Improve generic substitution and trait-bound handling for external Rust APIs
 - Support full Axum-style API declarations in Galvan:
-  - Add async functions
-  - Resolve associated Rust functions and constants such as `Router::new` and
-    `StatusCode::CREATED`
-  - Forward derive and attribute metadata needed by crates such as serde
-  - Support shared-state interop for types such as `Arc<Mutex<T>>`
+  - Add async functions and `.await`
+  - Generate async `main` with the default Tokio runtime
+  - Resolve type-associated Rust methods and constants with Galvan member
+    syntax, such as `Router.new()` and `StatusCode.CREATED`
+  - Support builtin auto traits, `@derive(...)`, `@derive(!Trait)` opt-outs,
+    and user-declared `auto trait`s
+  - Support shared-state interop from Galvan `ref` fields
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)

@@ -57,6 +57,24 @@ fn main(args: [String]) {
 }
 ```
 
+Async functions use `async fn` and await futures with `.await`. An async
+`main` function uses the default async runtime; it does not need a runtime
+attribute in Galvan code:
+
+```galvan
+async fn main() {
+    let response = client.get("https://example.com").send().await!
+    print response.text().await!
+}
+```
+
+> [!NOTE]
+> In the Rust target, Galvan's default async runtime is Tokio.
+
+> [!WARNING]
+> Async functions, `.await`, and async `main` generation are not implemented
+> yet.
+
 Strings support inline interpolation:
 
 ```galvan
@@ -158,6 +176,42 @@ fn main() {
 > When a type can be constructed without arguments, Galvan automatically emits a
 > Rust `Default` implementation for the generated type.
 
+### Auto Traits
+
+Some traits are auto traits in Galvan. A type conforms automatically when all
+of its fields conform, unless the type opts out:
+
+```galvan
+@derive(!Clone)
+type SessionToken {
+    value: String
+}
+```
+
+The built-in auto traits are `Clone`, `Copy`, `Debug`, `Default`, `PartialEq`,
+`Eq`, `Hash`, `serde::Serialize`, and `serde::Deserialize`.
+
+Explicit `@derive(...)` can still be written when a type wants to be clear
+about intended conformance:
+
+```galvan
+@derive(Clone, Debug, serde::Serialize)
+type HealthResponse {
+    status: String
+}
+```
+
+An explicit trait implementation can override the derived behavior. Libraries
+can declare additional auto traits with `auto trait`:
+
+```galvan
+auto trait CacheSafe
+```
+
+> [!WARNING]
+> The full auto-trait model, `@derive(...)` annotations, opt-outs such as
+> `@derive(!Clone)`, and user-declared `auto trait`s are not implemented yet.
+
 ### Member Functions
 
 All functions are declared top-level. If the first parameter is named `self`,
@@ -186,6 +240,15 @@ are automatically available through namespace-qualified syntax such as
 > `use mycrate` imports all public items from that crate for unqualified use,
 > similar to `use mycrate::*` in Rust. Path imports such as
 > `use mycrate::my_item` import only that item for unqualified use.
+
+Associated functions and constants on types use member syntax. `::` selects the
+namespace portion of a path; methods and constants that belong to the final type
+use `.`:
+
+```galvan
+let addr = std::net::SocketAddr.from(([127, 0, 0, 1], 3000))
+let created = axum::http::StatusCode.CREATED
+```
 
 Galvan also allows methods to be added to types you do not own. Outside the
 defining crate, namespace-qualified calls are available without an import. Use
@@ -393,7 +456,7 @@ error:
 
 ```galvan
 fn read_title(path: String) -> String! {
-    let file = File::open(path)!
+    let file = File.open(path)!
     file.read_to_string()!
 }
 ```
