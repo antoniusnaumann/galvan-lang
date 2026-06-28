@@ -90,7 +90,7 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve trait methods and re-exports from rustdoc JSON
+  - Resolve re-exports from rustdoc JSON
   - Wire imported top-level and associated Rust constants into expression
     lowering once Galvan has syntax/AST support for constant access
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing

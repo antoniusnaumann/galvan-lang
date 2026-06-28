@@ -498,12 +498,6 @@ impl RustInterop {
                 continue;
             };
             self.import_impl_constants(crate_name, impl_inner, index);
-            if impl_inner
-                .get("trait")
-                .is_some_and(|trait_| !trait_.is_null())
-            {
-                continue;
-            }
 
             for id in item_ids(impl_inner, "items") {
                 let Some(item) = index.get(id) else {
@@ -1357,14 +1351,24 @@ fn impl_function_rust_path(
     impl_inner: &Value,
 ) -> Box<str> {
     let path = callable_rust_path(crate_name, name, item);
+    let Some(receiver) = impl_inner.get("for").and_then(resolved_rust_type_path) else {
+        return path;
+    };
+    if let Some(trait_path) = impl_inner
+        .get("trait")
+        .filter(|trait_| !trait_.is_null())
+        .and_then(resolved_rust_type_path)
+    {
+        return format!("<::{receiver} as ::{trait_path}>::{name}").into();
+    }
     if path.matches("::").count() > 2 {
         return path;
     };
-
-    let Some(receiver) = impl_inner.get("for").and_then(resolved_type_name) else {
-        return path;
-    };
-    format!("::{crate_name}::{receiver}::{name}").into()
+    if receiver.contains("::") {
+        format!("::{receiver}::{name}").into()
+    } else {
+        format!("::{crate_name}::{receiver}::{name}").into()
+    }
 }
 
 fn impl_constant_rust_path(
@@ -1376,8 +1380,25 @@ fn impl_constant_rust_path(
     impl_function_rust_path(crate_name, name, item, impl_inner)
 }
 
-fn resolved_type_name(ty: &Value) -> Option<&str> {
-    inner(ty, "resolved_path").and_then(|resolved| resolved.get("name").and_then(Value::as_str))
+fn resolved_rust_type_path(ty: &Value) -> Option<Box<str>> {
+    let resolved = inner(ty, "resolved_path")?;
+    let name = resolved.get("name").and_then(Value::as_str)?;
+    let mut segments = resolved
+        .get("path")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    if segments.last().is_some_and(|segment| *segment == name) {
+        segments.pop();
+    }
+
+    if segments.is_empty() {
+        Some(name.into())
+    } else {
+        Some(format!("{}::{name}", segments.join("::")).into())
+    }
 }
 
 fn item_inner_constant(item: &Value) -> Option<&Value> {
@@ -1564,6 +1585,23 @@ mod tests {
         json!({
             "resolved_path": {
                 "name": name,
+                "args": {
+                    "angle_bracketed": {
+                        "args": args
+                            .into_iter()
+                            .map(|arg| json!({ "type": arg }))
+                            .collect::<Vec<_>>()
+                    }
+                }
+            }
+        })
+    }
+
+    fn resolved_with_path(name: &str, path: &[&str], args: Vec<Value>) -> Value {
+        json!({
+            "resolved_path": {
+                "name": name,
+                "path": path,
                 "args": {
                     "angle_bracketed": {
                         "args": args
@@ -2135,5 +2173,76 @@ mod tests {
             function.decl.item.signature.return_type,
             plain_type(TypeIdent::new("Ticket"))
         );
+    }
+
+    #[test]
+    fn rustdoc_imports_trait_impl_methods() {
+        let json = json!({
+            "index": {
+                "0": public_item("Ticket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                })),
+                "1": public_item("DisplayName", json!({
+                    "trait": {
+                        "items": []
+                    }
+                })),
+                "2": {
+                    "id": "2",
+                    "name": null,
+                    "visibility": "public",
+                    "inner": {
+                        "impl": {
+                            "for": resolved_with_path("Ticket", &["demo", "Ticket"], vec![]),
+                            "trait": resolved_with_path("DisplayName", &["demo", "DisplayName"], vec![]),
+                            "items": ["3"]
+                        }
+                    }
+                },
+                "3": {
+                    "id": "3",
+                    "name": "display_name",
+                    "visibility": "public",
+                    "path": ["demo", "DisplayName"],
+                    "inner": {
+                        "function": {
+                            "sig": {
+                                "inputs": [
+                                    ["self", {
+                                        "borrowed_ref": {
+                                            "type": resolved_with_path("Ticket", &["demo", "Ticket"], vec![]),
+                                            "mutable": false
+                                        }
+                                    }]
+                                ],
+                                "output": primitive("str")
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let function = interop
+            .function(
+                Some("demo"),
+                Some(&TypeIdent::new("Ticket")),
+                &ident("display_name"),
+                &[],
+            )
+            .expect("expected imported trait method");
+        assert_eq!(
+            function.rust_path.as_ref(),
+            "<::demo::Ticket as ::demo::DisplayName>::display_name"
+        );
+        let receiver = function.decl.item.signature.receiver().unwrap();
+        assert_eq!(receiver.decl_modifier, None);
+        assert_eq!(receiver.param_type, plain_type(TypeIdent::new("Ticket")));
+        assert_eq!(function.decl.item.signature.return_type, string_type());
     }
 }
