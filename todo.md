@@ -93,6 +93,8 @@ commands remain subcommands.
   - Resolve glob and external-target re-exports from rustdoc JSON
   - Wire imported top-level and associated Rust constants into expression
     lowering once Galvan has syntax/AST support for constant access
+  - Support qualified external Rust type paths in Galvan type syntax; imported
+    Rust types currently become unqualified only through `use`
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,

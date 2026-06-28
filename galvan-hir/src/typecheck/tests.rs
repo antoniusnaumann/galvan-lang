@@ -1171,3 +1171,106 @@ fn rust_associated_functions_are_typechecked_as_type_member_calls() {
     };
     assert_eq!(ty.ident.as_str(), "Dog");
 }
+
+#[test]
+fn imported_rust_types_are_available_to_typecheck_after_use() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Dog",
+        "::external::Dog",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Dog"),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Dog"),
+        "new",
+        "::external::Dog::new",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("new"),
+            parameters: ParamList {
+                params: vec![],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("Dog"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Dog"])]);
+
+    let call_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("Dog")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("new"),
+                    arguments: vec![],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("call"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Dog"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![call_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Dog"])],
+            types: vec![],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "call"));
+
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected associated function call, got {:?}", tail.kind);
+    };
+    assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+}

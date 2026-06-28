@@ -33,6 +33,7 @@ pub struct RustInterop {
     pub types: Vec<RustTypeDecl>,
     pub functions: Vec<RustFunctionDecl>,
     pub constants: Vec<RustConstantDecl>,
+    by_imported_type: HashMap<TypeIdent, usize>,
     by_namespace_function: HashMap<(String, RustFunctionId), usize>,
     by_imported_function: HashMap<(String, RustFunctionId), usize>,
     by_namespace_associated_function: HashMap<(String, TypeIdent, RustFunctionId), usize>,
@@ -148,6 +149,29 @@ impl RustInterop {
         self.push_function(namespace, name, rust_path.into(), decl, borrowed_return);
     }
 
+    pub fn add_type_decl(
+        &mut self,
+        namespace: &str,
+        name: &str,
+        rust_path: impl Into<Box<str>>,
+        decl: TypeDecl,
+    ) {
+        let type_decl = RustTypeDecl {
+            namespace: namespace.into(),
+            name: TypeIdent::new(name),
+            rust_path: rust_path.into(),
+            decl: ToplevelItem {
+                item: decl,
+                source: Source::Builtin,
+            },
+        };
+        if let Some(existing) = self.types.iter_mut().find(|ty| ty.name.as_str() == name) {
+            *existing = type_decl;
+        } else {
+            self.types.push(type_decl);
+        }
+    }
+
     pub fn add_associated_function_decl(
         &mut self,
         namespace: &str,
@@ -210,6 +234,12 @@ impl RustInterop {
             .and_then(|(_, idx)| self.functions.get(*idx))
     }
 
+    pub fn imported_types(&self) -> impl Iterator<Item = &RustTypeDecl> {
+        self.by_imported_type
+            .values()
+            .filter_map(|idx| self.types.get(*idx))
+    }
+
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
         if let Some(namespace) = namespace {
             return self
@@ -251,6 +281,7 @@ impl RustInterop {
 
         let ident = TypeIdent::new(name);
         self.types.push(RustTypeDecl {
+            namespace: crate_name.into(),
             name: ident.clone(),
             rust_path: format!("::{crate_name}::{name}").into(),
             decl: ToplevelItem {
@@ -279,6 +310,7 @@ impl RustInterop {
             .unwrap_or_else(|| empty_type_decl(name));
         let rust_path = rust_path(crate_name, name, item);
         let type_decl = RustTypeDecl {
+            namespace: crate_name.into(),
             name: TypeIdent::new(name),
             rust_path,
             decl: ToplevelItem {
@@ -317,6 +349,7 @@ impl RustInterop {
             .type_decl_from_item(crate_name, exported_name, item, index)
             .unwrap_or_else(|| empty_type_decl(exported_name));
         self.types.push(RustTypeDecl {
+            namespace: crate_name.into(),
             name: TypeIdent::new(exported_name),
             rust_path,
             decl: ToplevelItem {
@@ -802,7 +835,7 @@ impl RustInterop {
         }
     }
 
-    fn import_uses(&mut self, uses: &[ToplevelItem<UseDecl>]) {
+    pub fn import_uses(&mut self, uses: &[ToplevelItem<UseDecl>]) {
         for use_decl in uses {
             let Some(namespace) = use_decl.path.segments.first() else {
                 continue;
@@ -817,6 +850,12 @@ impl RustInterop {
     }
 
     fn import_namespace(&mut self, namespace: &str) {
+        for (idx, ty) in self.types.iter().enumerate() {
+            if ty.namespace.as_ref() != namespace {
+                continue;
+            }
+            self.by_imported_type.insert(ty.name.clone(), idx);
+        }
         for (idx, function) in self.functions.iter().enumerate() {
             if function.namespace.as_ref() != namespace {
                 continue;
@@ -846,6 +885,15 @@ impl RustInterop {
     }
 
     fn import_item(&mut self, namespace: &str, name: &str) {
+        for (idx, ty) in self.types.iter().enumerate() {
+            if ty.namespace.as_ref() != namespace {
+                continue;
+            }
+            if ty.name.as_str() != name {
+                continue;
+            }
+            self.by_imported_type.insert(ty.name.clone(), idx);
+        }
         for (idx, function) in self.functions.iter().enumerate() {
             if function.namespace.as_ref() != namespace {
                 continue;
@@ -1123,6 +1171,7 @@ impl RustInterop {
 
 #[derive(Debug)]
 pub struct RustTypeDecl {
+    pub namespace: Box<str>,
     pub name: TypeIdent,
     pub rust_path: Box<str>,
     pub decl: ToplevelItem<TypeDecl>,
@@ -1837,6 +1886,57 @@ mod tests {
         assert!(interop
             .function(None, None, &ident("from_str"), &[])
             .is_none());
+    }
+
+    #[test]
+    fn use_declarations_import_types_unqualified() {
+        let json = json!({
+            "index": {
+                "0": public_item("Ticket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                }))
+            }
+        });
+        let uses = [use_decl(&["demo"])];
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+        interop.import_uses(&uses);
+
+        let imported = interop.imported_types().collect::<Vec<_>>();
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].name, TypeIdent::new("Ticket"));
+        assert_eq!(imported[0].rust_path.as_ref(), "::demo::Ticket");
+    }
+
+    #[test]
+    fn path_use_declarations_import_only_the_named_type() {
+        let json = json!({
+            "index": {
+                "0": public_item("Ticket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                })),
+                "1": public_item("InternalNote", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                }))
+            }
+        });
+        let uses = [use_decl(&["demo", "Ticket"])];
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+        interop.import_uses(&uses);
+
+        let imported = interop.imported_types().collect::<Vec<_>>();
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].name, TypeIdent::new("Ticket"));
     }
 
     #[test]

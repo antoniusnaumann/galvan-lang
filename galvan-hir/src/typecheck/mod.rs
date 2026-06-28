@@ -45,7 +45,10 @@ pub fn typecheck_with_interop(
     let predefined = predefined_from(&mapping, builtin_fns());
 
     let (functions, tests, main, cmd_bodies, errors) = {
-        let lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
+        let mut lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
+        for ty in rust_interop.imported_types() {
+            lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
+        }
         let mut checker = Checker::new(&lookup, &mapping, rust_interop);
 
         let functions = asts
