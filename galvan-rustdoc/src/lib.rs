@@ -32,9 +32,13 @@ pub enum RustdocError {
 pub struct RustInterop {
     pub types: Vec<RustTypeDecl>,
     pub functions: Vec<RustFunctionDecl>,
+    pub constants: Vec<RustConstantDecl>,
     by_namespace_function: HashMap<(String, RustFunctionId), usize>,
     by_imported_function: HashMap<(String, RustFunctionId), usize>,
     by_namespace_associated_function: HashMap<(String, TypeIdent, RustFunctionId), usize>,
+    by_namespace_constant: HashMap<(String, Ident), usize>,
+    by_imported_constant: HashMap<Ident, usize>,
+    by_namespace_associated_constant: HashMap<(String, TypeIdent, Ident), usize>,
 }
 
 impl RustInterop {
@@ -96,6 +100,7 @@ impl RustInterop {
         }
 
         let impl_function_ids = impl_function_ids(index);
+        let impl_constant_ids = impl_constant_ids(index);
         let mut found_function = false;
         for item in index.values() {
             if !is_public(item) {
@@ -123,6 +128,7 @@ impl RustInterop {
             self.push_function(crate_name, name, rust_path, decl, borrowed_return);
             found_function = true;
         }
+        self.import_top_level_constants(crate_name, index, &impl_constant_ids);
         found_function |= self.import_impl_functions(crate_name, index);
 
         if !found_function {
@@ -201,6 +207,40 @@ impl RustInterop {
                 stored_receiver == receiver && stored_id == &id
             })
             .and_then(|(_, idx)| self.functions.get(*idx))
+    }
+
+    pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
+        if let Some(namespace) = namespace {
+            return self
+                .by_namespace_constant
+                .get(&(namespace.to_string(), name.clone()))
+                .and_then(|idx| self.constants.get(*idx));
+        }
+
+        self.by_imported_constant
+            .get(name)
+            .and_then(|idx| self.constants.get(*idx))
+    }
+
+    pub fn associated_constant(
+        &self,
+        namespace: Option<&str>,
+        receiver: &TypeIdent,
+        name: &Ident,
+    ) -> Option<&RustConstantDecl> {
+        if let Some(namespace) = namespace {
+            return self
+                .by_namespace_associated_constant
+                .get(&(namespace.to_string(), receiver.clone(), name.clone()))
+                .and_then(|idx| self.constants.get(*idx));
+        }
+
+        self.by_namespace_associated_constant
+            .iter()
+            .find(|((_, stored_receiver, stored_name), _)| {
+                stored_receiver == receiver && stored_name == name
+            })
+            .and_then(|(_, idx)| self.constants.get(*idx))
     }
 
     fn push_type(&mut self, crate_name: &str, name: &str) {
@@ -457,6 +497,7 @@ impl RustInterop {
             let Some(impl_inner) = item_inner(impl_item, "impl") else {
                 continue;
             };
+            self.import_impl_constants(crate_name, impl_inner, index);
             if impl_inner
                 .get("trait")
                 .is_some_and(|trait_| !trait_.is_null())
@@ -503,6 +544,78 @@ impl RustInterop {
         found_function
     }
 
+    fn import_top_level_constants(
+        &mut self,
+        crate_name: &str,
+        index: &serde_json::Map<String, Value>,
+        impl_constant_ids: &HashSet<&str>,
+    ) {
+        for item in index.values() {
+            if !is_public(item) {
+                continue;
+            }
+            if item
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| impl_constant_ids.contains(id))
+            {
+                continue;
+            }
+            let Some(name) = item.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(constant) = constant_inner(item) else {
+                continue;
+            };
+            let Some(ty) =
+                constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
+            else {
+                continue;
+            };
+            self.push_constant(
+                crate_name,
+                None,
+                name,
+                callable_rust_path(crate_name, name, item),
+                ty,
+            );
+        }
+    }
+
+    fn import_impl_constants(
+        &mut self,
+        crate_name: &str,
+        impl_inner: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) {
+        let receiver = impl_inner
+            .get("for")
+            .and_then(|ty| self.type_from_json(crate_name, ty))
+            .and_then(|ty| receiver_type_ident(&ty));
+
+        for id in item_ids(impl_inner, "items") {
+            let Some(item) = index.get(id) else {
+                continue;
+            };
+            if !is_public(item) {
+                continue;
+            }
+            let Some(name) = item.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(constant) = constant_inner(item) else {
+                continue;
+            };
+            let Some(ty) =
+                constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
+            else {
+                continue;
+            };
+            let rust_path = impl_constant_rust_path(crate_name, name, item, impl_inner);
+            self.push_constant(crate_name, receiver.clone(), name, rust_path, ty);
+        }
+    }
+
     fn push_function(
         &mut self,
         crate_name: &str,
@@ -519,6 +632,33 @@ impl RustInterop {
             borrowed_return,
             None,
         );
+    }
+
+    fn push_constant(
+        &mut self,
+        crate_name: &str,
+        associated_receiver: Option<TypeIdent>,
+        name: &str,
+        rust_path: Box<str>,
+        ty: TypeElement,
+    ) {
+        let idx = self.constants.len();
+        let ident = Ident::new(name);
+        self.constants.push(RustConstantDecl {
+            namespace: crate_name.into(),
+            associated_receiver: associated_receiver.clone(),
+            name: ident.clone(),
+            rust_path,
+            ty,
+        });
+
+        if let Some(receiver) = associated_receiver {
+            self.by_namespace_associated_constant
+                .insert((crate_name.to_string(), receiver, ident), idx);
+        } else {
+            self.by_namespace_constant
+                .insert((crate_name.to_string(), ident), idx);
+        }
     }
 
     fn push_function_with_associated_receiver(
@@ -609,6 +749,12 @@ impl RustInterop {
             let id = RustFunctionId::new(receiver, signature.identifier.as_str(), &labels);
             self.by_imported_function.insert(("".to_string(), id), idx);
         }
+        for (idx, constant) in self.constants.iter().enumerate() {
+            if constant.namespace.as_ref() != namespace || constant.associated_receiver.is_some() {
+                continue;
+            }
+            self.by_imported_constant.insert(constant.name.clone(), idx);
+        }
     }
 
     fn import_item(&mut self, namespace: &str, name: &str) {
@@ -634,6 +780,15 @@ impl RustInterop {
                 });
             let id = RustFunctionId::new(receiver, signature.identifier.as_str(), &labels);
             self.by_imported_function.insert(("".to_string(), id), idx);
+        }
+        for (idx, constant) in self.constants.iter().enumerate() {
+            if constant.namespace.as_ref() != namespace || constant.associated_receiver.is_some() {
+                continue;
+            }
+            if constant.name.as_str() != name {
+                continue;
+            }
+            self.by_imported_constant.insert(constant.name.clone(), idx);
         }
     }
 
@@ -893,6 +1048,15 @@ pub struct RustFunctionDecl {
     pub decl: ToplevelItem<FnDecl>,
 }
 
+#[derive(Debug)]
+pub struct RustConstantDecl {
+    pub namespace: Box<str>,
+    pub associated_receiver: Option<TypeIdent>,
+    pub name: Ident,
+    pub rust_path: Box<str>,
+    pub ty: TypeElement,
+}
+
 #[derive(Clone, Debug)]
 struct LiftedType {
     ty: TypeElement,
@@ -1149,6 +1313,16 @@ fn impl_function_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
         .values()
         .filter_map(|item| item_inner(item, "impl"))
         .flat_map(|impl_item| item_ids(impl_item, "items"))
+        .filter(|id| index.get(*id).and_then(item_inner_constant).is_none())
+        .collect()
+}
+
+fn impl_constant_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
+    index
+        .values()
+        .filter_map(|item| item_inner(item, "impl"))
+        .flat_map(|impl_item| item_ids(impl_item, "items"))
+        .filter(|id| index.get(*id).and_then(item_inner_constant).is_some())
         .collect()
 }
 
@@ -1193,8 +1367,29 @@ fn impl_function_rust_path(
     format!("::{crate_name}::{receiver}::{name}").into()
 }
 
+fn impl_constant_rust_path(
+    crate_name: &str,
+    name: &str,
+    item: &Value,
+    impl_inner: &Value,
+) -> Box<str> {
+    impl_function_rust_path(crate_name, name, item, impl_inner)
+}
+
 fn resolved_type_name(ty: &Value) -> Option<&str> {
     inner(ty, "resolved_path").and_then(|resolved| resolved.get("name").and_then(Value::as_str))
+}
+
+fn item_inner_constant(item: &Value) -> Option<&Value> {
+    item_inner(item, "constant").or_else(|| item_inner(item, "assoc_const"))
+}
+
+fn constant_inner(item: &Value) -> Option<&Value> {
+    item_inner_constant(item)
+}
+
+fn constant_type(constant: &Value) -> Option<&Value> {
+    constant.get("type").or_else(|| constant.get("ty"))
 }
 
 fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {
@@ -1419,6 +1614,20 @@ mod tests {
         })
     }
 
+    fn public_constant(name: &str, ty: Value) -> Value {
+        json!({
+            "id": name,
+            "name": name,
+            "visibility": "public",
+            "path": ["demo"],
+            "inner": {
+                "constant": {
+                    "type": ty
+                }
+            }
+        })
+    }
+
     fn imported_type<'a>(interop: &'a RustInterop, name: &str) -> &'a TypeDecl {
         &interop
             .types
@@ -1462,6 +1671,25 @@ mod tests {
         assert!(interop
             .function(None, None, &ident("from_str"), &[])
             .is_none());
+    }
+
+    #[test]
+    fn use_declarations_import_constants_unqualified() {
+        let json = json!({
+            "index": {
+                "0": public_constant("DEFAULT_LIMIT", primitive("u64"))
+            }
+        });
+        let uses = [use_decl(&["demo"])];
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+        interop.import_uses(&uses);
+
+        let constant = interop
+            .constant(None, &ident("DEFAULT_LIMIT"))
+            .expect("expected imported constant");
+        assert_eq!(constant.ty, u64_type());
+        assert_eq!(constant.rust_path.as_ref(), "::demo::DEFAULT_LIMIT");
     }
 
     #[test]
@@ -1721,6 +1949,74 @@ mod tests {
             panic!("expected lifted Vec alias, got {:?}", names.r#type);
         };
         assert_eq!(names.elements, string_type());
+    }
+
+    #[test]
+    fn rustdoc_imports_top_level_constants() {
+        let json = json!({
+            "index": {
+                "0": public_constant("DEFAULT_LIMIT", primitive("u64"))
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let constant = interop
+            .constant(Some("demo"), &ident("DEFAULT_LIMIT"))
+            .expect("expected namespaced constant");
+        assert_eq!(constant.ty, u64_type());
+        assert_eq!(constant.rust_path.as_ref(), "::demo::DEFAULT_LIMIT");
+        assert!(interop.constant(None, &ident("DEFAULT_LIMIT")).is_none());
+    }
+
+    #[test]
+    fn rustdoc_imports_associated_constants() {
+        let json = json!({
+            "index": {
+                "0": public_item("StatusCode", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                })),
+                "1": {
+                    "id": "1",
+                    "name": null,
+                    "visibility": "public",
+                    "inner": {
+                        "impl": {
+                            "for": resolved("StatusCode", vec![]),
+                            "trait": null,
+                            "items": ["2"]
+                        }
+                    }
+                },
+                "2": {
+                    "id": "2",
+                    "name": "CREATED",
+                    "visibility": "public",
+                    "path": ["demo", "StatusCode"],
+                    "inner": {
+                        "assoc_const": {
+                            "type": resolved("StatusCode", vec![])
+                        }
+                    }
+                }
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        assert!(interop.constant(Some("demo"), &ident("CREATED")).is_none());
+        let constant = interop
+            .associated_constant(
+                Some("demo"),
+                &TypeIdent::new("StatusCode"),
+                &ident("CREATED"),
+            )
+            .expect("expected associated constant");
+        assert_eq!(constant.rust_path.as_ref(), "::demo::StatusCode::CREATED");
+        assert_eq!(constant.ty, plain_type(TypeIdent::new("StatusCode")));
     }
 
     #[test]

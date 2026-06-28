@@ -90,8 +90,9 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve trait methods, associated constants, and re-exports from rustdoc
-    JSON
+  - Resolve trait methods and re-exports from rustdoc JSON
+  - Wire imported top-level and associated Rust constants into expression
+    lowering once Galvan has syntax/AST support for constant access
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
@@ -100,7 +101,7 @@ commands remain subcommands.
     ecosystem wrapper types
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
-    cover constants, unions, repr details, and generic declarations
+    cover unions, repr details, and generic declarations
   - Infer all Galvan passing modes from lifted Rust signatures, including
     wrapper conversions at call boundaries and the remaining mutable
     receiver/argument cases not covered by rustdoc mutable borrowed refs
