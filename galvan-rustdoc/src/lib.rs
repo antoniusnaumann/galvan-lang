@@ -94,26 +94,35 @@ impl RustInterop {
             self.push_type_from_item(crate_name, item, index);
         }
 
+        let impl_function_ids = impl_function_ids(index);
         let mut found_function = false;
         for item in index.values() {
             if !is_public(item) {
                 continue;
             }
+            if item
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| impl_function_ids.contains(id))
+            {
+                continue;
+            }
             let Some(name) = item.get("name").and_then(Value::as_str) else {
                 continue;
             };
-            let Some(function) = inner(item, "function") else {
+            let Some(function) = item_inner(item, "function") else {
                 continue;
             };
             let Some(signature) = function.get("sig") else {
                 continue;
             };
-            let rust_path = rust_path(crate_name, name, item);
+            let rust_path = callable_rust_path(crate_name, name, item);
             let decl = self.function_decl(crate_name, name, signature);
             let borrowed_return = return_is_borrowed(signature);
             self.push_function(crate_name, name, rust_path, decl, borrowed_return);
             found_function = true;
         }
+        found_function |= self.import_impl_functions(crate_name, index);
 
         if !found_function {
             self.add_curated_crate(crate_name);
@@ -378,6 +387,51 @@ impl RustInterop {
         })
     }
 
+    fn import_impl_functions(
+        &mut self,
+        crate_name: &str,
+        index: &serde_json::Map<String, Value>,
+    ) -> bool {
+        let mut found_function = false;
+        for impl_item in index.values() {
+            let Some(impl_inner) = item_inner(impl_item, "impl") else {
+                continue;
+            };
+            if impl_inner
+                .get("trait")
+                .is_some_and(|trait_| !trait_.is_null())
+            {
+                continue;
+            }
+
+            for id in item_ids(impl_inner, "items") {
+                let Some(item) = index.get(id) else {
+                    continue;
+                };
+                if !is_public(item) {
+                    continue;
+                }
+                let Some(name) = item.get("name").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(function) = item_inner(item, "function") else {
+                    continue;
+                };
+                let Some(signature) = function.get("sig") else {
+                    continue;
+                };
+
+                let decl = self.impl_function_decl(crate_name, name, signature, impl_inner);
+                let rust_path = impl_function_rust_path(crate_name, name, item, impl_inner);
+                let borrowed_return = return_is_borrowed(signature);
+                self.push_function(crate_name, name, rust_path, decl, borrowed_return);
+                found_function = true;
+            }
+        }
+
+        found_function
+    }
+
     fn push_function(
         &mut self,
         crate_name: &str,
@@ -488,6 +542,7 @@ impl RustInterop {
 
         let return_type = signature
             .get("output")
+            .filter(|output| !output.is_null())
             .and_then(|output| self.type_from_json(crate_name, output))
             .unwrap_or_else(TypeElement::void);
 
@@ -528,6 +583,31 @@ impl RustInterop {
         })
     }
 
+    fn impl_function_decl(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        signature: &Value,
+        impl_inner: &Value,
+    ) -> FnDecl {
+        let mut decl = self.function_decl(crate_name, name, signature);
+        let Some(first_param) = decl.signature.parameters.params.first_mut() else {
+            return decl;
+        };
+        if !first_param.identifier.is_self() {
+            return decl;
+        }
+
+        if let Some(receiver_ty) = impl_inner
+            .get("for")
+            .and_then(|ty| self.type_from_json(crate_name, ty))
+        {
+            first_param.param_type = receiver_ty;
+        }
+
+        decl
+    }
+
     fn type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<TypeElement> {
         self.lift_type_from_json(crate_name, ty)
             .map(|lifted| lifted.ty)
@@ -541,9 +621,13 @@ impl RustInterop {
             return Some(LiftedType::new(generic_type(generic)));
         }
         if let Some(borrowed) = inner(ty, "borrowed_ref") {
-            return borrowed
+            let mut lifted = borrowed
                 .get("type")
-                .and_then(|inner| self.lift_type_from_json(crate_name, inner));
+                .and_then(|inner| self.lift_type_from_json(crate_name, inner))?;
+            if borrowed_ref_is_mutable(borrowed) {
+                lifted.decl_modifier = Some(galvan_ast::DeclModifier::Mut);
+            }
+            return Some(lifted);
         }
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved.get("name").and_then(Value::as_str)?;
@@ -954,6 +1038,14 @@ fn item_ids<'a>(item: &'a Value, key: &str) -> Vec<&'a str> {
         .collect()
 }
 
+fn impl_function_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
+    index
+        .values()
+        .filter_map(|item| item_inner(item, "impl"))
+        .flat_map(|impl_item| item_ids(impl_item, "items"))
+        .collect()
+}
+
 fn rust_path(crate_name: &str, name: &str, item: &Value) -> Box<str> {
     item.get("path")
         .and_then(Value::as_array)
@@ -969,6 +1061,36 @@ fn rust_path(crate_name: &str, name: &str, item: &Value) -> Box<str> {
         .unwrap_or_else(|| format!("::{crate_name}::{name}").into())
 }
 
+fn callable_rust_path(crate_name: &str, name: &str, item: &Value) -> Box<str> {
+    let path = rust_path(crate_name, name, item);
+    if path.ends_with(&format!("::{name}")) {
+        path
+    } else {
+        format!("{path}::{name}").into()
+    }
+}
+
+fn impl_function_rust_path(
+    crate_name: &str,
+    name: &str,
+    item: &Value,
+    impl_inner: &Value,
+) -> Box<str> {
+    let path = callable_rust_path(crate_name, name, item);
+    if path.matches("::").count() > 2 {
+        return path;
+    };
+
+    let Some(receiver) = impl_inner.get("for").and_then(resolved_type_name) else {
+        return path;
+    };
+    format!("::{crate_name}::{receiver}::{name}").into()
+}
+
+fn resolved_type_name(ty: &Value) -> Option<&str> {
+    inner(ty, "resolved_path").and_then(|resolved| resolved.get("name").and_then(Value::as_str))
+}
+
 fn return_is_borrowed(signature: &Value) -> bool {
     signature
         .get("output")
@@ -977,6 +1099,11 @@ fn return_is_borrowed(signature: &Value) -> bool {
 
 fn type_is_owned(ty: &Value) -> bool {
     inner(ty, "borrowed_ref").is_none()
+}
+
+fn borrowed_ref_is_mutable(borrowed: &Value) -> bool {
+    borrowed.get("mutable").and_then(Value::as_bool) == Some(true)
+        || borrowed.get("mutability").and_then(Value::as_str) == Some("mut")
 }
 
 fn resolved_type_args(resolved: &Value) -> Vec<&Value> {
@@ -1139,6 +1266,15 @@ mod tests {
         })
     }
 
+    fn mut_borrowed(ty: Value) -> Value {
+        json!({
+            "borrowed_ref": {
+                "type": ty,
+                "mutable": true
+            }
+        })
+    }
+
     fn string_type() -> TypeElement {
         plain_type(TypeIdent::new("String"))
     }
@@ -1149,6 +1285,7 @@ mod tests {
 
     fn public_item(name: &str, inner: Value) -> Value {
         json!({
+            "id": name,
             "name": name,
             "visibility": "public",
             "path": ["demo", name],
@@ -1158,6 +1295,7 @@ mod tests {
 
     fn public_field(name: &str, ty: Value) -> Value {
         json!({
+            "id": name,
             "name": name,
             "visibility": "public",
             "inner": {
@@ -1307,6 +1445,20 @@ mod tests {
     }
 
     #[test]
+    fn rustdoc_lifts_mutable_borrowed_parameters_to_mut() {
+        let mut interop = RustInterop::empty();
+        let param = interop
+            .param_from_json(
+                "demo",
+                &json!(["ticket", mut_borrowed(resolved("Ticket", vec![]))]),
+            )
+            .unwrap();
+
+        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Mut));
+        assert_eq!(param.param_type, plain_type(TypeIdent::new("Ticket")));
+    }
+
+    #[test]
     fn rustdoc_imports_public_struct_fields() {
         let json = json!({
             "index": {
@@ -1425,5 +1577,120 @@ mod tests {
             event.members[2].fields[0].r#type,
             TypeElement::Optional(_)
         ));
+    }
+
+    #[test]
+    fn rustdoc_imports_inherent_impl_methods_with_receivers() {
+        let json = json!({
+            "index": {
+                "0": public_item("Ticket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                })),
+                "1": {
+                    "id": "1",
+                    "name": null,
+                    "visibility": "public",
+                    "inner": {
+                        "impl": {
+                            "for": resolved("Ticket", vec![]),
+                            "trait": null,
+                            "items": ["2"]
+                        }
+                    }
+                },
+                "2": {
+                    "id": "2",
+                    "name": "rename",
+                    "visibility": "public",
+                    "path": ["demo", "Ticket"],
+                    "inner": {
+                        "function": {
+                            "sig": {
+                                "inputs": [
+                                    ["self", mut_borrowed(resolved("Ticket", vec![]))],
+                                    ["title", primitive("str")]
+                                ],
+                                "output": null
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        assert!(interop
+            .function(Some("demo"), None, &ident("rename"), &[])
+            .is_none());
+        let function = interop
+            .function(
+                Some("demo"),
+                Some(&TypeIdent::new("Ticket")),
+                &ident("rename"),
+                &[],
+            )
+            .expect("expected imported Ticket.rename method");
+        assert_eq!(function.rust_path.as_ref(), "::demo::Ticket::rename");
+        let receiver = function.decl.item.signature.receiver().unwrap();
+        assert_eq!(receiver.decl_modifier, Some(galvan_ast::DeclModifier::Mut));
+        assert_eq!(receiver.param_type, plain_type(TypeIdent::new("Ticket")));
+    }
+
+    #[test]
+    fn rustdoc_imports_inherent_associated_functions() {
+        let json = json!({
+            "index": {
+                "0": public_item("Ticket", json!({
+                    "struct": {
+                        "kind": "plain",
+                        "fields": []
+                    }
+                })),
+                "1": {
+                    "id": "1",
+                    "name": null,
+                    "visibility": "public",
+                    "inner": {
+                        "impl": {
+                            "for": resolved("Ticket", vec![]),
+                            "trait": null,
+                            "items": ["2"]
+                        }
+                    }
+                },
+                "2": {
+                    "id": "2",
+                    "name": "new",
+                    "visibility": "public",
+                    "path": ["demo", "Ticket"],
+                    "inner": {
+                        "function": {
+                            "sig": {
+                                "inputs": [
+                                    ["title", primitive("str")]
+                                ],
+                                "output": resolved("Ticket", vec![])
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let mut interop = RustInterop::empty();
+        interop.add_crate("demo", &json);
+
+        let function = interop
+            .function(Some("demo"), None, &ident("new"), &[])
+            .expect("expected imported Ticket.new associated function");
+        assert_eq!(function.rust_path.as_ref(), "::demo::Ticket::new");
+        assert!(function.decl.item.signature.receiver().is_none());
+        assert_eq!(
+            function.decl.item.signature.return_type,
+            plain_type(TypeIdent::new("Ticket"))
+        );
     }
 }

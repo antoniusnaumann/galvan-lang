@@ -84,8 +84,11 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve inherent impl methods, trait methods, type-associated methods,
-    associated constants, and re-exports from rustdoc JSON
+  - Resolve trait methods, associated constants, and re-exports from rustdoc
+    JSON
+  - Connect imported inherent associated functions to Galvan's type-member call
+    syntax, e.g. `Ticket.new()` / `Router.new()`, instead of only importing
+    callable Rust paths
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
     `Vec<T>`, maps, sets, `Result<T, E>`, generic wrappers, `Mutex<T>`, and
     `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover more standard-library and
@@ -94,8 +97,8 @@ commands remain subcommands.
     struct fields, tuple struct fields, and enum variants to cover constants,
     type aliases, unions, repr details, and generic declarations
   - Infer all Galvan passing modes from lifted Rust signatures, including
-    mutable receiver/argument requirements and wrapper conversions at call
-    boundaries
+    wrapper conversions at call boundaries and the remaining mutable
+    receiver/argument cases not covered by rustdoc mutable borrowed refs
   - Improve generic substitution and trait-bound handling for external Rust APIs
   - Preserve namespace/module paths on imported data declarations so
     same-named types from different Rust modules do not collapse together
