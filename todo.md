@@ -86,6 +86,19 @@ commands remain subcommands.
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve trait methods, type-associated methods, associated constants, and
     re-exports from rustdoc JSON
+  - Lift Rust wrapper types into Galvan shapes, e.g. `Arc<Mutex<T>>` and
+    `Mutex<T>` as `ref T`, and primitive `Arc<Atomic*>` values as `ref`
+    primitive fields/arguments
+  - Preserve generic `resolved_path` arguments from rustdoc JSON so Rust
+    `Option<T>`, `Vec<T>`, `HashMap<K, V>`, `Arc<T>`, `Mutex<T>`, and
+    extractor/wrapper types such as `Json<T>`, `State<T>`, and `Path<T>` map
+    to useful Galvan types instead of empty nominal types
+  - Import public Rust struct fields, tuple struct constructors, and enum
+    variants/constants so external data types can be constructed and accessed
+    from Galvan
+  - Infer Galvan passing modes from lifted Rust signatures, including `ref`
+    parameters, mutable receiver/argument requirements, and wrapper
+    conversions at call boundaries
   - Improve generic substitution and trait-bound handling for external Rust APIs
 - Support full Axum-style API declarations in Galvan:
   - Add async functions and `.await`

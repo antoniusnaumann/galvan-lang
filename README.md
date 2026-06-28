@@ -57,16 +57,18 @@ fn main(args: [String]) {
 }
 ```
 
-Async functions use `async fn` and await futures with `.await`. An async
-`main` function uses the default async runtime; it does not need a runtime
-attribute in Galvan code:
+Async functions use `async fn` and await futures with `.await`. Functions that
+use postfix `!` still return a result type:
 
 ```galvan
-async fn main() {
+async fn fetch_homepage(client: HttpClient) -> String! {
     let response = client.get("https://example.com").send().await!
-    print response.text().await!
+    response.text().await!
 }
 ```
+
+An async `main` function uses the default async runtime; it does not need a
+runtime attribute in Galvan code.
 
 > [!NOTE]
 > In the Rust target, Galvan's default async runtime is Tokio.

@@ -139,19 +139,20 @@ async fn close_ticket(
     let state = state.into_inner()
     let id = id.into_inner()
 
-    // TODO(ref-codegen): Mutating a ref array inside async shared state should
-    // borrow only for the duration of the update and then release the guard.
-    for 0..<state.tickets.len() |index| {
-        if state.tickets[index].id == id {
-            state.tickets[index].status = "closed"
-            state.tickets[index].summary = ticket_summary(
-                state.tickets[index].id,
-                state.tickets[index].title,
-                state.tickets[index].priority,
-                state.tickets[index].status,
+    // TODO(ref-codegen): Mutating an item from a ref array inside async shared
+    // state should borrow only for the duration of the update and then release
+    // the guard.
+    for state.tickets |ticket| {
+        if ticket.id == id {
+            ticket.status = "closed"
+            ticket.summary = ticket_summary(
+                ticket.id,
+                ticket.title,
+                ticket.priority,
+                ticket.status,
             )
 
-            return Json(state.tickets[index])
+            return Json(ticket)
         }
     }
 
