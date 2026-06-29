@@ -469,6 +469,7 @@ fn transpile_rust_return(rendered: String, conversion: RustReturnConversion) -> 
     match conversion {
         RustReturnConversion::None => rendered,
         RustReturnConversion::BoxDeref => format!("*({rendered})"),
+        RustReturnConversion::RcCloneDeref => format!("(*({rendered})).clone()"),
     }
 }
 
@@ -1026,6 +1027,27 @@ mod tests {
         assert_eq!(
             call.transpile(&ctx, &mut errors),
             "*(::demo::boxed_ticket())"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_rc_return_conversions() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::shared_ticket".into()),
+            rust_return_conversion: RustReturnConversion::RcCloneDeref,
+            rust_arg_conversions: Vec::new(),
+            ident: Ident::new("shared_ticket"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "(*(::demo::shared_ticket())).clone()"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }

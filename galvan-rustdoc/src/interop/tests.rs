@@ -498,6 +498,33 @@ fn rustdoc_lifts_box_returns_with_return_conversions() {
 }
 
 #[test]
+fn rustdoc_lifts_rc_returns_with_clone_return_conversions() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "shared_ticket",
+                vec![],
+                resolved("Rc", vec![resolved("Ticket", vec![])])
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let function = interop
+        .function(Some("demo"), None, &ident("shared_ticket"), &[])
+        .expect("expected imported Rc return function");
+    assert_eq!(
+        function.return_conversion,
+        RustReturnConversion::RcCloneDeref
+    );
+    assert_eq!(
+        function.decl.item.signature.return_type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+}
+
+#[test]
 fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
     let json = json!({
         "index": {
@@ -525,6 +552,37 @@ fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("TicketEnvelope"), &ident("ticket")),
         RustReturnConversion::BoxDeref
+    );
+}
+
+#[test]
+fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
+    let json = json!({
+        "index": {
+            "0": public_item("TicketCache", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field("latest", resolved("Rc", vec![resolved("Ticket", vec![])]))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Struct(cache) = imported_type(&interop, "TicketCache") else {
+        panic!("expected TicketCache struct");
+    };
+    assert_eq!(cache.members.len(), 1);
+    assert_eq!(cache.members[0].ident.as_str(), "latest");
+    assert_eq!(
+        cache.members[0].r#type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+    assert_eq!(
+        interop.field_return_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
+        RustReturnConversion::RcCloneDeref
     );
 }
 

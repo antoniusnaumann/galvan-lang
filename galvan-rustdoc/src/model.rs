@@ -33,6 +33,7 @@ pub enum RustReturnConversion {
     #[default]
     None,
     BoxDeref,
+    RcCloneDeref,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

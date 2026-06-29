@@ -1123,13 +1123,18 @@ impl RustInterop {
     fn lift_return_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedReturn> {
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved.get("name").and_then(Value::as_str)?;
-            if name == "Box" {
+            let return_conversion = match name {
+                "Box" => RustReturnConversion::BoxDeref,
+                "Rc" => RustReturnConversion::RcCloneDeref,
+                _ => RustReturnConversion::None,
+            };
+            if return_conversion != RustReturnConversion::None {
                 let arg = resolved_type_args(resolved).into_iter().next()?;
                 let lifted = self.lift_type_from_json(crate_name, arg)?;
                 return Some(LiftedReturn {
                     ty: lifted.ty,
                     decl_modifier: lifted.decl_modifier,
-                    return_conversion: RustReturnConversion::BoxDeref,
+                    return_conversion,
                 });
             }
         }
