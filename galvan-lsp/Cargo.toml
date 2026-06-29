@@ -1,0 +1,25 @@
+[package]
+name = "galvan-lsp"
+description = "Language server for the Galvan programming language"
+
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+galvan-ast.workspace = true
+galvan-files.workspace = true
+galvan-into-ast.workspace = true
+galvan-parse.workspace = true
+galvan-resolver.workspace = true
+
+itertools.workspace = true
+
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
+dashmap = "5.5"
+
+[[bin]]
+name = "galvan-lsp"
+path = "src/main.rs"
