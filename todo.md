@@ -97,12 +97,10 @@ commands remain subcommands.
     Rust types currently become unqualified only through `use`
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
-  - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
+  - Extend Rust wrapper lifting beyond the current common cases (`Option<T>`,
     Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
-    `Arc<Mutex<T>>` / `Arc<Atomic*>`, parameter-side `Box<T>` / `Rc<T>`,
-    return-side `Box<T>` / `Rc<T>`, and named-struct field-side `Box<T>` /
-    `Rc<T>`) to cover pattern codegen conversions for wrapper-lifted enum
-    variant payloads
+    `Arc<Mutex<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
+    conversions) to cover additional smart pointers and standard wrappers
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations

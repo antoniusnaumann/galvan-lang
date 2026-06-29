@@ -318,6 +318,30 @@ impl RustInterop {
         index: usize,
         field: Option<&Ident>,
     ) -> RustArgConversion {
+        self.enum_variant_conversion(receiver, variant, index, field)
+            .map(|conversion| conversion.arg_conversion)
+            .unwrap_or_default()
+    }
+
+    pub fn enum_variant_return_conversion(
+        &self,
+        receiver: &TypeIdent,
+        variant: &TypeIdent,
+        index: usize,
+        field: Option<&Ident>,
+    ) -> RustReturnConversion {
+        self.enum_variant_conversion(receiver, variant, index, field)
+            .map(|conversion| conversion.return_conversion)
+            .unwrap_or_default()
+    }
+
+    fn enum_variant_conversion(
+        &self,
+        receiver: &TypeIdent,
+        variant: &TypeIdent,
+        index: usize,
+        field: Option<&Ident>,
+    ) -> Option<&RustEnumVariantArgConversion> {
         self.types
             .iter()
             .find(|ty| ty.name == *receiver)
@@ -335,8 +359,6 @@ impl RustInterop {
                 }
                 conversion.args.get(index)
             })
-            .map(|conversion| conversion.arg_conversion)
-            .unwrap_or_default()
     }
 
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
@@ -674,6 +696,7 @@ impl RustInterop {
             arg_conversions.push(RustEnumVariantArgConversion {
                 field: field.field.name.clone(),
                 arg_conversion: field.arg_conversion,
+                return_conversion: field.return_conversion,
             });
             fields.push(field.field);
         }
@@ -731,6 +754,7 @@ impl RustInterop {
                 span: Span::default(),
             },
             arg_conversion: member_arg_conversion(lifted.return_conversion),
+            return_conversion: lifted.return_conversion,
         })
     }
 
@@ -1507,6 +1531,7 @@ struct LiftedEnumMember {
 struct LiftedEnumVariantField {
     field: EnumVariantField,
     arg_conversion: RustArgConversion,
+    return_conversion: RustReturnConversion,
 }
 
 #[derive(Clone, Debug)]

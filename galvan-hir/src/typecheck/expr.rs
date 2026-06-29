@@ -993,7 +993,8 @@ impl Checker<'_> {
         target: Option<&TypeIdent>,
         expected: &Expected,
     ) -> HirMatchArm {
-        let (pattern, bindings) = self.lower_match_pattern(&arm.pattern, target);
+        let (pattern, bindings, binding_conversions) =
+            self.lower_match_pattern(&arm.pattern, target);
 
         self.scopes.push();
         for binding in bindings {
@@ -1002,16 +1003,24 @@ impl Checker<'_> {
         let body = self.lower_block(&arm.body.body, expected);
         self.scopes.pop();
 
-        HirMatchArm { pattern, body }
+        HirMatchArm {
+            pattern,
+            binding_conversions,
+            body,
+        }
     }
 
     fn lower_match_pattern(
         &mut self,
         pattern: &MatchPattern,
         target: Option<&TypeIdent>,
-    ) -> (HirMatchPattern, Vec<Variable>) {
+    ) -> (
+        HirMatchPattern,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
         match pattern {
-            MatchPattern::Wildcard(_) => (HirMatchPattern::Wildcard, Vec::new()),
+            MatchPattern::Wildcard(_) => (HirMatchPattern::Wildcard, Vec::new(), Vec::new()),
             MatchPattern::EnumVariant(pattern) => {
                 let target = target
                     .cloned()
@@ -1019,7 +1028,7 @@ impl Checker<'_> {
                 let fields = self
                     .resolve_match_variant_fields(&target, &pattern.case, pattern.span)
                     .unwrap_or_default();
-                let (arguments, bindings) =
+                let (arguments, bindings, binding_conversions) =
                     self.lower_match_pattern_arguments(&pattern.arguments, &fields, pattern.span);
 
                 (
@@ -1029,6 +1038,7 @@ impl Checker<'_> {
                         arguments,
                     }),
                     bindings,
+                    binding_conversions,
                 )
             }
         }
@@ -1037,9 +1047,13 @@ impl Checker<'_> {
     fn lower_match_pattern_arguments(
         &mut self,
         arguments: &[MatchPatternArg],
-        fields: &[(Option<Ident>, TypeElement)],
+        fields: &[MatchVariantField],
         span: Span,
-    ) -> (HirMatchPatternArguments, Vec<Variable>) {
+    ) -> (
+        HirMatchPatternArguments,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
         let has_named = arguments
             .iter()
             .any(|argument| matches!(argument, MatchPatternArg::Named(_)));
@@ -1057,7 +1071,11 @@ impl Checker<'_> {
         }
 
         if arguments.is_empty() {
-            return (self.wildcard_match_arguments(fields), Vec::new());
+            return (
+                self.wildcard_match_arguments(fields),
+                Vec::new(),
+                Vec::new(),
+            );
         }
 
         if has_named {
@@ -1070,10 +1088,14 @@ impl Checker<'_> {
     fn lower_positional_match_arguments(
         &mut self,
         arguments: &[MatchPatternArg],
-        fields: &[(Option<Ident>, TypeElement)],
+        fields: &[MatchVariantField],
         span: Span,
-    ) -> (HirMatchPatternArguments, Vec<Variable>) {
-        if fields.iter().any(|(name, _)| name.is_some()) {
+    ) -> (
+        HirMatchPatternArguments,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
+        if fields.iter().any(|field| field.name.is_some()) {
             self.errors.error_with_span(
                 TranspilerError::InvalidSyntax {
                     message: "Named enum variants must be matched with named fields".to_string(),
@@ -1096,36 +1118,54 @@ impl Checker<'_> {
         let mut bindings = Vec::new();
         let mut patterns = Vec::with_capacity(fields.len());
 
-        for (i, (_, ty)) in fields.iter().enumerate() {
+        let mut binding_conversions = Vec::new();
+        for (i, field) in fields.iter().enumerate() {
             let binding = arguments.get(i).and_then(|argument| match argument {
                 MatchPatternArg::Binding(binding) => Some(binding),
                 MatchPatternArg::Named(_) => None,
             });
 
             let (pattern, variable) = match binding {
-                Some(binding) => self.lower_match_binding(binding, ty),
+                Some(binding) => self.lower_match_binding(binding, &field.ty),
                 None => (HirMatchBindingPattern::Wildcard, None),
             };
             if let Some(variable) = variable {
+                push_match_binding_conversion(
+                    &mut binding_conversions,
+                    &variable.ident,
+                    field.rust_return_conversion,
+                );
                 bindings.push(variable);
             }
             patterns.push(pattern);
         }
 
         if fields.is_empty() {
-            (HirMatchPatternArguments::None, bindings)
+            (
+                HirMatchPatternArguments::None,
+                bindings,
+                binding_conversions,
+            )
         } else {
-            (HirMatchPatternArguments::Tuple(patterns), bindings)
+            (
+                HirMatchPatternArguments::Tuple(patterns),
+                bindings,
+                binding_conversions,
+            )
         }
     }
 
     fn lower_named_match_arguments(
         &mut self,
         arguments: &[MatchPatternArg],
-        fields: &[(Option<Ident>, TypeElement)],
+        fields: &[MatchVariantField],
         span: Span,
-    ) -> (HirMatchPatternArguments, Vec<Variable>) {
-        if fields.iter().any(|(name, _)| name.is_none()) {
+    ) -> (
+        HirMatchPatternArguments,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
+        if fields.iter().any(|field| field.name.is_none()) {
             self.errors.error_with_span(
                 TranspilerError::InvalidSyntax {
                     message: "Tuple enum variants must be matched with positional fields"
@@ -1146,7 +1186,7 @@ impl Checker<'_> {
         for argument in &named_arguments {
             let found = fields
                 .iter()
-                .any(|(name, _)| name.as_ref() == Some(&argument.field));
+                .any(|field| field.name.as_ref() == Some(&argument.field));
             if !found {
                 self.errors.error_with_span(
                     TranspilerError::InvalidSyntax {
@@ -1158,34 +1198,48 @@ impl Checker<'_> {
         }
 
         let mut bindings = Vec::new();
+        let mut binding_conversions = Vec::new();
         let mut patterns = Vec::with_capacity(fields.len());
 
-        for (field, ty) in fields {
-            let Some(field) = field else {
+        for field in fields {
+            let Some(field_name) = &field.name else {
                 continue;
             };
 
             let binding = named_arguments
                 .iter()
-                .find(|argument| argument.field == *field)
+                .find(|argument| argument.field == *field_name)
                 .map(|argument| &argument.binding);
             let (binding, variable) = match binding {
-                Some(binding) => self.lower_match_binding(binding, ty),
+                Some(binding) => self.lower_match_binding(binding, &field.ty),
                 None => (HirMatchBindingPattern::Wildcard, None),
             };
             if let Some(variable) = variable {
+                push_match_binding_conversion(
+                    &mut binding_conversions,
+                    &variable.ident,
+                    field.rust_return_conversion,
+                );
                 bindings.push(variable);
             }
             patterns.push(HirNamedMatchBinding {
-                field: field.clone(),
+                field: field_name.clone(),
                 binding,
             });
         }
 
         if fields.is_empty() {
-            (HirMatchPatternArguments::None, bindings)
+            (
+                HirMatchPatternArguments::None,
+                bindings,
+                binding_conversions,
+            )
         } else {
-            (HirMatchPatternArguments::Named(patterns), bindings)
+            (
+                HirMatchPatternArguments::Named(patterns),
+                bindings,
+                binding_conversions,
+            )
         }
     }
 
@@ -1206,20 +1260,17 @@ impl Checker<'_> {
         }
     }
 
-    fn wildcard_match_arguments(
-        &self,
-        fields: &[(Option<Ident>, TypeElement)],
-    ) -> HirMatchPatternArguments {
+    fn wildcard_match_arguments(&self, fields: &[MatchVariantField]) -> HirMatchPatternArguments {
         if fields.is_empty() {
             return HirMatchPatternArguments::None;
         }
 
-        if fields.iter().all(|(field, _)| field.is_some()) {
+        if fields.iter().all(|field| field.name.is_some()) {
             HirMatchPatternArguments::Named(
                 fields
                     .iter()
-                    .filter_map(|(field, _)| {
-                        field.as_ref().map(|field| HirNamedMatchBinding {
+                    .filter_map(|field| {
+                        field.name.as_ref().map(|field| HirNamedMatchBinding {
                             field: field.clone(),
                             binding: HirMatchBindingPattern::Wildcard,
                         })
@@ -1259,7 +1310,7 @@ impl Checker<'_> {
         target: &TypeIdent,
         case: &TypeIdent,
         span: Span,
-    ) -> Option<Vec<(Option<Ident>, TypeElement)>> {
+    ) -> Option<Vec<MatchVariantField>> {
         let Some(decl) = self.lookup.resolve_type(target) else {
             self.errors.error_with_span(
                 TranspilerError::UnknownType {
@@ -1299,7 +1350,17 @@ impl Checker<'_> {
             member
                 .fields
                 .iter()
-                .map(|field| (field.name.clone(), field.r#type.clone()))
+                .enumerate()
+                .map(|(index, field)| MatchVariantField {
+                    name: field.name.clone(),
+                    ty: field.r#type.clone(),
+                    rust_return_conversion: self.rust_interop.enum_variant_return_conversion(
+                        target,
+                        case,
+                        index,
+                        field.name.as_ref(),
+                    ),
+                })
                 .collect(),
         )
     }
@@ -3309,6 +3370,27 @@ fn passing_mode_name(modifier: Option<DeclModifier>) -> &'static str {
         Some(DeclModifier::Let) => "`let`",
         None => "unmodified",
     }
+}
+
+#[derive(Clone, Debug)]
+struct MatchVariantField {
+    name: Option<Ident>,
+    ty: TypeElement,
+    rust_return_conversion: galvan_rustdoc::RustReturnConversion,
+}
+
+fn push_match_binding_conversion(
+    conversions: &mut Vec<HirMatchBindingConversion>,
+    ident: &Ident,
+    rust_return_conversion: galvan_rustdoc::RustReturnConversion,
+) {
+    if rust_return_conversion == galvan_rustdoc::RustReturnConversion::None {
+        return;
+    }
+    conversions.push(HirMatchBindingConversion {
+        ident: ident.clone(),
+        rust_return_conversion,
+    });
 }
 
 fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {

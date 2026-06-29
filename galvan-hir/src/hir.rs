@@ -400,7 +400,14 @@ pub struct HirMatch {
 #[derive(Clone, Debug)]
 pub struct HirMatchArm {
     pub pattern: HirMatchPattern,
+    pub binding_conversions: Vec<HirMatchBindingConversion>,
     pub body: HirBlock,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirMatchBindingConversion {
+    pub ident: Ident,
+    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
 }
 
 #[derive(Clone, Debug)]

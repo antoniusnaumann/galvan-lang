@@ -816,6 +816,15 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
         RustArgConversion::RcNew
     );
     assert_eq!(
+        interop.enum_variant_return_conversion(
+            &TypeIdent::new("TicketEvent"),
+            &TypeIdent::new("Assigned"),
+            0,
+            None,
+        ),
+        RustReturnConversion::RcCloneDeref
+    );
+    assert_eq!(
         interop.enum_variant_arg_conversion(
             &TypeIdent::new("TicketEvent"),
             &TypeIdent::new("Moved"),
@@ -823,6 +832,15 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
             Some(&ident("owner")),
         ),
         RustArgConversion::BoxNew
+    );
+    assert_eq!(
+        interop.enum_variant_return_conversion(
+            &TypeIdent::new("TicketEvent"),
+            &TypeIdent::new("Moved"),
+            1,
+            Some(&ident("owner")),
+        ),
+        RustReturnConversion::BoxDeref
     );
 }
 

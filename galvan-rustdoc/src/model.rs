@@ -55,6 +55,7 @@ pub struct RustEnumVariantConversion {
 pub struct RustEnumVariantArgConversion {
     pub field: Option<Ident>,
     pub arg_conversion: RustArgConversion,
+    pub return_conversion: RustReturnConversion,
 }
 
 #[derive(Debug)]

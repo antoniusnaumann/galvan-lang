@@ -226,7 +226,22 @@ impl Transpile for HirMatch {
 
 impl Transpile for HirMatchArm {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        transpile!(ctx, errors, "{} => {}", self.pattern, self.body)
+        let pattern = self.pattern.transpile(ctx, errors);
+        let body = self.body.transpile(ctx, errors);
+        if self.binding_conversions.is_empty() {
+            return format!("{pattern} => {body}");
+        }
+
+        let conversions = self
+            .binding_conversions
+            .iter()
+            .map(|conversion| {
+                let ident = sanitize_name(conversion.ident.as_str()).into_owned();
+                let value = transpile_rust_return(ident.clone(), conversion.rust_return_conversion);
+                format!("let {ident} = {value};")
+            })
+            .join("\n");
+        format!("{pattern} => {{\n{conversions}\n{body}\n}}")
     }
 }
 
@@ -1084,6 +1099,41 @@ mod tests {
         assert_eq!(
             constructor.transpile(&ctx, &mut errors),
             "TicketEvent::Moved { owner: ::std::boxed::Box::new(owner) }"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn match_arms_apply_rust_binding_conversions() {
+        let arm = HirMatchArm {
+            pattern: HirMatchPattern::EnumVariant(HirEnumMatchPattern {
+                target: TypeIdent::new("TicketEvent"),
+                case: TypeIdent::new("Assigned"),
+                arguments: HirMatchPatternArguments::Tuple(vec![HirMatchBindingPattern::Binding(
+                    Ident::new("user"),
+                )]),
+            }),
+            binding_conversions: vec![HirMatchBindingConversion {
+                ident: Ident::new("user"),
+                rust_return_conversion: RustReturnConversion::RcCloneDeref,
+            }],
+            body: HirBlock {
+                statements: vec![HirStatement::Expression(HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("user")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ))],
+                ty: TypeElement::infer(),
+                span: Span::default(),
+            },
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            arm.transpile(&ctx, &mut errors),
+            "TicketEvent::Assigned(user) => {\nlet user = (*(user)).clone();\n{\nuser\n}\n}"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
