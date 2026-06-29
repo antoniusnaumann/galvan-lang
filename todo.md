@@ -90,7 +90,7 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve glob and external-target re-exports from rustdoc JSON
+  - Resolve external-target re-exports from rustdoc JSON
   - Support parser/grammar syntax for imported Rust constants with uppercase
     names and qualified constant paths
   - Support qualified external Rust type paths in Galvan type syntax; imported
@@ -101,6 +101,9 @@ commands remain subcommands.
     Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
     `Arc<Mutex<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
     conversions) to cover additional smart pointers and standard wrappers
+  - Lift the remaining rustdoc type shapes needed for API round-tripping,
+    including raw pointers, function pointers, `dyn Trait`, `impl Trait`,
+    never type, and generic associated types
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
@@ -128,5 +131,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-28*
+*Last updated: 2026-06-29*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

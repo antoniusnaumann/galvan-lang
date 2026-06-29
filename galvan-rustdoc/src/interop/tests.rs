@@ -62,6 +62,19 @@ fn resolved_with_path(name: &str, path: &[&str], args: Vec<Value>) -> Value {
     })
 }
 
+fn slice(ty: Value) -> Value {
+    json!({ "slice": ty })
+}
+
+fn array(ty: Value) -> Value {
+    json!({
+        "array": {
+            "type": ty,
+            "len": "3"
+        }
+    })
+}
+
 fn mut_borrowed(ty: Value) -> Value {
     json!({
         "borrowed_ref": {
@@ -151,6 +164,37 @@ fn public_use(id: &str, name: &str, target_id: &str) -> Value {
                 "name": name,
                 "id": target_id,
                 "is_glob": false
+            }
+        }
+    })
+}
+
+fn public_glob_use(id: &str, name: &str, target_id: &str) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "visibility": "public",
+        "path": ["demo"],
+        "inner": {
+            "use": {
+                "source": format!("demo::{name}::*"),
+                "name": name,
+                "id": target_id,
+                "is_glob": true
+            }
+        }
+    })
+}
+
+fn public_module(name: &str, items: Vec<&str>) -> Value {
+    json!({
+        "id": name,
+        "name": name,
+        "visibility": "public",
+        "path": ["demo", name],
+        "inner": {
+            "module": {
+                "items": items
             }
         }
     })
@@ -361,6 +405,27 @@ fn rustdoc_lifts_common_collections_and_results() {
 }
 
 #[test]
+fn rustdoc_lifts_slice_and_array_types() {
+    let mut interop = RustInterop::empty();
+
+    let slice = interop
+        .type_from_json("std", &slice(primitive("u64")))
+        .unwrap();
+    let TypeElement::Array(slice) = slice else {
+        panic!("expected slice to lift as array, got {slice:?}");
+    };
+    assert_eq!(slice.elements, u64_type());
+
+    let array = interop
+        .type_from_json("std", &array(primitive("str")))
+        .unwrap();
+    let TypeElement::Array(array) = array else {
+        panic!("expected fixed array to lift as array, got {array:?}");
+    };
+    assert_eq!(array.elements, string_type());
+}
+
+#[test]
 fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     let param = interop
@@ -414,7 +479,7 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
         "index": {
             "0": public_function(
                 "takes_ref",
-                vec![json!(["value", borrowed(primitive("u64"))])],
+                vec![json!(["value", borrowed(slice(primitive("u64")))])],
                 primitive("bool")
             )
         }
@@ -431,7 +496,10 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
     );
     assert_eq!(
         function.decl.item.signature.parameters.params[0].param_type,
-        u64_type()
+        TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+            elements: u64_type(),
+            span: Span::default()
+        }))
     );
 }
 
@@ -1007,6 +1075,45 @@ fn rustdoc_imports_reexported_constants() {
     let constant = interop
         .constant(Some("demo"), &ident("LIMIT"))
         .expect("expected re-exported constant");
+    assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
+    assert_eq!(constant.ty, u64_type());
+}
+
+#[test]
+fn rustdoc_imports_glob_reexported_items() {
+    let json = json!({
+        "index": {
+            "0": public_module("internal", vec!["1", "2", "4"]),
+            "1": public_item("Ticket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["3"]
+                }
+            })),
+            "2": public_function("display_name", vec![], primitive("str")),
+            "3": public_field("title", primitive("str")),
+            "4": public_constant("LIMIT", primitive("u64")),
+            "5": public_glob_use("5", "internal", "0")
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let imported = interop
+        .types
+        .iter()
+        .find(|ty| ty.name.as_str() == "Ticket")
+        .expect("expected glob re-exported type");
+    assert_eq!(imported.rust_path.as_ref(), "::demo::Ticket");
+
+    let function = interop
+        .function(Some("demo"), None, &ident("display_name"), &[])
+        .expect("expected glob re-exported function");
+    assert_eq!(function.rust_path.as_ref(), "::demo::display_name");
+
+    let constant = interop
+        .constant(Some("demo"), &ident("LIMIT"))
+        .expect("expected glob re-exported constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
     assert_eq!(constant.ty, u64_type());
 }
