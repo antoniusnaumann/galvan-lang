@@ -69,22 +69,29 @@ be supplied to `resolve_function`.
 
 ---
 
-## 4. No cross-file / imported-symbol resolution
+## 4. Cross-*crate* / imported-symbol resolution
 
-`LookupContext` is built from a single set of `SegmentedAsts`. The struct has a
-commented-out `imports` field and a `// TODO: Nested contexts for resolving
-names from imported modules` note in `galvan-resolver/src/lookup.rs`.
+Same-*crate* cross-file resolution **is supported**: `src/workspace.rs` loads
+every `.galvan` file under the crate's source root (via
+`galvan_files::read_sources`) and aggregates them into one `LookupContext` with
+`LookupContext::add_from`, exactly as the compiler does for a whole crate. Each
+`ToplevelItem` carries its originating `Source`, which the LSP turns into a
+cross-file `Location`. This is library reuse, not a workaround.
 
-**Impact:** the server analyses each open document in isolation. Symbols defined
-in other files (including via `use`) cannot be resolved, so go-to-definition
-never crosses file boundaries.
+What is **not** supported is resolution across *crate boundaries*:
+`LookupContext` has a commented-out `imports` field and a `// TODO: Nested
+contexts for resolving names from imported modules` note in
+`galvan-resolver/src/lookup.rs`, so symbols brought in via `use` from another
+crate / external dependency cannot be resolved.
 
-**Current handling:** definitions are returned as a `Location` in the *same*
-document only. See `src/features/goto_definition.rs`.
+**Impact:** go-to-definition and hover do not follow `use` imports into other
+crates.
 
-**What would help:** a project/workspace-level resolution API that builds a
-`LookupContext` spanning multiple files and records each item's originating
-`Source`, so the LSP can return cross-file `Location`s.
+**Current handling:** resolution is scoped to the files of the requesting file's
+crate (the nearest ancestor `src` directory). See `src/workspace.rs`.
+
+**What would help:** an import-resolution API on the resolver that maps a `use`
+path to the defining item (and its `Source`) across crate boundaries.
 
 ---
 
