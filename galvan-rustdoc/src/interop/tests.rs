@@ -474,6 +474,30 @@ fn rustdoc_lifts_owned_wrapper_parameters_with_call_conversions() {
 }
 
 #[test]
+fn rustdoc_lifts_box_returns_with_return_conversions() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "boxed_ticket",
+                vec![],
+                resolved("Box", vec![resolved("Ticket", vec![])])
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let function = interop
+        .function(Some("demo"), None, &ident("boxed_ticket"), &[])
+        .expect("expected imported Box return function");
+    assert_eq!(function.return_conversion, RustReturnConversion::BoxDeref);
+    assert_eq!(
+        function.decl.item.signature.return_type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+}
+
+#[test]
 fn rustdoc_imports_public_struct_fields() {
     let json = json!({
         "index": {

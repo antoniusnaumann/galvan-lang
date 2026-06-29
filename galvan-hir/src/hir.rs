@@ -463,6 +463,7 @@ pub struct HirPrint {
 pub struct HirFunctionCall {
     pub namespace: Option<UsePath>,
     pub rust_path: Option<Box<str>>,
+    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
     pub rust_arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
@@ -475,6 +476,7 @@ pub struct HirMethodCall {
     pub receiver_modifier: Option<DeclModifier>,
     pub namespace: Option<UsePath>,
     pub rust_path: Option<Box<str>>,
+    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
     pub rust_receiver_conversion: galvan_rustdoc::RustArgConversion,
     pub rust_arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
     pub ident: Ident,

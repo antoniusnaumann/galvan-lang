@@ -99,8 +99,9 @@ commands remain subcommands.
     typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
     Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
-    `Arc<Mutex<T>>` / `Arc<Atomic*>`, and parameter-side `Box<T>` / `Rc<T>`)
-    to cover return-side and field-side wrapper conversions
+    `Arc<Mutex<T>>` / `Arc<Atomic*>`, parameter-side `Box<T>` / `Rc<T>`,
+    and return-side `Box<T>`) to cover return-side `Rc<T>` and field-side
+    wrapper conversions
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations

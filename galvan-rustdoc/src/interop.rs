@@ -13,7 +13,9 @@ use galvan_ast::{
 use galvan_files::Source;
 
 use crate::cache::RustdocCache;
-use crate::model::{RustArgConversion, RustConstantDecl, RustFunctionDecl, RustTypeDecl};
+use crate::model::{
+    RustArgConversion, RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
+};
 use crate::RustdocError;
 
 #[derive(Debug, Default)]
@@ -120,6 +122,7 @@ impl RustInterop {
                 rust_path,
                 imported.decl,
                 borrowed_return,
+                imported.return_conversion,
                 imported.arg_conversions,
             );
             found_function = true;
@@ -147,6 +150,7 @@ impl RustInterop {
             rust_path.into(),
             decl,
             borrowed_return,
+            RustReturnConversion::None,
             Vec::new(),
         );
     }
@@ -211,6 +215,7 @@ impl RustInterop {
             decl,
             borrowed_return,
             Some(receiver),
+            RustReturnConversion::None,
             Vec::new(),
         );
     }
@@ -617,6 +622,7 @@ impl RustInterop {
                     imported.decl,
                     borrowed_return,
                     associated_receiver,
+                    imported.return_conversion,
                     imported.arg_conversions,
                 );
                 found_function = true;
@@ -678,6 +684,7 @@ impl RustInterop {
                         rust_path,
                         imported.decl,
                         borrowed_return,
+                        imported.return_conversion,
                         imported.arg_conversions,
                     );
                     found_function = true;
@@ -776,6 +783,7 @@ impl RustInterop {
         rust_path: Box<str>,
         decl: FnDecl,
         borrowed_return: bool,
+        return_conversion: RustReturnConversion,
         arg_conversions: Vec<RustArgConversion>,
     ) {
         self.push_function_with_associated_receiver(
@@ -785,6 +793,7 @@ impl RustInterop {
             decl,
             borrowed_return,
             None,
+            return_conversion,
             arg_conversions,
         );
     }
@@ -824,6 +833,7 @@ impl RustInterop {
         decl: FnDecl,
         borrowed_return: bool,
         associated_receiver: Option<TypeIdent>,
+        return_conversion: RustReturnConversion,
         arg_conversions: Vec<RustArgConversion>,
     ) {
         let labels = decl.signature.overload_labels();
@@ -849,6 +859,7 @@ impl RustInterop {
             namespace: crate_name.into(),
             rust_path,
             borrowed_return,
+            return_conversion,
             arg_conversions,
             decl: ToplevelItem {
                 item: decl,
@@ -989,8 +1000,10 @@ impl RustInterop {
         let return_type = signature
             .get("output")
             .filter(|output| !output.is_null())
-            .and_then(|output| self.type_from_json(crate_name, output))
-            .unwrap_or_else(TypeElement::void);
+            .and_then(|output| self.lift_return_type_from_json(crate_name, output));
+        let (return_type, return_conversion) = return_type
+            .map(|lifted| (lifted.ty, lifted.return_conversion))
+            .unwrap_or_else(|| (TypeElement::void(), RustReturnConversion::None));
 
         let decl = FnSignature {
             visibility: Visibility::public(),
@@ -1007,6 +1020,7 @@ impl RustInterop {
 
         ImportedFunctionDecl {
             decl,
+            return_conversion,
             arg_conversions,
         }
     }
@@ -1061,6 +1075,26 @@ impl RustInterop {
         let mut lifted = self.lift_type_from_json(crate_name, arg)?;
         lifted.arg_conversion = conversion;
         Some(lifted)
+    }
+
+    fn lift_return_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedReturn> {
+        if let Some(resolved) = inner(ty, "resolved_path") {
+            let name = resolved.get("name").and_then(Value::as_str)?;
+            if name == "Box" {
+                let arg = resolved_type_args(resolved).into_iter().next()?;
+                let lifted = self.lift_type_from_json(crate_name, arg)?;
+                return Some(LiftedReturn {
+                    ty: lifted.ty,
+                    return_conversion: RustReturnConversion::BoxDeref,
+                });
+            }
+        }
+
+        self.lift_type_from_json(crate_name, ty)
+            .map(|lifted| LiftedReturn {
+                ty: lifted.ty,
+                return_conversion: RustReturnConversion::None,
+            })
     }
 
     fn impl_function_decl(
@@ -1252,6 +1286,7 @@ impl RustInterop {
             }
             .into(),
             false,
+            RustReturnConversion::None,
             Vec::new(),
         );
     }
@@ -1260,7 +1295,14 @@ impl RustInterop {
 #[derive(Clone, Debug)]
 struct ImportedFunctionDecl {
     decl: FnDecl,
+    return_conversion: RustReturnConversion,
     arg_conversions: Vec<RustArgConversion>,
+}
+
+#[derive(Clone, Debug)]
+struct LiftedReturn {
+    ty: TypeElement,
+    return_conversion: RustReturnConversion,
 }
 
 #[derive(Clone, Debug)]

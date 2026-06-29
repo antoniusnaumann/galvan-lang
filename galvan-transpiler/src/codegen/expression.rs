@@ -6,7 +6,7 @@ use galvan_ast::{
 };
 use galvan_hir::hir::*;
 use galvan_resolver::Lookup;
-use galvan_rustdoc::RustArgConversion;
+use galvan_rustdoc::{RustArgConversion, RustReturnConversion};
 
 use crate::context::Context;
 use crate::macros::transpile;
@@ -345,7 +345,8 @@ impl Transpile for HirFunctionCall {
             errors,
         );
         if let Some(rust_path) = &self.rust_path {
-            return format!("{rust_path}({args})");
+            let call = format!("{rust_path}({args})");
+            return transpile_rust_return(call, self.rust_return_conversion);
         }
 
         let name = mangle_function_name(self.ident.as_str(), &self.labels);
@@ -383,7 +384,8 @@ impl Transpile for HirMethodCall {
                     errors,
                 ))
                 .join(", ");
-            return format!("{rust_path}({args})");
+            let call = format!("{rust_path}({args})");
+            return transpile_rust_return(call, self.rust_return_conversion);
         }
 
         if let Some(namespace) = &self.namespace {
@@ -460,6 +462,13 @@ fn transpile_rust_argument(
         RustArgConversion::SharedBorrow => format!("&{rendered}"),
         RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
         RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
+    }
+}
+
+fn transpile_rust_return(rendered: String, conversion: RustReturnConversion) -> String {
+    match conversion {
+        RustReturnConversion::None => rendered,
+        RustReturnConversion::BoxDeref => format!("*({rendered})"),
     }
 }
 
@@ -937,6 +946,7 @@ mod tests {
         let call = HirFunctionCall {
             namespace: None,
             rust_path: Some("::demo::takes_ref".into()),
+            rust_return_conversion: RustReturnConversion::None,
             rust_arg_conversions: vec![RustArgConversion::SharedBorrow],
             ident: Ident::new("takes_ref"),
             labels: Vec::new(),
@@ -982,6 +992,7 @@ mod tests {
         let call = HirFunctionCall {
             namespace: None,
             rust_path: Some("::demo::takes_wrappers".into()),
+            rust_return_conversion: RustReturnConversion::None,
             rust_arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
             ident: Ident::new("takes_wrappers"),
             labels: Vec::new(),
@@ -993,6 +1004,27 @@ mod tests {
         assert_eq!(
             call.transpile(&ctx, &mut errors),
             "::demo::takes_wrappers(::std::boxed::Box::new(42), ::std::rc::Rc::new(ticket))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_box_return_conversions() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::boxed_ticket".into()),
+            rust_return_conversion: RustReturnConversion::BoxDeref,
+            rust_arg_conversions: Vec::new(),
+            ident: Ident::new("boxed_ticket"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "*(::demo::boxed_ticket())"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }

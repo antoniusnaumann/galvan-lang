@@ -5,4 +5,6 @@ mod model;
 
 pub use error::RustdocError;
 pub use interop::RustInterop;
-pub use model::{RustArgConversion, RustConstantDecl, RustFunctionDecl, RustTypeDecl};
+pub use model::{
+    RustArgConversion, RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
+};

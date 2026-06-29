@@ -13,6 +13,7 @@ pub struct RustFunctionDecl {
     pub namespace: Box<str>,
     pub rust_path: Box<str>,
     pub borrowed_return: bool,
+    pub return_conversion: RustReturnConversion,
     pub arg_conversions: Vec<RustArgConversion>,
     pub decl: ToplevelItem<FnDecl>,
 }
@@ -24,6 +25,13 @@ pub enum RustArgConversion {
     SharedBorrow,
     BoxNew,
     RcNew,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RustReturnConversion {
+    #[default]
+    None,
+    BoxDeref,
 }
 
 #[derive(Debug)]
