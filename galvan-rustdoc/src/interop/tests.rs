@@ -651,6 +651,40 @@ fn rustdoc_imports_tuple_struct_fields() {
 }
 
 #[test]
+fn rustdoc_lifts_tuple_struct_wrapper_fields() {
+    let json = json!({
+        "index": {
+            "0": public_item("SharedTicket", json!({
+                "struct": {
+                    "kind": "tuple",
+                    "fields": ["1", "2"]
+                }
+            })),
+            "1": public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
+            "2": public_field(
+                "1",
+                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketState", vec![])])])
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Tuple(shared_ticket) = imported_type(&interop, "SharedTicket") else {
+        panic!("expected SharedTicket tuple struct");
+    };
+    assert_eq!(shared_ticket.members.len(), 2);
+    assert_eq!(
+        shared_ticket.members[0].r#type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+    assert_eq!(
+        shared_ticket.members[1].r#type,
+        plain_type(TypeIdent::new("TicketState"))
+    );
+}
+
+#[test]
 fn rustdoc_imports_enum_variants() {
     let json = json!({
         "index": {
@@ -703,6 +737,55 @@ fn rustdoc_imports_enum_variants() {
     assert_eq!(event.members[2].fields[0].name, Some(Ident::new("reason")));
     assert!(matches!(
         event.members[2].fields[0].r#type,
+        TypeElement::Optional(_)
+    ));
+}
+
+#[test]
+fn rustdoc_lifts_enum_variant_wrapper_fields() {
+    let json = json!({
+        "index": {
+            "0": public_item("TicketEvent", json!({
+                "enum": {
+                    "variants": ["1", "3"]
+                }
+            })),
+            "1": public_item("Assigned", json!({
+                "variant": {
+                    "kind": {
+                        "tuple": {
+                            "fields": ["2"]
+                        }
+                    }
+                }
+            })),
+            "2": public_field("0", resolved("Rc", vec![resolved("User", vec![])])),
+            "3": public_item("Moved", json!({
+                "variant": {
+                    "kind": {
+                        "struct": {
+                            "fields": ["4"]
+                        }
+                    }
+                }
+            })),
+            "4": public_field("queue", resolved("Option", vec![primitive("str")]))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Enum(event) = imported_type(&interop, "TicketEvent") else {
+        panic!("expected TicketEvent enum");
+    };
+    assert_eq!(event.members.len(), 2);
+    assert_eq!(
+        event.members[0].fields[0].r#type,
+        plain_type(TypeIdent::new("User"))
+    );
+    assert_eq!(event.members[1].fields[0].name, Some(Ident::new("queue")));
+    assert!(matches!(
+        event.members[1].fields[0].r#type,
         TypeElement::Optional(_)
     ));
 }

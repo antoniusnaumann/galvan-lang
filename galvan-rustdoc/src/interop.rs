@@ -532,8 +532,9 @@ impl RustInterop {
         field: &Value,
     ) -> Option<TupleTypeMember> {
         let field_type = item_inner(field, "struct_field")?;
+        let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
         Some(TupleTypeMember {
-            r#type: self.type_from_json(crate_name, field_type)?,
+            r#type: lifted.ty,
             span: Span::default(),
         })
     }
@@ -615,9 +616,10 @@ impl RustInterop {
         field: &Value,
     ) -> Option<EnumVariantField> {
         let field_type = item_inner(field, "struct_field")?;
+        let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
         Some(EnumVariantField {
             name,
-            r#type: self.type_from_json(crate_name, field_type)?,
+            r#type: lifted.ty,
             span: Span::default(),
         })
     }
