@@ -168,6 +168,7 @@ impl RustInterop {
             name: TypeIdent::new(name),
             rust_path: rust_path.into(),
             field_conversions: Vec::new(),
+            constructor_arg_conversions: Vec::new(),
             decl: ToplevelItem {
                 item: decl,
                 source: Source::Builtin,
@@ -288,6 +289,27 @@ impl RustInterop {
             .unwrap_or_default()
     }
 
+    pub fn field_arg_conversion(&self, receiver: &TypeIdent, field: &Ident) -> RustArgConversion {
+        self.types
+            .iter()
+            .find(|ty| ty.name == *receiver)
+            .and_then(|ty| {
+                ty.field_conversions
+                    .iter()
+                    .find(|conversion| conversion.field == *field)
+            })
+            .map(|conversion| conversion.arg_conversion)
+            .unwrap_or_default()
+    }
+
+    pub fn constructor_arg_conversions(&self, receiver: &TypeIdent) -> Vec<RustArgConversion> {
+        self.types
+            .iter()
+            .find(|ty| ty.name == *receiver)
+            .map(|ty| ty.constructor_arg_conversions.clone())
+            .unwrap_or_default()
+    }
+
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
         if let Some(namespace) = namespace {
             return self
@@ -333,6 +355,7 @@ impl RustInterop {
             name: ident.clone(),
             rust_path: format!("::{crate_name}::{name}").into(),
             field_conversions: Vec::new(),
+            constructor_arg_conversions: Vec::new(),
             decl: ToplevelItem {
                 item: TypeDecl::Empty(EmptyTypeDecl {
                     visibility: Visibility::public(),
@@ -363,6 +386,7 @@ impl RustInterop {
             name: TypeIdent::new(name),
             rust_path,
             field_conversions: imported.field_conversions,
+            constructor_arg_conversions: imported.constructor_arg_conversions,
             decl: ToplevelItem {
                 item: imported.decl,
                 source: Source::Builtin,
@@ -403,6 +427,7 @@ impl RustInterop {
             name: TypeIdent::new(exported_name),
             rust_path,
             field_conversions: imported.field_conversions,
+            constructor_arg_conversions: imported.constructor_arg_conversions,
             decl: ToplevelItem {
                 item: imported.decl,
                 source: Source::Builtin,
@@ -459,17 +484,29 @@ impl RustInterop {
         let field_ids = item_ids(struct_item, "fields");
         let kind = struct_item.get("kind").and_then(Value::as_str);
         if kind == Some("tuple") {
-            let members = field_ids
+            let lifted_members = field_ids
                 .into_iter()
                 .filter_map(|id| index.get(id))
                 .filter_map(|field| self.tuple_member_from_json(crate_name, field))
                 .collect::<Vec<_>>();
-            return Some(ImportedTypeDecl::new(TypeDecl::Tuple(TupleTypeDecl {
-                visibility: Visibility::public(),
-                ident: TypeIdent::new(name),
-                members,
-                span: Span::default(),
-            })));
+            let constructor_arg_conversions = lifted_members
+                .iter()
+                .map(|member| member.arg_conversion)
+                .collect::<Vec<_>>();
+            let members = lifted_members
+                .into_iter()
+                .map(|member| member.member)
+                .collect::<Vec<_>>();
+            return Some(ImportedTypeDecl {
+                decl: TypeDecl::Tuple(TupleTypeDecl {
+                    visibility: Visibility::public(),
+                    ident: TypeIdent::new(name),
+                    members,
+                    span: Span::default(),
+                }),
+                field_conversions: Vec::new(),
+                constructor_arg_conversions,
+            });
         }
 
         let lifted_members = field_ids
@@ -484,6 +521,7 @@ impl RustInterop {
             if member.return_conversion != RustReturnConversion::None {
                 field_conversions.push(RustFieldConversion {
                     field: member.member.ident.clone(),
+                    arg_conversion: member.arg_conversion,
                     return_conversion: member.return_conversion,
                 });
             }
@@ -502,6 +540,7 @@ impl RustInterop {
                 span: Span::default(),
             }),
             field_conversions,
+            constructor_arg_conversions: Vec::new(),
         })
     }
 
@@ -522,6 +561,7 @@ impl RustInterop {
                 default_value: None,
                 span: Span::default(),
             },
+            arg_conversion: member_arg_conversion(lifted.return_conversion),
             return_conversion: lifted.return_conversion,
         })
     }
@@ -530,12 +570,15 @@ impl RustInterop {
         &mut self,
         crate_name: &str,
         field: &Value,
-    ) -> Option<TupleTypeMember> {
+    ) -> Option<LiftedTupleMember> {
         let field_type = item_inner(field, "struct_field")?;
         let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
-        Some(TupleTypeMember {
-            r#type: lifted.ty,
-            span: Span::default(),
+        Some(LiftedTupleMember {
+            member: TupleTypeMember {
+                r#type: lifted.ty,
+                span: Span::default(),
+            },
+            arg_conversion: member_arg_conversion(lifted.return_conversion),
         })
     }
 
@@ -1355,6 +1398,7 @@ struct ImportedFunctionDecl {
 struct ImportedTypeDecl {
     decl: TypeDecl,
     field_conversions: Vec<RustFieldConversion>,
+    constructor_arg_conversions: Vec<RustArgConversion>,
 }
 
 impl ImportedTypeDecl {
@@ -1362,6 +1406,7 @@ impl ImportedTypeDecl {
         Self {
             decl,
             field_conversions: Vec::new(),
+            constructor_arg_conversions: Vec::new(),
         }
     }
 
@@ -1373,7 +1418,14 @@ impl ImportedTypeDecl {
 #[derive(Debug)]
 struct LiftedStructMember {
     member: StructTypeMember,
+    arg_conversion: RustArgConversion,
     return_conversion: RustReturnConversion,
+}
+
+#[derive(Debug)]
+struct LiftedTupleMember {
+    member: TupleTypeMember,
+    arg_conversion: RustArgConversion,
 }
 
 #[derive(Clone, Debug)]
@@ -1438,6 +1490,14 @@ fn imported_crates(uses: &[ToplevelItem<UseDecl>]) -> HashSet<String> {
         .filter_map(|use_decl| use_decl.path.segments.first())
         .map(|segment| segment.as_str().to_string())
         .collect()
+}
+
+fn member_arg_conversion(return_conversion: RustReturnConversion) -> RustArgConversion {
+    match return_conversion {
+        RustReturnConversion::None => RustArgConversion::None,
+        RustReturnConversion::BoxDeref => RustArgConversion::BoxNew,
+        RustReturnConversion::RcCloneDeref => RustArgConversion::RcNew,
+    }
 }
 
 fn inner<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {

@@ -449,6 +449,23 @@ fn transpile_rust_argument(
     errors: &mut ErrorCollector,
 ) -> String {
     let rendered = argument.transpile(ctx, errors);
+    apply_rust_arg_conversion_for_expr(rendered, argument, conversion)
+}
+
+fn apply_rust_arg_conversion(rendered: String, conversion: RustArgConversion) -> String {
+    match conversion {
+        RustArgConversion::None => rendered,
+        RustArgConversion::SharedBorrow => format!("&{rendered}"),
+        RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
+        RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
+    }
+}
+
+fn apply_rust_arg_conversion_for_expr(
+    rendered: String,
+    argument: &HirExpression,
+    conversion: RustArgConversion,
+) -> String {
     match conversion {
         RustArgConversion::None => rendered,
         RustArgConversion::SharedBorrow
@@ -459,9 +476,7 @@ fn transpile_rust_argument(
         {
             rendered
         }
-        RustArgConversion::SharedBorrow => format!("&{rendered}"),
-        RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
-        RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
+        conversion => apply_rust_arg_conversion(rendered, conversion),
     }
 }
 
@@ -529,7 +544,10 @@ impl Transpile for HirConstructorCall {
             let args = self
                 .args
                 .iter()
-                .map(|argument| argument.value.transpile(ctx, errors))
+                .map(|argument| {
+                    let value = argument.value.transpile(ctx, errors);
+                    apply_rust_arg_conversion(value, argument.rust_arg_conversion)
+                })
                 .join(", ");
             return format!("{ident}({args})");
         }
@@ -548,6 +566,7 @@ impl Transpile for HirConstructorCall {
                 } else {
                     value
                 };
+                let value = apply_rust_arg_conversion(value, argument.rust_arg_conversion);
                 format!("{}: {}", sanitize_name(argument.field.as_str()), value)
             })
             .join(", ");
@@ -934,12 +953,80 @@ mod tests {
                     Span::default(),
                 ),
                 store_as_ref: false,
+                rust_arg_conversion: RustArgConversion::None,
             }],
         };
         let ctx = Context::new(Mapping::default());
         let mut errors = ErrorCollector::new();
 
         assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn tuple_struct_constructors_apply_rust_argument_conversions() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("TicketPair"),
+            kind: HirConstructorKind::Tuple,
+            args: vec![
+                HirConstructorArg {
+                    field: Ident::new("first"),
+                    value: HirExpression::new(
+                        HirExpressionKind::Variable(Ident::new("first")),
+                        TypeElement::infer(),
+                        Ownership::UniqueOwned,
+                        Span::default(),
+                    ),
+                    store_as_ref: false,
+                    rust_arg_conversion: RustArgConversion::BoxNew,
+                },
+                HirConstructorArg {
+                    field: Ident::new("second"),
+                    value: HirExpression::new(
+                        HirExpressionKind::Variable(Ident::new("second")),
+                        TypeElement::infer(),
+                        Ownership::UniqueOwned,
+                        Span::default(),
+                    ),
+                    store_as_ref: false,
+                    rust_arg_conversion: RustArgConversion::RcNew,
+                },
+            ],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketPair(::std::boxed::Box::new(first), ::std::rc::Rc::new(second))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn struct_constructors_apply_rust_argument_conversions() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("TicketEnvelope"),
+            kind: HirConstructorKind::Struct,
+            args: vec![HirConstructorArg {
+                field: Ident::new("ticket"),
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("ticket")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                store_as_ref: false,
+                rust_arg_conversion: RustArgConversion::BoxNew,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketEnvelope { ticket: ::std::boxed::Box::new(ticket) }"
+        );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 

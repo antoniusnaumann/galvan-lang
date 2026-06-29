@@ -2778,6 +2778,9 @@ impl Checker<'_> {
                         field: member.ident.clone(),
                         value,
                         store_as_ref: is_ref_field,
+                        rust_arg_conversion: self
+                            .rust_interop
+                            .field_arg_conversion(&decl.ident, &member.ident),
                     });
                 }
                 args
@@ -2792,11 +2795,15 @@ impl Checker<'_> {
                     });
                 }
 
+                let rust_arg_conversions = self
+                    .rust_interop
+                    .constructor_arg_conversions(&constructor.identifier);
                 let args = constructor
                     .arguments
                     .iter()
                     .zip(&decl.members)
-                    .map(|(argument, member)| {
+                    .enumerate()
+                    .map(|(idx, (argument, member))| {
                         let value = self.lower_modified_value(
                             &argument.expression,
                             argument.modifier,
@@ -2814,6 +2821,10 @@ impl Checker<'_> {
                             field: argument.ident.clone(),
                             value,
                             store_as_ref: false,
+                            rust_arg_conversion: rust_arg_conversions
+                                .get(idx)
+                                .copied()
+                                .unwrap_or_default(),
                         }
                     })
                     .collect();
@@ -2834,6 +2845,7 @@ impl Checker<'_> {
                         field: argument.ident.clone(),
                         value,
                         store_as_ref: false,
+                        rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
                     }
                 })
                 .collect(),

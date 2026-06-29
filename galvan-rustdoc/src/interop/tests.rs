@@ -553,6 +553,10 @@ fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
         interop.field_return_conversion(&TypeIdent::new("TicketEnvelope"), &ident("ticket")),
         RustReturnConversion::BoxDeref
     );
+    assert_eq!(
+        interop.field_arg_conversion(&TypeIdent::new("TicketEnvelope"), &ident("ticket")),
+        RustArgConversion::BoxNew
+    );
 }
 
 #[test]
@@ -583,6 +587,10 @@ fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
         RustReturnConversion::RcCloneDeref
+    );
+    assert_eq!(
+        interop.field_arg_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
+        RustArgConversion::RcNew
     );
 }
 
@@ -681,6 +689,10 @@ fn rustdoc_lifts_tuple_struct_wrapper_fields() {
     assert_eq!(
         shared_ticket.members[1].r#type,
         plain_type(TypeIdent::new("TicketState"))
+    );
+    assert_eq!(
+        interop.constructor_arg_conversions(&TypeIdent::new("SharedTicket")),
+        vec![RustArgConversion::BoxNew, RustArgConversion::None]
     );
 }
 

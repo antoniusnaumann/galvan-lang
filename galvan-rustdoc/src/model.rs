@@ -6,6 +6,7 @@ pub struct RustTypeDecl {
     pub name: TypeIdent,
     pub rust_path: Box<str>,
     pub field_conversions: Vec<RustFieldConversion>,
+    pub constructor_arg_conversions: Vec<RustArgConversion>,
     pub decl: ToplevelItem<TypeDecl>,
 }
 
@@ -39,6 +40,7 @@ pub enum RustReturnConversion {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustFieldConversion {
     pub field: Ident,
+    pub arg_conversion: RustArgConversion,
     pub return_conversion: RustReturnConversion,
 }
 

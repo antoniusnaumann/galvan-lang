@@ -101,8 +101,8 @@ commands remain subcommands.
     Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
     `Arc<Mutex<T>>` / `Arc<Atomic*>`, parameter-side `Box<T>` / `Rc<T>`,
     return-side `Box<T>` / `Rc<T>`, and named-struct field-side `Box<T>` /
-    `Rc<T>`) to cover constructor and pattern codegen conversions for
-    wrapper-lifted tuple struct and enum variant payloads
+    `Rc<T>`) to cover enum constructor and pattern codegen conversions for
+    wrapper-lifted enum variant payloads
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
