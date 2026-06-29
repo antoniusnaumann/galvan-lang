@@ -6,6 +6,6 @@ mod model;
 pub use error::RustdocError;
 pub use interop::RustInterop;
 pub use model::{
-    RustArgConversion, RustConstantDecl, RustFieldConversion, RustFunctionDecl,
-    RustReturnConversion, RustTypeDecl,
+    RustArgConversion, RustConstantDecl, RustEnumVariantArgConversion, RustEnumVariantConversion,
+    RustFieldConversion, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
 };

@@ -14,8 +14,8 @@ use galvan_files::Source;
 
 use crate::cache::RustdocCache;
 use crate::model::{
-    RustArgConversion, RustConstantDecl, RustFieldConversion, RustFunctionDecl,
-    RustReturnConversion, RustTypeDecl,
+    RustArgConversion, RustConstantDecl, RustEnumVariantArgConversion, RustEnumVariantConversion,
+    RustFieldConversion, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
 };
 use crate::RustdocError;
 
@@ -169,6 +169,7 @@ impl RustInterop {
             rust_path: rust_path.into(),
             field_conversions: Vec::new(),
             constructor_arg_conversions: Vec::new(),
+            enum_variant_conversions: Vec::new(),
             decl: ToplevelItem {
                 item: decl,
                 source: Source::Builtin,
@@ -310,6 +311,34 @@ impl RustInterop {
             .unwrap_or_default()
     }
 
+    pub fn enum_variant_arg_conversion(
+        &self,
+        receiver: &TypeIdent,
+        variant: &TypeIdent,
+        index: usize,
+        field: Option<&Ident>,
+    ) -> RustArgConversion {
+        self.types
+            .iter()
+            .find(|ty| ty.name == *receiver)
+            .and_then(|ty| {
+                ty.enum_variant_conversions
+                    .iter()
+                    .find(|conversion| conversion.variant == *variant)
+            })
+            .and_then(|conversion| {
+                if let Some(field) = field {
+                    return conversion
+                        .args
+                        .iter()
+                        .find(|arg| arg.field.as_ref() == Some(field));
+                }
+                conversion.args.get(index)
+            })
+            .map(|conversion| conversion.arg_conversion)
+            .unwrap_or_default()
+    }
+
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
         if let Some(namespace) = namespace {
             return self
@@ -356,6 +385,7 @@ impl RustInterop {
             rust_path: format!("::{crate_name}::{name}").into(),
             field_conversions: Vec::new(),
             constructor_arg_conversions: Vec::new(),
+            enum_variant_conversions: Vec::new(),
             decl: ToplevelItem {
                 item: TypeDecl::Empty(EmptyTypeDecl {
                     visibility: Visibility::public(),
@@ -387,6 +417,7 @@ impl RustInterop {
             rust_path,
             field_conversions: imported.field_conversions,
             constructor_arg_conversions: imported.constructor_arg_conversions,
+            enum_variant_conversions: imported.enum_variant_conversions,
             decl: ToplevelItem {
                 item: imported.decl,
                 source: Source::Builtin,
@@ -428,6 +459,7 @@ impl RustInterop {
             rust_path,
             field_conversions: imported.field_conversions,
             constructor_arg_conversions: imported.constructor_arg_conversions,
+            enum_variant_conversions: imported.enum_variant_conversions,
             decl: ToplevelItem {
                 item: imported.decl,
                 source: Source::Builtin,
@@ -447,9 +479,7 @@ impl RustInterop {
             return self.struct_decl_from_json(crate_name, name, struct_item, index);
         }
         if let Some(enum_item) = inner.get("enum") {
-            return Some(ImportedTypeDecl::new(
-                self.enum_decl_from_json(crate_name, name, enum_item, index),
-            ));
+            return Some(self.enum_decl_from_json(crate_name, name, enum_item, index));
         }
         if let Some(alias_item) = inner.get("type_alias") {
             return self
@@ -506,6 +536,7 @@ impl RustInterop {
                 }),
                 field_conversions: Vec::new(),
                 constructor_arg_conversions,
+                enum_variant_conversions: Vec::new(),
             });
         }
 
@@ -541,6 +572,7 @@ impl RustInterop {
             }),
             field_conversions,
             constructor_arg_conversions: Vec::new(),
+            enum_variant_conversions: Vec::new(),
         })
     }
 
@@ -588,19 +620,39 @@ impl RustInterop {
         name: &str,
         enum_item: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> TypeDecl {
-        let members = item_ids(enum_item, "variants")
+    ) -> ImportedTypeDecl {
+        let lifted_members = item_ids(enum_item, "variants")
             .into_iter()
             .filter_map(|id| index.get(id))
             .filter_map(|variant| self.enum_member_from_json(crate_name, variant, index))
             .collect::<Vec<_>>();
+        let mut members = Vec::new();
+        let mut enum_variant_conversions = Vec::new();
+        for member in lifted_members {
+            if member
+                .arg_conversions
+                .iter()
+                .any(|arg| arg.arg_conversion != RustArgConversion::None)
+            {
+                enum_variant_conversions.push(RustEnumVariantConversion {
+                    variant: member.member.ident.clone(),
+                    args: member.arg_conversions,
+                });
+            }
+            members.push(member.member);
+        }
 
-        TypeDecl::Enum(EnumTypeDecl {
-            visibility: Visibility::public(),
-            ident: TypeIdent::new(name),
-            members,
-            span: Span::default(),
-        })
+        ImportedTypeDecl {
+            decl: TypeDecl::Enum(EnumTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new(name),
+                members,
+                span: Span::default(),
+            }),
+            field_conversions: Vec::new(),
+            constructor_arg_conversions: Vec::new(),
+            enum_variant_conversions,
+        }
     }
 
     fn enum_member_from_json(
@@ -608,19 +660,31 @@ impl RustInterop {
         crate_name: &str,
         variant: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> Option<EnumTypeMember> {
+    ) -> Option<LiftedEnumMember> {
         let name = variant.get("name").and_then(Value::as_str)?;
         let variant = item_inner(variant, "variant")?;
-        let fields = match variant.get("kind") {
+        let lifted_fields = match variant.get("kind") {
             Some(Value::String(kind)) if kind == "plain" => Vec::new(),
             Some(kind) => self.enum_variant_fields_from_kind(crate_name, kind, index),
             None => Vec::new(),
         };
+        let mut fields = Vec::new();
+        let mut arg_conversions = Vec::new();
+        for field in lifted_fields {
+            arg_conversions.push(RustEnumVariantArgConversion {
+                field: field.field.name.clone(),
+                arg_conversion: field.arg_conversion,
+            });
+            fields.push(field.field);
+        }
 
-        Some(EnumTypeMember {
-            ident: TypeIdent::new(name),
-            fields,
-            span: Span::default(),
+        Some(LiftedEnumMember {
+            member: EnumTypeMember {
+                ident: TypeIdent::new(name),
+                fields,
+                span: Span::default(),
+            },
+            arg_conversions,
         })
     }
 
@@ -629,7 +693,7 @@ impl RustInterop {
         crate_name: &str,
         kind: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> Vec<EnumVariantField> {
+    ) -> Vec<LiftedEnumVariantField> {
         if let Some(tuple) = inner(kind, "tuple") {
             return item_ids(tuple, "fields")
                 .into_iter()
@@ -657,13 +721,16 @@ impl RustInterop {
         crate_name: &str,
         name: Option<Ident>,
         field: &Value,
-    ) -> Option<EnumVariantField> {
+    ) -> Option<LiftedEnumVariantField> {
         let field_type = item_inner(field, "struct_field")?;
         let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
-        Some(EnumVariantField {
-            name,
-            r#type: lifted.ty,
-            span: Span::default(),
+        Some(LiftedEnumVariantField {
+            field: EnumVariantField {
+                name,
+                r#type: lifted.ty,
+                span: Span::default(),
+            },
+            arg_conversion: member_arg_conversion(lifted.return_conversion),
         })
     }
 
@@ -1399,6 +1466,7 @@ struct ImportedTypeDecl {
     decl: TypeDecl,
     field_conversions: Vec<RustFieldConversion>,
     constructor_arg_conversions: Vec<RustArgConversion>,
+    enum_variant_conversions: Vec<RustEnumVariantConversion>,
 }
 
 impl ImportedTypeDecl {
@@ -1407,6 +1475,7 @@ impl ImportedTypeDecl {
             decl,
             field_conversions: Vec::new(),
             constructor_arg_conversions: Vec::new(),
+            enum_variant_conversions: Vec::new(),
         }
     }
 
@@ -1425,6 +1494,18 @@ struct LiftedStructMember {
 #[derive(Debug)]
 struct LiftedTupleMember {
     member: TupleTypeMember,
+    arg_conversion: RustArgConversion,
+}
+
+#[derive(Debug)]
+struct LiftedEnumMember {
+    member: EnumTypeMember,
+    arg_conversions: Vec<RustEnumVariantArgConversion>,
+}
+
+#[derive(Debug)]
+struct LiftedEnumVariantField {
+    field: EnumVariantField,
     arg_conversion: RustArgConversion,
 }
 

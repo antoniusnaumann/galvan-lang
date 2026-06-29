@@ -554,6 +554,7 @@ pub struct HirEnumConstructor {
 pub struct HirEnumConstructorArg {
     pub field: Option<Ident>,
     pub value: HirExpression,
+    pub rust_arg_conversion: galvan_rustdoc::RustArgConversion,
 }
 
 #[derive(Clone, Debug)]

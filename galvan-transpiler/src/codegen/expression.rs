@@ -603,7 +603,10 @@ impl Transpile for HirEnumConstructor {
             let args = self
                 .args
                 .iter()
-                .map(|argument| argument.value.transpile(ctx, errors))
+                .map(|argument| {
+                    let value = argument.value.transpile(ctx, errors);
+                    apply_rust_arg_conversion(value, argument.rust_arg_conversion)
+                })
                 .join(", ");
             format!("{access}({args})")
         } else {
@@ -611,12 +614,15 @@ impl Transpile for HirEnumConstructor {
                 .args
                 .iter()
                 .map(|argument| match &argument.field {
-                    Some(field) => format!(
-                        "{}: {}",
-                        field.as_str(),
-                        argument.value.transpile(ctx, errors)
-                    ),
-                    None => argument.value.transpile(ctx, errors),
+                    Some(field) => {
+                        let value = argument.value.transpile(ctx, errors);
+                        let value = apply_rust_arg_conversion(value, argument.rust_arg_conversion);
+                        format!("{}: {}", field.as_str(), value)
+                    }
+                    None => {
+                        let value = argument.value.transpile(ctx, errors);
+                        apply_rust_arg_conversion(value, argument.rust_arg_conversion)
+                    }
                 })
                 .join(", ");
             format!("{access} {{ {args} }}")
@@ -1026,6 +1032,58 @@ mod tests {
         assert_eq!(
             constructor.transpile(&ctx, &mut errors),
             "TicketEnvelope { ticket: ::std::boxed::Box::new(ticket) }"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn tuple_enum_constructors_apply_rust_argument_conversions() {
+        let constructor = HirEnumConstructor {
+            target: TypeIdent::new("TicketEvent"),
+            case: TypeIdent::new("Assigned"),
+            args: vec![HirEnumConstructorArg {
+                field: None,
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("user")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                rust_arg_conversion: RustArgConversion::RcNew,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketEvent::Assigned(::std::rc::Rc::new(user))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn named_enum_constructors_apply_rust_argument_conversions() {
+        let constructor = HirEnumConstructor {
+            target: TypeIdent::new("TicketEvent"),
+            case: TypeIdent::new("Moved"),
+            args: vec![HirEnumConstructorArg {
+                field: Some(Ident::new("owner")),
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("owner")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                rust_arg_conversion: RustArgConversion::BoxNew,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketEvent::Moved { owner: ::std::boxed::Box::new(owner) }"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }

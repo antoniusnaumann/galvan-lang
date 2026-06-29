@@ -776,12 +776,13 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
                 "variant": {
                     "kind": {
                         "struct": {
-                            "fields": ["4"]
+                            "fields": ["4", "5"]
                         }
                     }
                 }
             })),
-            "4": public_field("queue", resolved("Option", vec![primitive("str")]))
+            "4": public_field("queue", resolved("Option", vec![primitive("str")])),
+            "5": public_field("owner", resolved("Box", vec![resolved("User", vec![])]))
         }
     });
     let mut interop = RustInterop::empty();
@@ -800,6 +801,29 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
         event.members[1].fields[0].r#type,
         TypeElement::Optional(_)
     ));
+    assert_eq!(event.members[1].fields[1].name, Some(Ident::new("owner")));
+    assert_eq!(
+        event.members[1].fields[1].r#type,
+        plain_type(TypeIdent::new("User"))
+    );
+    assert_eq!(
+        interop.enum_variant_arg_conversion(
+            &TypeIdent::new("TicketEvent"),
+            &TypeIdent::new("Assigned"),
+            0,
+            None,
+        ),
+        RustArgConversion::RcNew
+    );
+    assert_eq!(
+        interop.enum_variant_arg_conversion(
+            &TypeIdent::new("TicketEvent"),
+            &TypeIdent::new("Moved"),
+            1,
+            Some(&ident("owner")),
+        ),
+        RustArgConversion::BoxNew
+    );
 }
 
 #[test]

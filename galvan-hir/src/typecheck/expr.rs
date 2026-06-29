@@ -2871,7 +2871,8 @@ impl Checker<'_> {
         let args = constructor
             .arguments
             .iter()
-            .map(|argument| {
+            .enumerate()
+            .map(|(idx, argument)| {
                 let value = self.lower_expression(&argument.expression, &Expected::free());
                 let value = match (&argument.field_name, &argument.modifier) {
                     (None, Some(DeclModifier::Mut)) => value.adjusted(Adjustment::MutBorrow),
@@ -2883,6 +2884,12 @@ impl Checker<'_> {
                 HirEnumConstructorArg {
                     field: argument.field_name.clone(),
                     value,
+                    rust_arg_conversion: self.rust_interop.enum_variant_arg_conversion(
+                        &constructor.enum_access.target,
+                        &constructor.enum_access.case,
+                        idx,
+                        argument.field_name.as_ref(),
+                    ),
                 }
             })
             .collect();
