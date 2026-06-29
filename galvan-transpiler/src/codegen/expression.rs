@@ -1,11 +1,12 @@
 use itertools::Itertools;
 
 use galvan_ast::{
-    ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, RangeOperator,
-    TypeElement,
+    ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
+    RangeOperator, TypeElement,
 };
 use galvan_hir::hir::*;
 use galvan_resolver::Lookup;
+use galvan_rustdoc::RustArgConversion;
 
 use crate::context::Context;
 use crate::macros::transpile;
@@ -337,11 +338,12 @@ impl Transpile for HirPrint {
 
 impl Transpile for HirFunctionCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        let args = self
-            .args
-            .iter()
-            .map(|argument| argument.transpile(ctx, errors))
-            .join(", ");
+        let args = transpile_rust_arguments(
+            &self.args,
+            self.rust_arg_conversions.as_slice(),
+            ctx,
+            errors,
+        );
         if let Some(rust_path) = &self.rust_path {
             return format!("{rust_path}({args})");
         }
@@ -371,12 +373,15 @@ impl Transpile for HirMethodCall {
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
 
         if let Some(rust_path) = &self.rust_path {
+            let receiver =
+                transpile_rust_argument(&self.receiver, self.rust_receiver_conversion, ctx, errors);
             let args = std::iter::once(receiver)
-                .chain(
-                    self.args
-                        .iter()
-                        .map(|argument| argument.transpile(ctx, errors)),
-                )
+                .chain(transpile_rust_arguments_vec(
+                    &self.args,
+                    self.rust_arg_conversions.as_slice(),
+                    ctx,
+                    errors,
+                ))
                 .join(", ");
             return format!("{rust_path}({args})");
         }
@@ -404,6 +409,55 @@ impl Transpile for HirMethodCall {
         }
 
         format!("{}.{}({})", receiver, ident, args)
+    }
+}
+
+fn transpile_rust_arguments(
+    args: &[HirExpression],
+    conversions: &[RustArgConversion],
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    transpile_rust_arguments_vec(args, conversions, ctx, errors).join(", ")
+}
+
+fn transpile_rust_arguments_vec(
+    args: &[HirExpression],
+    conversions: &[RustArgConversion],
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> Vec<String> {
+    args.iter()
+        .enumerate()
+        .map(|(idx, argument)| {
+            transpile_rust_argument(
+                argument,
+                conversions.get(idx).copied().unwrap_or_default(),
+                ctx,
+                errors,
+            )
+        })
+        .collect()
+}
+
+fn transpile_rust_argument(
+    argument: &HirExpression,
+    conversion: RustArgConversion,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let rendered = argument.transpile(ctx, errors);
+    match conversion {
+        RustArgConversion::None => rendered,
+        RustArgConversion::SharedBorrow
+            if matches!(
+                argument.adjusted_ownership(),
+                Ownership::Borrowed | Ownership::MutBorrowed
+            ) =>
+        {
+            rendered
+        }
+        RustArgConversion::SharedBorrow => format!("&{rendered}"),
     }
 }
 
@@ -873,6 +927,31 @@ mod tests {
         let mut errors = ErrorCollector::new();
 
         assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_shared_borrow_argument_conversions() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::takes_ref".into()),
+            rust_arg_conversions: vec![RustArgConversion::SharedBorrow],
+            ident: Ident::new("takes_ref"),
+            labels: Vec::new(),
+            args: vec![HirExpression::new(
+                HirExpressionKind::Literal(HirLiteral::Number("42".to_string())),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("U64"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            )],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(call.transpile(&ctx, &mut errors), "::demo::takes_ref(&42)");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 }

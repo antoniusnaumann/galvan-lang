@@ -104,9 +104,9 @@ commands remain subcommands.
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
-  - Infer all Galvan passing modes from lifted Rust signatures, including
-    wrapper conversions at call boundaries and the remaining mutable
-    receiver/argument cases not covered by rustdoc mutable borrowed refs
+  - Infer all Galvan passing modes from lifted Rust signatures beyond mutable
+    and shared borrowed refs, including wrapper conversions at call boundaries
+    and the remaining receiver/argument cases not yet covered by rustdoc import
   - Improve generic substitution and trait-bound handling for external Rust APIs
   - Preserve namespace/module paths on imported data declarations so
     same-named types from different Rust modules do not collapse together

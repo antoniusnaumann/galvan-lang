@@ -324,6 +324,8 @@ impl Checker<'_> {
                         receiver_modifier: modifier,
                         namespace,
                         rust_path: None,
+                        rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                        rust_arg_conversions: Vec::new(),
                         ident: ident.clone(),
                         labels,
                         args,
@@ -332,6 +334,7 @@ impl Checker<'_> {
                 None => HirExpressionKind::FunctionCall(HirFunctionCall {
                     namespace,
                     rust_path: None,
+                    rust_arg_conversions: Vec::new(),
                     ident: ident.clone(),
                     labels,
                     args,
@@ -350,6 +353,7 @@ impl Checker<'_> {
                         HirExpressionKind::FunctionCall(HirFunctionCall {
                             namespace: None,
                             rust_path: None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: Vec::new(),
                             args,
@@ -419,6 +423,8 @@ impl Checker<'_> {
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
                             rust_path: None,
+                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: receiver_labels,
                             args,
@@ -451,6 +457,8 @@ impl Checker<'_> {
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
                             rust_path: None,
+                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -459,6 +467,7 @@ impl Checker<'_> {
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
                         rust_path: None,
+                        rust_arg_conversions: Vec::new(),
                         ident: ident.clone(),
                         labels: labels.clone(),
                         args,
@@ -479,6 +488,8 @@ impl Checker<'_> {
                             receiver_modifier: modifier,
                             namespace: None,
                             rust_path: None,
+                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -487,6 +498,7 @@ impl Checker<'_> {
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
                         rust_path: None,
+                        rust_arg_conversions: Vec::new(),
                         ident: ident.clone(),
                         labels,
                         args,
@@ -509,6 +521,21 @@ impl Checker<'_> {
     ) -> HirExpression {
         let signature = function.decl.item.signature.clone();
         let args = self.lower_call_args(&signature.parameters.params, arguments);
+        let receiver_conversion = if signature.receiver().is_some() {
+            function
+                .arg_conversions
+                .first()
+                .copied()
+                .unwrap_or_default()
+        } else {
+            galvan_rustdoc::RustArgConversion::None
+        };
+        let arg_conversions = function
+            .arg_conversions
+            .iter()
+            .copied()
+            .skip(usize::from(signature.receiver().is_some()))
+            .collect::<Vec<_>>();
         let kind = match receiver {
             Some((receiver, modifier)) => {
                 let receiver =
@@ -520,6 +547,8 @@ impl Checker<'_> {
                         .and_then(|receiver| receiver.decl_modifier),
                     namespace,
                     rust_path: Some(function.rust_path.clone()),
+                    rust_receiver_conversion: receiver_conversion,
+                    rust_arg_conversions: arg_conversions,
                     ident: ident.clone(),
                     labels,
                     args,
@@ -528,6 +557,7 @@ impl Checker<'_> {
             None => HirExpressionKind::FunctionCall(HirFunctionCall {
                 namespace,
                 rust_path: Some(function.rust_path.clone()),
+                rust_arg_conversions: arg_conversions,
                 ident: ident.clone(),
                 labels,
                 args,
@@ -889,6 +919,7 @@ impl Checker<'_> {
             HirExpressionKind::FunctionCall(HirFunctionCall {
                 namespace: None,
                 rust_path: None,
+                rust_arg_conversions: Vec::new(),
                 ident: call.identifier.clone(),
                 labels: Vec::new(),
                 args,
