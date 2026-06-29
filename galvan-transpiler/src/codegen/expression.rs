@@ -458,6 +458,8 @@ fn transpile_rust_argument(
             rendered
         }
         RustArgConversion::SharedBorrow => format!("&{rendered}"),
+        RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
+        RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
     }
 }
 
@@ -952,6 +954,46 @@ mod tests {
         let mut errors = ErrorCollector::new();
 
         assert_eq!(call.transpile(&ctx, &mut errors), "::demo::takes_ref(&42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_owned_wrapper_argument_conversions() {
+        let args = vec![
+            HirExpression::new(
+                HirExpressionKind::Literal(HirLiteral::Number("42".to_string())),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("U64"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+            HirExpression::new(
+                HirExpressionKind::Variable(Ident::new("ticket")),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("Ticket"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+        ];
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::takes_wrappers".into()),
+            rust_arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
+            ident: Ident::new("takes_wrappers"),
+            labels: Vec::new(),
+            args,
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::demo::takes_wrappers(::std::boxed::Box::new(42), ::std::rc::Rc::new(ticket))"
+        );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 }

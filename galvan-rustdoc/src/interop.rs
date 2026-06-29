@@ -1021,7 +1021,9 @@ impl RustInterop {
         let pair = param.as_array()?;
         let name = pair.first().and_then(Value::as_str).unwrap_or("_");
         let ty = pair.get(1)?;
-        let lifted = self.lift_type_from_json(crate_name, ty)?;
+        let lifted = self
+            .lift_param_wrapper_type_from_json(crate_name, ty)
+            .or_else(|| self.lift_type_from_json(crate_name, ty))?;
         let decl_modifier = lifted.decl_modifier.or_else(|| {
             if type_is_owned(ty) {
                 Some(galvan_ast::DeclModifier::Move)
@@ -1041,6 +1043,24 @@ impl RustInterop {
             },
             arg_conversion: lifted.arg_conversion,
         })
+    }
+
+    fn lift_param_wrapper_type_from_json(
+        &mut self,
+        crate_name: &str,
+        ty: &Value,
+    ) -> Option<LiftedType> {
+        let resolved = inner(ty, "resolved_path")?;
+        let name = resolved.get("name").and_then(Value::as_str)?;
+        let conversion = match name {
+            "Box" => RustArgConversion::BoxNew,
+            "Rc" => RustArgConversion::RcNew,
+            _ => return None,
+        };
+        let arg = resolved_type_args(resolved).into_iter().next()?;
+        let mut lifted = self.lift_type_from_json(crate_name, arg)?;
+        lifted.arg_conversion = conversion;
+        Some(lifted)
     }
 
     fn impl_function_decl(

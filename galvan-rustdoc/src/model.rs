@@ -22,6 +22,8 @@ pub enum RustArgConversion {
     #[default]
     None,
     SharedBorrow,
+    BoxNew,
+    RcNew,
 }
 
 #[derive(Debug)]

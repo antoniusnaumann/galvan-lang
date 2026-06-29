@@ -99,14 +99,15 @@ commands remain subcommands.
     typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the first common cases (`Option<T>`,
     Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
-    and `Arc<Mutex<T>>` / `Arc<Atomic*>`) to cover generic wrapper-conversion
-    types such as `Box<T>` and `Rc<T>`
+    `Arc<Mutex<T>>` / `Arc<Atomic*>`, and parameter-side `Box<T>` / `Rc<T>`)
+    to cover return-side and field-side wrapper conversions
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
   - Infer all Galvan passing modes from lifted Rust signatures beyond mutable
-    and shared borrowed refs, including wrapper conversions at call boundaries
-    and the remaining receiver/argument cases not yet covered by rustdoc import
+    refs, shared borrowed refs, and parameter-side owned wrapper conversions,
+    including the remaining receiver/argument cases not yet covered by rustdoc
+    import
   - Improve generic substitution and trait-bound handling for external Rust APIs
   - Preserve namespace/module paths on imported data declarations so
     same-named types from different Rust modules do not collapse together

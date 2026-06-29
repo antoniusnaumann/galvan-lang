@@ -1,4 +1,3 @@
-
 use super::*;
 use serde_json::json;
 
@@ -433,6 +432,44 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
     assert_eq!(
         function.decl.item.signature.parameters.params[0].param_type,
         u64_type()
+    );
+}
+
+#[test]
+fn rustdoc_lifts_owned_wrapper_parameters_with_call_conversions() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "takes_box",
+                vec![json!(["value", resolved("Box", vec![primitive("u64")])])],
+                primitive("bool")
+            ),
+            "1": public_function(
+                "takes_rc",
+                vec![json!(["value", resolved("Rc", vec![resolved("Ticket", vec![])])])],
+                primitive("bool")
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let takes_box = interop
+        .function(Some("demo"), None, &ident("takes_box"), &[])
+        .expect("expected imported Box function");
+    assert_eq!(takes_box.arg_conversions, vec![RustArgConversion::BoxNew]);
+    assert_eq!(
+        takes_box.decl.item.signature.parameters.params[0].param_type,
+        u64_type()
+    );
+
+    let takes_rc = interop
+        .function(Some("demo"), None, &ident("takes_rc"), &[])
+        .expect("expected imported Rc function");
+    assert_eq!(takes_rc.arg_conversions, vec![RustArgConversion::RcNew]);
+    assert_eq!(
+        takes_rc.decl.item.signature.parameters.params[0].param_type,
+        plain_type(TypeIdent::new("Ticket"))
     );
 }
 
