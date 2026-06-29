@@ -8,6 +8,7 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
 use crate::features::{completion, diagnostics, goto_definition, hover};
+use crate::workspace::Crate;
 
 pub struct Backend {
     client: Client,
@@ -89,10 +90,12 @@ impl LanguageServer for Backend {
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let position = params.text_document_position_params;
-        let Some(document) = self.documents.get(&position.text_document.uri) else {
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
             return Ok(None);
         };
-        Ok(hover::hover(&document, position.position))
+        let krate = Crate::load(&uri, &self.documents);
+        Ok(hover::hover(&document, &krate, position.position))
     }
 
     async fn goto_definition(
@@ -100,21 +103,22 @@ impl LanguageServer for Backend {
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
         let position = params.text_document_position_params;
-        let uri = position.text_document.uri.clone();
+        let uri = position.text_document.uri;
         let Some(document) = self.documents.get(&uri) else {
             return Ok(None);
         };
-        Ok(goto_definition::goto_definition(&document, uri, position.position)
-            .map(GotoDefinitionResponse::Scalar))
+        let krate = Crate::load(&uri, &self.documents);
+        Ok(
+            goto_definition::goto_definition(&document, &krate, position.position)
+                .map(GotoDefinitionResponse::Scalar),
+        )
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
-            return Ok(None);
-        };
+        let krate = Crate::load(&uri, &self.documents);
         Ok(Some(CompletionResponse::Array(completion::completion(
-            &document,
+            &krate,
         ))))
     }
 }

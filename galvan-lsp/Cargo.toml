@@ -9,7 +9,7 @@ license.workspace = true
 
 [dependencies]
 galvan-ast.workspace = true
-galvan-files.workspace = true
+galvan-files = { workspace = true, features = ["exec"] }
 galvan-into-ast.workspace = true
 galvan-parse.workspace = true
 galvan-resolver.workspace = true

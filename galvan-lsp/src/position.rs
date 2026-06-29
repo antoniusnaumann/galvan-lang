@@ -72,12 +72,17 @@ impl LineIndex {
         }
     }
 
+    /// Convert a byte range into an LSP range.
+    pub fn byte_range(&self, text: &str, start: usize, end: usize) -> Range {
+        Range {
+            start: self.position(text, start),
+            end: self.position(text, end),
+        }
+    }
+
     /// Convert a Galvan byte-range span into an LSP range.
     pub fn range(&self, text: &str, span: Span) -> Range {
-        Range {
-            start: self.position(text, span.range.0),
-            end: self.position(text, span.range.1),
-        }
+        self.byte_range(text, span.range.0, span.range.1)
     }
 }
 

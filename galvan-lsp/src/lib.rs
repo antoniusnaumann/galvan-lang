@@ -15,5 +15,6 @@ pub mod document;
 pub mod features;
 pub mod position;
 pub mod server;
+pub mod workspace;
 
 pub use server::Backend;
