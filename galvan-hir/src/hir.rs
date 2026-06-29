@@ -492,6 +492,7 @@ pub struct HirRustConstant {
 #[derive(Clone, Debug)]
 pub struct HirFieldAccess {
     pub receiver: HirExpression,
+    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
     pub field: Ident,
 }
 

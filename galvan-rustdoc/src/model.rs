@@ -5,6 +5,7 @@ pub struct RustTypeDecl {
     pub namespace: Box<str>,
     pub name: TypeIdent,
     pub rust_path: Box<str>,
+    pub field_conversions: Vec<RustFieldConversion>,
     pub decl: ToplevelItem<TypeDecl>,
 }
 
@@ -32,6 +33,12 @@ pub enum RustReturnConversion {
     #[default]
     None,
     BoxDeref,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RustFieldConversion {
+    pub field: Ident,
+    pub return_conversion: RustReturnConversion,
 }
 
 #[derive(Debug)]

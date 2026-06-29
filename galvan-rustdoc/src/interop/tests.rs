@@ -498,6 +498,37 @@ fn rustdoc_lifts_box_returns_with_return_conversions() {
 }
 
 #[test]
+fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
+    let json = json!({
+        "index": {
+            "0": public_item("TicketEnvelope", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field("ticket", resolved("Box", vec![resolved("Ticket", vec![])]))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Struct(envelope) = imported_type(&interop, "TicketEnvelope") else {
+        panic!("expected TicketEnvelope struct");
+    };
+    assert_eq!(envelope.members.len(), 1);
+    assert_eq!(envelope.members[0].ident.as_str(), "ticket");
+    assert_eq!(
+        envelope.members[0].r#type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+    assert_eq!(
+        interop.field_return_conversion(&TypeIdent::new("TicketEnvelope"), &ident("ticket")),
+        RustReturnConversion::BoxDeref
+    );
+}
+
+#[test]
 fn rustdoc_imports_public_struct_fields() {
     let json = json!({
         "index": {

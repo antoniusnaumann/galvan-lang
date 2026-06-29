@@ -474,13 +474,14 @@ fn transpile_rust_return(rendered: String, conversion: RustReturnConversion) -> 
 
 impl Transpile for HirFieldAccess {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        transpile!(
+        let access = transpile!(
             ctx,
             errors,
             "{}.{}",
             self.receiver,
             sanitize_name(self.field.as_str()).into_owned()
-        )
+        );
+        transpile_rust_return(access, self.rust_return_conversion)
     }
 }
 
@@ -1026,6 +1027,25 @@ mod tests {
             call.transpile(&ctx, &mut errors),
             "*(::demo::boxed_ticket())"
         );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_field_access_applies_box_return_conversions() {
+        let access = HirFieldAccess {
+            receiver: HirExpression::new(
+                HirExpressionKind::Variable(Ident::new("envelope")),
+                TypeElement::infer(),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+            rust_return_conversion: RustReturnConversion::BoxDeref,
+            field: Ident::new("ticket"),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(access.transpile(&ctx, &mut errors), "*(envelope.ticket)");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 }

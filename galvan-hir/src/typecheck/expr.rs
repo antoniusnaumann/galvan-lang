@@ -2208,6 +2208,9 @@ impl Checker<'_> {
                     }
                     let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
+                    let rust_return_conversion = receiver_type_ident(&receiver.ty)
+                        .map(|receiver| self.rust_interop.field_return_conversion(&receiver, field))
+                        .unwrap_or_default();
                     let ownership = if self.is_copy(&field_ty) {
                         Ownership::UniqueOwned
                     } else if locks_ref {
@@ -2218,6 +2221,7 @@ impl Checker<'_> {
                     HirExpression::new(
                         HirExpressionKind::FieldAccess(Box::new(HirFieldAccess {
                             receiver,
+                            rust_return_conversion,
                             field: field.clone(),
                         })),
                         field_ty,

@@ -14,7 +14,8 @@ use galvan_files::Source;
 
 use crate::cache::RustdocCache;
 use crate::model::{
-    RustArgConversion, RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
+    RustArgConversion, RustConstantDecl, RustFieldConversion, RustFunctionDecl,
+    RustReturnConversion, RustTypeDecl,
 };
 use crate::RustdocError;
 
@@ -166,6 +167,7 @@ impl RustInterop {
             namespace: namespace.into(),
             name: TypeIdent::new(name),
             rust_path: rust_path.into(),
+            field_conversions: Vec::new(),
             decl: ToplevelItem {
                 item: decl,
                 source: Source::Builtin,
@@ -269,6 +271,23 @@ impl RustInterop {
             .filter_map(|idx| self.types.get(*idx))
     }
 
+    pub fn field_return_conversion(
+        &self,
+        receiver: &TypeIdent,
+        field: &Ident,
+    ) -> RustReturnConversion {
+        self.types
+            .iter()
+            .find(|ty| ty.name == *receiver)
+            .and_then(|ty| {
+                ty.field_conversions
+                    .iter()
+                    .find(|conversion| conversion.field == *field)
+            })
+            .map(|conversion| conversion.return_conversion)
+            .unwrap_or_default()
+    }
+
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
         if let Some(namespace) = namespace {
             return self
@@ -313,6 +332,7 @@ impl RustInterop {
             namespace: crate_name.into(),
             name: ident.clone(),
             rust_path: format!("::{crate_name}::{name}").into(),
+            field_conversions: Vec::new(),
             decl: ToplevelItem {
                 item: TypeDecl::Empty(EmptyTypeDecl {
                     visibility: Visibility::public(),
@@ -334,16 +354,17 @@ impl RustInterop {
             return;
         };
 
-        let decl = self
+        let imported = self
             .type_decl_from_item(crate_name, name, item, index)
-            .unwrap_or_else(|| empty_type_decl(name));
+            .unwrap_or_else(|| ImportedTypeDecl::empty(name));
         let rust_path = rust_path(crate_name, name, item);
         let type_decl = RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(name),
             rust_path,
+            field_conversions: imported.field_conversions,
             decl: ToplevelItem {
-                item: decl,
+                item: imported.decl,
                 source: Source::Builtin,
             },
         };
@@ -374,15 +395,16 @@ impl RustInterop {
             return;
         }
 
-        let decl = self
+        let imported = self
             .type_decl_from_item(crate_name, exported_name, item, index)
-            .unwrap_or_else(|| empty_type_decl(exported_name));
+            .unwrap_or_else(|| ImportedTypeDecl::empty(exported_name));
         self.types.push(RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(exported_name),
             rust_path,
+            field_conversions: imported.field_conversions,
             decl: ToplevelItem {
-                item: decl,
+                item: imported.decl,
                 source: Source::Builtin,
             },
         });
@@ -394,16 +416,20 @@ impl RustInterop {
         name: &str,
         item: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> Option<TypeDecl> {
+    ) -> Option<ImportedTypeDecl> {
         let inner = item.get("inner")?;
         if let Some(struct_item) = inner.get("struct") {
             return self.struct_decl_from_json(crate_name, name, struct_item, index);
         }
         if let Some(enum_item) = inner.get("enum") {
-            return Some(self.enum_decl_from_json(crate_name, name, enum_item, index));
+            return Some(ImportedTypeDecl::new(
+                self.enum_decl_from_json(crate_name, name, enum_item, index),
+            ));
         }
         if let Some(alias_item) = inner.get("type_alias") {
-            return self.alias_decl_from_json(crate_name, name, alias_item);
+            return self
+                .alias_decl_from_json(crate_name, name, alias_item)
+                .map(ImportedTypeDecl::new);
         }
 
         None
@@ -429,7 +455,7 @@ impl RustInterop {
         name: &str,
         struct_item: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> Option<TypeDecl> {
+    ) -> Option<ImportedTypeDecl> {
         let field_ids = item_ids(struct_item, "fields");
         let kind = struct_item.get("kind").and_then(Value::as_str);
         if kind == Some("tuple") {
@@ -438,48 +464,65 @@ impl RustInterop {
                 .filter_map(|id| index.get(id))
                 .filter_map(|field| self.tuple_member_from_json(crate_name, field))
                 .collect::<Vec<_>>();
-            return Some(TypeDecl::Tuple(TupleTypeDecl {
+            return Some(ImportedTypeDecl::new(TypeDecl::Tuple(TupleTypeDecl {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
                 members,
                 span: Span::default(),
-            }));
+            })));
         }
 
-        let members = field_ids
+        let lifted_members = field_ids
             .into_iter()
             .filter_map(|id| index.get(id))
             .filter(|field| is_public(field))
             .filter_map(|field| self.struct_member_from_json(crate_name, field))
             .collect::<Vec<_>>();
+        let mut members = Vec::new();
+        let mut field_conversions = Vec::new();
+        for member in lifted_members {
+            if member.return_conversion != RustReturnConversion::None {
+                field_conversions.push(RustFieldConversion {
+                    field: member.member.ident.clone(),
+                    return_conversion: member.return_conversion,
+                });
+            }
+            members.push(member.member);
+        }
 
         if members.is_empty() && kind != Some("plain") {
             return None;
         }
 
-        Some(TypeDecl::Struct(StructTypeDecl {
-            visibility: Visibility::public(),
-            ident: TypeIdent::new(name),
-            members,
-            span: Span::default(),
-        }))
+        Some(ImportedTypeDecl {
+            decl: TypeDecl::Struct(StructTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new(name),
+                members,
+                span: Span::default(),
+            }),
+            field_conversions,
+        })
     }
 
     fn struct_member_from_json(
         &mut self,
         crate_name: &str,
         field: &Value,
-    ) -> Option<StructTypeMember> {
+    ) -> Option<LiftedStructMember> {
         let name = field.get("name").and_then(Value::as_str)?;
         let field_type = item_inner(field, "struct_field")?;
-        let lifted = self.lift_type_from_json(crate_name, field_type)?;
+        let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
 
-        Some(StructTypeMember {
-            decl_modifier: lifted.decl_modifier,
-            ident: Ident::new(name),
-            r#type: lifted.ty,
-            default_value: None,
-            span: Span::default(),
+        Some(LiftedStructMember {
+            member: StructTypeMember {
+                decl_modifier: lifted.decl_modifier,
+                ident: Ident::new(name),
+                r#type: lifted.ty,
+                default_value: None,
+                span: Span::default(),
+            },
+            return_conversion: lifted.return_conversion,
         })
     }
 
@@ -1085,6 +1128,7 @@ impl RustInterop {
                 let lifted = self.lift_type_from_json(crate_name, arg)?;
                 return Some(LiftedReturn {
                     ty: lifted.ty,
+                    decl_modifier: lifted.decl_modifier,
                     return_conversion: RustReturnConversion::BoxDeref,
                 });
             }
@@ -1093,6 +1137,7 @@ impl RustInterop {
         self.lift_type_from_json(crate_name, ty)
             .map(|lifted| LiftedReturn {
                 ty: lifted.ty,
+                decl_modifier: lifted.decl_modifier,
                 return_conversion: RustReturnConversion::None,
             })
     }
@@ -1299,9 +1344,35 @@ struct ImportedFunctionDecl {
     arg_conversions: Vec<RustArgConversion>,
 }
 
+#[derive(Debug)]
+struct ImportedTypeDecl {
+    decl: TypeDecl,
+    field_conversions: Vec<RustFieldConversion>,
+}
+
+impl ImportedTypeDecl {
+    fn new(decl: TypeDecl) -> Self {
+        Self {
+            decl,
+            field_conversions: Vec::new(),
+        }
+    }
+
+    fn empty(name: &str) -> Self {
+        Self::new(empty_type_decl(name))
+    }
+}
+
+#[derive(Debug)]
+struct LiftedStructMember {
+    member: StructTypeMember,
+    return_conversion: RustReturnConversion,
+}
+
 #[derive(Clone, Debug)]
 struct LiftedReturn {
     ty: TypeElement,
+    decl_modifier: Option<galvan_ast::DeclModifier>,
     return_conversion: RustReturnConversion,
 }
 
