@@ -107,10 +107,10 @@ commands remain subcommands.
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
-  - Infer all Galvan passing modes from lifted Rust signatures beyond mutable
-    refs, shared borrowed refs, and parameter-side owned wrapper conversions,
-    including the remaining receiver/argument cases not yet covered by rustdoc
-    import
+  - Infer all Galvan passing modes from lifted Rust signatures beyond owned
+    copy/value params, mutable refs, shared borrowed refs, and parameter-side
+    owned wrapper conversions, including the remaining receiver/argument cases
+    not yet covered by rustdoc import
   - Improve generic substitution and trait-bound handling for external Rust APIs
   - Preserve namespace/module paths on imported data declarations so
     same-named types from different Rust modules do not collapse together

@@ -522,6 +522,41 @@ fn rustdoc_lifts_mutable_borrowed_parameters_to_mut() {
 }
 
 #[test]
+fn rustdoc_keeps_owned_copy_parameters_unmodified() {
+    let mut interop = RustInterop::empty();
+    let integer = interop
+        .param_from_json("std", &json!(["limit", primitive("u64")]))
+        .unwrap();
+    assert_eq!(integer.decl_modifier, None);
+    assert_eq!(integer.param_type, u64_type());
+
+    let tuple = interop
+        .param_from_json(
+            "std",
+            &json!(["range", { "tuple": [primitive("u64"), primitive("bool")] }]),
+        )
+        .unwrap();
+    assert_eq!(tuple.decl_modifier, None);
+    assert!(matches!(tuple.param_type, TypeElement::Tuple(_)));
+}
+
+#[test]
+fn rustdoc_marks_owned_non_copy_parameters_as_move() {
+    let mut interop = RustInterop::empty();
+    let string = interop
+        .param_from_json("std", &json!(["title", primitive("str")]))
+        .unwrap();
+    assert_eq!(string.decl_modifier, Some(galvan_ast::DeclModifier::Move));
+    assert_eq!(string.param_type, string_type());
+
+    let generic = interop
+        .param_from_json("demo", &json!(["value", generic("T")]))
+        .unwrap();
+    assert_eq!(generic.decl_modifier, Some(galvan_ast::DeclModifier::Move));
+    assert_eq!(generic.param_type, generic_type("T"));
+}
+
+#[test]
 fn rustdoc_preserves_shared_borrow_parameter_conversions() {
     let json = json!({
         "index": {
