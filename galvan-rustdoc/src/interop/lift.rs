@@ -1,11 +1,11 @@
 use serde_json::Value;
 
 use galvan_ast::{
-    AliasTypeDecl, ArrayTypeItem, BasicTypeItem, DictionaryTypeItem, EmptyTypeDecl, EnumTypeDecl,
-    EnumTypeMember, EnumVariantField, FnDecl, FnSignature, Ident, OptionalTypeItem,
-    OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem, ResultTypeItem, SetTypeItem,
-    Span, StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
-    TypeIdent, Visibility,
+    AliasTypeDecl, ArrayTypeItem, BasicTypeItem, ClosureTypeItem, DictionaryTypeItem,
+    EmptyTypeDecl, EnumTypeDecl, EnumTypeMember, EnumVariantField, FnDecl, FnSignature, Ident,
+    OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem,
+    ResultTypeItem, SetTypeItem, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
+    TupleTypeMember, TypeDecl, TypeElement, TypeIdent, Visibility,
 };
 
 use crate::model::{
@@ -475,6 +475,12 @@ impl RustInterop {
                 .lift_type_from_json(crate_name, element)
                 .map(array_type);
         }
+        if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function"))
+        {
+            return Some(LiftedType::new(
+                self.function_pointer_type_from_json(crate_name, function),
+            ));
+        }
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved.get("name").and_then(Value::as_str)?;
             let args = resolved_type_args(resolved)
@@ -502,6 +508,33 @@ impl RustInterop {
         }
 
         Some(LiftedType::new(TypeElement::infer()))
+    }
+
+    fn function_pointer_type_from_json(
+        &mut self,
+        crate_name: &str,
+        function: &Value,
+    ) -> TypeElement {
+        let signature = function.get("sig").unwrap_or(function);
+        let parameters = signature
+            .get("inputs")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(function_pointer_input_type)
+            .filter_map(|input| self.type_from_json(crate_name, input))
+            .collect();
+        let return_ty = signature
+            .get("output")
+            .filter(|output| !output.is_null())
+            .and_then(|output| self.type_from_json(crate_name, output))
+            .unwrap_or_else(TypeElement::void);
+
+        TypeElement::Closure(Box::new(ClosureTypeItem {
+            parameters,
+            return_ty,
+            span: Span::default(),
+        }))
     }
 
     fn lift_known_resolved_type(&mut self, name: &str, args: &[LiftedType]) -> Option<LiftedType> {
@@ -746,6 +779,13 @@ fn array_type(inner: LiftedType) -> LiftedType {
         elements: inner.ty,
         span: Span::default(),
     })))
+}
+
+fn function_pointer_input_type(input: &Value) -> &Value {
+    input
+        .as_array()
+        .and_then(|pair| pair.get(1))
+        .unwrap_or(input)
 }
 
 fn atomic_type(name: &str) -> Option<TypeElement> {

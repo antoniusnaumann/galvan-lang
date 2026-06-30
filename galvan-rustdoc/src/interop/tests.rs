@@ -75,6 +75,17 @@ fn array(ty: Value) -> Value {
     })
 }
 
+fn function_pointer(inputs: Vec<Value>, output: Value) -> Value {
+    json!({
+        "function_pointer": {
+            "sig": {
+                "inputs": inputs,
+                "output": output
+            }
+        }
+    })
+}
+
 fn mut_borrowed(ty: Value) -> Value {
     json!({
         "borrowed_ref": {
@@ -426,6 +437,26 @@ fn rustdoc_lifts_slice_and_array_types() {
 }
 
 #[test]
+fn rustdoc_lifts_function_pointer_types() {
+    let mut interop = RustInterop::empty();
+    let ty = interop
+        .type_from_json(
+            "std",
+            &function_pointer(
+                vec![json!(["ticket_id", primitive("u64")]), primitive("str")],
+                primitive("bool"),
+            ),
+        )
+        .unwrap();
+
+    let TypeElement::Closure(closure) = ty else {
+        panic!("expected function pointer to lift as closure, got {ty:?}");
+    };
+    assert_eq!(closure.parameters, vec![u64_type(), string_type()]);
+    assert_eq!(closure.return_ty, TypeElement::bool());
+}
+
+#[test]
 fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     let param = interop
@@ -501,6 +532,37 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
             span: Span::default()
         }))
     );
+}
+
+#[test]
+fn rustdoc_imports_function_pointer_parameters() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "filter_tickets",
+                vec![json!([
+                    "predicate",
+                    function_pointer(vec![primitive("u64")], primitive("bool"))
+                ])],
+                primitive("u64")
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let function = interop
+        .function(Some("demo"), None, &ident("filter_tickets"), &[])
+        .expect("expected imported function");
+    let parameter = &function.decl.item.signature.parameters.params[0];
+    let TypeElement::Closure(closure) = &parameter.param_type else {
+        panic!(
+            "expected closure parameter type, got {:?}",
+            parameter.param_type
+        );
+    };
+    assert_eq!(closure.parameters, vec![u64_type()]);
+    assert_eq!(closure.return_ty, TypeElement::bool());
 }
 
 #[test]

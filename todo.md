@@ -102,8 +102,8 @@ commands remain subcommands.
     `Arc<Mutex<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
     conversions) to cover additional smart pointers and standard wrappers
   - Lift the remaining rustdoc type shapes needed for API round-tripping,
-    including raw pointers, function pointers, `dyn Trait`, `impl Trait`,
-    never type, and generic associated types
+    including raw pointers, `dyn Trait`, `impl Trait`, never type, and
+    generic associated types
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, and generic declarations
