@@ -14,6 +14,7 @@ use galvan_ast::{
     Assignment, AssignmentOperator, BasicTypeItem, Body, DeclModifier, Declaration, FnDecl, Ident,
     MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement, TypeIdent,
 };
+use galvan_files::Source;
 use galvan_resolver::{LookupContext, LookupError};
 use galvan_rustdoc::RustInterop;
 
@@ -37,6 +38,15 @@ pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), Loo
     typecheck_with_interop(asts, &RustInterop::empty())
 }
 
+/// Identify a source by its file path, for attributing diagnostics. Non-file
+/// sources (e.g. in-memory strings) have no path and yield an empty string.
+fn source_file(source: &Source) -> String {
+    source
+        .origin()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 pub fn typecheck_with_interop(
     asts: SegmentedAsts,
     rust_interop: &RustInterop,
@@ -54,20 +64,27 @@ pub fn typecheck_with_interop(
         let functions = asts
             .functions
             .iter()
-            .map(|func| checker.lower_function(func))
+            .map(|func| {
+                checker.errors.set_current_file(source_file(&func.source));
+                checker.lower_function(func)
+            })
             .collect::<Vec<_>>();
 
         let tests = asts
             .tests
             .iter()
-            .map(|test| HirTest {
-                name: test.item.name.clone(),
-                body: checker.lower_toplevel_body(&test.item.body),
-                source: test.source.clone(),
+            .map(|test| {
+                checker.errors.set_current_file(source_file(&test.source));
+                HirTest {
+                    name: test.item.name.clone(),
+                    body: checker.lower_toplevel_body(&test.item.body),
+                    source: test.source.clone(),
+                }
             })
             .collect::<Vec<_>>();
 
         let main = asts.main.as_ref().map(|main| {
+            checker.errors.set_current_file(source_file(&main.source));
             checker.scopes.push();
             let kind = match &main.item.kind {
                 MainKind::Command(signature) => {
@@ -113,6 +130,7 @@ pub fn typecheck_with_interop(
             .cmds
             .iter()
             .map(|cmd| {
+                checker.errors.set_current_file(source_file(&cmd.source));
                 checker.scopes.push();
                 for param in &cmd.item.signature.parameters.params {
                     // CLI parameters are passed by value

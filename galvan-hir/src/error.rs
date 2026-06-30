@@ -122,11 +122,39 @@ pub struct ErrorCollector {
     diagnostics: Vec<Diagnostic>,
     error_count: usize,
     warning_count: usize,
+    /// File that subsequently reported diagnostics belong to.
+    ///
+    /// AST spans only carry byte offsets, not the file they originate from. When
+    /// several files are checked together (e.g. a whole crate), callers set this
+    /// before processing each file so that diagnostics can be attributed back to
+    /// the right source. It is stamped onto any span whose `file` is still empty.
+    current_file: String,
 }
 
 impl ErrorCollector {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the file that subsequently added diagnostics belong to.
+    pub fn set_current_file(&mut self, file: impl Into<String>) {
+        self.current_file = file.into();
+    }
+
+    /// Push a diagnostic, stamping the current file onto its span (when not
+    /// already set) and updating the severity counters.
+    fn push(&mut self, mut diagnostic: Diagnostic) {
+        if let Some(span) = diagnostic.span.as_mut() {
+            if span.file.is_empty() {
+                span.file = self.current_file.clone();
+            }
+        }
+        match diagnostic.severity {
+            DiagnosticSeverity::Error => self.error_count += 1,
+            DiagnosticSeverity::Warning => self.warning_count += 1,
+            DiagnosticSeverity::Info => {}
+        }
+        self.diagnostics.push(diagnostic);
     }
 
     /// Add an error to the collector
@@ -136,13 +164,12 @@ impl ErrorCollector {
 
     /// Add an error with span information
     pub fn error_with_span(&mut self, error: TranspilerError, span: Option<Span>) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Error,
             message: error.to_string(),
             span,
             suggestion: None,
         });
-        self.error_count += 1;
     }
 
     /// Add an error with a suggestion
@@ -152,29 +179,27 @@ impl ErrorCollector {
         span: Option<Span>,
         suggestion: String,
     ) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Error,
             message: error.to_string(),
             span,
             suggestion: Some(suggestion),
         });
-        self.error_count += 1;
     }
 
     /// Add a warning
     pub fn warning(&mut self, message: String, span: Option<Span>) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Warning,
             message,
             span,
             suggestion: None,
         });
-        self.warning_count += 1;
     }
 
     /// Add an info message
     pub fn info(&mut self, message: String, span: Option<Span>) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Info,
             message,
             span,
