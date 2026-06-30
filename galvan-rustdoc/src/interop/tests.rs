@@ -119,11 +119,15 @@ fn u64_type() -> TypeElement {
 }
 
 fn public_item(name: &str, inner: Value) -> Value {
+    public_item_at_path(name, name, &["demo", name], inner)
+}
+
+fn public_item_at_path(id: &str, name: &str, path: &[&str], inner: Value) -> Value {
     json!({
-        "id": name,
+        "id": id,
         "name": name,
         "visibility": "public",
-        "path": ["demo", name],
+        "path": path,
         "inner": inner
     })
 }
@@ -331,6 +335,40 @@ fn use_declarations_import_constants_unqualified() {
         .expect("expected imported constant");
     assert_eq!(constant.ty, u64_type());
     assert_eq!(constant.rust_path.as_ref(), "::demo::DEFAULT_LIMIT");
+}
+
+#[test]
+fn rustdoc_preserves_same_named_types_from_different_modules() {
+    let json = json!({
+        "index": {
+            "0": public_item_at_path("http_error", "Error", &["demo", "http", "Error"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": public_item_at_path("db_error", "Error", &["demo", "db", "Error"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            }))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let mut error_paths = interop
+        .types
+        .iter()
+        .filter(|ty| ty.name.as_str() == "Error")
+        .map(|ty| ty.rust_path.as_ref())
+        .collect::<Vec<_>>();
+    error_paths.sort();
+    assert_eq!(
+        error_paths,
+        vec!["::demo::db::Error", "::demo::http::Error"]
+    );
 }
 
 #[test]

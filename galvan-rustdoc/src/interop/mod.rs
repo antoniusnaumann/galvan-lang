@@ -103,10 +103,11 @@ impl RustInterop {
         rust_path: impl Into<Box<str>>,
         decl: TypeDecl,
     ) {
+        let rust_path = rust_path.into();
         let type_decl = RustTypeDecl {
             namespace: namespace.into(),
             name: TypeIdent::new(name),
-            rust_path: rust_path.into(),
+            rust_path,
             field_conversions: Vec::new(),
             constructor_arg_conversions: Vec::new(),
             enum_variant_conversions: Vec::new(),
@@ -115,7 +116,11 @@ impl RustInterop {
                 source: Source::Builtin,
             },
         };
-        if let Some(existing) = self.types.iter_mut().find(|ty| ty.name.as_str() == name) {
+        if let Some(existing) = self
+            .types
+            .iter_mut()
+            .find(|ty| ty.rust_path.as_ref() == type_decl.rust_path.as_ref())
+        {
             *existing = type_decl;
         } else {
             self.types.push(type_decl);

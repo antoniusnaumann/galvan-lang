@@ -16,7 +16,12 @@ use super::RustInterop;
 
 impl RustInterop {
     pub(super) fn push_type(&mut self, crate_name: &str, name: &str) {
-        if self.types.iter().any(|ty| ty.name.as_str() == name) {
+        let rust_path = format!("::{crate_name}::{name}").into_boxed_str();
+        if self
+            .types
+            .iter()
+            .any(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
+        {
             return;
         }
 
@@ -24,7 +29,7 @@ impl RustInterop {
         self.types.push(RustTypeDecl {
             namespace: crate_name.into(),
             name: ident.clone(),
-            rust_path: format!("::{crate_name}::{name}").into(),
+            rust_path,
             field_conversions: Vec::new(),
             constructor_arg_conversions: Vec::new(),
             enum_variant_conversions: Vec::new(),
@@ -49,10 +54,10 @@ impl RustInterop {
             return;
         };
 
+        let rust_path = rust_path(crate_name, name, item);
         let imported = self
             .type_decl_from_item(crate_name, name, item, index)
             .unwrap_or_else(|| ImportedTypeDecl::empty(name));
-        let rust_path = rust_path(crate_name, name, item);
         let type_decl = RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(name),
@@ -66,7 +71,11 @@ impl RustInterop {
             },
         };
 
-        if let Some(existing) = self.types.iter_mut().find(|ty| ty.name.as_str() == name) {
+        if let Some(existing) = self
+            .types
+            .iter_mut()
+            .find(|ty| ty.rust_path.as_ref() == type_decl.rust_path.as_ref())
+        {
             if matches!(existing.decl.item, TypeDecl::Empty(_)) {
                 *existing = type_decl;
             }
@@ -84,18 +93,12 @@ impl RustInterop {
         item: &Value,
         index: &serde_json::Map<String, Value>,
     ) {
-        if self
+        if let Some(existing) = self
             .types
-            .iter()
-            .any(|ty| ty.name.as_str() == exported_name)
+            .iter_mut()
+            .find(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
         {
-            if let Some(existing) = self
-                .types
-                .iter_mut()
-                .find(|ty| ty.name.as_str() == exported_name)
-            {
-                existing.rust_path = rust_path;
-            }
+            existing.name = TypeIdent::new(exported_name);
             return;
         }
 
