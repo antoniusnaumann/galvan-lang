@@ -22,7 +22,8 @@ resolution is reused from the compiler rather than reimplemented:
   type, including declarations in other files of the same crate.
 - **Completion** — top-level functions and types from across the crate, plus
   language keywords.
-- **Syntax diagnostics** — surfaced from tree-sitter error nodes.
+- **Diagnostics** — syntax errors from the parser plus semantic (type) errors
+  from the compiler's typechecker, mapped to precise ranges.
 
 Resolution is crate-wide: every `.galvan` file under the crate's `src` root is
 indexed (open buffers use their unsaved contents, the rest are read from disk),
@@ -51,9 +52,9 @@ src/
     diagnostics.rs
 ```
 
-Each feature is a pure function of a `Document` and request parameters, which
-keeps `server.rs` thin and makes the features unit-testable (see
-`tests/features.rs`).
+Each feature is a pure function of a `Document` / `Crate` and request
+parameters, which keeps `server.rs` thin and makes the features unit-testable
+(see `tests/features.rs`).
 
 ## Running
 

@@ -95,18 +95,32 @@ path to the defining item (and its `Source`) across crate boundaries.
 
 ---
 
-## 5. Semantic diagnostics are not exposed with source spans
+## 5. Semantic diagnostics — implemented (with a small compiler change)
 
-The HIR typechecker produces `galvan_hir::Diagnostic`s, but they are not
-surfaced to consumers in a stable, span-carrying form that the LSP can map back
-to ranges without depending on transpiler internals.
+This is now **supported**. `galvan_hir::typecheck(SegmentedAsts)` already
+returns an `ErrorCollector` of span-carrying `Diagnostic`s without running the
+transpile-to-Rust pipeline, so the LSP runs it over the whole crate and publishes
+the results alongside the syntax diagnostics (see `src/features/diagnostics.rs`
+and `Crate::diagnostics` in `src/workspace.rs`).
 
-**Impact:** the server can only publish **syntax** diagnostics (from tree-sitter
-error / missing nodes), not type errors.
+**Surgical compiler change:** diagnostic spans only carried byte offsets, not the
+file they came from, so in a multi-file crate they could not be routed back to a
+document. `ErrorCollector` gained a `set_current_file` method (`galvan-hir/src/
+error.rs`); the typechecker sets it before lowering each top-level item
+(`galvan-hir/src/typecheck/mod.rs`), and the file is stamped onto every span
+whose `file` is still empty. This also improves the compiler's own multi-file
+error messages.
 
-**Current handling:** `src/features/diagnostics.rs` walks the tree-sitter tree
-for error/missing nodes. Semantic diagnostics are a stub.
+**Remaining caveats** (not blockers, but worth noting):
 
-**What would help:** a function such as `analyze(source) -> Vec<Diagnostic>`
-where each `Diagnostic` carries a `Span`, callable without running the full
-transpile-to-Rust pipeline.
+- Diagnostics emitted *without* a span (via `ErrorCollector::error`, e.g. some
+  `InvalidModifier` / `InvalidSyntax` cases) cannot be placed and are not shown.
+  Giving those call sites spans in the compiler would surface them.
+- The typechecker is run with an empty `RustInterop`, so code that depends on
+  imported Rust items may produce false "unknown type/identifier" diagnostics.
+  Wiring real interop in (it is expensive — it shells out to rustdoc) is future
+  work.
+- Crate-level conflicts that surface as a `LookupError` (e.g. duplicate
+  top-level declarations) abort typechecking and are not yet reported.
+- Only the requested document's diagnostics are published per refresh; an error
+  in another crate file appears when that file is itself refreshed.
