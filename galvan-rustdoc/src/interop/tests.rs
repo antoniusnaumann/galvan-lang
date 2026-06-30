@@ -479,18 +479,19 @@ fn rustdoc_lifts_never_types() {
 #[test]
 fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
-    let param = interop
-        .param_from_json(
-            "std",
-            &json!([
-                "tickets",
-                resolved("Arc", vec![resolved("Mutex", vec![generic("T")])])
-            ]),
-        )
-        .unwrap();
+    for wrapper in [
+        resolved("Mutex", vec![generic("T")]),
+        resolved("RwLock", vec![generic("T")]),
+        resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
+        resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
+    ] {
+        let param = interop
+            .param_from_json("std", &json!(["tickets", wrapper]))
+            .unwrap();
 
-    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
-    assert_eq!(param.param_type, generic_type("T"));
+        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
+        assert_eq!(param.param_type, generic_type("T"));
+    }
 }
 
 #[test]
@@ -812,7 +813,7 @@ fn rustdoc_imports_public_struct_fields() {
             "2": public_field("title", primitive("str")),
             "3": public_field(
                 "state",
-                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketState", vec![])])])
+                resolved("Arc", vec![resolved("RwLock", vec![resolved("TicketState", vec![])])])
             )
         }
     });

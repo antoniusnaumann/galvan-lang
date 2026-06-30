@@ -95,9 +95,10 @@ commands remain subcommands.
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend Rust wrapper lifting beyond the current common cases (`Option<T>`,
-    Rust list/map/set collections, `Result<T, E>`, `Mutex<T>`,
-    `Arc<Mutex<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
-    conversions) to cover additional smart pointers and standard wrappers
+    Rust list/map/set collections, `Result<T, E>`, `Mutex<T>` / `RwLock<T>`,
+    `Arc<Mutex<T>>` / `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` /
+    `Rc<T>` interop conversions) to cover additional smart pointers and
+    standard wrappers
   - Lift the remaining rustdoc type shapes needed for API round-tripping,
     including raw pointers, `dyn Trait`, `impl Trait`, and generic associated
     types

@@ -609,7 +609,7 @@ impl RustInterop {
                 }),
             ))),
             "Arc" => lift_arc(args.first()),
-            "Mutex" => lift_ref(args.first()),
+            "Mutex" | "RwLock" => lift_ref(args.first()),
             atomic if atomic_type(atomic).is_some() => Some(LiftedType::with_modifier(
                 atomic_type(atomic).unwrap(),
                 galvan_ast::DeclModifier::Ref,
