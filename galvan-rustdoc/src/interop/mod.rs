@@ -218,6 +218,17 @@ impl RustInterop {
             .filter_map(|idx| self.types.get(*idx))
     }
 
+    pub fn type_by_qualified_path(&self, path: &[&str]) -> Option<&RustTypeDecl> {
+        let namespace = path.first()?;
+        let (name, _) = path.split_last()?;
+        let rust_path = format!("::{}", path.join("::"));
+        self.types.iter().find(|ty| {
+            ty.namespace.as_ref() == *namespace
+                && ty.name.as_str() == *name
+                && ty.rust_path.as_ref() == rust_path
+        })
+    }
+
     pub fn field_return_conversion(
         &self,
         receiver: &TypeIdent,

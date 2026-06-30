@@ -369,6 +369,19 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
         error_paths,
         vec!["::demo::db::Error", "::demo::http::Error"]
     );
+
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["demo", "http", "Error"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::demo::http::Error")
+    );
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["demo", "db", "Error"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::demo::db::Error")
+    );
 }
 
 #[test]

@@ -110,8 +110,9 @@ commands remain subcommands.
     owned wrapper conversions, including the remaining receiver/argument cases
     not yet covered by rustdoc import
   - Improve generic substitution and trait-bound handling for external Rust APIs
-  - Use preserved namespace/module paths during imported type lookup so
-    same-named Rust types can be addressed from Galvan without ambiguity
+  - Add qualified type-path syntax to the parser/AST/typechecker and wire it to
+    rustdoc's preserved namespace/module paths so same-named Rust types can be
+    addressed from Galvan without ambiguity
 - Support full Axum-style API declarations in Galvan:
   - Add async functions and `.await`
   - Generate async `main` with the default Tokio runtime
