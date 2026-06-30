@@ -449,6 +449,9 @@ impl RustInterop {
     }
 
     fn lift_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedType> {
+        if inner(ty, "never").is_some() {
+            return Some(LiftedType::new(never_type()));
+        }
         if let Some(primitive) = inner_string(ty, "primitive") {
             return Some(LiftedType::new(primitive_type(primitive)));
         }
@@ -822,6 +825,7 @@ pub(super) fn generic_type(name: &str) -> TypeElement {
 
 fn primitive_type(name: &str) -> TypeElement {
     let galvan = match name {
+        "!" => return never_type(),
         "bool" => "Bool",
         "i8" => "I8",
         "i16" => "I16",
@@ -842,4 +846,10 @@ fn primitive_type(name: &str) -> TypeElement {
         _ => "__UnknownRustPrimitive",
     };
     plain_type(TypeIdent::new(galvan))
+}
+
+fn never_type() -> TypeElement {
+    TypeElement::Never(galvan_ast::NeverTypeItem {
+        span: Span::default(),
+    })
 }

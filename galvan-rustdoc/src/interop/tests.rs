@@ -29,6 +29,10 @@ fn generic(name: &str) -> Value {
     json!({ "generic": name })
 }
 
+fn never() -> Value {
+    json!({ "never": null })
+}
+
 fn resolved(name: &str, args: Vec<Value>) -> Value {
     json!({
         "resolved_path": {
@@ -457,6 +461,19 @@ fn rustdoc_lifts_function_pointer_types() {
 }
 
 #[test]
+fn rustdoc_lifts_never_types() {
+    let mut interop = RustInterop::empty();
+
+    let ty = interop.type_from_json("std", &never()).unwrap();
+    assert!(matches!(ty, TypeElement::Never(_)));
+
+    let primitive_ty = interop
+        .type_from_json("std", &primitive("!"))
+        .expect("expected primitive never type to lift");
+    assert!(matches!(primitive_ty, TypeElement::Never(_)));
+}
+
+#[test]
 fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     let param = interop
@@ -563,6 +580,25 @@ fn rustdoc_imports_function_pointer_parameters() {
     };
     assert_eq!(closure.parameters, vec![u64_type()]);
     assert_eq!(closure.return_ty, TypeElement::bool());
+}
+
+#[test]
+fn rustdoc_imports_never_returning_functions() {
+    let json = json!({
+        "index": {
+            "0": public_function("abort_request", vec![], never())
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let function = interop
+        .function(Some("demo"), None, &ident("abort_request"), &[])
+        .expect("expected imported function");
+    assert!(matches!(
+        function.decl.item.signature.return_type,
+        TypeElement::Never(_)
+    ));
 }
 
 #[test]
