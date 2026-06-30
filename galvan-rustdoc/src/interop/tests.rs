@@ -336,6 +336,31 @@ fn path_use_declarations_import_only_the_named_type() {
 }
 
 #[test]
+fn rustdoc_type_only_crates_do_not_fall_back_to_curated_metadata() {
+    let json = json!({
+        "index": {
+            "0": public_item_at_path("Value", "Value", &["serde_json", "Value"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            }))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &json);
+
+    assert!(interop
+        .types
+        .iter()
+        .any(|ty| ty.name.as_str() == "Value" && ty.rust_path.as_ref() == "::serde_json::Value"));
+    assert!(interop
+        .function(Some("serde_json"), None, &ident("to_string"), &[])
+        .is_none());
+    assert!(interop.types.iter().all(|ty| ty.name.as_str() != "Error"));
+}
+
+#[test]
 fn use_declarations_import_constants_unqualified() {
     let json = json!({
         "index": {
