@@ -473,6 +473,9 @@ impl RustInterop {
             }
             return Some(lifted);
         }
+        if let Some(raw_pointer) = inner(ty, "raw_pointer") {
+            return self.lift_raw_pointer_type_from_json(crate_name, raw_pointer);
+        }
         if let Some(slice) = inner(ty, "slice") {
             return self.lift_type_from_json(crate_name, slice).map(array_type);
         }
@@ -515,6 +518,30 @@ impl RustInterop {
         }
 
         Some(LiftedType::new(TypeElement::infer()))
+    }
+
+    fn lift_raw_pointer_type_from_json(
+        &mut self,
+        crate_name: &str,
+        raw_pointer: &Value,
+    ) -> Option<LiftedType> {
+        let inner = raw_pointer
+            .get("type")
+            .or_else(|| raw_pointer.get("type_"))
+            .and_then(|inner| self.lift_type_from_json(crate_name, inner))?;
+        let base_type = if raw_pointer_is_mutable(raw_pointer) {
+            "MutRawPointer"
+        } else {
+            "ConstRawPointer"
+        };
+
+        Some(LiftedType::new(TypeElement::Parametric(
+            ParametricTypeItem {
+                base_type: TypeIdent::new(base_type),
+                type_args: vec![inner.ty],
+                span: Span::default(),
+            },
+        )))
     }
 
     fn function_pointer_type_from_json(
@@ -753,6 +780,9 @@ fn type_is_copy(ty: &TypeElement) -> bool {
         TypeElement::Result(result) => {
             type_is_copy(&result.success) && result.error.as_ref().is_some_and(type_is_copy)
         }
+        TypeElement::Parametric(parametric) if raw_pointer_type(parametric.base_type.as_str()) => {
+            true
+        }
         TypeElement::Void(_) => true,
         TypeElement::Array(_)
         | TypeElement::Dictionary(_)
@@ -786,6 +816,15 @@ fn plain_type_is_copy(name: &str) -> bool {
             | "Double"
             | "Char"
     )
+}
+
+fn raw_pointer_is_mutable(raw_pointer: &Value) -> bool {
+    raw_pointer.get("mutable").and_then(Value::as_bool) == Some(true)
+        || raw_pointer.get("is_mutable").and_then(Value::as_bool) == Some(true)
+}
+
+fn raw_pointer_type(name: &str) -> bool {
+    matches!(name, "ConstRawPointer" | "MutRawPointer")
 }
 
 fn never_type() -> TypeElement {

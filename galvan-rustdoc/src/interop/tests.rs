@@ -82,6 +82,15 @@ fn array(ty: Value) -> Value {
     })
 }
 
+fn raw_pointer(ty: Value, mutable: bool) -> Value {
+    json!({
+        "raw_pointer": {
+            "type": ty,
+            "mutable": mutable
+        }
+    })
+}
+
 fn function_pointer(inputs: Vec<Value>, output: Value) -> Value {
     json!({
         "function_pointer": {
@@ -534,6 +543,43 @@ fn rustdoc_lifts_slice_and_array_types() {
         panic!("expected fixed array to lift as array, got {array:?}");
     };
     assert_eq!(array.elements, string_type());
+}
+
+#[test]
+fn rustdoc_lifts_raw_pointer_types() {
+    let mut interop = RustInterop::empty();
+
+    let const_pointer = interop
+        .type_from_json("std", &raw_pointer(primitive("u8"), false))
+        .unwrap();
+    let TypeElement::Parametric(const_pointer) = const_pointer else {
+        panic!("expected const raw pointer type, got {const_pointer:?}");
+    };
+    assert_eq!(const_pointer.base_type, TypeIdent::new("ConstRawPointer"));
+    assert_eq!(
+        const_pointer.type_args,
+        vec![plain_type(TypeIdent::new("U8"))]
+    );
+
+    let mut_pointer = interop
+        .type_from_json("std", &raw_pointer(resolved("Ticket", vec![]), true))
+        .unwrap();
+    let TypeElement::Parametric(mut_pointer) = mut_pointer else {
+        panic!("expected mut raw pointer type, got {mut_pointer:?}");
+    };
+    assert_eq!(mut_pointer.base_type, TypeIdent::new("MutRawPointer"));
+    assert_eq!(
+        mut_pointer.type_args,
+        vec![plain_type(TypeIdent::new("Ticket"))]
+    );
+
+    let param = interop
+        .param_from_json(
+            "std",
+            &json!(["bytes", raw_pointer(primitive("u8"), false)]),
+        )
+        .unwrap();
+    assert_eq!(param.decl_modifier, None);
 }
 
 #[test]
