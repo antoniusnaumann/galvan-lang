@@ -154,9 +154,11 @@ impl RustInterop {
                 continue;
             };
             let Some(target_id) = use_item.get("id").and_then(Value::as_str) else {
+                self.import_external_reexported_type(crate_name, exported_name, use_item);
                 continue;
             };
             let Some(target) = index.get(target_id) else {
+                self.import_external_reexported_type(crate_name, exported_name, use_item);
                 continue;
             };
             let rust_path = callable_rust_path(crate_name, exported_name, item);
@@ -200,6 +202,24 @@ impl RustInterop {
             }
         }
         found_function
+    }
+
+    fn import_external_reexported_type(
+        &mut self,
+        crate_name: &str,
+        exported_name: &str,
+        use_item: &Value,
+    ) -> bool {
+        if !looks_like_type_name(exported_name) {
+            return false;
+        }
+
+        let Some(source) = use_item.get("source").and_then(Value::as_str) else {
+            return false;
+        };
+
+        self.push_external_reexported_type(crate_name, exported_name, absolute_rust_path(source));
+        true
     }
 
     fn import_glob_reexport(
@@ -345,4 +365,16 @@ impl RustInterop {
             self.push_constant(crate_name, receiver.clone(), name, rust_path, ty);
         }
     }
+}
+
+fn absolute_rust_path(source: &str) -> Box<str> {
+    if source.starts_with("::") {
+        source.into()
+    } else {
+        format!("::{source}").into()
+    }
+}
+
+fn looks_like_type_name(name: &str) -> bool {
+    name.chars().next().is_some_and(char::is_uppercase) && name.chars().any(char::is_lowercase)
 }

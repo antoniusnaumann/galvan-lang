@@ -119,6 +119,36 @@ impl RustInterop {
         });
     }
 
+    pub(super) fn push_external_reexported_type(
+        &mut self,
+        crate_name: &str,
+        exported_name: &str,
+        rust_path: Box<str>,
+    ) {
+        if let Some(existing) = self
+            .types
+            .iter_mut()
+            .find(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
+        {
+            existing.name = TypeIdent::new(exported_name);
+            return;
+        }
+
+        let imported = ImportedTypeDecl::empty(exported_name);
+        self.types.push(RustTypeDecl {
+            namespace: crate_name.into(),
+            name: TypeIdent::new(exported_name),
+            rust_path,
+            field_conversions: imported.field_conversions,
+            constructor_arg_conversions: imported.constructor_arg_conversions,
+            enum_variant_conversions: imported.enum_variant_conversions,
+            decl: ToplevelItem {
+                item: imported.decl,
+                source: Source::Builtin,
+            },
+        });
+    }
+
     pub(super) fn push_function(
         &mut self,
         crate_name: &str,

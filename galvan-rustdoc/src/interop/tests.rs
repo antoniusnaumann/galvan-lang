@@ -191,6 +191,23 @@ fn public_use(id: &str, name: &str, target_id: &str) -> Value {
     })
 }
 
+fn public_external_use(id: &str, name: &str, source: &str) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "visibility": "public",
+        "path": ["demo"],
+        "inner": {
+            "use": {
+                "source": source,
+                "name": name,
+                "id": null,
+                "is_glob": false
+            }
+        }
+    })
+}
+
 fn public_glob_use(id: &str, name: &str, target_id: &str) -> Value {
     json!({
         "id": id,
@@ -1225,6 +1242,33 @@ fn rustdoc_imports_reexported_type_aliases() {
     };
     assert_eq!(ticket.ident, TypeIdent::new("Ticket"));
     assert_eq!(ticket.members[0].ident, ident("title"));
+}
+
+#[test]
+fn rustdoc_imports_external_reexported_types_without_index_targets() {
+    let json = json!({
+        "index": {
+            "0": public_external_use("0", "StatusCode", "http::StatusCode"),
+            "1": public_external_use("1", "DEFAULT_LIMIT", "http::DEFAULT_LIMIT")
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let imported = interop
+        .types
+        .iter()
+        .find(|ty| ty.name.as_str() == "StatusCode")
+        .expect("expected external re-exported type");
+    assert_eq!(imported.rust_path.as_ref(), "::http::StatusCode");
+    let TypeDecl::Empty(status_code) = &imported.decl.item else {
+        panic!("expected external re-export to import as empty type");
+    };
+    assert_eq!(status_code.ident, TypeIdent::new("StatusCode"));
+    assert!(interop
+        .types
+        .iter()
+        .all(|ty| ty.name.as_str() != "DEFAULT_LIMIT"));
 }
 
 #[test]

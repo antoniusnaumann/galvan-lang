@@ -87,7 +87,8 @@ commands remain subcommands.
 
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
-  - Resolve external-target re-exports from rustdoc JSON
+  - Resolve external-target function and constant re-exports from rustdoc JSON;
+    external type re-exports without target metadata are imported as empty types
   - Support parser/grammar syntax for imported Rust constants with uppercase
     names and qualified constant paths
   - Support qualified external Rust type paths in Galvan type syntax; imported
