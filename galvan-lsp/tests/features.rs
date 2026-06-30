@@ -4,9 +4,9 @@ use std::path::PathBuf;
 
 use dashmap::DashMap;
 use galvan_lsp::document::Document;
-use galvan_lsp::features::{completion, goto_definition, hover};
+use galvan_lsp::features::{completion, diagnostics, goto_definition, hover};
 use galvan_lsp::workspace::Crate;
-use tower_lsp::lsp_types::{HoverContents, MarkupContent, Position, Url};
+use tower_lsp::lsp_types::{DiagnosticSeverity, HoverContents, MarkupContent, Position, Url};
 
 const SOURCE: &str = "\
 fn greet(name: String) {
@@ -147,6 +147,48 @@ fn completion_aggregates_symbols_from_all_crate_files() {
     assert!(labels.iter().any(|l| l == "alpha"));
     assert!(labels.iter().any(|l| l == "beta"));
     assert!(labels.iter().any(|l| l == "Gamma"));
+}
+
+#[test]
+fn semantic_diagnostics_report_type_errors_with_a_range() {
+    let path = PathBuf::from("/galvan_lsp_test/src/main.galvan");
+    // Referencing an undefined identifier is a semantic error.
+    let src = "fn f() {\n    print(undefined_variable)\n}\n";
+    let krate = Crate::in_memory([(path.clone(), src.to_string())]);
+    let doc = Document::new(src);
+
+    let diags = diagnostics::diagnostics(&doc, &krate, Some(&path));
+    let semantic: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.severity == Some(DiagnosticSeverity::ERROR)
+                && d.message.contains("Unknown identifier")
+        })
+        .collect();
+
+    assert!(
+        !semantic.is_empty(),
+        "expected an unknown-identifier error, got: {:?}",
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
+    // The range points at the offending reference (line 1, 0-based).
+    let diag = semantic[0];
+    assert_eq!(diag.range.start.line, 1, "diagnostic range: {:?}", diag.range);
+}
+
+#[test]
+fn clean_program_has_no_semantic_diagnostics() {
+    let path = PathBuf::from("/galvan_lsp_test/src/main.galvan");
+    let src = "fn add(a: Int, b: Int) -> Int {\n    a + b\n}\n";
+    let krate = Crate::in_memory([(path.clone(), src.to_string())]);
+    let doc = Document::new(src);
+
+    let diags = diagnostics::diagnostics(&doc, &krate, Some(&path));
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
 }
 
 /// Exercise the real on-disk loader: a crate laid out as `<tmp>/src/*.galvan`,

@@ -9,12 +9,14 @@
 //! Files that are open in the editor are taken from their in-memory buffer
 //! (honouring unsaved edits); the rest are read from disk.
 
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use galvan_ast::SegmentedAsts;
+use galvan_ast::{Ast, SegmentedAsts};
 use galvan_files::{read_sources, Source};
+use galvan_hir::{typecheck, Diagnostic};
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
 use galvan_resolver::LookupContext;
 use tower_lsp::lsp_types::Url;
@@ -102,6 +104,34 @@ impl Crate {
 
     pub fn files(&self) -> impl Iterator<Item = &CrateFile> {
         self.files.iter()
+    }
+
+    /// Typecheck the whole crate and return the compiler's diagnostics.
+    ///
+    /// The crate is checked as a unit so that cross-file references resolve;
+    /// each returned [`Diagnostic`]'s span carries the file it belongs to (see
+    /// the `set_current_file` mechanism in `galvan-hir`), letting callers route
+    /// it back to the right document.
+    ///
+    /// Diagnostics are not produced for crates that fail to parse or that have
+    /// conflicting top-level declarations (a [`LookupError`](galvan_resolver::LookupError)).
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        let asts: Vec<Ast> = self
+            .files
+            .iter()
+            .filter_map(|file| file.source.clone().try_into_ast().ok())
+            .collect();
+        let Ok(segmented) = asts.segmented() else {
+            return Vec::new();
+        };
+
+        // Guard against the typechecker panicking on pathological input: a
+        // language server must keep running whatever the buffer contains.
+        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| typecheck(segmented)));
+        match checked {
+            Ok(Ok((_module, errors))) => errors.diagnostics().to_vec(),
+            _ => Vec::new(),
+        }
     }
 }
 

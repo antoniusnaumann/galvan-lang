@@ -1,19 +1,71 @@
-//! Syntax diagnostics derived from tree-sitter error and missing nodes.
+//! Diagnostics: syntax errors from tree-sitter plus semantic (type) errors from
+//! the compiler's typechecker.
 //!
-//! Semantic diagnostics (type errors) are produced by the compiler's
-//! typechecker, but it does not yet expose them with source spans in a way the
-//! language server can consume — see `compiler-features.md`. Until then we
-//! surface syntax errors only.
+//! Semantic diagnostics come from `galvan_hir::typecheck` run over the whole
+//! crate (so cross-file references resolve). Each compiler diagnostic carries
+//! the file it belongs to, so we keep only those for the document being
+//! refreshed and map their byte spans to ranges in that document.
 
+use std::path::Path;
+
+use galvan_hir::DiagnosticSeverity as HirSeverity;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::document::Document;
+use crate::workspace::Crate;
 
-pub fn diagnostics(document: &Document) -> Vec<Diagnostic> {
+/// All diagnostics for `document`: parser syntax errors plus, when the document
+/// corresponds to a file on disk, the compiler's semantic diagnostics for it.
+pub fn diagnostics(document: &Document, krate: &Crate, file: Option<&Path>) -> Vec<Diagnostic> {
+    let mut diagnostics = syntax_diagnostics(document);
+    if let Some(file) = file {
+        diagnostics.extend(semantic_diagnostics(document, krate, file));
+    }
+    diagnostics
+}
+
+/// Semantic diagnostics for `file`, produced by typechecking the whole crate.
+fn semantic_diagnostics(document: &Document, krate: &Crate, file: &Path) -> Vec<Diagnostic> {
+    krate
+        .diagnostics()
+        .into_iter()
+        .filter_map(|diagnostic| {
+            let span = diagnostic.span?;
+            if Path::new(&span.file) != file {
+                return None;
+            }
+
+            let message = match &diagnostic.suggestion {
+                Some(suggestion) => format!("{}\n{suggestion}", diagnostic.message),
+                None => diagnostic.message.clone(),
+            };
+
+            Some(Diagnostic {
+                range: document
+                    .line_index
+                    .byte_range(&document.text, span.start, span.end),
+                severity: Some(severity(&diagnostic.severity)),
+                source: Some("galvan".to_string()),
+                message,
+                ..Default::default()
+            })
+        })
+        .collect()
+}
+
+fn severity(severity: &HirSeverity) -> DiagnosticSeverity {
+    match severity {
+        HirSeverity::Error => DiagnosticSeverity::ERROR,
+        HirSeverity::Warning => DiagnosticSeverity::WARNING,
+        HirSeverity::Info => DiagnosticSeverity::INFORMATION,
+    }
+}
+
+/// Syntax diagnostics derived from tree-sitter error and missing nodes.
+fn syntax_diagnostics(document: &Document) -> Vec<Diagnostic> {
     let Some(tree) = document.tree.as_ref() else {
         return Vec::new();
     };
-    let text = document.text();
 
     let mut diagnostics = Vec::new();
     let mut cursor = tree.walk();
@@ -22,7 +74,6 @@ pub fn diagnostics(document: &Document) -> Vec<Diagnostic> {
     let mut recurse = true;
     loop {
         if recurse && cursor.goto_first_child() {
-            recurse = true;
             continue;
         }
 
@@ -34,19 +85,10 @@ pub fn diagnostics(document: &Document) -> Vec<Diagnostic> {
                 "Syntax error".to_string()
             };
             diagnostics.push(Diagnostic {
-                range: document.line_index.range(
-                    text,
-                    galvan_ast::Span {
-                        range: (node.start_byte(), node.end_byte().max(node.start_byte() + 1)),
-                        start: galvan_ast::Point {
-                            row: node.start_position().row,
-                            col: node.start_position().column,
-                        },
-                        end: galvan_ast::Point {
-                            row: node.end_position().row,
-                            col: node.end_position().column,
-                        },
-                    },
+                range: document.line_index.byte_range(
+                    &document.text,
+                    node.start_byte(),
+                    node.end_byte().max(node.start_byte() + 1),
                 ),
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("galvan".to_string()),

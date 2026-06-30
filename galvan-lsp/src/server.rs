@@ -25,9 +25,16 @@ impl Backend {
 
     /// Re-analyse a document and publish its diagnostics.
     async fn refresh(&self, uri: Url, text: String, version: i32) {
-        let document = Document::new(text);
-        let diags = diagnostics::diagnostics(&document);
-        self.documents.insert(uri.clone(), document);
+        self.documents.insert(uri.clone(), Document::new(text));
+        let krate = Crate::load(&uri, &self.documents);
+        let file = uri.to_file_path().ok();
+
+        // Scope the document borrow so it is released before the await below.
+        let diags = {
+            let document = self.documents.get(&uri).expect("just inserted");
+            diagnostics::diagnostics(&document, &krate, file.as_deref())
+        };
+
         self.client
             .publish_diagnostics(uri, diags, Some(version))
             .await;
