@@ -15,6 +15,7 @@ mod curated;
 mod function_id;
 mod import;
 mod lift;
+mod lift_model;
 mod registry;
 mod rustdoc_json;
 mod uses;

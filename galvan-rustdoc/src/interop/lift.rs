@@ -1,11 +1,11 @@
 use serde_json::Value;
 
 use galvan_ast::{
-    AliasTypeDecl, ArrayTypeItem, BasicTypeItem, ClosureTypeItem, DictionaryTypeItem,
-    EmptyTypeDecl, EnumTypeDecl, EnumTypeMember, EnumVariantField, FnDecl, FnSignature, Ident,
-    OptionalTypeItem, OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem,
-    ResultTypeItem, SetTypeItem, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
-    TupleTypeMember, TypeDecl, TypeElement, TypeIdent, Visibility,
+    AliasTypeDecl, ArrayTypeItem, BasicTypeItem, ClosureTypeItem, DictionaryTypeItem, EnumTypeDecl,
+    EnumTypeMember, EnumVariantField, FnSignature, Ident, OptionalTypeItem,
+    OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem, ResultTypeItem, SetTypeItem,
+    Span, StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
+    TypeIdent, Visibility,
 };
 
 use crate::model::{
@@ -13,6 +13,10 @@ use crate::model::{
     RustFieldConversion, RustReturnConversion,
 };
 
+use super::lift_model::{
+    ImportedFunctionDecl, ImportedTypeDecl, LiftedEnumMember, LiftedEnumVariantField, LiftedParam,
+    LiftedReturn, LiftedStructMember, LiftedTupleMember, LiftedType,
+};
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
     resolved_type_args, type_is_owned,
@@ -619,119 +623,12 @@ impl RustInterop {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct ImportedFunctionDecl {
-    pub(super) decl: FnDecl,
-
-    pub(super) return_conversion: RustReturnConversion,
-
-    pub(super) arg_conversions: Vec<RustArgConversion>,
-}
-
-#[derive(Debug)]
-pub(super) struct ImportedTypeDecl {
-    pub(super) decl: TypeDecl,
-
-    pub(super) field_conversions: Vec<RustFieldConversion>,
-
-    pub(super) constructor_arg_conversions: Vec<RustArgConversion>,
-
-    pub(super) enum_variant_conversions: Vec<RustEnumVariantConversion>,
-}
-
-impl ImportedTypeDecl {
-    pub(super) fn new(decl: TypeDecl) -> Self {
-        Self {
-            decl,
-            field_conversions: Vec::new(),
-            constructor_arg_conversions: Vec::new(),
-            enum_variant_conversions: Vec::new(),
-        }
-    }
-
-    pub(super) fn empty(name: &str) -> Self {
-        Self::new(empty_type_decl(name))
-    }
-}
-
-#[derive(Debug)]
-struct LiftedStructMember {
-    member: StructTypeMember,
-    arg_conversion: RustArgConversion,
-    pub(super) return_conversion: RustReturnConversion,
-}
-
-#[derive(Debug)]
-struct LiftedTupleMember {
-    member: TupleTypeMember,
-    arg_conversion: RustArgConversion,
-}
-
-#[derive(Debug)]
-struct LiftedEnumMember {
-    member: EnumTypeMember,
-    arg_conversions: Vec<RustEnumVariantArgConversion>,
-}
-
-#[derive(Debug)]
-struct LiftedEnumVariantField {
-    field: EnumVariantField,
-    arg_conversion: RustArgConversion,
-    pub(super) return_conversion: RustReturnConversion,
-}
-
-#[derive(Clone, Debug)]
-struct LiftedReturn {
-    ty: TypeElement,
-    decl_modifier: Option<galvan_ast::DeclModifier>,
-    pub(super) return_conversion: RustReturnConversion,
-}
-
-#[derive(Clone, Debug)]
-struct LiftedParam {
-    param: Param,
-    arg_conversion: RustArgConversion,
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct LiftedType {
-    ty: TypeElement,
-    decl_modifier: Option<galvan_ast::DeclModifier>,
-    arg_conversion: RustArgConversion,
-}
-
-impl LiftedType {
-    pub(super) fn new(ty: TypeElement) -> Self {
-        Self {
-            ty,
-            decl_modifier: None,
-            arg_conversion: RustArgConversion::None,
-        }
-    }
-
-    pub(super) fn with_modifier(ty: TypeElement, decl_modifier: galvan_ast::DeclModifier) -> Self {
-        Self {
-            ty,
-            decl_modifier: Some(decl_modifier),
-            arg_conversion: RustArgConversion::None,
-        }
-    }
-}
-
 fn member_arg_conversion(return_conversion: RustReturnConversion) -> RustArgConversion {
     match return_conversion {
         RustReturnConversion::None => RustArgConversion::None,
         RustReturnConversion::BoxDeref => RustArgConversion::BoxNew,
         RustReturnConversion::RcCloneDeref => RustArgConversion::RcNew,
     }
-}
-
-fn empty_type_decl(name: &str) -> TypeDecl {
-    TypeDecl::Empty(EmptyTypeDecl {
-        visibility: Visibility::public(),
-        ident: TypeIdent::new(name),
-        span: Span::default(),
-    })
 }
 
 fn parametric_or_plain_type(name: &str, args: Vec<LiftedType>) -> TypeElement {

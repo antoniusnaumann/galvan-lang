@@ -10,7 +10,7 @@ use crate::model::{
 };
 
 use super::function_id::RustFunctionId;
-use super::lift::ImportedTypeDecl;
+use super::lift_model::ImportedTypeDecl;
 use super::rustdoc_json::{public_type_name, receiver_type_ident, rust_path};
 use super::RustInterop;
 
