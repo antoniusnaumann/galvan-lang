@@ -11,8 +11,8 @@ mod expr;
 mod scope;
 
 use galvan_ast::{
-    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, MainKind,
-    Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    Assignment, AssignmentOperator, BasicTypeItem, Body, DeclModifier, Declaration, FnDecl, Ident,
+    MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement, TypeIdent,
 };
 use galvan_resolver::{LookupContext, LookupError};
 use galvan_rustdoc::RustInterop;
@@ -340,7 +340,7 @@ impl<'a> Checker<'a> {
         let shares_ref = declaration.decl_modifier == DeclModifier::Ref
             && declaration.assignment_modifier == Some(DeclModifier::Ref);
 
-        let (value, ty) = match (&declaration.type_annotation, &declaration.assignment) {
+        let (value, mut ty) = match (&declaration.type_annotation, &declaration.assignment) {
             (Some(annotation), Some(expression)) => {
                 let expected =
                     self.declaration_expected(annotation, declaration.decl_modifier, shares_ref);
@@ -380,6 +380,10 @@ impl<'a> Checker<'a> {
                 (None, TypeElement::infer())
             }
         };
+
+        if declaration.decl_modifier == DeclModifier::Ref {
+            ty = concretize_inferred_integer_ref_type(ty, value.as_ref());
+        }
 
         let ownership = match declaration.decl_modifier {
             DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => {
@@ -534,6 +538,35 @@ impl<'a> Checker<'a> {
                 None
             }
         }
+    }
+}
+
+fn concretize_inferred_integer_ref_type(
+    ty: TypeElement,
+    value: Option<&HirExpression>,
+) -> TypeElement {
+    if !matches!(
+        &ty,
+        TypeElement::Plain(plain) if plain.ident.as_str() == "__Number"
+    ) {
+        return ty;
+    }
+
+    let Some(HirExpression {
+        kind: HirExpressionKind::Literal(HirLiteral::Number(number)),
+        ..
+    }) = value
+    else {
+        return ty;
+    };
+
+    if number.contains('.') || number.contains('e') || number.contains('E') {
+        ty
+    } else {
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("Int"),
+            span: Span::default(),
+        })
     }
 }
 

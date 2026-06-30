@@ -234,6 +234,51 @@ fn non_primitive_ref_struct_fields_keep_mutex_storage() {
 }
 
 #[test]
+fn primitive_ref_locals_and_params_use_atomic_storage() {
+    let output = transpile_source(
+        "fn increment_ref(ref counter: Int) {
+             counter += 1
+         }
+         fn check() {
+             ref counter = 0
+             counter = 42
+             counter += 1
+             assert counter == 43
+         }",
+    );
+
+    assert!(
+        output.contains("fn increment_ref(counter: std::sync::Arc<std::sync::atomic::AtomicI64>)")
+    );
+    assert!(output.contains(
+        "let mut counter: std::sync::Arc<std::sync::atomic::AtomicI64> = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0))"
+    ));
+    assert!(output.contains("counter.store(42, std::sync::atomic::Ordering::Relaxed)"));
+    assert!(output.contains("counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)"));
+    assert!(output.contains("counter.load(std::sync::atomic::Ordering::Relaxed)"));
+}
+
+#[test]
+fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
+    let output = transpile_source(
+        "fn bump(mut value: Int) {
+             value += 1
+         }
+         fn check() {
+             ref counter = 0
+             bump(counter.mut)
+         }",
+    );
+
+    assert!(output.contains(
+        "let mut __galvan_atomic_arg_0 = counter.load(std::sync::atomic::Ordering::Relaxed)"
+    ));
+    assert!(output.contains("bump(&mut __galvan_atomic_arg_0)"));
+    assert!(output
+        .contains("counter.store(__galvan_atomic_arg_0, std::sync::atomic::Ordering::Relaxed)"));
+}
+
+#[test]
 fn clones_implicitly_for_move_parameters() {
     let output = transpile_source(
         "fn keep(move message: String) -> String {

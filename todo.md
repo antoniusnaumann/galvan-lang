@@ -42,12 +42,9 @@ commands remain subcommands.
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
-  - Lower local primitive `ref` variables and primitive `ref` parameters to
-    atomic shared state where appropriate; primitive `ref` struct fields
-    already use atomics
-  - Render atomic `ref` mutation/call-boundary operations without relying on
-    mutex guard semantics, e.g. mut-argument passing currently still assumes
-    lockable storage
+  - Complete atomic `ref` operation coverage beyond primitive locals,
+    parameters, fields, assignment, arithmetic assignment, reads, and basic
+    mut-argument call-boundaries
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)

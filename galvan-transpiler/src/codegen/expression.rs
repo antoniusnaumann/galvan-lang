@@ -14,7 +14,7 @@ use crate::sanitize::{mangle_function_name, sanitize_name, sanitize_path};
 use crate::ErrorCollector;
 use crate::Transpile;
 
-use super::wrap_ref_storage_value;
+use super::{atomic_ordering, atomic_ref_storage_type, wrap_ref_storage_value};
 
 impl Transpile for HirExpressionKind {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
@@ -353,6 +353,10 @@ impl Transpile for HirPrint {
 
 impl Transpile for HirFunctionCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        if let Some(call) = transpile_call_with_atomic_mut_ref_args(self, ctx, errors) {
+            return call;
+        }
+
         let args = transpile_rust_arguments(
             &self.args,
             self.rust_arg_conversions.as_slice(),
@@ -371,6 +375,64 @@ impl Transpile for HirFunctionCall {
 
         format!("{}({})", name, args)
     }
+}
+
+fn transpile_call_with_atomic_mut_ref_args(
+    call: &HirFunctionCall,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> Option<String> {
+    if !call.args.iter().any(is_atomic_mut_ref_arg) {
+        return None;
+    }
+
+    let mut setup = Vec::new();
+    let mut stores = Vec::new();
+    let args = call
+        .args
+        .iter()
+        .enumerate()
+        .map(|(idx, argument)| {
+            if is_atomic_mut_ref_arg(argument) {
+                let base = transpile_without_adjustments(argument, ctx, errors);
+                let temp = format!("__galvan_atomic_arg_{idx}");
+                setup.push(format!(
+                    "let mut {temp} = {base}.load({})",
+                    atomic_ordering()
+                ));
+                stores.push(format!("{base}.store({temp}, {})", atomic_ordering()));
+                format!("&mut {temp}")
+            } else {
+                transpile_rust_argument(
+                    argument,
+                    call.rust_arg_conversions
+                        .get(idx)
+                        .copied()
+                        .unwrap_or_default(),
+                    ctx,
+                    errors,
+                )
+            }
+        })
+        .join(", ");
+
+    let rendered = if let Some(rust_path) = &call.rust_path {
+        format!("{rust_path}({args})")
+    } else {
+        let name = mangle_function_name(call.ident.as_str(), &call.labels);
+        if let Some(namespace) = &call.namespace {
+            format!("{}::{}({})", sanitize_path(namespace), name, args)
+        } else {
+            format!("{}({})", name, args)
+        }
+    };
+    let rendered = transpile_rust_return(rendered, call.rust_return_conversion);
+    let setup = setup.into_iter().map(|line| format!("{line};")).join(" ");
+    let stores = stores.into_iter().map(|line| format!("{line};")).join(" ");
+
+    Some(format!(
+        "{{ {setup} let __galvan_result = {rendered}; {stores} __galvan_result }}"
+    ))
 }
 
 impl Transpile for HirMethodCall {
@@ -465,6 +527,26 @@ fn transpile_rust_argument(
 ) -> String {
     let rendered = argument.transpile(ctx, errors);
     apply_rust_arg_conversion_for_expr(rendered, argument, conversion)
+}
+
+fn is_atomic_mut_ref_arg(argument: &HirExpression) -> bool {
+    argument.adjustments
+        == [
+            Adjustment::LockRef,
+            Adjustment::Deref,
+            Adjustment::MutBorrow,
+        ]
+        && atomic_ref_storage_type(&argument.ty).is_some()
+}
+
+fn transpile_without_adjustments(
+    expression: &HirExpression,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let mut base = expression.clone();
+    base.adjustments.clear();
+    base.transpile(ctx, errors)
 }
 
 fn apply_rust_arg_conversion(rendered: String, conversion: RustArgConversion) -> String {

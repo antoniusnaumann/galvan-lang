@@ -22,7 +22,7 @@ use crate::Transpile;
 impl Transpile for HirExpression {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let rendered = self.kind.transpile(ctx, errors);
-        apply_adjustments(rendered, &self.kind, &self.adjustments)
+        apply_adjustments(rendered, self)
     }
 }
 
@@ -46,7 +46,7 @@ pub(crate) fn wrap_ref_storage_value(
     }
 }
 
-fn atomic_ref_storage_type(ty: &TypeElement) -> Option<&'static str> {
+pub(crate) fn atomic_ref_storage_type(ty: &TypeElement) -> Option<&'static str> {
     let TypeElement::Plain(plain) = ty else {
         return None;
     };
@@ -67,28 +67,36 @@ fn atomic_ref_storage_type(ty: &TypeElement) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn atomic_ordering() -> &'static str {
+    "std::sync::atomic::Ordering::Relaxed"
+}
+
 /// Renders the coercions determined by the typechecker around an expression
-fn apply_adjustments(
-    rendered: String,
-    kind: &HirExpressionKind,
-    adjustments: &[Adjustment],
-) -> String {
+fn apply_adjustments(rendered: String, expression: &HirExpression) -> String {
     let mut result = rendered;
-    for (i, adjustment) in adjustments.iter().enumerate() {
+    let mut loaded_atomic_ref = false;
+    for (i, adjustment) in expression.adjustments.iter().enumerate() {
+        let was_loaded_atomic_ref = loaded_atomic_ref;
+        loaded_atomic_ref = false;
         // Once the first adjustment is applied, the rendered code is a call,
         // wrap or reference that needs no further parenthesization
-        let parenthesize = i == 0 && needs_parens(kind);
+        let parenthesize = i == 0 && needs_parens(&expression.kind);
         result = match adjustment {
             Adjustment::Borrow if parenthesize => format!("&({result})"),
             Adjustment::Borrow => format!("&{result}"),
             Adjustment::MutBorrow if parenthesize => format!("&mut ({result})"),
             Adjustment::MutBorrow => format!("&mut {result}"),
+            Adjustment::Deref if was_loaded_atomic_ref => result,
             Adjustment::Deref => format!("*{result}"),
             Adjustment::ToOwned if parenthesize => format!("({result}).to_owned()"),
             Adjustment::ToOwned => format!("{result}.to_owned()"),
             Adjustment::WrapSome => format!("Some({result})"),
             Adjustment::WrapOk => format!("Ok({result})"),
             Adjustment::WrapErr => format!("Err({result})"),
+            Adjustment::LockRef if atomic_ref_storage_type(&expression.ty).is_some() => {
+                loaded_atomic_ref = true;
+                format!("{result}.load({})", atomic_ordering())
+            }
             Adjustment::LockRef => format!("{result}.lock().unwrap()"),
             Adjustment::ArcClone => format!("::std::sync::Arc::clone(&{result})"),
         };

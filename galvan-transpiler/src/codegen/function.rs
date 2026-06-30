@@ -5,6 +5,7 @@ use galvan_hir::builtins::CheckBuiltins;
 use galvan_hir::hir::{HirFunction, HirMain, HirMainKind, HirTest};
 use itertools::Itertools;
 
+use crate::codegen::ref_storage_type;
 use crate::context::Context;
 use crate::sanitize::{mangle_function_name, sanitize_name};
 use crate::transpile_item::ident::{TranspileType, TypeOwnership};
@@ -138,10 +139,11 @@ impl Transpile for Param {
                     return "__self: std::sync::Arc<std::sync::Mutex<Self>>".into();
                 }
 
+                let ty = self.param_type.transpile(ctx, errors);
                 format!(
-                    "{}: std::sync::Arc<std::sync::Mutex<{}>>",
+                    "{}: {}",
                     sanitize_name(self.identifier.as_str()),
-                    self.param_type.transpile(ctx, errors)
+                    ref_storage_type(&self.param_type, ty),
                 )
             }
         }
