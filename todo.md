@@ -91,8 +91,9 @@ commands remain subcommands.
     external type re-exports without target metadata are imported as empty types
   - Support parser/grammar syntax for imported Rust constants with uppercase
     names and qualified constant paths
-  - Support qualified external Rust type paths in Galvan type syntax; imported
-    Rust types currently become unqualified only through `use`
+  - Support qualified external Rust type paths in Galvan type syntax; rustdoc
+    metadata preserves module paths, but imported Rust types currently become
+    unqualified only through `use`
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,

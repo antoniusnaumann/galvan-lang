@@ -51,6 +51,8 @@ Resolved Rust paths lift by their item name. If the resolved type has generic
 arguments, those arguments are lifted recursively and preserved as Galvan
 parametric type arguments. If the resolved type is not one of the known wrapper
 types below, `galvan-rustdoc` records the type as an imported dependency type.
+When rustdoc provides the resolved module path, that path is preserved in the
+Rust metadata so same-named Rust types from different modules remain distinct.
 
 Qualified external type paths are preserved in the rustdoc metadata, but Galvan
 type syntax does not yet expose qualified type paths all the way through the

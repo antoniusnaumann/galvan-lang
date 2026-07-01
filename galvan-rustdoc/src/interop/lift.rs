@@ -513,7 +513,7 @@ impl RustInterop {
                 return Some(lifted);
             }
 
-            self.push_type(crate_name, name);
+            self.push_resolved_type(crate_name, name, resolved);
             return Some(LiftedType::new(parametric_or_plain_type(name, args)));
         }
         if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {

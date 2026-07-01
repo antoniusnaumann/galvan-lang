@@ -11,12 +11,23 @@ use crate::model::{
 
 use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
-use super::rustdoc_json::{public_type_name, receiver_type_ident, rust_path, type_generic_params};
+use super::rustdoc_json::{
+    public_type_name, receiver_type_ident, resolved_type_rust_path, rust_path, type_generic_params,
+};
 use super::RustInterop;
 
 impl RustInterop {
     pub(super) fn push_type(&mut self, crate_name: &str, name: &str) {
         let rust_path = format!("::{crate_name}::{name}").into_boxed_str();
+        self.push_empty_type(crate_name, name, rust_path);
+    }
+
+    pub(super) fn push_resolved_type(&mut self, crate_name: &str, name: &str, resolved: &Value) {
+        let rust_path = resolved_type_rust_path(crate_name, name, resolved);
+        self.push_empty_type(crate_name, name, rust_path);
+    }
+
+    fn push_empty_type(&mut self, crate_name: &str, name: &str, rust_path: Box<str>) {
         if self
             .types
             .iter()

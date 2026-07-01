@@ -298,9 +298,38 @@ pub(super) fn impl_constant_rust_path(
     impl_function_rust_path(crate_name, name, item, impl_inner)
 }
 
+pub(super) fn resolved_type_rust_path(crate_name: &str, name: &str, resolved: &Value) -> Box<str> {
+    let path = resolved_path_segments(name, resolved)
+        .map(|segments| {
+            if segments.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}::{name}", segments.join("::"))
+            }
+        })
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(|| name.to_string());
+
+    if path.contains("::") {
+        format!("::{path}").into()
+    } else {
+        format!("::{crate_name}::{path}").into()
+    }
+}
+
 fn resolved_rust_type_path(ty: &Value) -> Option<Box<str>> {
     let resolved = inner(ty, "resolved_path")?;
     let name = resolved.get("name").and_then(Value::as_str)?;
+    let segments = resolved_path_segments(name, resolved)?;
+
+    if segments.is_empty() {
+        Some(name.into())
+    } else {
+        Some(format!("{}::{name}", segments.join("::")).into())
+    }
+}
+
+fn resolved_path_segments<'a>(name: &str, resolved: &'a Value) -> Option<Vec<&'a str>> {
     let mut segments = resolved
         .get("path")
         .and_then(Value::as_array)
@@ -311,12 +340,7 @@ fn resolved_rust_type_path(ty: &Value) -> Option<Box<str>> {
     if segments.last().is_some_and(|segment| *segment == name) {
         segments.pop();
     }
-
-    if segments.is_empty() {
-        Some(name.into())
-    } else {
-        Some(format!("{}::{name}", segments.join("::")).into())
-    }
+    Some(segments)
 }
 
 fn item_inner_constant(item: &Value) -> Option<&Value> {

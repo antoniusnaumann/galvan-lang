@@ -529,6 +529,58 @@ fn rustdoc_preserves_generic_resolved_paths() {
 }
 
 #[test]
+fn rustdoc_preserves_qualified_paths_for_referenced_types() {
+    let mut interop = RustInterop::empty();
+    let ty = interop
+        .type_from_json(
+            "axum",
+            &resolved_with_path(
+                "Json",
+                &["axum", "response", "Json"],
+                vec![primitive("str")],
+            ),
+        )
+        .unwrap();
+
+    let TypeElement::Parametric(parametric) = ty else {
+        panic!("expected Json<T>, got {ty:?}");
+    };
+    assert_eq!(parametric.base_type.as_str(), "Json");
+    assert_eq!(parametric.type_args, vec![string_type()]);
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["axum", "response", "Json"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::axum::response::Json")
+    );
+}
+
+#[test]
+fn rustdoc_preserves_same_named_referenced_types_from_different_modules() {
+    let mut interop = RustInterop::empty();
+    interop.type_from_json(
+        "demo",
+        &resolved_with_path("Error", &["demo", "http", "Error"], vec![]),
+    );
+    interop.type_from_json(
+        "demo",
+        &resolved_with_path("Error", &["demo", "db", "Error"], vec![]),
+    );
+
+    let mut error_paths = interop
+        .types
+        .iter()
+        .filter(|ty| ty.name.as_str() == "Error")
+        .map(|ty| ty.rust_path.as_ref())
+        .collect::<Vec<_>>();
+    error_paths.sort();
+    assert_eq!(
+        error_paths,
+        vec!["::demo::db::Error", "::demo::http::Error"]
+    );
+}
+
+#[test]
 fn rustdoc_lifts_common_collections_and_results() {
     let mut interop = RustInterop::empty();
 
