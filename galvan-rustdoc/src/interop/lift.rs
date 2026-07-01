@@ -560,6 +560,7 @@ impl RustInterop {
 
     fn lift_known_resolved_type(&mut self, name: &str, args: &[LiftedType]) -> Option<LiftedType> {
         match name {
+            "String" => Some(LiftedType::new(string_type())),
             "Option" => Some(LiftedType::new(TypeElement::Optional(Box::new(
                 OptionalTypeItem {
                     inner: args
@@ -720,6 +721,10 @@ fn atomic_type(name: &str) -> Option<TypeElement> {
     Some(plain_type(TypeIdent::new(galvan)))
 }
 
+fn string_type() -> TypeElement {
+    plain_type(TypeIdent::new("String"))
+}
+
 pub(super) fn plain_type(ident: TypeIdent) -> TypeElement {
     TypeElement::Plain(BasicTypeItem {
         ident,
@@ -753,7 +758,7 @@ fn primitive_type(name: &str) -> TypeElement {
         "f32" => "Float",
         "f64" => "Double",
         "char" => "Char",
-        "str" => "String",
+        "str" => return string_type(),
         _ => "__UnknownRustPrimitive",
     };
     plain_type(TypeIdent::new(galvan))

@@ -529,6 +529,20 @@ fn rustdoc_preserves_generic_resolved_paths() {
 }
 
 #[test]
+fn rustdoc_lifts_resolved_string_as_builtin_string() {
+    let mut interop = RustInterop::empty();
+    let ty = interop
+        .type_from_json(
+            "std",
+            &resolved_with_path("String", &["alloc", "string", "String"], vec![]),
+        )
+        .unwrap();
+
+    assert_eq!(ty, string_type());
+    assert!(interop.types.iter().all(|ty| ty.name.as_str() != "String"));
+}
+
+#[test]
 fn rustdoc_preserves_qualified_paths_for_referenced_types() {
     let mut interop = RustInterop::empty();
     let ty = interop

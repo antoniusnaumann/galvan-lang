@@ -36,6 +36,9 @@ Rust primitive and builtin rustdoc type forms lift as follows:
 | `char` | `Char` |
 | `str` | `String` |
 
+Resolved Rust `String` also lifts to Galvan `String` and is treated as a
+builtin type rather than an imported dependency type.
+
 Unknown rustdoc primitive names lift to `__UnknownRustPrimitive` so the imported
 surface remains visible instead of silently disappearing.
 
