@@ -41,8 +41,11 @@ surface remains visible instead of silently disappearing.
 
 ## Generic And Path Types
 
-Rust generic parameters lift to Galvan generic type parameters with the same
-name.
+Rust generic type parameters lift to Galvan generic type parameters with the
+same name. Public Rust type declarations also preserve their type generic
+parameter list, including opaque imported types whose fields are not exposed.
+Rust lifetime parameters and const generic parameters are ignored because
+Galvan does not currently have corresponding API-surface syntax.
 
 Resolved Rust paths lift by their item name. If the resolved type has generic
 arguments, those arguments are lifted recursively and preserved as Galvan
@@ -141,5 +144,6 @@ The following safe Rust shapes are also not lifted yet:
 - `impl Trait`
 - generic associated types
 - unions and `repr` details
+- lifetime and const generic parameters
 - external function and constant re-exports that do not have local rustdoc
   target metadata

@@ -1,5 +1,5 @@
 use galvan_ast::{
-    EmptyTypeDecl, EnumTypeMember, EnumVariantField, FnDecl, Param, StructTypeMember,
+    EmptyTypeDecl, EnumTypeMember, EnumVariantField, FnDecl, Ident, Param, StructTypeMember,
     TupleTypeMember, TypeDecl, TypeElement, TypeIdent, Visibility,
 };
 
@@ -34,9 +34,14 @@ impl ImportedTypeDecl {
     }
 
     pub(super) fn empty(name: &str) -> Self {
+        Self::empty_with_generics(name, Vec::new())
+    }
+
+    pub(super) fn empty_with_generics(name: &str, generic_params: Vec<Ident>) -> Self {
         Self::new(TypeDecl::Empty(EmptyTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new(name),
+            generic_params,
             span: galvan_ast::Span::default(),
         }))
     }

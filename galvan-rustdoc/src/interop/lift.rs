@@ -19,7 +19,8 @@ use super::lift_model::{
 };
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
-    resolved_type_args, type_contains_raw_pointer, type_decl_contains_raw_pointer, type_is_owned,
+    resolved_type_args, type_alias_type, type_contains_raw_pointer, type_decl_contains_raw_pointer,
+    type_generic_params, type_inner_generic_params, type_is_owned,
 };
 use super::RustInterop;
 
@@ -44,7 +45,7 @@ impl RustInterop {
         }
         if let Some(alias_item) = inner.get("type_alias") {
             return self
-                .alias_decl_from_json(crate_name, name, alias_item)
+                .alias_decl_from_json(crate_name, name, alias_item, type_generic_params(item))
                 .map(ImportedTypeDecl::new);
         }
 
@@ -56,11 +57,13 @@ impl RustInterop {
         crate_name: &str,
         name: &str,
         alias_item: &Value,
+        generic_params: Vec<Ident>,
     ) -> Option<TypeDecl> {
         Some(TypeDecl::Alias(AliasTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new(name),
-            r#type: self.type_from_json(crate_name, alias_item)?,
+            generic_params,
+            r#type: self.type_from_json(crate_name, type_alias_type(alias_item)?)?,
             span: Span::default(),
         }))
     }
@@ -92,6 +95,7 @@ impl RustInterop {
                 decl: TypeDecl::Tuple(TupleTypeDecl {
                     visibility: Visibility::public(),
                     ident: TypeIdent::new(name),
+                    generic_params: type_inner_generic_params(struct_item),
                     members,
                     span: Span::default(),
                 }),
@@ -128,6 +132,7 @@ impl RustInterop {
             decl: TypeDecl::Struct(StructTypeDecl {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
+                generic_params: type_inner_generic_params(struct_item),
                 members,
                 span: Span::default(),
             }),
@@ -207,6 +212,7 @@ impl RustInterop {
             decl: TypeDecl::Enum(EnumTypeDecl {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
+                generic_params: type_inner_generic_params(enum_item),
                 members,
                 span: Span::default(),
             }),

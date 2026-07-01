@@ -32,6 +32,37 @@ fn generic(name: &str) -> Value {
     json!({ "generic": name })
 }
 
+fn generic_param(name: &str) -> Value {
+    json!({
+        "name": name,
+        "kind": {
+            "type": {
+                "bounds": [],
+                "default": null,
+                "is_synthetic": false
+            }
+        }
+    })
+}
+
+fn lifetime_param(name: &str) -> Value {
+    json!({
+        "name": name,
+        "kind": {
+            "lifetime": {
+                "outlives": []
+            }
+        }
+    })
+}
+
+fn type_generics(params: Vec<Value>) -> Value {
+    json!({
+        "params": params,
+        "where_predicates": []
+    })
+}
+
 fn never() -> Value {
     json!({ "never": null })
 }
@@ -809,6 +840,60 @@ fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
 }
 
 #[test]
+fn rustdoc_preserves_generic_params_on_opaque_types() {
+    let json = json!({
+        "index": {
+            "0": public_item("State", json!({
+                "struct": {
+                    "kind": "unit",
+                    "generics": type_generics(vec![
+                        lifetime_param("'a"),
+                        generic_param("T"),
+                    ])
+                }
+            }))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(state) = imported_type(&interop, "State") else {
+        panic!("expected opaque State type");
+    };
+    assert_eq!(state.generic_params, vec![Ident::new("T")]);
+}
+
+#[test]
+fn rustdoc_preserves_generic_params_on_structs() {
+    let json = json!({
+        "index": {
+            "0": public_item("Page", json!({
+                "struct": {
+                    "kind": "plain",
+                    "generics": type_generics(vec![generic_param("T")]),
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field("items", resolved("Vec", vec![generic("T")]))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Struct(page) = imported_type(&interop, "Page") else {
+        panic!("expected Page struct");
+    };
+    assert_eq!(page.generic_params, vec![Ident::new("T")]);
+    assert_eq!(
+        page.members[0].r#type,
+        TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+            elements: generic_type("T"),
+            span: Span::default()
+        }))
+    );
+}
+
+#[test]
 fn rustdoc_imports_never_returning_functions() {
     let json = json!({
         "index": {
@@ -1245,6 +1330,15 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
             })),
             "1": public_item("Names", json!({
                 "type_alias": resolved("Vec", vec![primitive("str")])
+            })),
+            "2": public_item("ParseResult", json!({
+                "type_alias": {
+                    "type": resolved(
+                        "Result",
+                        vec![generic("T"), resolved("Error", vec![])]
+                    ),
+                    "generics": type_generics(vec![generic_param("T")])
+                }
             }))
         }
     });
@@ -1263,6 +1357,22 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
         panic!("expected lifted Vec alias, got {:?}", names.r#type);
     };
     assert_eq!(names.elements, string_type());
+
+    let TypeDecl::Alias(parse_result) = imported_type(&interop, "ParseResult") else {
+        panic!("expected ParseResult alias");
+    };
+    assert_eq!(parse_result.generic_params, vec![Ident::new("T")]);
+    let TypeElement::Result(parse_result) = &parse_result.r#type else {
+        panic!(
+            "expected lifted Result alias, got {:?}",
+            parse_result.r#type
+        );
+    };
+    assert_eq!(parse_result.success, generic_type("T"));
+    assert_eq!(
+        parse_result.error,
+        Some(plain_type(TypeIdent::new("Error")))
+    );
 }
 
 #[test]

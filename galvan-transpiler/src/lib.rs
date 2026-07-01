@@ -360,6 +360,9 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     for ty in &module.types {
         ctx.lookup.types.insert(ty.item.ident().clone(), ty);
     }
+    for ty in &rust_interop.types {
+        ctx.lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
+    }
 
     transpile_module(&module, &ctx, &mut errors)
 }

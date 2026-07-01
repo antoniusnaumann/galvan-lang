@@ -1085,6 +1085,7 @@ fn rust_associated_functions_are_typechecked_as_type_member_calls() {
         item: TypeDecl::Empty(EmptyTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new("Dog"),
+            generic_params: Vec::new(),
             span: Span::default(),
         }),
         source: Source::Builtin,
@@ -1183,6 +1184,7 @@ fn imported_rust_types_are_available_to_typecheck_after_use() {
         TypeDecl::Empty(EmptyTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new("Dog"),
+            generic_params: Vec::new(),
             span: Span::default(),
         }),
     );
@@ -1286,6 +1288,7 @@ fn imported_rust_tuple_struct_constructors_are_typechecked_as_tuple_constructors
         TypeDecl::Tuple(TupleTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new("Json"),
+            generic_params: Vec::new(),
             members: vec![TupleTypeMember {
                 r#type: TypeElement::Plain(BasicTypeItem {
                     ident: TypeIdent::new("String"),
@@ -1385,6 +1388,7 @@ fn imported_rust_tuple_struct_constructors_preserve_expected_parametric_type() {
         TypeDecl::Tuple(TupleTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new("Json"),
+            generic_params: Vec::new(),
             members: vec![TupleTypeMember {
                 r#type: TypeElement::Generic(GenericTypeItem {
                     ident: Ident::new("T"),
@@ -1478,6 +1482,7 @@ fn imported_rust_tuple_struct_constructors_infer_parametric_type_from_arguments(
         TypeDecl::Tuple(TupleTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new("Json"),
+            generic_params: Vec::new(),
             members: vec![TupleTypeMember {
                 r#type: TypeElement::Generic(GenericTypeItem {
                     ident: Ident::new("T"),
@@ -1657,6 +1662,7 @@ fn rust_associated_constants_are_typechecked_as_type_member_access() {
         TypeDecl::Empty(EmptyTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new("StatusCode"),
+            generic_params: Vec::new(),
             span: Span::default(),
         }),
     );

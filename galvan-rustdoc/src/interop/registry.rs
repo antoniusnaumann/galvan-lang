@@ -11,7 +11,7 @@ use crate::model::{
 
 use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
-use super::rustdoc_json::{public_type_name, receiver_type_ident, rust_path};
+use super::rustdoc_json::{public_type_name, receiver_type_ident, rust_path, type_generic_params};
 use super::RustInterop;
 
 impl RustInterop {
@@ -37,6 +37,7 @@ impl RustInterop {
                 item: TypeDecl::Empty(EmptyTypeDecl {
                     visibility: Visibility::public(),
                     ident,
+                    generic_params: Vec::new(),
                     span: Span::default(),
                 }),
                 source: Source::Builtin,
@@ -57,7 +58,9 @@ impl RustInterop {
         let rust_path = rust_path(crate_name, name, item);
         let imported = self
             .type_decl_from_item(crate_name, name, item, index)
-            .unwrap_or_else(|| ImportedTypeDecl::empty(name));
+            .unwrap_or_else(|| {
+                ImportedTypeDecl::empty_with_generics(name, type_generic_params(item))
+            });
         let type_decl = RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(name),
@@ -104,7 +107,9 @@ impl RustInterop {
 
         let imported = self
             .type_decl_from_item(crate_name, exported_name, item, index)
-            .unwrap_or_else(|| ImportedTypeDecl::empty(exported_name));
+            .unwrap_or_else(|| {
+                ImportedTypeDecl::empty_with_generics(exported_name, type_generic_params(item))
+            });
         self.types.push(RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(exported_name),

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use galvan_ast::{TypeElement, TypeIdent};
+use galvan_ast::{Ident, TypeElement, TypeIdent};
 
 pub(super) fn inner<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     match value {
@@ -35,6 +35,49 @@ pub(super) fn public_type_name(item: &Value) -> Option<&str> {
         .iter()
         .any(|kind| inner.get(*kind).is_some())
         .then_some(name)
+}
+
+pub(super) fn type_generic_params(item: &Value) -> Vec<Ident> {
+    let Some(inner) = item.get("inner") else {
+        return Vec::new();
+    };
+
+    ["struct", "enum", "type_alias", "union"]
+        .iter()
+        .find_map(|kind| inner.get(*kind))
+        .and_then(type_inner_generics)
+        .or_else(|| item.get("generics"))
+        .map(generic_type_params)
+        .unwrap_or_default()
+}
+
+pub(super) fn type_inner_generic_params(inner: &Value) -> Vec<Ident> {
+    type_inner_generics(inner)
+        .map(generic_type_params)
+        .unwrap_or_default()
+}
+
+fn type_inner_generics(inner: &Value) -> Option<&Value> {
+    inner
+        .get("generics")
+        .or_else(|| inner.as_object().and_then(|object| object.get("generics")))
+}
+
+fn generic_type_params(generics: &Value) -> Vec<Ident> {
+    generics
+        .get("params")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|param| {
+            param
+                .get("kind")
+                .and_then(|kind| kind.get("type"))
+                .is_some()
+        })
+        .filter_map(|param| param.get("name").and_then(Value::as_str))
+        .map(Ident::new)
+        .collect()
 }
 
 pub(super) fn function_is_unsafe(function: &Value) -> bool {
@@ -71,7 +114,7 @@ pub(super) fn type_decl_contains_raw_pointer(
     };
 
     if let Some(alias) = inner.get("type_alias") {
-        return type_contains_raw_pointer(alias);
+        return type_alias_type(alias).is_some_and(type_contains_raw_pointer);
     }
 
     if let Some(struct_item) = inner.get("struct") {
@@ -90,6 +133,10 @@ pub(super) fn type_decl_contains_raw_pointer(
     }
 
     false
+}
+
+pub(super) fn type_alias_type(alias: &Value) -> Option<&Value> {
+    alias.get("type").or(Some(alias))
 }
 
 pub(super) fn type_contains_raw_pointer(ty: &Value) -> bool {
