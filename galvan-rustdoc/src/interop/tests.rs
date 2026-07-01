@@ -169,6 +169,26 @@ fn public_function(name: &str, inputs: Vec<Value>, output: Value) -> Value {
     })
 }
 
+fn public_unsafe_function(name: &str, inputs: Vec<Value>, output: Value) -> Value {
+    json!({
+        "id": name,
+        "name": name,
+        "visibility": "public",
+        "path": ["demo"],
+        "inner": {
+            "function": {
+                "sig": {
+                    "inputs": inputs,
+                    "output": output
+                },
+                "header": {
+                    "is_unsafe": true
+                }
+            }
+        }
+    })
+}
+
 fn public_constant(name: &str, ty: Value) -> Value {
     json!({
         "id": name,
@@ -546,40 +566,12 @@ fn rustdoc_lifts_slice_and_array_types() {
 }
 
 #[test]
-fn rustdoc_lifts_raw_pointer_types() {
+fn rustdoc_does_not_lift_raw_pointer_types() {
     let mut interop = RustInterop::empty();
 
-    let const_pointer = interop
+    assert!(interop
         .type_from_json("std", &raw_pointer(primitive("u8"), false))
-        .unwrap();
-    let TypeElement::Parametric(const_pointer) = const_pointer else {
-        panic!("expected const raw pointer type, got {const_pointer:?}");
-    };
-    assert_eq!(const_pointer.base_type, TypeIdent::new("ConstRawPointer"));
-    assert_eq!(
-        const_pointer.type_args,
-        vec![plain_type(TypeIdent::new("U8"))]
-    );
-
-    let mut_pointer = interop
-        .type_from_json("std", &raw_pointer(resolved("Ticket", vec![]), true))
-        .unwrap();
-    let TypeElement::Parametric(mut_pointer) = mut_pointer else {
-        panic!("expected mut raw pointer type, got {mut_pointer:?}");
-    };
-    assert_eq!(mut_pointer.base_type, TypeIdent::new("MutRawPointer"));
-    assert_eq!(
-        mut_pointer.type_args,
-        vec![plain_type(TypeIdent::new("Ticket"))]
-    );
-
-    let param = interop
-        .param_from_json(
-            "std",
-            &json!(["bytes", raw_pointer(primitive("u8"), false)]),
-        )
-        .unwrap();
-    assert_eq!(param.decl_modifier, None);
+        .is_none());
 }
 
 #[test]
@@ -730,6 +722,40 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
 }
 
 #[test]
+fn rustdoc_does_not_import_unsafe_functions() {
+    let json = json!({
+        "index": {
+            "0": public_unsafe_function("from_raw_parts", vec![], primitive("u64"))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("from_raw_parts"), &[])
+        .is_none());
+}
+
+#[test]
+fn rustdoc_does_not_import_functions_with_raw_pointer_signatures() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "read_address",
+                vec![json!(["bytes", raw_pointer(primitive("u8"), false)])],
+                primitive("u64")
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("read_address"), &[])
+        .is_none());
+}
+
+#[test]
 fn rustdoc_imports_function_pointer_parameters() {
     let json = json!({
         "index": {
@@ -758,6 +784,28 @@ fn rustdoc_imports_function_pointer_parameters() {
     };
     assert_eq!(closure.parameters, vec![u64_type()]);
     assert_eq!(closure.return_ty, TypeElement::bool());
+}
+
+#[test]
+fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("Buffer", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field("ptr", raw_pointer(primitive("u8"), false))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(buffer) = imported_type(&interop, "Buffer") else {
+        panic!("expected Buffer to import as an opaque type");
+    };
+    assert_eq!(buffer.ident, TypeIdent::new("Buffer"));
 }
 
 #[test]
@@ -1537,6 +1585,62 @@ fn rustdoc_imports_inherent_associated_functions() {
         function.decl.item.signature.return_type,
         plain_type(TypeIdent::new("Ticket"))
     );
+}
+
+#[test]
+fn rustdoc_does_not_import_unsafe_associated_functions() {
+    let json = json!({
+        "index": {
+            "0": public_item("Ticket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": {
+                "id": "1",
+                "name": null,
+                "visibility": "public",
+                "inner": {
+                    "impl": {
+                        "for": resolved("Ticket", vec![]),
+                        "trait": null,
+                        "items": ["2"]
+                    }
+                }
+            },
+            "2": {
+                "id": "2",
+                "name": "from_raw",
+                "visibility": "public",
+                "path": ["demo", "Ticket"],
+                "inner": {
+                    "function": {
+                        "sig": {
+                            "inputs": [
+                                ["address", primitive("usize")]
+                            ],
+                            "output": resolved("Ticket", vec![])
+                        },
+                        "header": {
+                            "is_unsafe": true
+                        }
+                    }
+                }
+            }
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .associated_function(
+            Some("demo"),
+            &TypeIdent::new("Ticket"),
+            &ident("from_raw"),
+            &[]
+        )
+        .is_none());
 }
 
 #[test]

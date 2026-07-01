@@ -95,12 +95,12 @@ commands remain subcommands.
     Rust types currently become unqualified only through `use`
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
-  - Extend Rust wrapper lifting beyond the current common cases (`Option<T>`,
+  - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,
     Rust list/map/set collections, `Result<T, E>`, `Mutex<T>` / `RwLock<T>`,
     `Arc<Mutex<T>>` / `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` /
     `Rc<T>` interop conversions) to cover additional smart pointers and
     standard wrappers
-  - Lift the remaining rustdoc type shapes needed for API round-tripping,
+  - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
     including `dyn Trait`, `impl Trait`, and generic associated types
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to

@@ -37,6 +37,124 @@ pub(super) fn public_type_name(item: &Value) -> Option<&str> {
         .then_some(name)
 }
 
+pub(super) fn function_is_unsafe(function: &Value) -> bool {
+    function.get("is_unsafe").and_then(Value::as_bool) == Some(true)
+        || function
+            .get("header")
+            .is_some_and(function_header_is_unsafe)
+        || function
+            .get("sig")
+            .and_then(|signature| signature.get("header"))
+            .is_some_and(function_header_is_unsafe)
+}
+
+pub(super) fn signature_contains_raw_pointer(signature: &Value) -> bool {
+    signature
+        .get("inputs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(signature_input_type)
+        .any(type_contains_raw_pointer)
+        || signature
+            .get("output")
+            .filter(|output| !output.is_null())
+            .is_some_and(type_contains_raw_pointer)
+}
+
+pub(super) fn type_decl_contains_raw_pointer(
+    item: &Value,
+    index: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some(inner) = item.get("inner") else {
+        return false;
+    };
+
+    if let Some(alias) = inner.get("type_alias") {
+        return type_contains_raw_pointer(alias);
+    }
+
+    if let Some(struct_item) = inner.get("struct") {
+        return item_ids(struct_item, "fields")
+            .into_iter()
+            .filter_map(|id| index.get(id))
+            .filter_map(|field| item_inner(field, "struct_field"))
+            .any(type_contains_raw_pointer);
+    }
+
+    if let Some(enum_item) = inner.get("enum") {
+        return item_ids(enum_item, "variants")
+            .into_iter()
+            .filter_map(|id| index.get(id))
+            .any(|variant| variant_contains_raw_pointer(variant, index));
+    }
+
+    false
+}
+
+pub(super) fn type_contains_raw_pointer(ty: &Value) -> bool {
+    if inner(ty, "raw_pointer").is_some() {
+        return true;
+    }
+    if let Some(borrowed) = inner(ty, "borrowed_ref") {
+        return borrowed.get("type").is_some_and(type_contains_raw_pointer);
+    }
+    if let Some(slice) = inner(ty, "slice") {
+        return type_contains_raw_pointer(slice);
+    }
+    if let Some(array) = inner(ty, "array") {
+        return array
+            .get("type")
+            .or_else(|| array.get("element"))
+            .is_some_and(type_contains_raw_pointer);
+    }
+    if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function")) {
+        let signature = function.get("sig").unwrap_or(function);
+        return signature_contains_raw_pointer(signature);
+    }
+    if let Some(resolved) = inner(ty, "resolved_path") {
+        return resolved_type_args(resolved)
+            .into_iter()
+            .any(type_contains_raw_pointer);
+    }
+    if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
+        return tuple.iter().any(type_contains_raw_pointer);
+    }
+
+    false
+}
+
+fn function_header_is_unsafe(header: &Value) -> bool {
+    header.get("is_unsafe").and_then(Value::as_bool) == Some(true)
+        || header.get("unsafe").and_then(Value::as_bool) == Some(true)
+        || header.get("unsafety").and_then(Value::as_str) == Some("unsafe")
+}
+
+fn signature_input_type(input: &Value) -> &Value {
+    input
+        .as_array()
+        .and_then(|pair| pair.get(1))
+        .unwrap_or(input)
+}
+
+fn variant_contains_raw_pointer(variant: &Value, index: &serde_json::Map<String, Value>) -> bool {
+    let Some(variant) = item_inner(variant, "variant") else {
+        return false;
+    };
+    let Some(kind) = variant.get("kind") else {
+        return false;
+    };
+
+    let fields = inner(kind, "tuple").or_else(|| inner(kind, "struct"));
+    fields
+        .map(|fields| item_ids(fields, "fields"))
+        .into_iter()
+        .flatten()
+        .filter_map(|id| index.get(id))
+        .filter_map(|field| item_inner(field, "struct_field"))
+        .any(type_contains_raw_pointer)
+}
+
 pub(super) fn item_ids<'a>(item: &'a Value, key: &str) -> Vec<&'a str> {
     item.get(key)
         .and_then(Value::as_array)

@@ -1,5 +1,9 @@
 use galvan_ast::{FnDecl, Ident, ToplevelItem, TypeDecl, TypeElement, TypeIdent};
 
+use super::{
+    RustArgConversion, RustEnumVariantConversion, RustFieldConversion, RustReturnConversion,
+};
+
 #[derive(Debug)]
 pub struct RustTypeDecl {
     pub namespace: Box<str>,
@@ -19,43 +23,6 @@ pub struct RustFunctionDecl {
     pub return_conversion: RustReturnConversion,
     pub arg_conversions: Vec<RustArgConversion>,
     pub decl: ToplevelItem<FnDecl>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RustArgConversion {
-    #[default]
-    None,
-    SharedBorrow,
-    BoxNew,
-    RcNew,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RustReturnConversion {
-    #[default]
-    None,
-    BoxDeref,
-    RcCloneDeref,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RustFieldConversion {
-    pub field: Ident,
-    pub arg_conversion: RustArgConversion,
-    pub return_conversion: RustReturnConversion,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RustEnumVariantConversion {
-    pub variant: TypeIdent,
-    pub args: Vec<RustEnumVariantArgConversion>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RustEnumVariantArgConversion {
-    pub field: Option<Ident>,
-    pub arg_conversion: RustArgConversion,
-    pub return_conversion: RustReturnConversion,
 }
 
 #[derive(Debug)]

@@ -64,20 +64,6 @@ impl Transpile for ResultTypeItem {
 
 impl Transpile for ParametricTypeItem {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        if let Some(pointer) = raw_pointer_prefix(self.base_type.as_str()) {
-            let Some(inner) = self.type_args.first() else {
-                errors.warning(
-                    format!(
-                        "Raw pointer type {} is missing its pointee type",
-                        self.base_type
-                    ),
-                    None,
-                );
-                return format!("{pointer} _");
-            };
-            return format!("{pointer} {}", inner.transpile(ctx, errors));
-        }
-
         let base = self.base_type.transpile(ctx, errors);
         let args = self
             .type_args
@@ -85,14 +71,6 @@ impl Transpile for ParametricTypeItem {
             .map(|arg| arg.transpile(ctx, errors))
             .join(", ");
         format!("{}<{}>", base, args)
-    }
-}
-
-fn raw_pointer_prefix(base_type: &str) -> Option<&'static str> {
-    match base_type {
-        "ConstRawPointer" => Some("*const"),
-        "MutRawPointer" => Some("*mut"),
-        _ => None,
     }
 }
 
@@ -138,38 +116,4 @@ impl_transpile_variants! { TypeElement;
     Void
     Infer
     Never
-}
-
-#[cfg(test)]
-mod tests {
-    use galvan_ast::{BasicTypeItem, ParametricTypeItem, Span, TypeElement, TypeIdent};
-    use galvan_hir::mapping::Mapping;
-
-    use crate::context::Context;
-    use crate::{ErrorCollector, Transpile};
-
-    #[test]
-    fn synthetic_raw_pointer_types_transpile_to_rust_pointers() {
-        let ctx = Context::new(Mapping::default());
-        let mut errors = ErrorCollector::new();
-        let const_pointer = ParametricTypeItem {
-            base_type: TypeIdent::new("ConstRawPointer"),
-            type_args: vec![TypeElement::Plain(BasicTypeItem {
-                ident: TypeIdent::new("Ticket"),
-                span: Span::default(),
-            })],
-            span: Span::default(),
-        };
-        let mut_pointer = ParametricTypeItem {
-            base_type: TypeIdent::new("MutRawPointer"),
-            type_args: vec![TypeElement::Plain(BasicTypeItem {
-                ident: TypeIdent::new("String"),
-                span: Span::default(),
-            })],
-            span: Span::default(),
-        };
-
-        assert_eq!(const_pointer.transpile(&ctx, &mut errors), "*const Ticket");
-        assert_eq!(mut_pointer.transpile(&ctx, &mut errors), "*mut String");
-    }
 }

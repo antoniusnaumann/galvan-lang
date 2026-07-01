@@ -3,9 +3,10 @@ use std::collections::HashSet;
 use serde_json::Value;
 
 use super::rustdoc_json::{
-    callable_rust_path, constant_inner, constant_type, impl_constant_ids, impl_constant_rust_path,
-    impl_function_ids, impl_function_rust_path, is_public, item_ids, item_inner, public_type_name,
-    receiver_type_ident, return_is_borrowed,
+    callable_rust_path, constant_inner, constant_type, function_is_unsafe, impl_constant_ids,
+    impl_constant_rust_path, impl_function_ids, impl_function_rust_path, is_public, item_ids,
+    item_inner, public_type_name, receiver_type_ident, return_is_borrowed,
+    signature_contains_raw_pointer, type_contains_raw_pointer,
 };
 use super::RustInterop;
 
@@ -50,9 +51,15 @@ impl RustInterop {
             let Some(function) = item_inner(item, "function") else {
                 continue;
             };
+            if function_is_unsafe(function) {
+                continue;
+            }
             let Some(signature) = function.get("sig") else {
                 continue;
             };
+            if signature_contains_raw_pointer(signature) {
+                continue;
+            }
             let rust_path = callable_rust_path(crate_name, name, item);
             let imported = self.function_decl(crate_name, name, signature);
             let borrowed_return = return_is_borrowed(signature);
@@ -101,9 +108,15 @@ impl RustInterop {
                 let Some(function) = item_inner(item, "function") else {
                     continue;
                 };
+                if function_is_unsafe(function) {
+                    continue;
+                }
                 let Some(signature) = function.get("sig") else {
                     continue;
                 };
+                if signature_contains_raw_pointer(signature) {
+                    continue;
+                }
 
                 let associated_receiver = impl_inner
                     .get("for")
@@ -178,7 +191,13 @@ impl RustInterop {
             }
 
             if let Some(function) = item_inner(target, "function") {
+                if function_is_unsafe(function) {
+                    continue;
+                }
                 if let Some(signature) = function.get("sig") {
+                    if signature_contains_raw_pointer(signature) {
+                        continue;
+                    }
                     let imported = self.function_decl(crate_name, exported_name, signature);
                     let borrowed_return = return_is_borrowed(signature);
                     self.push_function(
@@ -269,7 +288,13 @@ impl RustInterop {
             }
 
             if let Some(function) = item_inner(target, "function") {
+                if function_is_unsafe(function) {
+                    continue;
+                }
                 if let Some(signature) = function.get("sig") {
+                    if signature_contains_raw_pointer(signature) {
+                        continue;
+                    }
                     let imported = self.function_decl(crate_name, exported_name, signature);
                     let borrowed_return = return_is_borrowed(signature);
                     self.push_function(
@@ -329,6 +354,9 @@ impl RustInterop {
             else {
                 continue;
             };
+            if constant_type(constant).is_some_and(type_contains_raw_pointer) {
+                continue;
+            }
             self.push_constant(
                 crate_name,
                 None,
@@ -371,6 +399,9 @@ impl RustInterop {
             else {
                 continue;
             };
+            if constant_type(constant).is_some_and(type_contains_raw_pointer) {
+                continue;
+            }
             let rust_path = impl_constant_rust_path(crate_name, name, item, impl_inner);
             self.push_constant(crate_name, receiver.clone(), name, rust_path, ty);
             found_item = true;

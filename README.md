@@ -78,6 +78,10 @@ runtime attribute in Galvan code.
 > Async functions, `.await`, and async `main` generation are not implemented
 > yet.
 
+> [!NOTE]
+> Rustdoc-backed dependency interop liftings are documented separately in
+> [`galvan-rustdoc/LIFTINGS.md`](galvan-rustdoc/LIFTINGS.md).
+
 Strings support inline interpolation:
 
 ```galvan
