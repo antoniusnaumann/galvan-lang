@@ -91,21 +91,21 @@ pub(super) fn function_is_unsafe(function: &Value) -> bool {
             .is_some_and(function_header_is_unsafe)
 }
 
-pub(super) fn signature_contains_raw_pointer(signature: &Value) -> bool {
+pub(super) fn signature_contains_unliftable_type(signature: &Value) -> bool {
     signature
         .get("inputs")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .map(signature_input_type)
-        .any(type_contains_raw_pointer)
+        .any(type_contains_unliftable_type)
         || signature
             .get("output")
             .filter(|output| !output.is_null())
-            .is_some_and(type_contains_raw_pointer)
+            .is_some_and(type_contains_unliftable_type)
 }
 
-pub(super) fn type_decl_contains_raw_pointer(
+pub(super) fn type_decl_contains_unliftable_type(
     item: &Value,
     index: &serde_json::Map<String, Value>,
 ) -> bool {
@@ -114,7 +114,7 @@ pub(super) fn type_decl_contains_raw_pointer(
     };
 
     if let Some(alias) = inner.get("type_alias") {
-        return type_alias_type(alias).is_some_and(type_contains_raw_pointer);
+        return type_alias_type(alias).is_some_and(type_contains_unliftable_type);
     }
 
     if let Some(struct_item) = inner.get("struct") {
@@ -122,14 +122,14 @@ pub(super) fn type_decl_contains_raw_pointer(
             .into_iter()
             .filter_map(|id| index.get(id))
             .filter_map(|field| item_inner(field, "struct_field"))
-            .any(type_contains_raw_pointer);
+            .any(type_contains_unliftable_type);
     }
 
     if let Some(enum_item) = inner.get("enum") {
         return item_ids(enum_item, "variants")
             .into_iter()
             .filter_map(|id| index.get(id))
-            .any(|variant| variant_contains_raw_pointer(variant, index));
+            .any(|variant| variant_contains_unliftable_type(variant, index));
     }
 
     false
@@ -139,33 +139,39 @@ pub(super) fn type_alias_type(alias: &Value) -> Option<&Value> {
     alias.get("type").or(Some(alias))
 }
 
-pub(super) fn type_contains_raw_pointer(ty: &Value) -> bool {
-    if inner(ty, "raw_pointer").is_some() {
+pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
+    if inner(ty, "raw_pointer").is_some()
+        || inner(ty, "qualified_path").is_some()
+        || inner(ty, "dyn_trait").is_some()
+        || inner(ty, "impl_trait").is_some()
+    {
         return true;
     }
     if let Some(borrowed) = inner(ty, "borrowed_ref") {
-        return borrowed.get("type").is_some_and(type_contains_raw_pointer);
+        return borrowed
+            .get("type")
+            .is_some_and(type_contains_unliftable_type);
     }
     if let Some(slice) = inner(ty, "slice") {
-        return type_contains_raw_pointer(slice);
+        return type_contains_unliftable_type(slice);
     }
     if let Some(array) = inner(ty, "array") {
         return array
             .get("type")
             .or_else(|| array.get("element"))
-            .is_some_and(type_contains_raw_pointer);
+            .is_some_and(type_contains_unliftable_type);
     }
     if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function")) {
         let signature = function.get("sig").unwrap_or(function);
-        return signature_contains_raw_pointer(signature);
+        return signature_contains_unliftable_type(signature);
     }
     if let Some(resolved) = inner(ty, "resolved_path") {
         return resolved_type_args(resolved)
             .into_iter()
-            .any(type_contains_raw_pointer);
+            .any(type_contains_unliftable_type);
     }
     if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
-        return tuple.iter().any(type_contains_raw_pointer);
+        return tuple.iter().any(type_contains_unliftable_type);
     }
 
     false
@@ -184,7 +190,10 @@ fn signature_input_type(input: &Value) -> &Value {
         .unwrap_or(input)
 }
 
-fn variant_contains_raw_pointer(variant: &Value, index: &serde_json::Map<String, Value>) -> bool {
+fn variant_contains_unliftable_type(
+    variant: &Value,
+    index: &serde_json::Map<String, Value>,
+) -> bool {
     let Some(variant) = item_inner(variant, "variant") else {
         return false;
     };
@@ -199,7 +208,7 @@ fn variant_contains_raw_pointer(variant: &Value, index: &serde_json::Map<String,
         .flatten()
         .filter_map(|id| index.get(id))
         .filter_map(|field| item_inner(field, "struct_field"))
-        .any(type_contains_raw_pointer)
+        .any(type_contains_unliftable_type)
 }
 
 pub(super) fn item_ids<'a>(item: &'a Value, key: &str) -> Vec<&'a str> {

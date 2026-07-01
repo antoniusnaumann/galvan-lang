@@ -101,7 +101,8 @@ commands remain subcommands.
     `Rc<T>` interop conversions) to cover additional smart pointers and
     standard wrappers
   - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
-    including `dyn Trait`, `impl Trait`, and generic associated types
+    including `dyn Trait`, `impl Trait`, associated type projections, and
+    generic associated types
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, explicit Galvan syntax for generic type
@@ -131,5 +132,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-30*
+*Last updated: 2026-07-01*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

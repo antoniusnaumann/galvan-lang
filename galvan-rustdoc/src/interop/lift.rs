@@ -19,8 +19,9 @@ use super::lift_model::{
 };
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
-    resolved_type_args, type_alias_type, type_contains_raw_pointer, type_decl_contains_raw_pointer,
-    type_generic_params, type_inner_generic_params, type_is_owned,
+    resolved_type_args, type_alias_type, type_contains_unliftable_type,
+    type_decl_contains_unliftable_type, type_generic_params, type_inner_generic_params,
+    type_is_owned,
 };
 use super::RustInterop;
 
@@ -32,7 +33,7 @@ impl RustInterop {
         item: &Value,
         index: &serde_json::Map<String, Value>,
     ) -> Option<ImportedTypeDecl> {
-        if type_decl_contains_raw_pointer(item, index) {
+        if type_decl_contains_unliftable_type(item, index) {
             return None;
         }
 
@@ -463,7 +464,7 @@ impl RustInterop {
     }
 
     fn lift_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedType> {
-        if type_contains_raw_pointer(ty) {
+        if type_contains_unliftable_type(ty) {
             return None;
         }
         if inner(ty, "never").is_some() {

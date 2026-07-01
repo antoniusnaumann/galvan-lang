@@ -133,15 +133,17 @@ interop cases:
 
 `galvan-rustdoc` does not bridge raw pointers, unsafe functions, or other unsafe
 Rust-only surfaces into Galvan. Functions whose signatures contain raw pointers
-are skipped. Data declarations whose public surface contains raw pointers are
-kept opaque instead of exposing those fields or variants. If an API requires raw
-pointers or unsafe contracts, write that boundary in Rust and expose a safe
-wrapper to Galvan.
+or currently unliftable type shapes are skipped. Constants with unliftable types
+are skipped. Data declarations whose public surface contains raw pointers or
+unliftable type shapes are kept opaque instead of exposing those fields or
+variants. If an API requires raw pointers or unsafe contracts, write that
+boundary in Rust and expose a safe wrapper to Galvan.
 
 The following safe Rust shapes are also not lifted yet:
 
 - `dyn Trait`
 - `impl Trait`
+- associated type projections such as `<T as Trait>::Item`
 - generic associated types
 - unions and `repr` details
 - lifetime and const generic parameters

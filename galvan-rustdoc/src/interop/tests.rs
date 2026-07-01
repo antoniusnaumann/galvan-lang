@@ -122,6 +122,30 @@ fn raw_pointer(ty: Value, mutable: bool) -> Value {
     })
 }
 
+fn qualified_path(name: &str, self_type: Value) -> Value {
+    json!({
+        "qualified_path": {
+            "name": name,
+            "args": null,
+            "self_type": self_type,
+            "trait": {
+                "path": "demo::Visitor",
+                "name": "Visitor",
+                "id": "trait",
+                "args": null
+            }
+        }
+    })
+}
+
+fn dyn_trait() -> Value {
+    json!({ "dyn_trait": [] })
+}
+
+fn impl_trait() -> Value {
+    json!({ "impl_trait": [] })
+}
+
 fn function_pointer(inputs: Vec<Value>, output: Value) -> Value {
     json!({
         "function_pointer": {
@@ -606,6 +630,17 @@ fn rustdoc_does_not_lift_raw_pointer_types() {
 }
 
 #[test]
+fn rustdoc_does_not_lift_unrepresentable_type_shapes() {
+    let mut interop = RustInterop::empty();
+
+    assert!(interop
+        .type_from_json("demo", &qualified_path("Output", generic("T")))
+        .is_none());
+    assert!(interop.type_from_json("demo", &dyn_trait()).is_none());
+    assert!(interop.type_from_json("demo", &impl_trait()).is_none());
+}
+
+#[test]
 fn rustdoc_lifts_function_pointer_types() {
     let mut interop = RustInterop::empty();
     let ty = interop
@@ -787,6 +822,40 @@ fn rustdoc_does_not_import_functions_with_raw_pointer_signatures() {
 }
 
 #[test]
+fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "visit",
+                vec![json!(["visitor", dyn_trait()])],
+                qualified_path("Output", generic("V"))
+            ),
+            "1": public_function(
+                "make_display",
+                vec![],
+                impl_trait()
+            ),
+            "2": public_constant(
+                "DEFAULT_OUTPUT",
+                qualified_path("Output", generic("V"))
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("visit"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("make_display"), &[])
+        .is_none());
+    assert!(interop
+        .constant(Some("demo"), &ident("DEFAULT_OUTPUT"))
+        .is_none());
+}
+
+#[test]
 fn rustdoc_imports_function_pointer_parameters() {
     let json = json!({
         "index": {
@@ -837,6 +906,28 @@ fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
         panic!("expected Buffer to import as an opaque type");
     };
     assert_eq!(buffer.ident, TypeIdent::new("Buffer"));
+}
+
+#[test]
+fn rustdoc_keeps_types_with_unliftable_fields_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("VisitResult", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field("output", qualified_path("Output", generic("V")))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(visit_result) = imported_type(&interop, "VisitResult") else {
+        panic!("expected VisitResult to import as an opaque type");
+    };
+    assert_eq!(visit_result.ident, TypeIdent::new("VisitResult"));
 }
 
 #[test]
