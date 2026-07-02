@@ -16,12 +16,21 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use galvan_ast::{Ast, SegmentedAsts};
 use galvan_files::{read_sources, Source};
-use galvan_hir::{typecheck, Diagnostic};
+use galvan_hir::{typecheck, Diagnostic, HirModule, SymbolIndex};
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
 use galvan_resolver::LookupContext;
 use tower_lsp::lsp_types::Url;
 
 use crate::document::Document;
+
+/// The result of typechecking a whole crate: the typed HIR, the
+/// position-indexed symbol information recorded by the typechecker, and the
+/// crate-wide diagnostics.
+pub struct Analysis {
+    pub module: HirModule,
+    pub index: SymbolIndex,
+    pub diagnostics: Vec<Diagnostic>,
+}
 
 /// A single file's parsed contents within a crate.
 pub struct CrateFile {
@@ -106,32 +115,50 @@ impl Crate {
         self.files.iter()
     }
 
-    /// Typecheck the whole crate and return the compiler's diagnostics.
+    /// A copy of this crate with the contents of `file` replaced by `text`
+    /// (used to analyze completion probes without mutating the real crate).
+    pub fn with_file_text(&self, file: &Path, text: &str) -> Self {
+        let sources = self
+            .files
+            .iter()
+            .map(|crate_file| {
+                if crate_file.source.origin() == Some(file) {
+                    file_source(file, text)
+                } else {
+                    crate_file.source.clone()
+                }
+            })
+            .collect();
+        Self::from_sources(sources)
+    }
+
+    /// Typecheck the whole crate.
     ///
     /// The crate is checked as a unit so that cross-file references resolve;
     /// each returned [`Diagnostic`]'s span carries the file it belongs to (see
     /// the `set_current_file` mechanism in `galvan-hir`), letting callers route
-    /// it back to the right document.
+    /// it back to the right document. The returned [`Analysis`] also carries
+    /// the typechecker's [`SymbolIndex`] and the typed [`HirModule`], which
+    /// power hover, go-to-definition, references and completion.
     ///
-    /// Diagnostics are not produced for crates that fail to parse or that have
-    /// conflicting top-level declarations (a [`LookupError`](galvan_resolver::LookupError)).
-    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+    /// Returns `None` when the crate does not parse (analysis then degrades
+    /// gracefully; syntax errors are reported separately).
+    pub fn analyze(&self) -> Option<Analysis> {
         let asts: Vec<Ast> = self
             .files
             .iter()
             .filter_map(|file| file.source.clone().try_into_ast().ok())
             .collect();
-        let Ok(segmented) = asts.segmented() else {
-            return Vec::new();
-        };
+        let segmented = asts.segmented().ok()?;
 
         // Guard against the typechecker panicking on pathological input: a
         // language server must keep running whatever the buffer contains.
-        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| typecheck(segmented)));
-        match checked {
-            Ok(Ok((_module, errors))) => errors.diagnostics().to_vec(),
-            _ => Vec::new(),
-        }
+        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| typecheck(segmented))).ok()?;
+        Some(Analysis {
+            module: checked.module,
+            diagnostics: checked.errors.diagnostics().to_vec(),
+            index: checked.index,
+        })
     }
 }
 

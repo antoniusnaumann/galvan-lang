@@ -1,126 +1,98 @@
 # Compiler features needed by the language server
 
-This file tracks places where `galvan-lsp` is **blocked or limited** by what the
-compiler crates currently expose. The language server deliberately does *not*
-work around these by reimplementing compiler logic or mutating the other crates;
-instead it degrades gracefully and the gap is recorded here so it can be fixed in
-the compiler proper.
+This file tracks how `galvan-lsp` uses the compiler crates and where it is
+still **blocked or limited** by what they expose. The language server does not
+reimplement compiler logic; features degrade gracefully and gaps are recorded
+here so they can be fixed in the compiler proper.
 
-Each entry notes the impact and where in the LSP code the limitation surfaces.
+## Resolved
 
----
+The following former shortcomings are now implemented **in the compiler** and
+consumed by the LSP:
 
-## 1. Identifiers do not carry source spans
+### 1. Identifiers carry source spans — resolved
 
-`galvan_ast::Ident` and `galvan_ast::TypeIdent` both implement `AstNode::span`
-by returning `Span::default()` (there is a `// TODO Save a meaningful span in
-this struct` in `galvan-ast/src/item/ident.rs`).
+`galvan_ast::Ident` and `galvan_ast::TypeIdent` store the span of their token
+(`Ident::spanned`, populated by `galvan-into-ast`). Spans are not part of an
+identifier's identity (equality/hashing use only the name), so identifiers
+remain usable as lookup keys.
 
-**Impact:** the AST alone cannot tell us which identifier is under the cursor, so
-the LSP cannot map a cursor position to an AST identifier node.
+### 2. Position-indexed scope information — resolved
 
-**Current handling (not a workaround in the compiler):** the server uses the
-tree-sitter parse tree (re-exported by `galvan-parse`) to find the `ident` /
-`type_ident` token at a byte offset, then resolves it by *name* against the
-`LookupContext`. See `src/analysis.rs::symbol_at`.
+Typechecking now produces a `galvan_hir::SymbolIndex` as a by-product
+(`typecheck` returns a `Typechecked { module, index, errors }`). While
+lowering, the checker records:
 
-**What would help:** store a real `Span` on `Ident`/`TypeIdent`. This would let
-the server resolve usages structurally and would be a prerequisite for precise
-"find references".
+- **definitions**: top-level functions and types, struct fields, enum
+  variants, parameters and local bindings (each with the span of its
+  defining identifier and the enclosing scope for locals),
+- **references**: every identifier use the checker resolves — variable reads,
+  function and method calls, type annotations, constructor calls, field
+  accesses, enum accesses and match patterns,
+- **scopes**: the byte range in which each local scope's bindings are
+  visible.
 
----
+Queries: `symbol_at(file, offset)`, `references(id)`,
+`visible_locals(file, offset)`, `definitions()`. The LSP builds hover,
+go-to-definition, find-references and scope-aware completion directly on
+these (see `src/analysis.rs` and `src/features/`).
 
-## 2. No position-indexed scope information for locals
+### 3. Inferred types are position-queryable — resolved
 
-`galvan_resolver::Scope` models variable scopes, but scopes are constructed
-transiently during type checking / transpilation and are not exposed keyed by
-source position. There is also no span on local bindings (see #1).
+Every `HirExpression` stores its inferred type and span;
+`galvan_hir::query::expression_at(&module, file, offset)` returns the
+innermost expression at a position. The LSP uses this for member completion
+(receiver type of the expression before a `.`) and for hover over arbitrary
+expressions. Method calls resolve through the symbol index (recorded during
+type inference), so the LSP never re-runs receiver inference itself.
 
-**Impact:** the server cannot resolve **local variables / parameters** for
-hover or go-to-definition, and completion cannot offer in-scope locals.
+### 5. Semantic diagnostics — resolved
 
-**Current handling:** resolution is limited to top-level **functions** and
-**types**. Hovering or go-to-definition on a local simply returns nothing.
-Completion offers top-level declarations and keywords only.
-See `src/analysis.rs::resolve` and `src/features/completion.rs`.
+`galvan_hir::typecheck(SegmentedAsts)` returns span-carrying `Diagnostic`s
+without running the transpile-to-Rust pipeline. Additionally:
 
-**What would help:** a query like `scope_at(offset) -> &Scope` (or an exported
-map from spans to resolved bindings) produced once during analysis.
+- Diagnostic spans carry the file they belong to (`ErrorCollector::
+  set_current_file`), so multi-file crates route errors to the right
+  document.
+- All typechecker diagnostics now carry spans (the former span-less
+  `ErrorCollector::error` call sites were converted).
+- Duplicate top-level declarations no longer abort typechecking: the first
+  declaration wins, the conflict is reported as a `DuplicateDeclaration`
+  diagnostic at the second declaration's identifier, and the rest of the
+  crate still typechecks (`LookupContext::add_from` returns the conflicts
+  instead of `Err`).
 
----
+## Remaining limitations
 
-## 3. Method / receiver resolution needs type inference
+### 4. Cross-*crate* / imported-symbol resolution
 
-`LookupContext::resolve_function` can resolve a method when given the receiver
-`TypeIdent` and call labels, but determining the receiver type of an expression
-like `dog.name` or `value.method()` requires the typechecker's inferred types,
-which are not exposed as a position-queryable API.
+Same-crate cross-file resolution is supported (the whole crate is loaded and
+typechecked as a unit). Resolution across *crate boundaries* is not:
+`LookupContext` has no nested contexts for imported modules, so symbols
+brought in via `use` from another crate cannot be resolved to their
+declaration.
 
-**Impact:** go-to-definition and hover only resolve **free functions** (called
-without a receiver and without argument labels). Method calls and overloaded
-calls distinguished by labels are not resolved.
+**What would help:** an import-resolution API on the resolver that maps a
+`use` path to the defining item (and its `Source`) across crate boundaries.
 
-**Current handling:** `resolve` passes `receiver = None` and `labels = &[]`.
-Method calls fall through to "no result".
+### 6. Rust interop in the language server
 
-**What would help:** an API exposing the inferred type of the expression at a
-given offset (e.g. from the HIR / typechecker), so the receiver and labels can
-be supplied to `resolve_function`.
+The LSP typechecks with an empty `RustInterop` (building the real one shells
+out to rustdoc and is too slow to run per keystroke). Code that uses imported
+Rust items may therefore produce false "unknown type/identifier" diagnostics,
+and Rust symbols are absent from completion.
 
----
+**What would help:** a cacheable, offline-buildable interop index (build once
+per dependency version, load from disk).
 
-## 4. Cross-*crate* / imported-symbol resolution
+### 7. Extension/UFCS methods in member completion
 
-Same-*crate* cross-file resolution **is supported**: `src/workspace.rs` loads
-every `.galvan` file under the crate's source root (via
-`galvan_files::read_sources`) and aggregates them into one `LookupContext` with
-`LookupContext::add_from`, exactly as the compiler does for a whole crate. Each
-`ToplevelItem` carries its originating `Source`, which the LSP turns into a
-cross-file `Location`. This is library reuse, not a workaround.
+Member completion offers fields and methods whose declared receiver type
+matches the receiver expression. Functions that are callable in method
+position via the first-argument rule, and builtin functions registered
+without a receiver type (e.g. collection helpers), are not offered after a
+dot because the `Definition` does not carry enough signature information to
+match them.
 
-What is **not** supported is resolution across *crate boundaries*:
-`LookupContext` has a commented-out `imports` field and a `// TODO: Nested
-contexts for resolving names from imported modules` note in
-`galvan-resolver/src/lookup.rs`, so symbols brought in via `use` from another
-crate / external dependency cannot be resolved.
-
-**Impact:** go-to-definition and hover do not follow `use` imports into other
-crates.
-
-**Current handling:** resolution is scoped to the files of the requesting file's
-crate (the nearest ancestor `src` directory). See `src/workspace.rs`.
-
-**What would help:** an import-resolution API on the resolver that maps a `use`
-path to the defining item (and its `Source`) across crate boundaries.
-
----
-
-## 5. Semantic diagnostics — implemented (with a small compiler change)
-
-This is now **supported**. `galvan_hir::typecheck(SegmentedAsts)` already
-returns an `ErrorCollector` of span-carrying `Diagnostic`s without running the
-transpile-to-Rust pipeline, so the LSP runs it over the whole crate and publishes
-the results alongside the syntax diagnostics (see `src/features/diagnostics.rs`
-and `Crate::diagnostics` in `src/workspace.rs`).
-
-**Surgical compiler change:** diagnostic spans only carried byte offsets, not the
-file they came from, so in a multi-file crate they could not be routed back to a
-document. `ErrorCollector` gained a `set_current_file` method (`galvan-hir/src/
-error.rs`); the typechecker sets it before lowering each top-level item
-(`galvan-hir/src/typecheck/mod.rs`), and the file is stamped onto every span
-whose `file` is still empty. This also improves the compiler's own multi-file
-error messages.
-
-**Remaining caveats** (not blockers, but worth noting):
-
-- Diagnostics emitted *without* a span (via `ErrorCollector::error`, e.g. some
-  `InvalidModifier` / `InvalidSyntax` cases) cannot be placed and are not shown.
-  Giving those call sites spans in the compiler would surface them.
-- The typechecker is run with an empty `RustInterop`, so code that depends on
-  imported Rust items may produce false "unknown type/identifier" diagnostics.
-  Wiring real interop in (it is expensive — it shells out to rustdoc) is future
-  work.
-- Crate-level conflicts that surface as a `LookupError` (e.g. duplicate
-  top-level declarations) abort typechecking and are not yet reported.
-- Only the requested document's diagnostics are published per refresh; an error
-  in another crate file appears when that file is itself refreshed.
+**What would help:** recording the first-parameter type on
+`DefinitionKind::Function` even when it is not a plain `self` receiver.
