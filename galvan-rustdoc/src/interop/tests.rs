@@ -774,9 +774,15 @@ fn rustdoc_lifts_never_types() {
 #[test]
 fn rustdoc_lifts_arc_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
-    for wrapper in [
-        resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
-        resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
+    for (wrapper, leaked_name) in [
+        (
+            resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
+            "Mutex",
+        ),
+        (
+            resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
+            "RwLock",
+        ),
     ] {
         let param = interop
             .param_from_json("std", &json!(["tickets", wrapper]))
@@ -784,7 +790,30 @@ fn rustdoc_lifts_arc_shared_wrappers_to_ref_parameters() {
 
         assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
         assert_eq!(param.param_type, generic_type("T"));
+        assert!(interop
+            .types
+            .iter()
+            .all(|ty| !matches!(ty.name.as_str(), "Arc") && ty.name.as_str() != leaked_name));
     }
+}
+
+#[test]
+fn rustdoc_preserves_non_shared_arc_types_nominally() {
+    let mut interop = RustInterop::empty();
+    let ty = interop
+        .type_from_json("std", &resolved("Arc", vec![resolved("Ticket", vec![])]))
+        .unwrap();
+
+    let TypeElement::Parametric(parametric) = ty else {
+        panic!("expected Arc<Ticket>, got {ty:?}");
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Arc"));
+    assert_eq!(
+        parametric.type_args,
+        vec![plain_type(TypeIdent::new("Ticket"))]
+    );
+    assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Arc"));
+    assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Ticket"));
 }
 
 #[test]
@@ -828,6 +857,10 @@ fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
 
     assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
     assert_eq!(param.param_type, u64_type());
+    assert!(interop
+        .types
+        .iter()
+        .all(|ty| !matches!(ty.name.as_str(), "Arc" | "AtomicU64")));
 }
 
 #[test]

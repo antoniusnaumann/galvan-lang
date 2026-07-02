@@ -504,6 +504,10 @@ impl RustInterop {
         }
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved.get("name").and_then(Value::as_str)?;
+            if name == "Arc" {
+                return self.lift_arc_type_from_json(crate_name, resolved);
+            }
+
             let args = resolved_type_args(resolved)
                 .into_iter()
                 .filter_map(|arg| self.lift_type_from_json(crate_name, arg))
@@ -629,9 +633,45 @@ impl RustInterop {
                     span: Span::default(),
                 }),
             ))),
-            "Arc" => lift_arc(args.first()),
             _ => None,
         }
+    }
+
+    fn lift_arc_type_from_json(
+        &mut self,
+        crate_name: &str,
+        resolved: &Value,
+    ) -> Option<LiftedType> {
+        let inner = resolved_type_args(resolved).into_iter().next()?;
+        if let Some(shared) = self.lift_arc_shared_inner(crate_name, inner) {
+            return Some(shared);
+        }
+
+        let inner = self.lift_type_from_json(crate_name, inner)?;
+        let name = resolved.get("name").and_then(Value::as_str)?;
+        self.push_resolved_type(crate_name, name, resolved);
+        Some(LiftedType::new(TypeElement::Parametric(
+            ParametricTypeItem {
+                base_type: TypeIdent::new(name),
+                type_args: vec![inner.ty],
+                span: Span::default(),
+            },
+        )))
+    }
+
+    fn lift_arc_shared_inner(&mut self, crate_name: &str, inner: &Value) -> Option<LiftedType> {
+        let resolved = inner.get("resolved_path")?;
+        let name = resolved.get("name").and_then(Value::as_str)?;
+        if matches!(name, "Mutex" | "RwLock") {
+            let arg = resolved_type_args(resolved).into_iter().next()?;
+            let inner = self.lift_type_from_json(crate_name, arg)?;
+            return Some(LiftedType::with_modifier(
+                inner.ty,
+                galvan_ast::DeclModifier::Ref,
+            ));
+        }
+
+        atomic_type(name).map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
     }
 }
 
@@ -663,31 +703,6 @@ fn parametric_or_plain_type(name: &str, args: Vec<LiftedType>) -> TypeElement {
         type_args: args.into_iter().map(|arg| arg.ty).collect(),
         span: Span::default(),
     })
-}
-
-fn lift_arc(inner: Option<&LiftedType>) -> Option<LiftedType> {
-    let inner = inner?;
-    match &inner.ty {
-        TypeElement::Parametric(parametric)
-            if matches!(parametric.base_type.as_str(), "Mutex" | "RwLock") =>
-        {
-            parametric
-                .type_args
-                .first()
-                .cloned()
-                .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
-        }
-        _ if inner.decl_modifier == Some(galvan_ast::DeclModifier::Ref) => Some(inner.clone()),
-        TypeElement::Plain(plain) => atomic_type(plain.ident.as_str())
-            .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref)),
-        _ => Some(LiftedType::new(TypeElement::Parametric(
-            ParametricTypeItem {
-                base_type: TypeIdent::new("Arc"),
-                type_args: vec![inner.ty.clone()],
-                span: Span::default(),
-            },
-        ))),
-    }
 }
 
 fn array_type(inner: LiftedType) -> LiftedType {

@@ -112,11 +112,13 @@ Rust shared synchronization wrappers lift to Galvan `ref` fields and parameters:
 | `Arc<AtomicI8>`, `Arc<AtomicI16>`, `Arc<AtomicI32>`, `Arc<AtomicI64>`, `Arc<AtomicIsize>` | `ref I8`, `ref I16`, `ref I32`, `ref I64`, `ref ISize` |
 | `Arc<AtomicU8>`, `Arc<AtomicU16>`, `Arc<AtomicU32>`, `Arc<AtomicU64>`, `Arc<AtomicUsize>` | `ref U8`, `ref U16`, `ref U32`, `ref U64`, `ref USize` |
 
-Naked `Mutex<T>`, `RwLock<T>`, and `Atomic*` types remain nominal Rust
-dependency types because they do not represent shared ownership by themselves.
-Other `Arc<T>` shapes remain `Arc<T>` in the lifted Galvan type. They are not
-treated as Galvan `ref` unless the inner type is one of the recognized shared
-state wrappers above.
+When `Arc` is consumed as a shared-state wrapper, the `Arc`, lock, or atomic
+wrapper type is not recorded as part of the Galvan API surface. Naked
+`Mutex<T>`, `RwLock<T>`, and `Atomic*` types remain nominal Rust dependency
+types because they do not represent shared ownership by themselves. Other
+`Arc<T>` shapes remain `Arc<T>` in the lifted Galvan type and are recorded as
+dependency types. They are not treated as Galvan `ref` unless the inner type is
+one of the recognized shared state wrappers above.
 
 ## Owned Wrapper Conversions
 
