@@ -42,7 +42,7 @@ impl RustInterop {
             return self.struct_decl_from_json(crate_name, name, struct_item, index);
         }
         if let Some(enum_item) = inner.get("enum") {
-            return Some(self.enum_decl_from_json(crate_name, name, enum_item, index));
+            return self.enum_decl_from_json(crate_name, name, enum_item, index);
         }
         if let Some(alias_item) = inner.get("type_alias") {
             return self
@@ -79,11 +79,11 @@ impl RustInterop {
         let field_ids = item_ids(struct_item, "fields");
         let kind = struct_item.get("kind").and_then(Value::as_str);
         if kind == Some("tuple") {
-            let lifted_members = field_ids
-                .into_iter()
-                .filter_map(|id| index.get(id))
-                .filter_map(|field| self.tuple_member_from_json(crate_name, field))
-                .collect::<Vec<_>>();
+            let mut lifted_members = Vec::new();
+            for id in field_ids {
+                let field = index.get(id)?;
+                lifted_members.push(self.tuple_member_from_json(crate_name, field)?);
+            }
             let constructor_arg_conversions = lifted_members
                 .iter()
                 .map(|member| member.arg_conversion)
@@ -106,12 +106,13 @@ impl RustInterop {
             });
         }
 
-        let lifted_members = field_ids
-            .into_iter()
-            .filter_map(|id| index.get(id))
-            .filter(|field| is_public(field))
-            .filter_map(|field| self.struct_member_from_json(crate_name, field))
-            .collect::<Vec<_>>();
+        let mut lifted_members = Vec::new();
+        for id in field_ids {
+            let field = index.get(id)?;
+            if is_public(field) {
+                lifted_members.push(self.struct_member_from_json(crate_name, field)?);
+            }
+        }
         let mut members = Vec::new();
         let mut field_conversions = Vec::new();
         for member in lifted_members {
@@ -187,12 +188,12 @@ impl RustInterop {
         name: &str,
         enum_item: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> ImportedTypeDecl {
-        let lifted_members = item_ids(enum_item, "variants")
-            .into_iter()
-            .filter_map(|id| index.get(id))
-            .filter_map(|variant| self.enum_member_from_json(crate_name, variant, index))
-            .collect::<Vec<_>>();
+    ) -> Option<ImportedTypeDecl> {
+        let mut lifted_members = Vec::new();
+        for id in item_ids(enum_item, "variants") {
+            let variant = index.get(id)?;
+            lifted_members.push(self.enum_member_from_json(crate_name, variant, index)?);
+        }
         let mut members = Vec::new();
         let mut enum_variant_conversions = Vec::new();
         for member in lifted_members {
@@ -209,7 +210,7 @@ impl RustInterop {
             members.push(member.member);
         }
 
-        ImportedTypeDecl {
+        Some(ImportedTypeDecl {
             decl: TypeDecl::Enum(EnumTypeDecl {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
@@ -220,7 +221,7 @@ impl RustInterop {
             field_conversions: Vec::new(),
             constructor_arg_conversions: Vec::new(),
             enum_variant_conversions,
-        }
+        })
     }
 
     fn enum_member_from_json(
@@ -233,7 +234,7 @@ impl RustInterop {
         let variant = item_inner(variant, "variant")?;
         let lifted_fields = match variant.get("kind") {
             Some(Value::String(kind)) if kind == "plain" => Vec::new(),
-            Some(kind) => self.enum_variant_fields_from_kind(crate_name, kind, index),
+            Some(kind) => self.enum_variant_fields_from_kind(crate_name, kind, index)?,
             None => Vec::new(),
         };
         let mut fields = Vec::new();
@@ -262,27 +263,27 @@ impl RustInterop {
         crate_name: &str,
         kind: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> Vec<LiftedEnumVariantField> {
+    ) -> Option<Vec<LiftedEnumVariantField>> {
         if let Some(tuple) = inner(kind, "tuple") {
-            return item_ids(tuple, "fields")
-                .into_iter()
-                .filter_map(|id| index.get(id))
-                .filter_map(|field| self.enum_variant_field_from_json(crate_name, None, field))
-                .collect();
+            let mut fields = Vec::new();
+            for id in item_ids(tuple, "fields") {
+                let field = index.get(id)?;
+                fields.push(self.enum_variant_field_from_json(crate_name, None, field)?);
+            }
+            return Some(fields);
         }
 
         if let Some(struct_variant) = inner(kind, "struct") {
-            return item_ids(struct_variant, "fields")
-                .into_iter()
-                .filter_map(|id| index.get(id))
-                .filter_map(|field| {
-                    let name = field.get("name").and_then(Value::as_str).map(Ident::new);
-                    self.enum_variant_field_from_json(crate_name, name, field)
-                })
-                .collect();
+            let mut fields = Vec::new();
+            for id in item_ids(struct_variant, "fields") {
+                let field = index.get(id)?;
+                let name = field.get("name").and_then(Value::as_str).map(Ident::new);
+                fields.push(self.enum_variant_field_from_json(crate_name, name, field)?);
+            }
+            return Some(fields);
         }
 
-        Vec::new()
+        Some(Vec::new())
     }
 
     fn enum_variant_field_from_json(

@@ -1086,6 +1086,52 @@ fn rustdoc_keeps_types_with_unliftable_fields_opaque() {
 }
 
 #[test]
+fn rustdoc_keeps_types_with_incomplete_field_metadata_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("PartialTicket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1", "missing"]
+                }
+            })),
+            "1": public_field("title", primitive("str")),
+            "2": public_item("PartialTuple", json!({
+                "struct": {
+                    "kind": "tuple",
+                    "fields": ["3", "missing"]
+                }
+            })),
+            "3": public_field("0", primitive("u64")),
+            "4": public_item("PartialEvent", json!({
+                "enum": {
+                    "variants": ["5"]
+                }
+            })),
+            "5": public_item("Renamed", json!({
+                "variant": {
+                    "kind": {
+                        "tuple": {
+                            "fields": ["6", "missing"]
+                        }
+                    }
+                }
+            })),
+            "6": public_field("0", primitive("str"))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    for name in ["PartialTicket", "PartialTuple", "PartialEvent"] {
+        let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
+            panic!("expected {name} to import as an opaque type");
+        };
+        assert_eq!(opaque.ident, TypeIdent::new(name));
+    }
+}
+
+#[test]
 fn rustdoc_preserves_generic_params_on_opaque_types() {
     let json = json!({
         "index": {

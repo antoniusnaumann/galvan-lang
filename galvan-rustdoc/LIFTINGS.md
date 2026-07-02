@@ -144,8 +144,10 @@ Rust-only surfaces into Galvan. Functions whose signatures contain raw pointers
 or currently unliftable type shapes are skipped. Constants with unliftable types
 are skipped. Data declarations whose public surface contains raw pointers or
 unliftable type shapes are kept opaque instead of exposing those fields or
-variants. If an API requires raw pointers or unsafe contracts, write that
-boundary in Rust and expose a safe wrapper to Galvan.
+variants. Data declarations are also kept opaque when rustdoc metadata is
+incomplete enough that fields or variants would otherwise be silently dropped.
+If an API requires raw pointers or unsafe contracts, write that boundary in Rust
+and expose a safe wrapper to Galvan.
 
 The following safe Rust shapes are also not lifted yet:
 
