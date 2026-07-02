@@ -10,9 +10,11 @@ use thiserror::Error;
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
 use galvan_hir::hir::{HirCmd, HirFunction, HirMain, HirMainKind, HirModule, HirTest};
-use galvan_hir::typecheck::typecheck;
+use galvan_hir::mapping::RustType;
+use galvan_hir::typecheck::typecheck_with_interop;
 use galvan_into_ast::{AstError, SegmentAst, SourceIntoAst};
 use galvan_resolver::LookupError;
+use galvan_rustdoc::{RustInterop, RustdocError};
 
 use crate::codegen::{transpile_function, transpile_main, transpile_signature, transpile_test};
 
@@ -321,6 +323,8 @@ pub enum TranspileError {
     Lookup(#[from] LookupError),
     #[error(transparent)]
     File(#[from] FileError),
+    #[error(transparent)]
+    Rustdoc(#[from] RustdocError),
 }
 
 fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
@@ -334,17 +338,183 @@ fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, Trans
 
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
     let segmented = asts.segmented()?;
-    let (module, mut errors) = typecheck(segmented)?;
+    let rust_interop =
+        RustInterop::from_crates_and_uses(qualified_namespaces(&segmented), &segmented.uses)?;
+    let (module, mut errors) = typecheck_with_interop(segmented, &rust_interop)?;
 
-    let builtins = builtins();
+    let mut builtins = builtins();
+    for ty in &rust_interop.types {
+        builtins.types.insert(
+            ty.name.clone(),
+            RustType::new(
+                ty.rust_path.as_ref(),
+                ty.rust_path.as_ref(),
+                ty.rust_path.as_ref(),
+                false,
+            ),
+        );
+    }
     let predefined = predefined_from(&builtins, builtin_fns());
     let mut ctx = Context::new(builtins);
     ctx = ctx.with(&predefined)?;
     for ty in &module.types {
         ctx.lookup.types.insert(ty.item.ident().clone(), ty);
     }
+    for ty in &rust_interop.types {
+        ctx.lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
+    }
 
     transpile_module(&module, &ctx, &mut errors)
+}
+
+fn qualified_namespaces(asts: &SegmentedAsts) -> HashSet<String> {
+    let mut namespaces = HashSet::new();
+
+    for function in &asts.functions {
+        collect_body_namespaces(&function.item.body, &mut namespaces);
+    }
+    for test in &asts.tests {
+        collect_body_namespaces(&test.item.body, &mut namespaces);
+    }
+    if let Some(main) = &asts.main {
+        collect_body_namespaces(&main.item.body, &mut namespaces);
+    }
+    for cmd in &asts.cmds {
+        collect_body_namespaces(&cmd.item.body, &mut namespaces);
+    }
+
+    namespaces
+}
+
+fn collect_body_namespaces(body: &Body, namespaces: &mut HashSet<String>) {
+    for statement in &body.statements {
+        match statement {
+            Statement::Assignment(assignment) => {
+                collect_expression_namespaces(&assignment.target, namespaces);
+                collect_expression_namespaces(&assignment.expression, namespaces);
+            }
+            Statement::Declaration(declaration) => {
+                if let Some(assignment) = &declaration.assignment {
+                    collect_expression_namespaces(assignment, namespaces);
+                }
+            }
+            Statement::Expression(expression)
+            | Statement::Return(Return { expression, .. })
+            | Statement::Throw(Throw { expression, .. }) => {
+                collect_expression_namespaces(expression, namespaces);
+            }
+            Statement::Break(_) | Statement::Continue(_) => {}
+        }
+    }
+}
+
+fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashSet<String>) {
+    match &expression.kind {
+        ExpressionKind::FunctionCall(call) => {
+            collect_call_namespaces(call, namespaces);
+        }
+        ExpressionKind::ElseExpression(else_expression) => {
+            collect_expression_namespaces(&else_expression.receiver, namespaces);
+            collect_body_namespaces(&else_expression.block.body, namespaces);
+        }
+        ExpressionKind::Match(match_expression) => {
+            collect_expression_namespaces(&match_expression.scrutinee, namespaces);
+            for arm in &match_expression.arms {
+                collect_body_namespaces(&arm.body.body, namespaces);
+            }
+        }
+        ExpressionKind::Infix(infix) => collect_infix_namespaces(infix, namespaces),
+        ExpressionKind::Postfix(postfix) => match postfix.as_ref() {
+            PostfixExpression::AccessExpression(access) => {
+                collect_expression_namespaces(&access.base, namespaces);
+                collect_expression_namespaces(&access.index, namespaces);
+            }
+            PostfixExpression::YeetExpression(yeet) => {
+                collect_expression_namespaces(&yeet.inner, namespaces);
+            }
+        },
+        ExpressionKind::Modified(modified) => {
+            collect_expression_namespaces(&modified.inner, namespaces);
+        }
+        ExpressionKind::CollectionLiteral(literal) => {
+            collect_collection_namespaces(literal, namespaces)
+        }
+        ExpressionKind::ConstructorCall(constructor) => {
+            for argument in &constructor.arguments {
+                collect_expression_namespaces(&argument.expression, namespaces);
+            }
+        }
+        ExpressionKind::EnumConstructor(constructor) => {
+            for argument in &constructor.arguments {
+                collect_expression_namespaces(&argument.expression, namespaces);
+            }
+        }
+        ExpressionKind::Closure(closure) => {
+            collect_body_namespaces(&closure.block.body, namespaces);
+        }
+        ExpressionKind::Group(group) => {
+            collect_expression_namespaces(&group.inner, namespaces);
+        }
+        ExpressionKind::EnumAccess(_) | ExpressionKind::Literal(_) | ExpressionKind::Ident(_) => {}
+    }
+}
+
+fn collect_call_namespaces(call: &FunctionCall, namespaces: &mut HashSet<String>) {
+    if let Some(namespace) = &call.namespace {
+        if let Some(segment) = namespace.segments.first() {
+            namespaces.insert(segment.as_str().to_string());
+        }
+    }
+    for argument in &call.arguments {
+        collect_expression_namespaces(&argument.expression, namespaces);
+    }
+}
+
+fn collect_infix_namespaces(infix: &InfixExpression, namespaces: &mut HashSet<String>) {
+    macro_rules! collect_operation {
+        ($operation:expr) => {{
+            collect_expression_namespaces(&$operation.lhs, namespaces);
+            collect_expression_namespaces(&$operation.rhs, namespaces);
+        }};
+    }
+
+    match infix {
+        InfixExpression::Logical(operation) => collect_operation!(operation),
+        InfixExpression::Arithmetic(operation) => collect_operation!(operation),
+        InfixExpression::Bitwise(operation) => collect_operation!(operation),
+        InfixExpression::Collection(operation) => collect_operation!(operation),
+        InfixExpression::Range(operation) => collect_operation!(operation),
+        InfixExpression::Comparison(operation) => collect_operation!(operation),
+        InfixExpression::Member(operation) => collect_operation!(operation),
+        InfixExpression::Custom(operation) => collect_operation!(operation),
+    }
+}
+
+fn collect_collection_namespaces(literal: &CollectionLiteral, namespaces: &mut HashSet<String>) {
+    match literal {
+        CollectionLiteral::ArrayLiteral(array) => {
+            for element in &array.elements {
+                collect_expression_namespaces(element, namespaces);
+            }
+        }
+        CollectionLiteral::SetLiteral(set) => {
+            for element in &set.elements {
+                collect_expression_namespaces(element, namespaces);
+            }
+        }
+        CollectionLiteral::DictLiteral(dict) => {
+            for element in &dict.elements {
+                collect_expression_namespaces(&element.key, namespaces);
+                collect_expression_namespaces(&element.value, namespaces);
+            }
+        }
+        CollectionLiteral::OrderedDictLiteral(dict) => {
+            for element in &dict.elements {
+                collect_expression_namespaces(&element.key, namespaces);
+                collect_expression_namespaces(&element.value, namespaces);
+            }
+        }
+    }
 }
 
 struct TypeFileContent<'a> {

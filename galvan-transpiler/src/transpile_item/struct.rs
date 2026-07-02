@@ -1,7 +1,10 @@
+use crate::codegen::ref_storage_type;
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::{ErrorCollector, Transpile};
-use galvan_ast::{DeclModifier, EnumTypeMember, StructTypeMember, TupleTypeMember, TypeDecl};
+use galvan_ast::{
+    DeclModifier, EnumTypeMember, Ident, StructTypeMember, TupleTypeMember, TypeDecl,
+};
 use std::collections::HashSet;
 
 static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
@@ -10,84 +13,63 @@ impl Transpile for TypeDecl {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self {
             TypeDecl::Tuple(def) => {
-                // Collect generic parameters from tuple members
-                let mut generics = HashSet::new();
-                for member in &def.members {
-                    member.r#type.collect_generics_recursive(&mut generics);
-                }
-
-                let generic_params = if generics.is_empty() {
-                    String::new()
-                } else {
-                    // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
-                    let params = generics
-                        .iter()
-                        .map(|g| {
-                            format!(
-                                "{}: ToOwned<Owned = {}>",
-                                crate::capitalize_generic(g.as_str()),
-                                crate::capitalize_generic(g.as_str())
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("<{}>", params)
-                };
-
+                let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
                 let members = def.members.transpile(ctx, errors);
                 format!("{DERIVE} {visibility} struct {ident}{generic_params}({members});")
             }
             TypeDecl::Struct(def) => {
-                // Collect generic parameters from struct members
-                let mut generics = HashSet::new();
-                for member in &def.members {
-                    member.r#type.collect_generics_recursive(&mut generics);
-                }
-
-                let generic_params = if generics.is_empty() {
-                    String::new()
-                } else {
-                    // Add ToOwned trait bound to all generic parameters for Galvan's ownership semantics
-                    let params = generics
-                        .iter()
-                        .map(|g| {
-                            format!(
-                                "{}: ToOwned<Owned = {}>",
-                                crate::capitalize_generic(g.as_str()),
-                                crate::capitalize_generic(g.as_str())
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("<{}>", params)
-                };
-
+                let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
                 let members = def.members.transpile(ctx, errors);
                 format!("{DERIVE} {visibility} struct {ident}{generic_params} {{\n{members}\n}}")
             }
             TypeDecl::Enum(def) => {
+                let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
                 let members = def.members.transpile(ctx, errors);
-                format!("{DERIVE} {visibility} enum {ident} {{\n{members}\n}}")
+                format!("{DERIVE} {visibility} enum {ident}{generic_params} {{\n{members}\n}}")
             }
             TypeDecl::Alias(def) => {
+                let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
                 let r#type = def.r#type.transpile(ctx, errors);
-                format!("{visibility} type {ident} = {type};")
+                format!("{visibility} type {ident}{generic_params} = {type};")
             }
             TypeDecl::Empty(def) => {
+                let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
-                format!("{DERIVE} {visibility} struct {ident};")
+                format!("{DERIVE} {visibility} struct {ident}{generic_params};")
             }
         }
     }
+}
+
+fn generic_params(generics: HashSet<Ident>) -> String {
+    if generics.is_empty() {
+        return String::new();
+    }
+
+    let mut generics = generics.into_iter().collect::<Vec<_>>();
+    generics.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+
+    let params = generics
+        .into_iter()
+        .map(|g| {
+            format!(
+                "{}: ToOwned<Owned = {}>",
+                crate::capitalize_generic(g.as_str()),
+                crate::capitalize_generic(g.as_str())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("<{}>", params)
 }
 
 impl_transpile!(TupleTypeMember, "{}", r#type);
@@ -95,21 +77,17 @@ impl_transpile!(TupleTypeMember, "{}", r#type);
 impl Transpile for StructTypeMember {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.decl_modifier {
-            Some(DeclModifier::Let) | Some(DeclModifier::Mut) => {
+            Some(DeclModifier::Let) | Some(DeclModifier::Mut) | Some(DeclModifier::Move) => {
                 errors.error(crate::TranspilerError::InvalidModifier {
-                    modifier: "let/mut".to_string(),
+                    modifier: "let/mut/move".to_string(),
                     context: "struct fields".to_string(),
                 });
                 transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
             }
             Some(DeclModifier::Ref) => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "pub(crate) {}: std::sync::Arc<std::sync::Mutex<{}>>",
-                    self.ident,
-                    self.r#type
-                )
+                let ty = self.r#type.transpile(ctx, errors);
+                let storage_ty = ref_storage_type(&self.r#type, ty);
+                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, storage_ty)
             }
             None => {
                 transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)

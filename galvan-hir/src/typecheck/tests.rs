@@ -1,11 +1,18 @@
-use galvan_ast::{Ownership, TypeElement};
+use galvan_ast::{
+    BasicTypeItem, Body, Declaration, EmptyTypeDecl, Expression, ExpressionKind, FnDecl,
+    FnSignature, GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator,
+    Ownership, Param, ParamList, ParametricTypeItem, SegmentedAsts, Span, StringLiteral,
+    ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl,
+    UsePath, Visibility,
+};
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
+use galvan_rustdoc::RustInterop;
 
 use crate::builtins::CheckBuiltins;
 use crate::error::ErrorCollector;
 use crate::hir::*;
-use crate::typecheck::typecheck;
+use crate::typecheck::{typecheck, typecheck_with_interop};
 
 fn lower_with_diagnostics(code: &str) -> (HirModule, ErrorCollector) {
     let ast = Source::from_string(code)
@@ -22,6 +29,36 @@ fn lower(code: &str) -> HirModule {
         "expected no type errors, got: {errors}"
     );
     module
+}
+
+fn lower_with_interop(code: &str, rust_interop: &RustInterop) -> HirModule {
+    let ast = Source::from_string(code)
+        .try_into_ast()
+        .expect("test code should parse");
+    let segmented = vec![ast].segmented().expect("test code should segment");
+    let (module, errors) =
+        typecheck_with_interop(segmented, rust_interop).expect("test code should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    module
+}
+
+fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
+    ToplevelItem {
+        item: UseDecl {
+            path: UsePath {
+                segments: segments
+                    .iter()
+                    .map(|segment| Ident::new(*segment))
+                    .collect(),
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    }
 }
 
 fn function<'m>(module: &'m HirModule, name: &str) -> &'m HirFunction {
@@ -855,4 +892,857 @@ fn ownership_matches_generated_rust_for_locals() {
     // exactly what the generated Rust needs to compile
     assert_eq!(value.ownership, Ownership::SharedOwned);
     assert_eq!(value.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn borrowed_rust_returns_are_cloned_in_hir() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_function_decl(
+        "borrowed",
+        "name",
+        "::borrowed::name",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("name"),
+            parameters: ParamList {
+                params: Vec::new(),
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("String"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        true,
+    );
+
+    let module = lower_with_interop(
+        "fn call() -> String {
+             borrowed::name()
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert_eq!(tail.ownership, Ownership::Borrowed);
+    assert_eq!(tail.adjustments, vec![Adjustment::ToOwned]);
+}
+
+#[test]
+fn qualified_rust_functions_are_typechecked_without_imports() {
+    let rust_interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
+    let module = lower_with_interop(
+        "fn call(scores: [Int]) -> String {
+             serde_json::to_string(scores) else |error| {
+                 \"encoding failed\"
+             }
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert!(matches!(tail.kind, HirExpressionKind::ElseUnwrap(_)));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn imported_rust_functions_are_typechecked_unqualified() {
+    let uses = [use_decl(&["serde_json", "to_string"])];
+    let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let module = lower_with_interop(
+        "use serde_json::to_string
+         fn call(scores: [Int]) -> String {
+             to_string(scores) else |error| {
+                 \"encoding failed\"
+             }
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert!(matches!(tail.kind, HirExpressionKind::ElseUnwrap(_)));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn namespace_use_imports_rust_functions_unqualified() {
+    let uses = [use_decl(&["serde_json"])];
+    let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let module = lower_with_interop(
+        "use serde_json
+         fn call(scores: [Int]) -> String {
+             to_string(scores) else |error| {
+                 \"encoding failed\"
+             }
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    assert!(matches!(tail.kind, HirExpressionKind::ElseUnwrap(_)));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn qualified_rust_methods_are_typechecked_with_receivers() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_function_decl(
+        "external",
+        "nickname",
+        "::external::nickname",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("nickname"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: None,
+                    short_name: None,
+                    identifier: Ident::new("self"),
+                    param_type: TypeElement::Plain(BasicTypeItem {
+                        ident: TypeIdent::new("Dog"),
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("String"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    let module = lower_with_interop(
+        "type Dog
+         fn call(dog: Dog) -> String {
+             dog.external::nickname()
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+
+    let HirExpressionKind::MethodCall(call) = &tail.kind else {
+        panic!("expected method call, got {:?}", tail.kind);
+    };
+    assert_eq!(call.rust_path.as_deref(), Some("::external::nickname"));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected string result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn rust_associated_functions_are_typechecked_as_type_member_calls() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Dog"),
+        "new",
+        "::external::Dog::new",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("new"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                    short_name: None,
+                    identifier: Ident::new("name"),
+                    param_type: TypeElement::Plain(BasicTypeItem {
+                        ident: TypeIdent::new("String"),
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("Dog"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    let dog_type = ToplevelItem {
+        item: TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Dog"),
+            generic_params: Vec::new(),
+            span: Span::default(),
+        }),
+        source: Source::Builtin,
+    };
+    let call_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("Dog")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("new"),
+                    arguments: vec![galvan_ast::FunctionCallArg {
+                        label: None,
+                        modifier: None,
+                        expression: Expression {
+                            kind: ExpressionKind::Literal(
+                                StringLiteral {
+                                    value: "Scout".to_string(),
+                                    interpolations: vec![],
+                                    span: Span::default(),
+                                }
+                                .into(),
+                            ),
+                            span: Span::default(),
+                        },
+                    }],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("call"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Dog"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![call_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![],
+            types: vec![dog_type],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "call"));
+
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected associated function call, got {:?}", tail.kind);
+    };
+    assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected Dog result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "Dog");
+}
+
+#[test]
+fn imported_rust_types_are_available_to_typecheck_after_use() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Dog",
+        "::external::Dog",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Dog"),
+            generic_params: Vec::new(),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Dog"),
+        "new",
+        "::external::Dog::new",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("new"),
+            parameters: ParamList {
+                params: vec![],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("Dog"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Dog"])]);
+
+    let call_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("Dog")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("new"),
+                    arguments: vec![],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("call"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Dog"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![call_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Dog"])],
+            types: vec![],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "call"));
+
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected associated function call, got {:?}", tail.kind);
+    };
+    assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+}
+
+#[test]
+fn imported_rust_tuple_struct_constructors_are_typechecked_as_tuple_constructors() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            generic_params: Vec::new(),
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("String"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
+            identifier: TypeIdent::new("Json"),
+            arguments: vec![galvan_ast::ConstructorCallArg {
+                ident: Ident::new("value"),
+                modifier: None,
+                expression: Expression {
+                    kind: ExpressionKind::Literal(
+                        StringLiteral {
+                            value: "ok".to_string(),
+                            interpolations: vec![],
+                            span: Span::default(),
+                        }
+                        .into(),
+                    ),
+                    span: Span::default(),
+                },
+            }],
+        }),
+        span: Span::default(),
+    };
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("response"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Json"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![constructor_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Json"])],
+            types: vec![],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "response"));
+
+    let HirExpressionKind::ConstructorCall(constructor) = &tail.kind else {
+        panic!("expected constructor call, got {:?}", tail.kind);
+    };
+    assert_eq!(constructor.kind, HirConstructorKind::Tuple);
+    assert_eq!(constructor.args.len(), 1);
+    let TypeElement::Plain(ty) = &constructor.args[0].value.ty else {
+        panic!(
+            "expected String argument, got {:?}",
+            constructor.args[0].value.ty
+        );
+    };
+    assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn imported_rust_tuple_struct_constructors_preserve_expected_parametric_type() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            generic_params: Vec::new(),
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("T"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
+            identifier: TypeIdent::new("Json"),
+            arguments: vec![galvan_ast::ConstructorCallArg {
+                ident: Ident::new("value"),
+                modifier: None,
+                expression: Expression {
+                    kind: ExpressionKind::Literal(
+                        StringLiteral {
+                            value: "ok".to_string(),
+                            interpolations: vec![],
+                            span: Span::default(),
+                        }
+                        .into(),
+                    ),
+                    span: Span::default(),
+                },
+            }],
+        }),
+        span: Span::default(),
+    };
+    let return_type = TypeElement::Parametric(ParametricTypeItem {
+        base_type: TypeIdent::new("Json"),
+        type_args: vec![TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("String"),
+            span: Span::default(),
+        })],
+        span: Span::default(),
+    });
+    let call_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("response"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: return_type.clone(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![constructor_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Json"])],
+            types: vec![],
+            functions: vec![call_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "response"));
+
+    assert_eq!(tail.ty, return_type);
+}
+
+#[test]
+fn imported_rust_tuple_struct_constructors_infer_parametric_type_from_arguments() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            generic_params: Vec::new(),
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("T"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
+            identifier: TypeIdent::new("Json"),
+            arguments: vec![galvan_ast::ConstructorCallArg {
+                ident: Ident::new("value"),
+                modifier: None,
+                expression: Expression {
+                    kind: ExpressionKind::Literal(
+                        StringLiteral {
+                            value: "ok".to_string(),
+                            interpolations: vec![],
+                            span: Span::default(),
+                        }
+                        .into(),
+                    ),
+                    span: Span::default(),
+                },
+            }],
+        }),
+        span: Span::default(),
+    };
+    let check_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("check"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::void(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Declaration {
+                    decl_modifier: galvan_ast::DeclModifier::Let,
+                    identifier: Ident::new("response"),
+                    type_annotation: None,
+                    assignment_modifier: None,
+                    assignment: Some(constructor_expr),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Json"])],
+            types: vec![],
+            functions: vec![check_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let check = function(&module, "check");
+    let HirStatement::Declaration(declaration) = &check.body.statements[0] else {
+        panic!("expected declaration");
+    };
+    let TypeElement::Parametric(parametric) = &declaration.ty else {
+        panic!(
+            "expected inferred parametric Json type, got {:?}",
+            declaration.ty
+        );
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Json"));
+    assert_eq!(parametric.type_args.len(), 1);
+    let TypeElement::Plain(arg) = &parametric.type_args[0] else {
+        panic!(
+            "expected String type argument, got {:?}",
+            parametric.type_args[0]
+        );
+    };
+    assert_eq!(arg.ident.as_str(), "String");
+}
+
+#[test]
+fn imported_rust_constants_are_typechecked_as_identifiers() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_constant_decl(
+        "external",
+        "DEFAULT_LIMIT",
+        "::external::DEFAULT_LIMIT",
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("U64"),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "DEFAULT_LIMIT"])]);
+
+    let limit_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("limit"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("U64"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Expression {
+                    kind: ExpressionKind::Ident(Ident::new("DEFAULT_LIMIT")),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "DEFAULT_LIMIT"])],
+            types: vec![],
+            functions: vec![limit_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "limit"));
+
+    let HirExpressionKind::RustConstant(constant) = &tail.kind else {
+        panic!("expected Rust constant, got {:?}", tail.kind);
+    };
+    assert_eq!(constant.rust_path.as_ref(), "::external::DEFAULT_LIMIT");
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected U64 result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "U64");
+}
+
+#[test]
+fn rust_associated_constants_are_typechecked_as_type_member_access() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "StatusCode",
+        "::external::StatusCode",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("StatusCode"),
+            generic_params: Vec::new(),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_constant_decl(
+        "external",
+        TypeIdent::new("StatusCode"),
+        "CREATED",
+        "::external::StatusCode::CREATED",
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("StatusCode"),
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "StatusCode"])]);
+
+    let access_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("StatusCode")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("CREATED")),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let created_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("created"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("StatusCode"),
+                    span: Span::default(),
+                }),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![access_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "StatusCode"])],
+            types: vec![],
+            functions: vec![created_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let tail = trailing(function(&module, "created"));
+
+    let HirExpressionKind::RustConstant(constant) = &tail.kind else {
+        panic!("expected Rust associated constant, got {:?}", tail.kind);
+    };
+    assert_eq!(
+        constant.rust_path.as_ref(),
+        "::external::StatusCode::CREATED"
+    );
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected StatusCode result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident.as_str(), "StatusCode");
 }

@@ -14,9 +14,11 @@ galvan-resolver = { path = "galvan-resolver", version = "0.0.3" }
 galvan-hir = { path = "galvan-hir", version = "0.0.3" }
 galvan-into-ast = { path = "galvan-into-ast", version = "0.0.3" }
 galvan-parse = { path = "galvan-parse", version = "0.0.3" }
+galvan-rustdoc = { path = "galvan-rustdoc", version = "0.0.3" }
 
 thiserror = "1.0.61"
 itertools = "0.13.0"
+serde_json = "1.0.120"
 
 [package]
 name = "galvan"
@@ -47,6 +49,7 @@ members = [
   "galvan-parse",
   # "galvan-core",
   "galvan-files",
+  "galvan-rustdoc",
   "galvan-resolver",
   "galvan-hir",
   "galvan-transpiler",

@@ -1,0 +1,178 @@
+use axum::Json
+use axum::Router
+use axum::extract::Path
+use axum::extract::State
+use axum::http::StatusCode
+use axum::routing::get
+use axum::routing::post
+use std::net::SocketAddr
+
+// TODO(auto-traits): Builtin auto traits should derive Clone, Debug, and
+// serde::Deserialize here without an explicit @derive annotation.
+type CreateTicketRequest {
+    title: String,
+    priority: String?,
+}
+
+// TODO(auto-traits): Builtin auto traits should derive Clone, Debug, and
+// serde::Serialize here without an explicit @derive annotation.
+type HealthResponse {
+    service: String,
+    status: String,
+}
+
+type TicketResponse {
+    id: U64,
+    title: String,
+    priority: String,
+    status: String,
+    summary: String,
+}
+
+type ErrorResponse {
+    error: String,
+}
+
+type ApiState {
+    // TODO(ref-codegen): Shared primitive ref fields should lower to atomic
+    // storage, such as Arc<AtomicU64>, instead of Arc<Mutex<U64>>.
+    ref next_ticket_id: U64,
+
+    // TODO(ref-codegen): Shared non-primitive ref fields should provide
+    // synchronized access suitable for async service state.
+    ref tickets: [TicketResponse],
+}
+
+// TODO(async): Support async functions. An async Galvan main should use the
+// default Tokio runtime without requiring a #[tokio::main] or @tokio::main
+// annotation in user code.
+async fn main() {
+    let state = ApiState(
+        next_ticket_id: 1,
+        tickets: [],
+    )
+
+    // TODO(rust-interop): Typecheck external generic builder APIs and
+    // associated type methods such as Router.new() and SocketAddr.from(...).
+    let app = Router.new()
+        .route("/health", get(health))
+        .route("/tickets", get(list_tickets).post(create_ticket))
+        .route("/tickets/{id}", get(get_ticket))
+        .route("/tickets/{id}/close", post(close_ticket))
+        .with_state(state)
+
+    let addr = SocketAddr.from(([127, 0, 0, 1], 3000))
+    println "listening on http://\(addr)"
+
+    // TODO(async): Support .await on external futures and Galvan's postfix !
+    // error propagation on awaited Rust results.
+    let listener = tokio::net::TcpListener.bind(addr).await!
+    axum::serve(listener, app).await!
+}
+
+// TODO(async): Allow async handler functions and external generic return types
+// such as Json<HealthResponse>.
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse(
+        service: "galvan-axum-api",
+        status: "ok",
+    ))
+}
+
+async fn list_tickets(state: State<ApiState>) -> Json<[TicketResponse]> {
+    // TODO(rust-interop): Resolve extractor helper methods such as into_inner
+    // on dependency types without requiring Rust-side wrapper functions.
+    let state = state.into_inner()
+    Json(state.tickets)
+}
+
+async fn create_ticket(
+    state: State<ApiState>,
+    request: Json<CreateTicketRequest>,
+) -> (StatusCode, Json<TicketResponse>) {
+    let state = state.into_inner()
+    let request = request.into_inner()
+
+    let id = state.next_ticket_id
+    state.next_ticket_id += 1
+
+    let title = request.title
+    let priority = normalized_priority(request.priority)
+    let status = "open"
+    let summary = ticket_summary(id, title, priority, status)
+    let response = TicketResponse(
+        id: id,
+        title: title,
+        priority: priority,
+        status: status,
+        summary: summary,
+    )
+
+    state.tickets ++= response
+
+    // TODO(rust-interop): Resolve associated constants on external types with
+    // member syntax, such as StatusCode.CREATED.
+    (StatusCode.CREATED, Json(response))
+}
+
+async fn get_ticket(
+    state: State<ApiState>,
+    id: Path<U64>,
+) -> Result<Json<TicketResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let state = state.into_inner()
+    let id = id.into_inner()
+
+    for state.tickets |ticket| {
+        if ticket.id == id {
+            return Json(ticket)
+        }
+    }
+
+    throw not_found(id)
+}
+
+async fn close_ticket(
+    state: State<ApiState>,
+    id: Path<U64>,
+) -> Result<Json<TicketResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let state = state.into_inner()
+    let id = id.into_inner()
+
+    // TODO(ref-codegen): Mutating an item from a ref array inside async shared
+    // state should borrow only for the duration of the update and then release
+    // the guard.
+    for state.tickets |mut ticket| {
+        if ticket.id == id {
+            ticket.status = "closed"
+            ticket.summary = ticket_summary(
+                ticket.id,
+                ticket.title,
+                ticket.priority,
+                ticket.status,
+            )
+
+            return Json(ticket)
+        }
+    }
+
+    throw not_found(id)
+}
+
+fn normalized_priority(priority: String?) -> String {
+    try priority |priority| {
+        priority
+    } else {
+        "normal"
+    }
+}
+
+fn ticket_summary(id: U64, title: String, priority: String, status: String) -> String {
+    "[\(status)] #\(id) \(title) (\(priority))"
+}
+
+fn not_found(id: U64) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode.NOT_FOUND,
+        Json(ErrorResponse(error: "ticket \(id) was not found")),
+    )
+}

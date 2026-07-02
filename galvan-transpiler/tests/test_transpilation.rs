@@ -159,12 +159,23 @@ fn transpiles_import_declarations() {
         "use reader
          use reader::score
          fn call() {
-             reader::score()
+             score()
          }",
     );
 
     assert!(output.contains("use reader::*;"));
     assert!(output.contains("use reader::score;"));
+    assert!(output.contains("score()"));
+}
+
+#[test]
+fn transpiles_qualified_function_calls_without_imports() {
+    let output = transpile_source(
+        "fn call() {
+             reader::score()
+         }",
+    );
+
     assert!(output.contains("reader::score()"));
 }
 
@@ -180,6 +191,124 @@ fn transpiles_namespaced_method_calls_as_scoped_imports() {
 
     assert!(output.contains("{ use reader::*; book.read_and_judge() }"));
     assert!(output.contains("{ use reader::*; book.score__with(5) }"));
+}
+
+#[test]
+fn primitive_ref_struct_fields_use_atomic_storage() {
+    let output = transpile_source(
+        "type State {
+             ref next_id: U64,
+             ref active: Bool,
+         }
+         fn state() -> State {
+             State(next_id: 1, active: true)
+         }",
+    );
+
+    assert!(output.contains("pub(crate) next_id: std::sync::Arc<std::sync::atomic::AtomicU64>"));
+    assert!(output.contains("pub(crate) active: std::sync::Arc<std::sync::atomic::AtomicBool>"));
+    assert!(output.contains("next_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1))"));
+    assert!(
+        output.contains("active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))")
+    );
+}
+
+#[test]
+fn non_primitive_ref_struct_fields_keep_mutex_storage() {
+    let output = transpile_source(
+        "type Dog {
+             name: String,
+         }
+         type Shelter {
+             ref dog: Dog,
+         }
+         fn shelter() -> Shelter {
+             Shelter(dog: Dog(name: \"Rex\"))
+         }",
+    );
+
+    assert!(output.contains("pub(crate) dog: std::sync::Arc<std::sync::Mutex<Dog>>"));
+    assert!(output.contains("dog:"));
+    assert!(output.contains(".__to_ref()"));
+    assert!(!output.contains("Atomic"));
+}
+
+#[test]
+fn primitive_ref_locals_and_params_use_atomic_storage() {
+    let output = transpile_source(
+        "fn increment_ref(ref counter: Int) {
+             counter += 1
+         }
+         fn check() {
+             ref counter = 0
+             counter = 42
+             counter += 1
+             assert counter == 43
+         }",
+    );
+
+    assert!(
+        output.contains("fn increment_ref(counter: std::sync::Arc<std::sync::atomic::AtomicI64>)")
+    );
+    assert!(output.contains(
+        "let mut counter: std::sync::Arc<std::sync::atomic::AtomicI64> = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0))"
+    ));
+    assert!(output.contains("counter.store(42, std::sync::atomic::Ordering::Relaxed)"));
+    assert!(output.contains("counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)"));
+    assert!(output.contains("counter.load(std::sync::atomic::Ordering::Relaxed)"));
+}
+
+#[test]
+fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
+    let output = transpile_source(
+        "fn bump(mut value: Int) {
+             value += 1
+         }
+         fn check() {
+             ref counter = 0
+             bump(counter.mut)
+         }",
+    );
+
+    assert!(output.contains(
+        "let mut __galvan_atomic_arg_0 = counter.load(std::sync::atomic::Ordering::Relaxed)"
+    ));
+    assert!(output.contains("bump(&mut __galvan_atomic_arg_0)"));
+    assert!(output
+        .contains("counter.store(__galvan_atomic_arg_0, std::sync::atomic::Ordering::Relaxed)"));
+}
+
+#[test]
+fn clones_implicitly_for_move_parameters() {
+    let output = transpile_source(
+        "fn keep(move message: String) -> String {
+             message
+         }
+         fn call() -> String {
+             let message = \"hello\"
+             keep(message)
+         }",
+    );
+
+    assert!(output.contains("fn keep(message: String) -> String"));
+    assert!(output.contains("keep(message.to_owned())"));
+}
+
+#[test]
+fn passes_move_arguments_without_implicit_clone() {
+    let output = transpile_source(
+        "fn keep(move message: String) -> String {
+             message
+         }
+         fn call() -> String {
+             let message = \"hello\"
+             keep(move message)
+         }",
+    );
+
+    assert!(output.contains("fn keep(message: String) -> String"));
+    assert!(output.contains("keep(message)"));
+    assert!(!output.contains("keep(message.to_owned())"));
 }
 
 #[test]

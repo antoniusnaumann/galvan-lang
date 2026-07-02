@@ -42,6 +42,9 @@ commands remain subcommands.
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
+  - Complete atomic `ref` operation coverage beyond primitive locals,
+    parameters, fields, assignment, arithmetic assignment, reads, and basic
+    mut-argument call-boundaries
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)
@@ -77,12 +80,50 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
+  - Allow type identifiers in member-call receiver position so
+    `TypeName.associated_function()` parses as an expression
 
 ## Future Enhancements
 
-- Add resolver-level checks for imported crates/items and namespaced method
-  calls. `use` declarations and `value.crate_name::method()` are currently
-  syntax/codegen only and cannot be checked by the Galvan compiler.
+- Extend Rust interop beyond rustdoc-backed free functions:
+  - Typecheck namespaced method calls such as `value.crate_name::method()`
+  - Resolve external-target function and constant re-exports from rustdoc JSON;
+    external type re-exports without target metadata are imported as empty types
+  - Support parser/grammar syntax for imported Rust constants with uppercase
+    names and qualified constant paths
+  - Support qualified external Rust type paths in Galvan type syntax; rustdoc
+    metadata preserves module paths, but imported Rust types currently become
+    unqualified only through `use`
+  - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
+    typechecker support for imported inherent associated functions
+  - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,
+    Rust list/map/set collections, `Result<T, E>`, `Mutex<T>` / `RwLock<T>`,
+    `Arc<Mutex<T>>` / `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` /
+    `Rc<T>` interop conversions) to cover additional smart pointers and
+    standard wrappers
+  - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
+    including `dyn Trait`, `impl Trait`, associated type projections, and
+    generic associated types
+  - Extend imported public Rust data declarations beyond the current named
+    struct fields, tuple struct fields, enum variants, and type aliases to
+    cover unions, repr details, explicit Galvan syntax for generic type
+    declarations, and Rust lifetime/const generic parameters
+  - Infer all Galvan passing modes from lifted Rust signatures beyond owned
+    copy/value params, mutable refs, shared borrowed refs, and parameter-side
+    owned wrapper conversions, including the remaining receiver/argument cases
+    not yet covered by rustdoc import
+  - Improve generic substitution and trait-bound handling for external Rust APIs
+  - Add qualified type-path syntax to the parser/AST/typechecker and wire it to
+    rustdoc's preserved namespace/module paths so same-named Rust types can be
+    addressed from Galvan without ambiguity
+- Support full Axum-style API declarations in Galvan:
+  - Add async functions and `.await`
+  - Generate async `main` with the default Tokio runtime
+  - Resolve type-associated Rust methods and constants with Galvan member
+    syntax, such as `Router.new()` and `StatusCode.CREATED`
+  - Support builtin auto traits, `@derive(...)`, `@derive(!Trait)` opt-outs,
+    and user-declared `auto trait`s
+  - Support shared-state interop from Galvan `ref` fields
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)
@@ -92,5 +133,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-25*
+*Last updated: 2026-07-02*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

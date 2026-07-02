@@ -1,10 +1,12 @@
 use itertools::Itertools;
 
 use galvan_ast::{
-    ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, RangeOperator,
-    TypeElement,
+    ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
+    RangeOperator, TypeElement,
 };
 use galvan_hir::hir::*;
+use galvan_resolver::Lookup;
+use galvan_rustdoc::{RustArgConversion, RustReturnConversion};
 
 use crate::context::Context;
 use crate::macros::transpile;
@@ -12,7 +14,7 @@ use crate::sanitize::{mangle_function_name, sanitize_name, sanitize_path};
 use crate::ErrorCollector;
 use crate::Transpile;
 
-use super::wrap_ref_storage_value;
+use super::{atomic_ordering, atomic_ref_storage_type, wrap_ref_storage_value};
 
 impl Transpile for HirExpressionKind {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
@@ -31,6 +33,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::ConstructorCall(constructor) => constructor.transpile(ctx, errors),
             HirExpressionKind::EnumConstructor(constructor) => constructor.transpile(ctx, errors),
             HirExpressionKind::EnumAccess(access) => access.transpile(ctx, errors),
+            HirExpressionKind::RustConstant(constant) => constant.rust_path.to_string(),
             HirExpressionKind::Literal(literal) => literal.transpile(ctx, errors),
             HirExpressionKind::Variable(ident) => sanitize_name(ident.as_str()).into_owned(),
             HirExpressionKind::Collection(collection) => collection.transpile(ctx, errors),
@@ -223,7 +226,22 @@ impl Transpile for HirMatch {
 
 impl Transpile for HirMatchArm {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        transpile!(ctx, errors, "{} => {}", self.pattern, self.body)
+        let pattern = self.pattern.transpile(ctx, errors);
+        let body = self.body.transpile(ctx, errors);
+        if self.binding_conversions.is_empty() {
+            return format!("{pattern} => {body}");
+        }
+
+        let conversions = self
+            .binding_conversions
+            .iter()
+            .map(|conversion| {
+                let ident = sanitize_name(conversion.ident.as_str()).into_owned();
+                let value = transpile_rust_return(ident.clone(), conversion.rust_return_conversion);
+                format!("let {ident} = {value};")
+            })
+            .join("\n");
+        format!("{pattern} => {{\n{conversions}\n{body}\n}}")
     }
 }
 
@@ -335,11 +353,21 @@ impl Transpile for HirPrint {
 
 impl Transpile for HirFunctionCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        let args = self
-            .args
-            .iter()
-            .map(|argument| argument.transpile(ctx, errors))
-            .join(", ");
+        if let Some(call) = transpile_call_with_atomic_mut_ref_args(self, ctx, errors) {
+            return call;
+        }
+
+        let args = transpile_rust_arguments(
+            &self.args,
+            self.rust_arg_conversions.as_slice(),
+            ctx,
+            errors,
+        );
+        if let Some(rust_path) = &self.rust_path {
+            let call = format!("{rust_path}({args})");
+            return transpile_rust_return(call, self.rust_return_conversion);
+        }
+
         let name = mangle_function_name(self.ident.as_str(), &self.labels);
         if let Some(namespace) = &self.namespace {
             return format!("{}::{}({})", sanitize_path(namespace), name, args);
@@ -347,6 +375,64 @@ impl Transpile for HirFunctionCall {
 
         format!("{}({})", name, args)
     }
+}
+
+fn transpile_call_with_atomic_mut_ref_args(
+    call: &HirFunctionCall,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> Option<String> {
+    if !call.args.iter().any(is_atomic_mut_ref_arg) {
+        return None;
+    }
+
+    let mut setup = Vec::new();
+    let mut stores = Vec::new();
+    let args = call
+        .args
+        .iter()
+        .enumerate()
+        .map(|(idx, argument)| {
+            if is_atomic_mut_ref_arg(argument) {
+                let base = transpile_without_adjustments(argument, ctx, errors);
+                let temp = format!("__galvan_atomic_arg_{idx}");
+                setup.push(format!(
+                    "let mut {temp} = {base}.load({})",
+                    atomic_ordering()
+                ));
+                stores.push(format!("{base}.store({temp}, {})", atomic_ordering()));
+                format!("&mut {temp}")
+            } else {
+                transpile_rust_argument(
+                    argument,
+                    call.rust_arg_conversions
+                        .get(idx)
+                        .copied()
+                        .unwrap_or_default(),
+                    ctx,
+                    errors,
+                )
+            }
+        })
+        .join(", ");
+
+    let rendered = if let Some(rust_path) = &call.rust_path {
+        format!("{rust_path}({args})")
+    } else {
+        let name = mangle_function_name(call.ident.as_str(), &call.labels);
+        if let Some(namespace) = &call.namespace {
+            format!("{}::{}({})", sanitize_path(namespace), name, args)
+        } else {
+            format!("{}({})", name, args)
+        }
+    };
+    let rendered = transpile_rust_return(rendered, call.rust_return_conversion);
+    let setup = setup.into_iter().map(|line| format!("{line};")).join(" ");
+    let stores = stores.into_iter().map(|line| format!("{line};")).join(" ");
+
+    Some(format!(
+        "{{ {setup} let __galvan_result = {rendered}; {stores} __galvan_result }}"
+    ))
 }
 
 impl Transpile for HirMethodCall {
@@ -363,6 +449,21 @@ impl Transpile for HirMethodCall {
             .map(|argument| argument.transpile(ctx, errors))
             .join(", ");
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
+
+        if let Some(rust_path) = &self.rust_path {
+            let receiver =
+                transpile_rust_argument(&self.receiver, self.rust_receiver_conversion, ctx, errors);
+            let args = std::iter::once(receiver)
+                .chain(transpile_rust_arguments_vec(
+                    &self.args,
+                    self.rust_arg_conversions.as_slice(),
+                    ctx,
+                    errors,
+                ))
+                .join(", ");
+            let call = format!("{rust_path}({args})");
+            return transpile_rust_return(call, self.rust_return_conversion);
+        }
 
         if let Some(namespace) = &self.namespace {
             return format!(
@@ -390,15 +491,110 @@ impl Transpile for HirMethodCall {
     }
 }
 
+fn transpile_rust_arguments(
+    args: &[HirExpression],
+    conversions: &[RustArgConversion],
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    transpile_rust_arguments_vec(args, conversions, ctx, errors).join(", ")
+}
+
+fn transpile_rust_arguments_vec(
+    args: &[HirExpression],
+    conversions: &[RustArgConversion],
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> Vec<String> {
+    args.iter()
+        .enumerate()
+        .map(|(idx, argument)| {
+            transpile_rust_argument(
+                argument,
+                conversions.get(idx).copied().unwrap_or_default(),
+                ctx,
+                errors,
+            )
+        })
+        .collect()
+}
+
+fn transpile_rust_argument(
+    argument: &HirExpression,
+    conversion: RustArgConversion,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let rendered = argument.transpile(ctx, errors);
+    apply_rust_arg_conversion_for_expr(rendered, argument, conversion)
+}
+
+fn is_atomic_mut_ref_arg(argument: &HirExpression) -> bool {
+    argument.adjustments
+        == [
+            Adjustment::LockRef,
+            Adjustment::Deref,
+            Adjustment::MutBorrow,
+        ]
+        && atomic_ref_storage_type(&argument.ty).is_some()
+}
+
+fn transpile_without_adjustments(
+    expression: &HirExpression,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let mut base = expression.clone();
+    base.adjustments.clear();
+    base.transpile(ctx, errors)
+}
+
+fn apply_rust_arg_conversion(rendered: String, conversion: RustArgConversion) -> String {
+    match conversion {
+        RustArgConversion::None => rendered,
+        RustArgConversion::SharedBorrow => format!("&{rendered}"),
+        RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
+        RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
+    }
+}
+
+fn apply_rust_arg_conversion_for_expr(
+    rendered: String,
+    argument: &HirExpression,
+    conversion: RustArgConversion,
+) -> String {
+    match conversion {
+        RustArgConversion::None => rendered,
+        RustArgConversion::SharedBorrow
+            if matches!(
+                argument.adjusted_ownership(),
+                Ownership::Borrowed | Ownership::MutBorrowed
+            ) =>
+        {
+            rendered
+        }
+        conversion => apply_rust_arg_conversion(rendered, conversion),
+    }
+}
+
+fn transpile_rust_return(rendered: String, conversion: RustReturnConversion) -> String {
+    match conversion {
+        RustReturnConversion::None => rendered,
+        RustReturnConversion::BoxDeref => format!("*({rendered})"),
+        RustReturnConversion::RcCloneDeref => format!("(*({rendered})).clone()"),
+    }
+}
+
 impl Transpile for HirFieldAccess {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        transpile!(
+        let access = transpile!(
             ctx,
             errors,
             "{}.{}",
             self.receiver,
             sanitize_name(self.field.as_str()).into_owned()
-        )
+        );
+        transpile_rust_return(access, self.rust_return_conversion)
     }
 }
 
@@ -441,21 +637,53 @@ impl Transpile for HirSafeAccess {
 impl Transpile for HirConstructorCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let ident = self.ident.transpile(ctx, errors);
+        if self.kind == HirConstructorKind::Tuple {
+            let args = self
+                .args
+                .iter()
+                .map(|argument| {
+                    let value = argument.value.transpile(ctx, errors);
+                    apply_rust_arg_conversion(value, argument.rust_arg_conversion)
+                })
+                .join(", ");
+            return format!("{ident}({args})");
+        }
+
         let args = self
             .args
             .iter()
             .map(|argument| {
                 let value = argument.value.transpile(ctx, errors);
                 let value = if argument.store_as_ref {
-                    wrap_ref_storage_value(value, &argument.value)
+                    if let Some(field_ty) = constructor_field_type(self, &argument.field, ctx) {
+                        wrap_ref_storage_value(value, &argument.value, field_ty)
+                    } else {
+                        wrap_ref_storage_value(value, &argument.value, &argument.value.ty)
+                    }
                 } else {
                     value
                 };
+                let value = apply_rust_arg_conversion(value, argument.rust_arg_conversion);
                 format!("{}: {}", sanitize_name(argument.field.as_str()), value)
             })
             .join(", ");
         format!("{ident} {{ {args} }}")
     }
+}
+
+fn constructor_field_type<'a>(
+    constructor: &HirConstructorCall,
+    field: &Ident,
+    ctx: &'a Context<'_>,
+) -> Option<&'a TypeElement> {
+    let ty = ctx.lookup.resolve_type(&constructor.ident)?;
+    let galvan_ast::TypeDecl::Struct(decl) = &ty.item else {
+        return None;
+    };
+    decl.members
+        .iter()
+        .find(|member| member.ident == *field)
+        .map(|member| &member.r#type)
 }
 
 impl Transpile for HirEnumConstructor {
@@ -472,7 +700,10 @@ impl Transpile for HirEnumConstructor {
             let args = self
                 .args
                 .iter()
-                .map(|argument| argument.value.transpile(ctx, errors))
+                .map(|argument| {
+                    let value = argument.value.transpile(ctx, errors);
+                    apply_rust_arg_conversion(value, argument.rust_arg_conversion)
+                })
                 .join(", ");
             format!("{access}({args})")
         } else {
@@ -480,12 +711,15 @@ impl Transpile for HirEnumConstructor {
                 .args
                 .iter()
                 .map(|argument| match &argument.field {
-                    Some(field) => format!(
-                        "{}: {}",
-                        field.as_str(),
-                        argument.value.transpile(ctx, errors)
-                    ),
-                    None => argument.value.transpile(ctx, errors),
+                    Some(field) => {
+                        let value = argument.value.transpile(ctx, errors);
+                        let value = apply_rust_arg_conversion(value, argument.rust_arg_conversion);
+                        format!("{}: {}", field.as_str(), value)
+                    }
+                    None => {
+                        let value = argument.value.transpile(ctx, errors);
+                        apply_rust_arg_conversion(value, argument.rust_arg_conversion)
+                    }
                 })
                 .join(", ");
             format!("{access} {{ {args} }}")
@@ -798,5 +1032,319 @@ impl Transpile for HirIndex {
                 "/* invalid index access */".to_string()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use galvan_ast::{Ident, Ownership, Span, TypeElement, TypeIdent};
+    use galvan_hir::mapping::Mapping;
+
+    use super::*;
+
+    #[test]
+    fn tuple_struct_constructors_transpile_as_tuple_calls() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("UserId"),
+            kind: HirConstructorKind::Tuple,
+            args: vec![HirConstructorArg {
+                field: Ident::new("value"),
+                value: HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("42".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                store_as_ref: false,
+                rust_arg_conversion: RustArgConversion::None,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn tuple_struct_constructors_apply_rust_argument_conversions() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("TicketPair"),
+            kind: HirConstructorKind::Tuple,
+            args: vec![
+                HirConstructorArg {
+                    field: Ident::new("first"),
+                    value: HirExpression::new(
+                        HirExpressionKind::Variable(Ident::new("first")),
+                        TypeElement::infer(),
+                        Ownership::UniqueOwned,
+                        Span::default(),
+                    ),
+                    store_as_ref: false,
+                    rust_arg_conversion: RustArgConversion::BoxNew,
+                },
+                HirConstructorArg {
+                    field: Ident::new("second"),
+                    value: HirExpression::new(
+                        HirExpressionKind::Variable(Ident::new("second")),
+                        TypeElement::infer(),
+                        Ownership::UniqueOwned,
+                        Span::default(),
+                    ),
+                    store_as_ref: false,
+                    rust_arg_conversion: RustArgConversion::RcNew,
+                },
+            ],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketPair(::std::boxed::Box::new(first), ::std::rc::Rc::new(second))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn struct_constructors_apply_rust_argument_conversions() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("TicketEnvelope"),
+            kind: HirConstructorKind::Struct,
+            args: vec![HirConstructorArg {
+                field: Ident::new("ticket"),
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("ticket")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                store_as_ref: false,
+                rust_arg_conversion: RustArgConversion::BoxNew,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketEnvelope { ticket: ::std::boxed::Box::new(ticket) }"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn tuple_enum_constructors_apply_rust_argument_conversions() {
+        let constructor = HirEnumConstructor {
+            target: TypeIdent::new("TicketEvent"),
+            case: TypeIdent::new("Assigned"),
+            args: vec![HirEnumConstructorArg {
+                field: None,
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("user")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                rust_arg_conversion: RustArgConversion::RcNew,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketEvent::Assigned(::std::rc::Rc::new(user))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn named_enum_constructors_apply_rust_argument_conversions() {
+        let constructor = HirEnumConstructor {
+            target: TypeIdent::new("TicketEvent"),
+            case: TypeIdent::new("Moved"),
+            args: vec![HirEnumConstructorArg {
+                field: Some(Ident::new("owner")),
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("owner")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                rust_arg_conversion: RustArgConversion::BoxNew,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constructor.transpile(&ctx, &mut errors),
+            "TicketEvent::Moved { owner: ::std::boxed::Box::new(owner) }"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn match_arms_apply_rust_binding_conversions() {
+        let arm = HirMatchArm {
+            pattern: HirMatchPattern::EnumVariant(HirEnumMatchPattern {
+                target: TypeIdent::new("TicketEvent"),
+                case: TypeIdent::new("Assigned"),
+                arguments: HirMatchPatternArguments::Tuple(vec![HirMatchBindingPattern::Binding(
+                    Ident::new("user"),
+                )]),
+            }),
+            binding_conversions: vec![HirMatchBindingConversion {
+                ident: Ident::new("user"),
+                rust_return_conversion: RustReturnConversion::RcCloneDeref,
+            }],
+            body: HirBlock {
+                statements: vec![HirStatement::Expression(HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("user")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ))],
+                ty: TypeElement::infer(),
+                span: Span::default(),
+            },
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            arm.transpile(&ctx, &mut errors),
+            "TicketEvent::Assigned(user) => {\nlet user = (*(user)).clone();\n{\nuser\n}\n}"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_shared_borrow_argument_conversions() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::takes_ref".into()),
+            rust_return_conversion: RustReturnConversion::None,
+            rust_arg_conversions: vec![RustArgConversion::SharedBorrow],
+            ident: Ident::new("takes_ref"),
+            labels: Vec::new(),
+            args: vec![HirExpression::new(
+                HirExpressionKind::Literal(HirLiteral::Number("42".to_string())),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("U64"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            )],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(call.transpile(&ctx, &mut errors), "::demo::takes_ref(&42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_owned_wrapper_argument_conversions() {
+        let args = vec![
+            HirExpression::new(
+                HirExpressionKind::Literal(HirLiteral::Number("42".to_string())),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("U64"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+            HirExpression::new(
+                HirExpressionKind::Variable(Ident::new("ticket")),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("Ticket"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+        ];
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::takes_wrappers".into()),
+            rust_return_conversion: RustReturnConversion::None,
+            rust_arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
+            ident: Ident::new("takes_wrappers"),
+            labels: Vec::new(),
+            args,
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::demo::takes_wrappers(::std::boxed::Box::new(42), ::std::rc::Rc::new(ticket))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_box_return_conversions() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::boxed_ticket".into()),
+            rust_return_conversion: RustReturnConversion::BoxDeref,
+            rust_arg_conversions: Vec::new(),
+            ident: Ident::new("boxed_ticket"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "*(::demo::boxed_ticket())"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_apply_rc_return_conversions() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust_path: Some("::demo::shared_ticket".into()),
+            rust_return_conversion: RustReturnConversion::RcCloneDeref,
+            rust_arg_conversions: Vec::new(),
+            ident: Ident::new("shared_ticket"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "(*(::demo::shared_ticket())).clone()"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_field_access_applies_box_return_conversions() {
+        let access = HirFieldAccess {
+            receiver: HirExpression::new(
+                HirExpressionKind::Variable(Ident::new("envelope")),
+                TypeElement::infer(),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+            rust_return_conversion: RustReturnConversion::BoxDeref,
+            field: Ident::new("ticket"),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(access.transpile(&ctx, &mut errors), "*(envelope.ticket)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 }

@@ -43,6 +43,7 @@ impl ReadCursor for StructTypeDecl {
         Ok(StructTypeDecl {
             visibility,
             ident,
+            generic_params: Vec::new(),
             members,
             span,
         })
@@ -129,6 +130,7 @@ impl ReadCursor for EnumTypeDecl {
         Ok(EnumTypeDecl {
             visibility,
             ident,
+            generic_params: Vec::new(),
             members,
             span,
         })
@@ -170,6 +172,7 @@ impl ReadCursor for TupleTypeDecl {
         Ok(TupleTypeDecl {
             visibility,
             ident,
+            generic_params: Vec::new(),
             members,
             span,
         })
@@ -230,6 +233,7 @@ impl ReadCursor for AliasTypeDecl {
         Ok(Self {
             visibility,
             ident,
+            generic_params: Vec::new(),
             r#type,
             span,
         })
@@ -252,6 +256,7 @@ impl ReadCursor for EmptyTypeDecl {
         Ok(EmptyTypeDecl {
             visibility,
             ident,
+            generic_params: Vec::new(),
             span,
         })
     }

@@ -11,10 +11,11 @@ mod expr;
 mod scope;
 
 use galvan_ast::{
-    Assignment, AssignmentOperator, Body, DeclModifier, Declaration, FnDecl, Ident, MainKind,
-    Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    Assignment, AssignmentOperator, BasicTypeItem, Body, DeclModifier, Declaration, FnDecl, Ident,
+    MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement, TypeIdent,
 };
 use galvan_resolver::{LookupContext, LookupError};
+use galvan_rustdoc::RustInterop;
 
 use crate::builtins::{builtin_fns, builtins, predefined_from, CheckBuiltins};
 use crate::error::ErrorCollector;
@@ -33,12 +34,22 @@ pub(crate) use scope::ScopeStack;
 /// the returned [`ErrorCollector`] so that callers can decide how to surface
 /// them.
 pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), LookupError> {
+    typecheck_with_interop(asts, &RustInterop::empty())
+}
+
+pub fn typecheck_with_interop(
+    asts: SegmentedAsts,
+    rust_interop: &RustInterop,
+) -> Result<(HirModule, ErrorCollector), LookupError> {
     let mapping = builtins();
     let predefined = predefined_from(&mapping, builtin_fns());
 
     let (functions, tests, main, cmd_bodies, errors) = {
-        let lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
-        let mut checker = Checker::new(&lookup, &mapping);
+        let mut lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
+        for ty in rust_interop.imported_types() {
+            lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
+        }
+        let mut checker = Checker::new(&lookup, &mapping, rust_interop);
 
         let functions = asts
             .functions
@@ -153,6 +164,7 @@ pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), Loo
 
 pub(crate) struct Checker<'a> {
     pub(crate) lookup: &'a LookupContext<'a>,
+    pub(crate) rust_interop: &'a RustInterop,
     pub(crate) mapping: &'a Mapping,
     pub(crate) scopes: ScopeStack,
     pub(crate) errors: ErrorCollector,
@@ -162,9 +174,14 @@ pub(crate) struct Checker<'a> {
 }
 
 impl<'a> Checker<'a> {
-    fn new(lookup: &'a LookupContext<'a>, mapping: &'a Mapping) -> Self {
+    fn new(
+        lookup: &'a LookupContext<'a>,
+        mapping: &'a Mapping,
+        rust_interop: &'a RustInterop,
+    ) -> Self {
         Self {
             lookup,
+            rust_interop,
             mapping,
             scopes: ScopeStack::new(),
             errors: ErrorCollector::new(),
@@ -193,6 +210,7 @@ impl<'a> Checker<'a> {
                 }
                 Some(DeclModifier::Mut) => Ownership::MutBorrowed,
                 Some(DeclModifier::Ref) => Ownership::Ref,
+                Some(DeclModifier::Move) => Ownership::UniqueOwned,
             };
             self.scopes.declare(Variable {
                 ident: param.identifier.clone(),
@@ -322,7 +340,7 @@ impl<'a> Checker<'a> {
         let shares_ref = declaration.decl_modifier == DeclModifier::Ref
             && declaration.assignment_modifier == Some(DeclModifier::Ref);
 
-        let (value, ty) = match (&declaration.type_annotation, &declaration.assignment) {
+        let (value, mut ty) = match (&declaration.type_annotation, &declaration.assignment) {
             (Some(annotation), Some(expression)) => {
                 let expected =
                     self.declaration_expected(annotation, declaration.decl_modifier, shares_ref);
@@ -363,8 +381,12 @@ impl<'a> Checker<'a> {
             }
         };
 
+        if declaration.decl_modifier == DeclModifier::Ref {
+            ty = concretize_inferred_integer_ref_type(ty, value.as_ref());
+        }
+
         let ownership = match declaration.decl_modifier {
-            DeclModifier::Let | DeclModifier::Mut => {
+            DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => {
                 if self.is_copy(&ty) {
                     Ownership::UniqueOwned
                 } else {
@@ -397,7 +419,7 @@ impl<'a> Checker<'a> {
         shares_ref: bool,
     ) -> Expected {
         let ownership = match modifier {
-            DeclModifier::Let | DeclModifier::Mut => {
+            DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => {
                 if self.is_copy(ty) {
                     Ownership::UniqueOwned
                 } else {
@@ -516,6 +538,35 @@ impl<'a> Checker<'a> {
                 None
             }
         }
+    }
+}
+
+fn concretize_inferred_integer_ref_type(
+    ty: TypeElement,
+    value: Option<&HirExpression>,
+) -> TypeElement {
+    if !matches!(
+        &ty,
+        TypeElement::Plain(plain) if plain.ident.as_str() == "__Number"
+    ) {
+        return ty;
+    }
+
+    let Some(HirExpression {
+        kind: HirExpressionKind::Literal(HirLiteral::Number(number)),
+        ..
+    }) = value
+    else {
+        return ty;
+    };
+
+    if number.contains('.') || number.contains('e') || number.contains('E') {
+        ty
+    } else {
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("Int"),
+            span: Span::default(),
+        })
     }
 }
 

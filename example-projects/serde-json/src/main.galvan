@@ -1,0 +1,7 @@
+fn main() {
+    let scores = [32, 48, 64]
+    let payload = serde_json::to_string(scores) else |error| {
+        "encoding failed"
+    }
+    println "scores as json: \(payload)"
+}

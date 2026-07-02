@@ -6,8 +6,8 @@ use galvan_ast::{
     EnumConstructor, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident,
     InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
     MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
-    OptionalTypeItem, Ownership, Param, PostfixExpression, ResultTypeItem, Span, TypeDecl,
-    TypeElement, TypeIdent, UsePath,
+    OptionalTypeItem, Ownership, Param, ParametricTypeItem, PostfixExpression, ResultTypeItem,
+    Span, TypeDecl, TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -46,7 +46,7 @@ impl Checker<'_> {
             }
             ExpressionKind::CollectionLiteral(literal) => self.lower_collection(literal, span),
             ExpressionKind::ConstructorCall(constructor) => {
-                self.lower_constructor(constructor, span)
+                self.lower_constructor(constructor, expected, span)
             }
             ExpressionKind::EnumConstructor(constructor) => {
                 self.lower_enum_constructor(constructor, span)
@@ -129,7 +129,7 @@ impl Checker<'_> {
     }
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {
-        match self.variable(ident, span) {
+        match self.scopes.get(ident).cloned() {
             Some(variable) => {
                 let ident = if ident.is_self() && self.ref_self {
                     Ident::new("__self")
@@ -143,12 +143,26 @@ impl Checker<'_> {
                     span,
                 )
             }
-            None => HirExpression::new(
-                HirExpressionKind::Variable(ident.clone()),
-                TypeElement::infer(),
-                Ownership::Borrowed,
-                span,
-            ),
+            None => {
+                if let Some(constant) = self.rust_interop.constant(None, ident) {
+                    return HirExpression::new(
+                        HirExpressionKind::RustConstant(HirRustConstant {
+                            rust_path: constant.rust_path.clone(),
+                        }),
+                        constant.ty.clone(),
+                        Ownership::UniqueOwned,
+                        span,
+                    );
+                }
+
+                self.variable(ident, span);
+                HirExpression::new(
+                    HirExpressionKind::Variable(ident.clone()),
+                    TypeElement::infer(),
+                    Ownership::Borrowed,
+                    span,
+                )
+            }
         }
     }
 
@@ -273,6 +287,30 @@ impl Checker<'_> {
     ) -> HirExpression {
         if let Some(namespace) = namespace {
             let labels = argument_labels(arguments);
+            let labels_ref = label_refs(&labels);
+            let receiver_ident = receiver
+                .as_ref()
+                .and_then(|(receiver, _)| receiver_type_ident(&receiver.ty));
+            if let Some(function) = namespace.segments.first().and_then(|segment| {
+                self.rust_interop.function(
+                    Some(segment.as_str()),
+                    receiver_ident.as_ref(),
+                    ident,
+                    &labels_ref,
+                )
+            }) {
+                return self.lower_rust_call(
+                    function,
+                    receiver,
+                    Some(namespace.clone()),
+                    ident,
+                    labels,
+                    arguments,
+                    span,
+                );
+            }
+
+            let labels = argument_labels(arguments);
             let args = arguments
                 .iter()
                 .map(|argument| self.lower_unknown_argument(argument))
@@ -285,6 +323,10 @@ impl Checker<'_> {
                         receiver,
                         receiver_modifier: modifier,
                         namespace,
+                        rust_path: None,
+                        rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                        rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                        rust_arg_conversions: Vec::new(),
                         ident: ident.clone(),
                         labels,
                         args,
@@ -292,6 +334,9 @@ impl Checker<'_> {
                 }
                 None => HirExpressionKind::FunctionCall(HirFunctionCall {
                     namespace,
+                    rust_path: None,
+                    rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                    rust_arg_conversions: Vec::new(),
                     ident: ident.clone(),
                     labels,
                     args,
@@ -309,6 +354,9 @@ impl Checker<'_> {
                     return HirExpression::new(
                         HirExpressionKind::FunctionCall(HirFunctionCall {
                             namespace: None,
+                            rust_path: None,
+                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: Vec::new(),
                             args,
@@ -338,6 +386,13 @@ impl Checker<'_> {
             // Extension functions on collection or generic receivers are
             // registered without a receiver type
             .or_else(|| lookup.resolve_function(None, ident, &labels_ref));
+
+        if let Some(function) =
+            self.rust_interop
+                .function(None, receiver_ident.as_ref(), ident, &labels_ref)
+        {
+            return self.lower_rust_call(function, receiver, None, ident, labels, arguments, span);
+        }
 
         if receiver.is_none() && function.is_none() {
             if let Some((receiver_argument, arguments)) = arguments.split_first() {
@@ -370,6 +425,10 @@ impl Checker<'_> {
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
+                            rust_path: None,
+                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: receiver_labels,
                             args,
@@ -401,6 +460,10 @@ impl Checker<'_> {
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
+                            rust_path: None,
+                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -408,6 +471,9 @@ impl Checker<'_> {
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
+                        rust_path: None,
+                        rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                        rust_arg_conversions: Vec::new(),
                         ident: ident.clone(),
                         labels: labels.clone(),
                         args,
@@ -427,6 +493,10 @@ impl Checker<'_> {
                             receiver,
                             receiver_modifier: modifier,
                             namespace: None,
+                            rust_path: None,
+                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
+                            rust_arg_conversions: Vec::new(),
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -434,6 +504,9 @@ impl Checker<'_> {
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
+                        rust_path: None,
+                        rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                        rust_arg_conversions: Vec::new(),
                         ident: ident.clone(),
                         labels,
                         args,
@@ -441,6 +514,80 @@ impl Checker<'_> {
                 };
                 HirExpression::new(kind, TypeElement::infer(), Ownership::UniqueOwned, span)
             }
+        }
+    }
+
+    fn lower_rust_call(
+        &mut self,
+        function: &galvan_rustdoc::RustFunctionDecl,
+        receiver: Option<(HirExpression, Option<DeclModifier>)>,
+        namespace: Option<UsePath>,
+        ident: &Ident,
+        labels: Vec<Ident>,
+        arguments: &[FunctionCallArg],
+        span: Span,
+    ) -> HirExpression {
+        let signature = function.decl.item.signature.clone();
+        let args = self.lower_call_args(&signature.parameters.params, arguments);
+        let receiver_conversion = if signature.receiver().is_some() {
+            function
+                .arg_conversions
+                .first()
+                .copied()
+                .unwrap_or_default()
+        } else {
+            galvan_rustdoc::RustArgConversion::None
+        };
+        let arg_conversions = function
+            .arg_conversions
+            .iter()
+            .copied()
+            .skip(usize::from(signature.receiver().is_some()))
+            .collect::<Vec<_>>();
+        let kind = match receiver {
+            Some((receiver, modifier)) => {
+                let receiver =
+                    self.lower_known_receiver(receiver, modifier, signature.receiver(), span);
+                HirExpressionKind::MethodCall(Box::new(HirMethodCall {
+                    receiver,
+                    receiver_modifier: signature
+                        .receiver()
+                        .and_then(|receiver| receiver.decl_modifier),
+                    namespace,
+                    rust_path: Some(function.rust_path.clone()),
+                    rust_return_conversion: function.return_conversion,
+                    rust_receiver_conversion: receiver_conversion,
+                    rust_arg_conversions: arg_conversions,
+                    ident: ident.clone(),
+                    labels,
+                    args,
+                }))
+            }
+            None => HirExpressionKind::FunctionCall(HirFunctionCall {
+                namespace,
+                rust_path: Some(function.rust_path.clone()),
+                rust_return_conversion: function.return_conversion,
+                rust_arg_conversions: arg_conversions,
+                ident: ident.clone(),
+                labels,
+                args,
+            }),
+        };
+        let expression = HirExpression::new(
+            kind,
+            signature.return_type,
+            if function.borrowed_return {
+                Ownership::Borrowed
+            } else {
+                Ownership::UniqueOwned
+            },
+            span,
+        );
+
+        if function.borrowed_return {
+            self.ensure_owned(expression)
+        } else {
+            expression
         }
     }
 
@@ -467,6 +614,7 @@ impl Checker<'_> {
         match modifier {
             Some(DeclModifier::Mut) => self.adjust_ownership(receiver, Ownership::MutBorrowed),
             Some(DeclModifier::Ref) => self.lower_ref_value(receiver, span),
+            Some(DeclModifier::Move) => self.adjust_ownership(receiver, Ownership::UniqueOwned),
             Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
             None => receiver,
         }
@@ -567,6 +715,7 @@ impl Checker<'_> {
         let expected_modifier = match param.decl_modifier {
             Some(DeclModifier::Mut) => Some(DeclModifier::Mut),
             Some(DeclModifier::Ref) => Some(DeclModifier::Ref),
+            Some(DeclModifier::Move) => Some(DeclModifier::Move),
             Some(DeclModifier::Let) | None => None,
         };
         self.validate_argument_modifier(param, expected_modifier, modifier, span);
@@ -580,6 +729,16 @@ impl Checker<'_> {
                 self.lower_ref_value(lowered, span)
             }
             Some(DeclModifier::Ref) => HirExpression::error("invalid ref passing mode", span),
+            Some(DeclModifier::Move) if modifier == Some(DeclModifier::Move) => {
+                let expected = Expected::with(param.param_type.clone(), Ownership::Ref);
+                self.coerce(lowered, &expected)
+            }
+            Some(DeclModifier::Move) => {
+                let expected =
+                    Expected::with(param.param_type.clone(), lowered.adjusted_ownership());
+                let typed = self.coerce(lowered, &expected);
+                self.ensure_owned(typed)
+            }
             Some(DeclModifier::Let) => unreachable!("let is not an argument passing modifier"),
             None => {
                 let ownership = value_argument_ownership(self.is_copy(&param.param_type));
@@ -597,6 +756,9 @@ impl Checker<'_> {
         span: Span,
     ) {
         if expected == found {
+            return;
+        }
+        if expected == Some(DeclModifier::Move) && found.is_none() {
             return;
         }
 
@@ -697,6 +859,10 @@ impl Checker<'_> {
                     Some(DeclModifier::Ref) => {
                         self.lower_ref_value(lowered, argument.expression.span)
                     }
+                    Some(DeclModifier::Move) => {
+                        let expected = Expected::with(param_ty.clone(), Ownership::Ref);
+                        self.coerce(lowered, &expected)
+                    }
                     Some(DeclModifier::Let) => {
                         unreachable!("let modifiers are rejected while merging")
                     }
@@ -722,6 +888,7 @@ impl Checker<'_> {
         match modifier {
             Some(DeclModifier::Mut) => self.adjust_ownership(lowered, Ownership::MutBorrowed),
             Some(DeclModifier::Ref) => self.lower_ref_value(lowered, argument.expression.span),
+            Some(DeclModifier::Move) => self.adjust_ownership(lowered, Ownership::UniqueOwned),
             Some(DeclModifier::Let) => {
                 self.errors.error(TranspilerError::InvalidModifier {
                     modifier: "let".to_string(),
@@ -761,6 +928,9 @@ impl Checker<'_> {
         HirExpression::new(
             HirExpressionKind::FunctionCall(HirFunctionCall {
                 namespace: None,
+                rust_path: None,
+                rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
+                rust_arg_conversions: Vec::new(),
                 ident: call.identifier.clone(),
                 labels: Vec::new(),
                 args,
@@ -823,7 +993,8 @@ impl Checker<'_> {
         target: Option<&TypeIdent>,
         expected: &Expected,
     ) -> HirMatchArm {
-        let (pattern, bindings) = self.lower_match_pattern(&arm.pattern, target);
+        let (pattern, bindings, binding_conversions) =
+            self.lower_match_pattern(&arm.pattern, target);
 
         self.scopes.push();
         for binding in bindings {
@@ -832,16 +1003,24 @@ impl Checker<'_> {
         let body = self.lower_block(&arm.body.body, expected);
         self.scopes.pop();
 
-        HirMatchArm { pattern, body }
+        HirMatchArm {
+            pattern,
+            binding_conversions,
+            body,
+        }
     }
 
     fn lower_match_pattern(
         &mut self,
         pattern: &MatchPattern,
         target: Option<&TypeIdent>,
-    ) -> (HirMatchPattern, Vec<Variable>) {
+    ) -> (
+        HirMatchPattern,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
         match pattern {
-            MatchPattern::Wildcard(_) => (HirMatchPattern::Wildcard, Vec::new()),
+            MatchPattern::Wildcard(_) => (HirMatchPattern::Wildcard, Vec::new(), Vec::new()),
             MatchPattern::EnumVariant(pattern) => {
                 let target = target
                     .cloned()
@@ -849,7 +1028,7 @@ impl Checker<'_> {
                 let fields = self
                     .resolve_match_variant_fields(&target, &pattern.case, pattern.span)
                     .unwrap_or_default();
-                let (arguments, bindings) =
+                let (arguments, bindings, binding_conversions) =
                     self.lower_match_pattern_arguments(&pattern.arguments, &fields, pattern.span);
 
                 (
@@ -859,6 +1038,7 @@ impl Checker<'_> {
                         arguments,
                     }),
                     bindings,
+                    binding_conversions,
                 )
             }
         }
@@ -867,9 +1047,13 @@ impl Checker<'_> {
     fn lower_match_pattern_arguments(
         &mut self,
         arguments: &[MatchPatternArg],
-        fields: &[(Option<Ident>, TypeElement)],
+        fields: &[MatchVariantField],
         span: Span,
-    ) -> (HirMatchPatternArguments, Vec<Variable>) {
+    ) -> (
+        HirMatchPatternArguments,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
         let has_named = arguments
             .iter()
             .any(|argument| matches!(argument, MatchPatternArg::Named(_)));
@@ -887,7 +1071,11 @@ impl Checker<'_> {
         }
 
         if arguments.is_empty() {
-            return (self.wildcard_match_arguments(fields), Vec::new());
+            return (
+                self.wildcard_match_arguments(fields),
+                Vec::new(),
+                Vec::new(),
+            );
         }
 
         if has_named {
@@ -900,10 +1088,14 @@ impl Checker<'_> {
     fn lower_positional_match_arguments(
         &mut self,
         arguments: &[MatchPatternArg],
-        fields: &[(Option<Ident>, TypeElement)],
+        fields: &[MatchVariantField],
         span: Span,
-    ) -> (HirMatchPatternArguments, Vec<Variable>) {
-        if fields.iter().any(|(name, _)| name.is_some()) {
+    ) -> (
+        HirMatchPatternArguments,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
+        if fields.iter().any(|field| field.name.is_some()) {
             self.errors.error_with_span(
                 TranspilerError::InvalidSyntax {
                     message: "Named enum variants must be matched with named fields".to_string(),
@@ -926,36 +1118,54 @@ impl Checker<'_> {
         let mut bindings = Vec::new();
         let mut patterns = Vec::with_capacity(fields.len());
 
-        for (i, (_, ty)) in fields.iter().enumerate() {
+        let mut binding_conversions = Vec::new();
+        for (i, field) in fields.iter().enumerate() {
             let binding = arguments.get(i).and_then(|argument| match argument {
                 MatchPatternArg::Binding(binding) => Some(binding),
                 MatchPatternArg::Named(_) => None,
             });
 
             let (pattern, variable) = match binding {
-                Some(binding) => self.lower_match_binding(binding, ty),
+                Some(binding) => self.lower_match_binding(binding, &field.ty),
                 None => (HirMatchBindingPattern::Wildcard, None),
             };
             if let Some(variable) = variable {
+                push_match_binding_conversion(
+                    &mut binding_conversions,
+                    &variable.ident,
+                    field.rust_return_conversion,
+                );
                 bindings.push(variable);
             }
             patterns.push(pattern);
         }
 
         if fields.is_empty() {
-            (HirMatchPatternArguments::None, bindings)
+            (
+                HirMatchPatternArguments::None,
+                bindings,
+                binding_conversions,
+            )
         } else {
-            (HirMatchPatternArguments::Tuple(patterns), bindings)
+            (
+                HirMatchPatternArguments::Tuple(patterns),
+                bindings,
+                binding_conversions,
+            )
         }
     }
 
     fn lower_named_match_arguments(
         &mut self,
         arguments: &[MatchPatternArg],
-        fields: &[(Option<Ident>, TypeElement)],
+        fields: &[MatchVariantField],
         span: Span,
-    ) -> (HirMatchPatternArguments, Vec<Variable>) {
-        if fields.iter().any(|(name, _)| name.is_none()) {
+    ) -> (
+        HirMatchPatternArguments,
+        Vec<Variable>,
+        Vec<HirMatchBindingConversion>,
+    ) {
+        if fields.iter().any(|field| field.name.is_none()) {
             self.errors.error_with_span(
                 TranspilerError::InvalidSyntax {
                     message: "Tuple enum variants must be matched with positional fields"
@@ -976,7 +1186,7 @@ impl Checker<'_> {
         for argument in &named_arguments {
             let found = fields
                 .iter()
-                .any(|(name, _)| name.as_ref() == Some(&argument.field));
+                .any(|field| field.name.as_ref() == Some(&argument.field));
             if !found {
                 self.errors.error_with_span(
                     TranspilerError::InvalidSyntax {
@@ -988,34 +1198,48 @@ impl Checker<'_> {
         }
 
         let mut bindings = Vec::new();
+        let mut binding_conversions = Vec::new();
         let mut patterns = Vec::with_capacity(fields.len());
 
-        for (field, ty) in fields {
-            let Some(field) = field else {
+        for field in fields {
+            let Some(field_name) = &field.name else {
                 continue;
             };
 
             let binding = named_arguments
                 .iter()
-                .find(|argument| argument.field == *field)
+                .find(|argument| argument.field == *field_name)
                 .map(|argument| &argument.binding);
             let (binding, variable) = match binding {
-                Some(binding) => self.lower_match_binding(binding, ty),
+                Some(binding) => self.lower_match_binding(binding, &field.ty),
                 None => (HirMatchBindingPattern::Wildcard, None),
             };
             if let Some(variable) = variable {
+                push_match_binding_conversion(
+                    &mut binding_conversions,
+                    &variable.ident,
+                    field.rust_return_conversion,
+                );
                 bindings.push(variable);
             }
             patterns.push(HirNamedMatchBinding {
-                field: field.clone(),
+                field: field_name.clone(),
                 binding,
             });
         }
 
         if fields.is_empty() {
-            (HirMatchPatternArguments::None, bindings)
+            (
+                HirMatchPatternArguments::None,
+                bindings,
+                binding_conversions,
+            )
         } else {
-            (HirMatchPatternArguments::Named(patterns), bindings)
+            (
+                HirMatchPatternArguments::Named(patterns),
+                bindings,
+                binding_conversions,
+            )
         }
     }
 
@@ -1036,20 +1260,17 @@ impl Checker<'_> {
         }
     }
 
-    fn wildcard_match_arguments(
-        &self,
-        fields: &[(Option<Ident>, TypeElement)],
-    ) -> HirMatchPatternArguments {
+    fn wildcard_match_arguments(&self, fields: &[MatchVariantField]) -> HirMatchPatternArguments {
         if fields.is_empty() {
             return HirMatchPatternArguments::None;
         }
 
-        if fields.iter().all(|(field, _)| field.is_some()) {
+        if fields.iter().all(|field| field.name.is_some()) {
             HirMatchPatternArguments::Named(
                 fields
                     .iter()
-                    .filter_map(|(field, _)| {
-                        field.as_ref().map(|field| HirNamedMatchBinding {
+                    .filter_map(|field| {
+                        field.name.as_ref().map(|field| HirNamedMatchBinding {
                             field: field.clone(),
                             binding: HirMatchBindingPattern::Wildcard,
                         })
@@ -1089,7 +1310,7 @@ impl Checker<'_> {
         target: &TypeIdent,
         case: &TypeIdent,
         span: Span,
-    ) -> Option<Vec<(Option<Ident>, TypeElement)>> {
+    ) -> Option<Vec<MatchVariantField>> {
         let Some(decl) = self.lookup.resolve_type(target) else {
             self.errors.error_with_span(
                 TranspilerError::UnknownType {
@@ -1129,7 +1350,17 @@ impl Checker<'_> {
             member
                 .fields
                 .iter()
-                .map(|field| (field.name.clone(), field.r#type.clone()))
+                .enumerate()
+                .map(|(index, field)| MatchVariantField {
+                    name: field.name.clone(),
+                    ty: field.r#type.clone(),
+                    rust_return_conversion: self.rust_interop.enum_variant_return_conversion(
+                        target,
+                        case,
+                        index,
+                        field.name.as_ref(),
+                    ),
+                })
                 .collect(),
         )
     }
@@ -2016,6 +2247,11 @@ impl Checker<'_> {
         match operation.operator {
             MemberOperator::Dot => match &operation.rhs.kind {
                 ExpressionKind::FunctionCall(call) => {
+                    if let Some(associated) =
+                        self.lower_associated_rust_call(&operation.lhs, call, span)
+                    {
+                        return associated;
+                    }
                     let (receiver, modifier) = self.lower_call_value(&operation.lhs);
                     self.lower_call(
                         Some((receiver, modifier)),
@@ -2026,8 +2262,16 @@ impl Checker<'_> {
                     )
                 }
                 ExpressionKind::Ident(field) => {
+                    if let Some(constant) =
+                        self.lower_associated_rust_constant(&operation.lhs, field, span)
+                    {
+                        return constant;
+                    }
                     let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
+                    let rust_return_conversion = receiver_type_ident(&receiver.ty)
+                        .map(|receiver| self.rust_interop.field_return_conversion(&receiver, field))
+                        .unwrap_or_default();
                     let ownership = if self.is_copy(&field_ty) {
                         Ownership::UniqueOwned
                     } else if locks_ref {
@@ -2038,6 +2282,7 @@ impl Checker<'_> {
                     HirExpression::new(
                         HirExpressionKind::FieldAccess(Box::new(HirFieldAccess {
                             receiver,
+                            rust_return_conversion,
                             field: field.clone(),
                         })),
                         field_ty,
@@ -2055,6 +2300,71 @@ impl Checker<'_> {
             },
             MemberOperator::SafeCall => self.lower_safe_access(operation, span),
         }
+    }
+
+    fn lower_associated_rust_constant(
+        &mut self,
+        lhs: &Expression,
+        constant_name: &Ident,
+        span: Span,
+    ) -> Option<HirExpression> {
+        let ExpressionKind::Ident(type_name) = &lhs.kind else {
+            return None;
+        };
+        let receiver = TypeIdent::new(type_name.as_str());
+        self.lookup.resolve_type(&receiver)?;
+        let constant = self
+            .rust_interop
+            .associated_constant(None, &receiver, constant_name)?;
+
+        Some(HirExpression::new(
+            HirExpressionKind::RustConstant(HirRustConstant {
+                rust_path: constant.rust_path.clone(),
+            }),
+            constant.ty.clone(),
+            Ownership::UniqueOwned,
+            span,
+        ))
+    }
+
+    fn lower_associated_rust_call(
+        &mut self,
+        lhs: &Expression,
+        call: &FunctionCall,
+        span: Span,
+    ) -> Option<HirExpression> {
+        let ExpressionKind::Ident(type_name) = &lhs.kind else {
+            return None;
+        };
+        let receiver = TypeIdent::new(type_name.as_str());
+        self.lookup.resolve_type(&receiver)?;
+
+        let labels = argument_labels(&call.arguments);
+        let labels_ref = label_refs(&labels);
+        let namespace = call.namespace.as_ref().cloned();
+        let function = if let Some(namespace) = call.namespace.as_ref() {
+            namespace.segments.first().and_then(|segment| {
+                self.rust_interop.associated_function(
+                    Some(segment.as_str()),
+                    &receiver,
+                    &call.identifier,
+                    &labels_ref,
+                )
+            })
+        } else {
+            self.rust_interop
+                .associated_function(None, &receiver, &call.identifier, &labels_ref)
+        }?;
+
+        Some(self.lower_rust_call(
+            function,
+            None,
+            namespace,
+            &call.identifier,
+            labels,
+            &call.arguments,
+            span,
+        ))
     }
 
     fn lower_access_base(&mut self, expression: &Expression) -> (HirExpression, bool) {
@@ -2475,9 +2785,16 @@ impl Checker<'_> {
         unified.unwrap_or_else(TypeElement::infer)
     }
 
-    fn lower_constructor(&mut self, constructor: &ConstructorCall, span: Span) -> HirExpression {
+    fn lower_constructor(
+        &mut self,
+        constructor: &ConstructorCall,
+        expected: &Expected,
+        span: Span,
+    ) -> HirExpression {
         let lookup = self.lookup;
         let type_decl = lookup.resolve_type(&constructor.identifier);
+        let mut kind = HirConstructorKind::Struct;
+        let mut inferred_type_args = Vec::new();
 
         let args = match type_decl.map(|decl| &decl.item) {
             Some(TypeDecl::Struct(decl)) => {
@@ -2522,8 +2839,56 @@ impl Checker<'_> {
                         field: member.ident.clone(),
                         value,
                         store_as_ref: is_ref_field,
+                        rust_arg_conversion: self
+                            .rust_interop
+                            .field_arg_conversion(&decl.ident, &member.ident),
                     });
                 }
+                args
+            }
+            Some(TypeDecl::Tuple(decl)) => {
+                kind = HirConstructorKind::Tuple;
+                if constructor.arguments.len() != decl.members.len() {
+                    self.errors.error(TranspilerError::ArgumentCountMismatch {
+                        name: format!("{}()", constructor.identifier.as_str()),
+                        expected: decl.members.len(),
+                        found: constructor.arguments.len(),
+                    });
+                }
+
+                let rust_arg_conversions = self
+                    .rust_interop
+                    .constructor_arg_conversions(&constructor.identifier);
+                let args = constructor
+                    .arguments
+                    .iter()
+                    .zip(&decl.members)
+                    .enumerate()
+                    .map(|(idx, (argument, member))| {
+                        let value = self.lower_modified_value(
+                            &argument.expression,
+                            argument.modifier,
+                            false,
+                            "constructor arguments",
+                        );
+                        let expected = Expected::owned(member.r#type.clone());
+                        let value = self.coerce(value, &expected);
+                        collect_generic_constructor_arg_types(
+                            &member.r#type,
+                            &value.ty,
+                            &mut inferred_type_args,
+                        );
+                        HirConstructorArg {
+                            field: argument.ident.clone(),
+                            value,
+                            store_as_ref: false,
+                            rust_arg_conversion: rust_arg_conversions
+                                .get(idx)
+                                .copied()
+                                .unwrap_or_default(),
+                        }
+                    })
+                    .collect();
                 args
             }
             _ => constructor
@@ -2541,6 +2906,7 @@ impl Checker<'_> {
                         field: argument.ident.clone(),
                         value,
                         store_as_ref: false,
+                        rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
                     }
                 })
                 .collect(),
@@ -2549,9 +2915,10 @@ impl Checker<'_> {
         HirExpression::new(
             HirExpressionKind::ConstructorCall(HirConstructorCall {
                 ident: constructor.identifier.clone(),
+                kind,
                 args,
             }),
-            plain_type(constructor.identifier.clone()),
+            constructor_result_type(&constructor.identifier, expected, inferred_type_args),
             Ownership::UniqueOwned,
             span,
         )
@@ -2565,7 +2932,8 @@ impl Checker<'_> {
         let args = constructor
             .arguments
             .iter()
-            .map(|argument| {
+            .enumerate()
+            .map(|(idx, argument)| {
                 let value = self.lower_expression(&argument.expression, &Expected::free());
                 let value = match (&argument.field_name, &argument.modifier) {
                     (None, Some(DeclModifier::Mut)) => value.adjusted(Adjustment::MutBorrow),
@@ -2577,6 +2945,12 @@ impl Checker<'_> {
                 HirEnumConstructorArg {
                     field: argument.field_name.clone(),
                     value,
+                    rust_arg_conversion: self.rust_interop.enum_variant_arg_conversion(
+                        &constructor.enum_access.target,
+                        &constructor.enum_access.case,
+                        idx,
+                        argument.field_name.as_ref(),
+                    ),
                 }
             })
             .collect();
@@ -2676,6 +3050,65 @@ fn plain_type(ident: TypeIdent) -> TypeElement {
         ident,
         span: Span::default(),
     })
+}
+
+fn constructor_result_type(
+    identifier: &TypeIdent,
+    expected: &Expected,
+    inferred_type_args: Vec<(Ident, TypeElement)>,
+) -> TypeElement {
+    match &expected.ty {
+        TypeElement::Plain(plain) if plain.ident == *identifier => expected.ty.clone(),
+        TypeElement::Parametric(parametric) if parametric.base_type == *identifier => {
+            expected.ty.clone()
+        }
+        _ if !inferred_type_args.is_empty() => TypeElement::Parametric(ParametricTypeItem {
+            base_type: identifier.clone(),
+            type_args: inferred_type_args.into_iter().map(|(_, ty)| ty).collect(),
+            span: Span::default(),
+        }),
+        _ => plain_type(identifier.clone()),
+    }
+}
+
+fn collect_generic_constructor_arg_types(
+    declared: &TypeElement,
+    actual: &TypeElement,
+    inferred: &mut Vec<(Ident, TypeElement)>,
+) {
+    match (declared, actual) {
+        (TypeElement::Generic(generic), actual) => {
+            if inferred.iter().any(|(ident, _)| ident == &generic.ident) {
+                return;
+            }
+            inferred.push((generic.ident.clone(), actual.clone()));
+        }
+        (TypeElement::Array(declared), TypeElement::Array(actual)) => {
+            collect_generic_constructor_arg_types(&declared.elements, &actual.elements, inferred);
+        }
+        (TypeElement::Optional(declared), TypeElement::Optional(actual)) => {
+            collect_generic_constructor_arg_types(&declared.inner, &actual.inner, inferred);
+        }
+        (TypeElement::Result(declared), TypeElement::Result(actual)) => {
+            collect_generic_constructor_arg_types(&declared.success, &actual.success, inferred);
+            if let (Some(declared), Some(actual)) = (&declared.error, &actual.error) {
+                collect_generic_constructor_arg_types(declared, actual, inferred);
+            }
+        }
+        (TypeElement::Tuple(declared), TypeElement::Tuple(actual)) => {
+            for (declared, actual) in declared.elements.iter().zip(&actual.elements) {
+                collect_generic_constructor_arg_types(declared, actual, inferred);
+            }
+        }
+        (TypeElement::Parametric(declared), TypeElement::Parametric(actual))
+            if declared.base_type == actual.base_type =>
+        {
+            for (declared, actual) in declared.type_args.iter().zip(&actual.type_args) {
+                collect_generic_constructor_arg_types(declared, actual, inferred);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn closure_argument(argument: &FunctionCallArg) -> Option<&Closure> {
@@ -2925,6 +3358,7 @@ fn modifier_name(modifier: DeclModifier) -> &'static str {
         DeclModifier::Let => "let",
         DeclModifier::Mut => "mut",
         DeclModifier::Ref => "ref",
+        DeclModifier::Move => "move",
     }
 }
 
@@ -2932,9 +3366,31 @@ fn passing_mode_name(modifier: Option<DeclModifier>) -> &'static str {
     match modifier {
         Some(DeclModifier::Mut) => "`mut`",
         Some(DeclModifier::Ref) => "`ref`",
+        Some(DeclModifier::Move) => "`move`",
         Some(DeclModifier::Let) => "`let`",
         None => "unmodified",
     }
+}
+
+#[derive(Clone, Debug)]
+struct MatchVariantField {
+    name: Option<Ident>,
+    ty: TypeElement,
+    rust_return_conversion: galvan_rustdoc::RustReturnConversion,
+}
+
+fn push_match_binding_conversion(
+    conversions: &mut Vec<HirMatchBindingConversion>,
+    ident: &Ident,
+    rust_return_conversion: galvan_rustdoc::RustReturnConversion,
+) {
+    if rust_return_conversion == galvan_rustdoc::RustReturnConversion::None {
+        return;
+    }
+    conversions.push(HirMatchBindingConversion {
+        ident: ident.clone(),
+        rust_return_conversion,
+    });
 }
 
 fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {
