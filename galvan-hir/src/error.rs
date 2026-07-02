@@ -114,6 +114,9 @@ pub enum TranspilerError {
         operation: String,
         type_name: String,
     },
+
+    #[error("Duplicate {kind} declaration: {name} is already declared")]
+    DuplicateDeclaration { kind: String, name: String },
 }
 
 /// Collects errors and warnings during compilation

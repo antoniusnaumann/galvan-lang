@@ -1,6 +1,6 @@
 use galvan_ast::SegmentedAsts;
 use galvan_hir::mapping::Mapping;
-use galvan_resolver::{LookupContext, LookupError};
+use galvan_resolver::LookupContext;
 
 pub use galvan_hir::builtins::predefined_from;
 
@@ -18,8 +18,11 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn with(mut self, asts: &'a SegmentedAsts) -> Result<Self, LookupError> {
-        self.lookup = self.lookup.with(asts)?;
-        Ok(self)
+    /// Registers `asts` in the lookup context. Duplicate declarations have
+    /// already been reported by the typechecker at this point, so conflicts
+    /// are resolved the same way (first declaration wins).
+    pub fn with(mut self, asts: &'a SegmentedAsts) -> Self {
+        self.lookup = self.lookup.with(asts);
+        self
     }
 }

@@ -1,4 +1,7 @@
-use galvan_ast::{FnDecl, Ident, SegmentedAsts, ToplevelItem, TypeDecl, TypeElement, TypeIdent};
+use galvan_ast::{
+    AstNode, FnDecl, Ident, SegmentedAsts, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+};
+use galvan_files::Source;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -34,17 +37,49 @@ pub enum LookupError {
     TypeNotFound,
     #[error("Function not found")]
     FunctionNotFound,
-    #[error("Duplicate type")]
-    DuplicateType(TypeIdent),
-    #[error("Duplicate function")]
-    DuplicateFunction,
+}
+
+/// What kind of top-level declaration a [`DuplicateDeclaration`] refers to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeclarationKind {
+    Type,
+    Function,
+}
+
+impl std::fmt::Display for DeclarationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeclarationKind::Type => write!(f, "type"),
+            DeclarationKind::Function => write!(f, "function"),
+        }
+    }
+}
+
+/// A top-level declaration that conflicts with an earlier one of the same
+/// name. The earlier declaration stays in the [`LookupContext`]; the duplicate
+/// is reported so that callers can surface it as a diagnostic and continue.
+#[derive(Clone, Debug)]
+pub struct DuplicateDeclaration {
+    pub kind: DeclarationKind,
+    pub name: String,
+    /// Identifier span of the duplicate declaration.
+    pub span: Span,
+    /// Source file of the duplicate declaration.
+    pub source: Source,
 }
 
 impl<'a> LookupContext<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn add_from(&mut self, asts: &'a SegmentedAsts) -> Result<(), LookupError> {
+
+    /// Registers all top-level declarations from `asts`.
+    ///
+    /// Conflicting redeclarations do not abort: the first declaration wins and
+    /// each conflict is returned as a [`DuplicateDeclaration`].
+    pub fn add_from(&mut self, asts: &'a SegmentedAsts) -> Vec<DuplicateDeclaration> {
+        let mut duplicates = Vec::new();
+
         for func in &asts.functions {
             let receiver = func.item.signature.parameters.params.first().and_then(|p| {
                 if p.identifier.is_self() {
@@ -63,27 +98,41 @@ impl<'a> LookupContext<'a> {
                 .map(|label| label.as_str())
                 .collect::<Vec<_>>();
             let func_id = FunctionId::new(receiver, &func.signature.identifier, &labels);
-            if self.functions.insert(func_id, func).is_some() {
-                return Err(LookupError::DuplicateFunction);
+            if self.functions.contains_key(&func_id) {
+                duplicates.push(DuplicateDeclaration {
+                    kind: DeclarationKind::Function,
+                    name: func_id.to_string(),
+                    span: func.signature.identifier.span(),
+                    source: func.source.clone(),
+                });
+            } else {
+                self.functions.insert(func_id, func);
             }
         }
 
         for type_decl in &asts.types {
-            if self
-                .types
-                .insert(type_decl.ident().clone(), type_decl)
-                .is_some()
-            {
-                return Err(LookupError::DuplicateType(type_decl.ident().clone()));
+            let ident = type_decl.ident();
+            if self.types.contains_key(ident) {
+                duplicates.push(DuplicateDeclaration {
+                    kind: DeclarationKind::Type,
+                    name: ident.to_string(),
+                    span: ident.span(),
+                    source: type_decl.source.clone(),
+                });
+            } else {
+                self.types.insert(ident.clone(), type_decl);
             }
         }
 
-        Ok(())
+        duplicates
     }
 
-    pub fn with(mut self, asts: &'a SegmentedAsts) -> Result<Self, LookupError> {
-        self.add_from(asts)?;
-        Ok(self)
+    /// Like [`add_from`](Self::add_from), but discards conflict information.
+    /// Intended for contexts (builtins, already-checked modules) where
+    /// duplicates have been reported elsewhere or cannot occur.
+    pub fn with(mut self, asts: &'a SegmentedAsts) -> Self {
+        self.add_from(asts);
+        self
     }
 }
 

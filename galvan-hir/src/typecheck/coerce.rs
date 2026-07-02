@@ -204,15 +204,17 @@ impl Checker<'_> {
                 expr.adjusted(Adjustment::WrapErr)
             }
             (TypeElement::Result(_), actual) => {
-                self.errors
-                    .warning(format!("Wrapping non-matching type {} in Ok", actual), None);
+                self.errors.warning(
+                    format!("Wrapping non-matching type {} in Ok", actual),
+                    Some(expr.span.into()),
+                );
                 let expr = self.ensure_owned(expr);
                 expr.adjusted(Adjustment::WrapOk)
             }
             (TypeElement::Optional(_), actual) => {
                 self.errors.warning(
                     format!("Wrapping non-matching type {} in Some", actual),
-                    None,
+                    Some(expr.span.into()),
                 );
                 let expr = self.ensure_owned(expr);
                 expr.adjusted(Adjustment::WrapSome)

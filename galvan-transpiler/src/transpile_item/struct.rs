@@ -78,10 +78,13 @@ impl Transpile for StructTypeMember {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.decl_modifier {
             Some(DeclModifier::Let) | Some(DeclModifier::Mut) | Some(DeclModifier::Move) => {
-                errors.error(crate::TranspilerError::InvalidModifier {
-                    modifier: "let/mut/move".to_string(),
-                    context: "struct fields".to_string(),
-                });
+                errors.error_with_span(
+                    crate::TranspilerError::InvalidModifier {
+                        modifier: "let/mut/move".to_string(),
+                        context: "struct fields".to_string(),
+                    },
+                    Some(self.span.into()),
+                );
                 transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
             }
             Some(DeclModifier::Ref) => {
@@ -119,10 +122,13 @@ impl Transpile for EnumTypeMember {
                         format!("{}: {}", name.as_str(), f.r#type.transpile(ctx, errors))
                     } else {
                         // Mix of named and unnamed should not be allowed
-                        errors.error(crate::TranspilerError::InvalidSyntax {
-                            message: "Cannot mix named and unnamed fields in enum variant"
-                                .to_string(),
-                        });
+                        errors.error_with_span(
+                            crate::TranspilerError::InvalidSyntax {
+                                message: "Cannot mix named and unnamed fields in enum variant"
+                                    .to_string(),
+                            },
+                            Some(f.span.into()),
+                        );
                         f.r#type.transpile(ctx, errors)
                     }
                 })

@@ -12,3 +12,4 @@ license.workspace = true
 thiserror.workspace = true
 
 galvan-ast.workspace = true
+galvan-files.workspace = true

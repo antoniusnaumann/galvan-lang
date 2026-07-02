@@ -340,7 +340,8 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     let segmented = asts.segmented()?;
     let rust_interop =
         RustInterop::from_crates_and_uses(qualified_namespaces(&segmented), &segmented.uses)?;
-    let (module, mut errors) = typecheck_with_interop(segmented, &rust_interop)?;
+    let checked = typecheck_with_interop(segmented, &rust_interop);
+    let (module, mut errors) = (checked.module, checked.errors);
 
     let mut builtins = builtins();
     for ty in &rust_interop.types {
@@ -356,7 +357,7 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     }
     let predefined = predefined_from(&builtins, builtin_fns());
     let mut ctx = Context::new(builtins);
-    ctx = ctx.with(&predefined)?;
+    ctx = ctx.with(&predefined);
     for ty in &module.types {
         ctx.lookup.types.insert(ty.item.ident().clone(), ty);
     }
