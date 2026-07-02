@@ -11,16 +11,18 @@ mod expr;
 mod scope;
 
 use galvan_ast::{
-    Assignment, AssignmentOperator, BasicTypeItem, Body, DeclModifier, Declaration, FnDecl, Ident,
-    MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement, TypeIdent,
+    Assignment, AssignmentOperator, AstNode, BasicTypeItem, Body, DeclModifier, Declaration,
+    FnDecl, Ident, MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    TypeIdent,
 };
 use galvan_files::Source;
-use galvan_resolver::{LookupContext, LookupError};
+use galvan_resolver::LookupContext;
 use galvan_rustdoc::RustInterop;
 
 use crate::builtins::{builtin_fns, builtins, predefined_from, CheckBuiltins};
 use crate::error::ErrorCollector;
 use crate::hir::*;
+use crate::index::{IndexBuilder, SymbolIndex};
 use crate::mapping::Mapping;
 
 pub use scope::Variable;
@@ -29,12 +31,21 @@ pub use coerce::types_compatible;
 pub(crate) use coerce::{concat_kind, Expected};
 pub(crate) use scope::ScopeStack;
 
+/// The result of typechecking a crate: the lowered [`HirModule`], the
+/// position-indexed [`SymbolIndex`] recorded while lowering, and all
+/// diagnostics.
+pub struct Typechecked {
+    pub module: HirModule,
+    pub index: SymbolIndex,
+    pub errors: ErrorCollector,
+}
+
 /// Typechecks a segmented AST and lowers it into a [`HirModule`].
 ///
-/// Type and ownership errors do not abort lowering; they are reported through
-/// the returned [`ErrorCollector`] so that callers can decide how to surface
-/// them.
-pub fn typecheck(asts: SegmentedAsts) -> Result<(HirModule, ErrorCollector), LookupError> {
+/// Type and ownership errors (including duplicate top-level declarations) do
+/// not abort lowering; they are reported through the returned
+/// [`ErrorCollector`] so that callers can decide how to surface them.
+pub fn typecheck(asts: SegmentedAsts) -> Typechecked {
     typecheck_with_interop(asts, &RustInterop::empty())
 }
 
@@ -47,25 +58,64 @@ fn source_file(source: &Source) -> String {
         .unwrap_or_default()
 }
 
-pub fn typecheck_with_interop(
-    asts: SegmentedAsts,
-    rust_interop: &RustInterop,
-) -> Result<(HirModule, ErrorCollector), LookupError> {
+pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -> Typechecked {
     let mapping = builtins();
     let predefined = predefined_from(&mapping, builtin_fns());
 
-    let (functions, tests, main, cmd_bodies, errors) = {
-        let mut lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
+    let (functions, tests, main, cmd_bodies, errors, index) = {
+        let mut lookup = LookupContext::new().with(&predefined);
+        let duplicates = lookup.add_from(&asts);
         for ty in rust_interop.imported_types() {
             lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
         }
         let mut checker = Checker::new(&lookup, &mapping, rust_interop);
 
+        for duplicate in duplicates {
+            checker.errors.error_with_span(
+                crate::error::TranspilerError::DuplicateDeclaration {
+                    kind: duplicate.kind.to_string(),
+                    name: duplicate.name,
+                },
+                Some(crate::error::Span {
+                    start: duplicate.span.range.0,
+                    end: duplicate.span.range.1,
+                    file: source_file(&duplicate.source),
+                }),
+            );
+        }
+
+        // Register all top-level definitions in the symbol index up front so
+        // that references recorded during lowering resolve regardless of
+        // declaration order.
+        for func in &predefined.functions {
+            checker.index.define_function(func);
+        }
+        for ty in &asts.types {
+            checker.index.define_type(ty);
+        }
+        for func in &asts.functions {
+            checker.index.define_function(func);
+        }
+        // Types referenced from type declarations and signatures.
+        for ty in &asts.types {
+            checker.enter_source(&ty.source);
+            checker.index.reference_type_decl_members(&ty.item);
+        }
+        for func in &asts.functions {
+            checker.enter_source(&func.source);
+            for param in &func.item.signature.parameters.params {
+                checker.index.reference_type_element(&param.param_type);
+            }
+            checker
+                .index
+                .reference_type_element(&func.item.signature.return_type);
+        }
+
         let functions = asts
             .functions
             .iter()
             .map(|func| {
-                checker.errors.set_current_file(source_file(&func.source));
+                checker.enter_source(&func.source);
                 checker.lower_function(func)
             })
             .collect::<Vec<_>>();
@@ -74,7 +124,7 @@ pub fn typecheck_with_interop(
             .tests
             .iter()
             .map(|test| {
-                checker.errors.set_current_file(source_file(&test.source));
+                checker.enter_source(&test.source);
                 HirTest {
                     name: test.item.name.clone(),
                     body: checker.lower_toplevel_body(&test.item.body),
@@ -84,12 +134,12 @@ pub fn typecheck_with_interop(
             .collect::<Vec<_>>();
 
         let main = asts.main.as_ref().map(|main| {
-            checker.errors.set_current_file(source_file(&main.source));
-            checker.scopes.push();
+            checker.enter_source(&main.source);
+            checker.push_scope(main.item.span);
             let kind = match &main.item.kind {
                 MainKind::Command(signature) => {
                     for param in &signature.parameters.params {
-                        checker.scopes.declare(Variable {
+                        checker.declare_parameter(Variable {
                             ident: param.identifier.clone(),
                             modifier: param.decl_modifier.unwrap_or(DeclModifier::Let),
                             ty: param.param_type.clone(),
@@ -102,7 +152,7 @@ pub fn typecheck_with_interop(
                 }
                 MainKind::Function { argument } => {
                     if let Some(argument) = argument {
-                        checker.scopes.declare(Variable {
+                        checker.declare_parameter(Variable {
                             ident: argument.identifier.clone(),
                             modifier: DeclModifier::Let,
                             ty: argument.param_type.clone(),
@@ -117,7 +167,7 @@ pub fn typecheck_with_interop(
                 }
             };
             let body = checker.lower_toplevel_body(&main.item.body);
-            checker.scopes.pop();
+            checker.pop_scope();
 
             HirMain {
                 kind,
@@ -130,11 +180,11 @@ pub fn typecheck_with_interop(
             .cmds
             .iter()
             .map(|cmd| {
-                checker.errors.set_current_file(source_file(&cmd.source));
-                checker.scopes.push();
+                checker.enter_source(&cmd.source);
+                checker.push_scope(cmd.item.span);
                 for param in &cmd.item.signature.parameters.params {
                     // CLI parameters are passed by value
-                    checker.scopes.declare(Variable {
+                    checker.declare_parameter(Variable {
                         ident: param.identifier.clone(),
                         modifier: param.decl_modifier.unwrap_or(DeclModifier::Let),
                         ty: param.param_type.clone(),
@@ -142,12 +192,19 @@ pub fn typecheck_with_interop(
                     });
                 }
                 let body = checker.lower_block(&cmd.item.body, &Expected::void());
-                checker.scopes.pop();
+                checker.pop_scope();
                 body
             })
             .collect::<Vec<_>>();
 
-        (functions, tests, main, cmd_bodies, checker.errors)
+        (
+            functions,
+            tests,
+            main,
+            cmd_bodies,
+            checker.errors,
+            checker.index.finish(),
+        )
     };
 
     let SegmentedAsts {
@@ -167,8 +224,8 @@ pub fn typecheck_with_interop(
         })
         .collect();
 
-    Ok((
-        HirModule {
+    Typechecked {
+        module: HirModule {
             uses,
             types,
             functions,
@@ -176,8 +233,9 @@ pub fn typecheck_with_interop(
             main,
             cmds,
         },
+        index,
         errors,
-    ))
+    }
 }
 
 pub(crate) struct Checker<'a> {
@@ -186,6 +244,7 @@ pub(crate) struct Checker<'a> {
     pub(crate) mapping: &'a Mapping,
     pub(crate) scopes: ScopeStack,
     pub(crate) errors: ErrorCollector,
+    pub(crate) index: IndexBuilder,
     /// Return type of the function currently being lowered
     pub(crate) fn_return: TypeElement,
     pub(crate) ref_self: bool,
@@ -203,6 +262,7 @@ impl<'a> Checker<'a> {
             mapping,
             scopes: ScopeStack::new(),
             errors: ErrorCollector::new(),
+            index: IndexBuilder::new(),
             fn_return: TypeElement::void(),
             ref_self: false,
         }
@@ -212,10 +272,47 @@ impl<'a> Checker<'a> {
         self.mapping.is_copy(ty)
     }
 
+    /// Attribute subsequently reported diagnostics and recorded index entries
+    /// to `source`.
+    fn enter_source(&mut self, source: &Source) {
+        self.errors.set_current_file(source_file(source));
+        self.index.set_current_source(source.clone());
+    }
+
+    /// Open a lexical scope covering `span` (the whole construct the scope
+    /// belongs to, so that bindings declared in its head are visible in it).
+    pub(crate) fn push_scope(&mut self, span: Span) {
+        self.scopes.push();
+        self.index.push_scope(span);
+    }
+
+    pub(crate) fn pop_scope(&mut self) {
+        self.scopes.pop();
+        self.index.pop_scope();
+    }
+
+    /// Declare a local binding in the current scope and record it in the
+    /// symbol index.
+    pub(crate) fn declare_local(&mut self, variable: Variable) {
+        let definition =
+            self.index
+                .define_binding(&variable.ident, variable.modifier, &variable.ty, false);
+        self.scopes.declare(variable, definition);
+    }
+
+    /// Declare a function or closure parameter in the current scope and
+    /// record it in the symbol index.
+    pub(crate) fn declare_parameter(&mut self, variable: Variable) {
+        let definition =
+            self.index
+                .define_binding(&variable.ident, variable.modifier, &variable.ty, true);
+        self.scopes.declare(variable, definition);
+    }
+
     fn lower_function(&mut self, func: &ToplevelItem<FnDecl>) -> HirFunction {
         let signature = func.item.signature.clone();
 
-        self.scopes.push();
+        self.push_scope(func.item.span);
         for param in &signature.parameters.params {
             let is_copy = self.is_copy(&param.param_type);
             let ownership = match param.decl_modifier {
@@ -230,7 +327,7 @@ impl<'a> Checker<'a> {
                 Some(DeclModifier::Ref) => Ownership::Ref,
                 Some(DeclModifier::Move) => Ownership::UniqueOwned,
             };
-            self.scopes.declare(Variable {
+            self.declare_parameter(Variable {
                 ident: param.identifier.clone(),
                 modifier: param.decl_modifier.unwrap_or(DeclModifier::Let),
                 ty: param.param_type.clone(),
@@ -249,7 +346,7 @@ impl<'a> Checker<'a> {
         };
         let body = self.lower_block(&func.item.body, &expected);
 
-        self.scopes.pop();
+        self.pop_scope();
         self.fn_return = TypeElement::void();
         self.ref_self = false;
 
@@ -263,9 +360,9 @@ impl<'a> Checker<'a> {
 
     fn lower_toplevel_body(&mut self, body: &Body) -> HirBlock {
         self.fn_return = TypeElement::void();
-        self.scopes.push();
+        self.push_scope(body.span);
         let block = self.lower_block(body, &Expected::void());
-        self.scopes.pop();
+        self.pop_scope();
         block
     }
 
@@ -273,7 +370,7 @@ impl<'a> Checker<'a> {
     /// expression is coerced to it; all other statements are lowered in
     /// statement position.
     pub(crate) fn lower_block(&mut self, body: &Body, expected: &Expected) -> HirBlock {
-        self.scopes.push();
+        self.push_scope(body.span);
 
         let mut statements = Vec::with_capacity(body.statements.len());
         let last_index = body.statements.len().saturating_sub(1);
@@ -313,7 +410,7 @@ impl<'a> Checker<'a> {
             }
         }
 
-        self.scopes.pop();
+        self.pop_scope();
 
         HirBlock {
             statements,
@@ -357,6 +454,10 @@ impl<'a> Checker<'a> {
     fn lower_declaration(&mut self, declaration: &Declaration) -> HirDeclaration {
         let shares_ref = declaration.decl_modifier == DeclModifier::Ref
             && declaration.assignment_modifier == Some(DeclModifier::Ref);
+
+        if let Some(annotation) = &declaration.type_annotation {
+            self.index.reference_type_element(annotation);
+        }
 
         let (value, mut ty) = match (&declaration.type_annotation, &declaration.assignment) {
             (Some(annotation), Some(expression)) => {
@@ -414,7 +515,7 @@ impl<'a> Checker<'a> {
             DeclModifier::Ref => Ownership::Ref,
         };
 
-        self.scopes.declare(Variable {
+        self.declare_local(Variable {
             ident: declaration.identifier.clone(),
             modifier: declaration.decl_modifier,
             ty: ty.clone(),
@@ -541,11 +642,18 @@ impl<'a> Checker<'a> {
         Expected::owned(target.ty.clone())
     }
 
-    /// Resolves a variable, reporting an error with a suggestion when the
-    /// name is unknown
+    /// Resolves a variable, recording the use in the symbol index, or reports
+    /// an error with a suggestion when the name is unknown.
     pub(crate) fn variable(&mut self, ident: &Ident, span: Span) -> Option<Variable> {
         match self.scopes.get(ident) {
-            Some(variable) => Some(variable.clone()),
+            Some(entry) => {
+                let definition = entry.definition;
+                let variable = entry.variable.clone();
+                if let Some(definition) = definition {
+                    self.index.reference(ident.span(), definition);
+                }
+                Some(variable)
+            }
             None => {
                 let available = self.scopes.variable_names();
                 self.errors.suggest_similar_identifier(

@@ -126,10 +126,13 @@ impl Transpile for HirAssignment {
                     }
                     _ => {
                         let operator = combined_operator_symbol(&self.operator);
-                        errors.error(crate::TranspilerError::UnsupportedDictSetAssignment {
-                            operation: operator.to_string(),
-                            type_name: "dictionary or set".to_string(),
-                        });
+                        errors.error_with_span(
+                            crate::TranspilerError::UnsupportedDictSetAssignment {
+                                operation: operator.to_string(),
+                                type_name: "dictionary or set".to_string(),
+                            },
+                            Some(self.span.into()),
+                        );
                         return format!(
                             "/* Unsupported operation: {operator} on dictionary or set */"
                         );

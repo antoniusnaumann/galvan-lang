@@ -4,9 +4,12 @@
 pub mod builtins;
 pub mod error;
 pub mod hir;
+pub mod index;
 pub mod mapping;
+pub mod query;
 pub mod typecheck;
 
 pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, TranspilerError};
 pub use hir::*;
-pub use typecheck::typecheck;
+pub use index::{Definition, DefinitionId, DefinitionKind, Reference, SymbolIndex};
+pub use typecheck::{typecheck, Typechecked};
