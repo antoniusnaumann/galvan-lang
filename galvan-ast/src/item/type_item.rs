@@ -58,6 +58,52 @@ impl TypeElement {
         self.collect_generics_recursive_with_depth(generics, 0, 512);
     }
 
+    /// Visit every named type reference in this type, including element types
+    /// of collections, optionals, results, closures and type arguments.
+    pub fn visit_type_idents<'a>(&'a self, visit: &mut impl FnMut(&'a TypeIdent)) {
+        match self {
+            TypeElement::Array(arr) => arr.elements.visit_type_idents(visit),
+            TypeElement::Dictionary(dict) => {
+                dict.key.visit_type_idents(visit);
+                dict.value.visit_type_idents(visit);
+            }
+            TypeElement::OrderedDictionary(dict) => {
+                dict.key.visit_type_idents(visit);
+                dict.value.visit_type_idents(visit);
+            }
+            TypeElement::Set(set) => set.elements.visit_type_idents(visit),
+            TypeElement::Tuple(tuple) => {
+                for elem in &tuple.elements {
+                    elem.visit_type_idents(visit);
+                }
+            }
+            TypeElement::Optional(opt) => opt.inner.visit_type_idents(visit),
+            TypeElement::Result(res) => {
+                res.success.visit_type_idents(visit);
+                if let Some(error) = &res.error {
+                    error.visit_type_idents(visit);
+                }
+            }
+            TypeElement::Plain(basic) => visit(&basic.ident),
+            TypeElement::Parametric(parametric) => {
+                visit(&parametric.base_type);
+                for arg in &parametric.type_args {
+                    arg.visit_type_idents(visit);
+                }
+            }
+            TypeElement::Closure(closure) => {
+                for param in &closure.parameters {
+                    param.visit_type_idents(visit);
+                }
+                closure.return_ty.visit_type_idents(visit);
+            }
+            TypeElement::Generic(_)
+            | TypeElement::Void(_)
+            | TypeElement::Infer(_)
+            | TypeElement::Never(_) => {}
+        }
+    }
+
     fn collect_generics_recursive_with_depth(
         &self,
         generics: &mut std::collections::HashSet<Ident>,

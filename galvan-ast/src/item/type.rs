@@ -25,6 +25,17 @@ impl TypeDecl {
         }
     }
 
+    /// Span of the whole type declaration.
+    pub fn span(&self) -> Span {
+        match self {
+            TypeDecl::Tuple(t) => t.span,
+            TypeDecl::Struct(s) => s.span,
+            TypeDecl::Alias(a) => a.span,
+            TypeDecl::Enum(e) => e.span,
+            TypeDecl::Empty(e) => e.span,
+        }
+    }
+
     pub fn collect_generics(&self) -> std::collections::HashSet<super::Ident> {
         let mut generics = std::collections::HashSet::new();
         match self {
