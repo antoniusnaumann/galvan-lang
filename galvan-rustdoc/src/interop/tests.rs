@@ -772,7 +772,7 @@ fn rustdoc_lifts_never_types() {
 }
 
 #[test]
-fn rustdoc_lifts_arc_shared_wrappers_to_ref_parameters() {
+fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     for (wrapper, leaked_name) in [
         (
@@ -783,6 +783,8 @@ fn rustdoc_lifts_arc_shared_wrappers_to_ref_parameters() {
             resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
             "RwLock",
         ),
+        (resolved("Mutex", vec![generic("T")]), "Mutex"),
+        (resolved("RwLock", vec![generic("T")]), "RwLock"),
     ] {
         let param = interop
             .param_from_json("std", &json!(["tickets", wrapper]))
@@ -817,24 +819,8 @@ fn rustdoc_preserves_non_shared_arc_types_nominally() {
 }
 
 #[test]
-fn rustdoc_keeps_single_owner_shared_wrappers_nominal() {
+fn rustdoc_keeps_single_owner_atomics_nominal() {
     let mut interop = RustInterop::empty();
-    for name in ["Mutex", "RwLock"] {
-        let param = interop
-            .param_from_json(
-                "std",
-                &json!(["tickets", resolved(name, vec![generic("T")])]),
-            )
-            .unwrap();
-
-        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Move));
-        let TypeElement::Parametric(parametric) = param.param_type else {
-            panic!("expected parametric {name}<T>");
-        };
-        assert_eq!(parametric.base_type, TypeIdent::new(name));
-        assert_eq!(parametric.type_args, vec![generic_type("T")]);
-    }
-
     let atomic = interop
         .param_from_json("std", &json!(["next_id", resolved("AtomicU64", vec![])]))
         .unwrap();
@@ -1370,7 +1356,7 @@ fn rustdoc_imports_public_struct_fields() {
             "0": public_item("Ticket", json!({
                 "struct": {
                     "kind": "plain",
-                    "fields": ["1", "2", "3"]
+                    "fields": ["1", "2", "3", "4"]
                 }
             })),
             "1": public_field("id", primitive("u64")),
@@ -1378,6 +1364,10 @@ fn rustdoc_imports_public_struct_fields() {
             "3": public_field(
                 "state",
                 resolved("Arc", vec![resolved("RwLock", vec![resolved("TicketState", vec![])])])
+            ),
+            "4": public_field(
+                "draft",
+                resolved("Mutex", vec![resolved("TicketDraft", vec![])])
             )
         }
     });
@@ -1388,7 +1378,7 @@ fn rustdoc_imports_public_struct_fields() {
         panic!("expected Ticket struct");
     };
     assert_eq!(ticket.ident.as_str(), "Ticket");
-    assert_eq!(ticket.members.len(), 3);
+    assert_eq!(ticket.members.len(), 4);
     assert_eq!(ticket.members[0].ident.as_str(), "id");
     assert_eq!(ticket.members[0].r#type, u64_type());
     assert_eq!(ticket.members[1].ident.as_str(), "title");
@@ -1400,6 +1390,14 @@ fn rustdoc_imports_public_struct_fields() {
     assert_eq!(
         ticket.members[2].r#type,
         plain_type(TypeIdent::new("TicketState"))
+    );
+    assert_eq!(
+        ticket.members[3].decl_modifier,
+        Some(galvan_ast::DeclModifier::Ref)
+    );
+    assert_eq!(
+        ticket.members[3].r#type,
+        plain_type(TypeIdent::new("TicketDraft"))
     );
 }
 

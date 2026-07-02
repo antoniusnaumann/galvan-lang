@@ -508,6 +508,9 @@ impl RustInterop {
             if name == "Arc" {
                 return self.lift_arc_type_from_json(crate_name, resolved);
             }
+            if matches!(name, "Mutex" | "RwLock") {
+                return self.lift_lock_type_from_json(crate_name, resolved);
+            }
 
             let args = resolved_type_args(resolved)
                 .into_iter()
@@ -664,15 +667,23 @@ impl RustInterop {
         let resolved = inner.get("resolved_path")?;
         let name = resolved.get("name").and_then(Value::as_str)?;
         if matches!(name, "Mutex" | "RwLock") {
-            let arg = resolved_type_args(resolved).into_iter().next()?;
-            let inner = self.lift_type_from_json(crate_name, arg)?;
-            return Some(LiftedType::with_modifier(
-                inner.ty,
-                galvan_ast::DeclModifier::Ref,
-            ));
+            return self.lift_lock_type_from_json(crate_name, resolved);
         }
 
         atomic_type(name).map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
+    }
+
+    fn lift_lock_type_from_json(
+        &mut self,
+        crate_name: &str,
+        resolved: &Value,
+    ) -> Option<LiftedType> {
+        let arg = resolved_type_args(resolved).into_iter().next()?;
+        let inner = self.lift_type_from_json(crate_name, arg)?;
+        Some(LiftedType::with_modifier(
+            inner.ty,
+            galvan_ast::DeclModifier::Ref,
+        ))
     }
 }
 
