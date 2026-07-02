@@ -311,7 +311,7 @@ impl ReadCursor for TypeIdent {
             return Err(AstError::InvalidIdentifier(inner.to_owned()));
         }
 
-        Ok(Self::new(inner))
+        Ok(Self::spanned(inner, Span::from_node(ident)))
     }
 }
 
@@ -323,6 +323,6 @@ impl ReadCursor for Ident {
             return Err(AstError::InvalidIdentifier(inner.to_owned()));
         }
 
-        Ok(Self::new(inner))
+        Ok(Self::spanned(inner, Span::from_node(ident)))
     }
 }
