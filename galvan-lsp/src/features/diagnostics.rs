@@ -26,8 +26,11 @@ pub fn diagnostics(document: &Document, krate: &Crate, file: Option<&Path>) -> V
 
 /// Semantic diagnostics for `file`, produced by typechecking the whole crate.
 fn semantic_diagnostics(document: &Document, krate: &Crate, file: &Path) -> Vec<Diagnostic> {
-    krate
-        .diagnostics()
+    let Some(analysis) = krate.analyze() else {
+        return Vec::new();
+    };
+    analysis
+        .diagnostics
         .into_iter()
         .filter_map(|diagnostic| {
             let span = diagnostic.span?;

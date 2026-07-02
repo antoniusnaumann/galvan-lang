@@ -7,7 +7,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
-use crate::features::{completion, diagnostics, goto_definition, hover};
+use crate::features::{completion, diagnostics, goto_definition, hover, references};
 use crate::workspace::Crate;
 
 pub struct Backend {
@@ -55,6 +55,7 @@ impl LanguageServer for Backend {
                 )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
                     trigger_characters: Some(vec![".".to_string(), ":".to_string()]),
                     ..Default::default()
@@ -102,7 +103,13 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         let krate = Crate::load(&uri, &self.documents);
-        Ok(hover::hover(&document, &krate, position.position))
+        let file = uri.to_file_path().ok();
+        Ok(hover::hover(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
+        ))
     }
 
     async fn goto_definition(
@@ -115,17 +122,47 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         let krate = Crate::load(&uri, &self.documents);
-        Ok(
-            goto_definition::goto_definition(&document, &krate, position.position)
-                .map(GotoDefinitionResponse::Scalar),
+        let file = uri.to_file_path().ok();
+        Ok(goto_definition::goto_definition(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
         )
+        .map(GotoDefinitionResponse::Scalar))
+    }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let position = params.text_document_position;
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = Crate::load(&uri, &self.documents);
+        let file = uri.to_file_path().ok();
+        let locations = references::references(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
+            params.context.include_declaration,
+        );
+        Ok(Some(locations))
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let uri = params.text_document_position.text_document.uri;
+        let position = params.text_document_position;
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
         let krate = Crate::load(&uri, &self.documents);
+        let file = uri.to_file_path().ok();
         Ok(Some(CompletionResponse::Array(completion::completion(
+            &document,
             &krate,
+            file.as_deref(),
+            position.position,
         ))))
     }
 }
