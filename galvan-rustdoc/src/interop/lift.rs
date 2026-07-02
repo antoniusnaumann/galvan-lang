@@ -628,11 +628,6 @@ impl RustInterop {
                 }),
             ))),
             "Arc" => lift_arc(args.first()),
-            "Mutex" | "RwLock" => lift_ref(args.first()),
-            atomic if atomic_type(atomic).is_some() => Some(LiftedType::with_modifier(
-                atomic_type(atomic).unwrap(),
-                galvan_ast::DeclModifier::Ref,
-            )),
             _ => None,
         }
     }
@@ -661,7 +656,9 @@ fn parametric_or_plain_type(name: &str, args: Vec<LiftedType>) -> TypeElement {
 fn lift_arc(inner: Option<&LiftedType>) -> Option<LiftedType> {
     let inner = inner?;
     match &inner.ty {
-        TypeElement::Parametric(parametric) if parametric.base_type.as_str() == "Mutex" => {
+        TypeElement::Parametric(parametric)
+            if matches!(parametric.base_type.as_str(), "Mutex" | "RwLock") =>
+        {
             parametric
                 .type_args
                 .first()
@@ -679,14 +676,6 @@ fn lift_arc(inner: Option<&LiftedType>) -> Option<LiftedType> {
             },
         ))),
     }
-}
-
-fn lift_ref(inner: Option<&LiftedType>) -> Option<LiftedType> {
-    let inner = inner?;
-    Some(LiftedType::with_modifier(
-        inner.ty.clone(),
-        galvan_ast::DeclModifier::Ref,
-    ))
 }
 
 fn array_type(inner: LiftedType) -> LiftedType {

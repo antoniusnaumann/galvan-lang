@@ -97,13 +97,14 @@ commands remain subcommands.
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,
-    Rust list/map/set collections, `Result<T, E>`, `Mutex<T>` / `RwLock<T>`,
-    `Arc<Mutex<T>>` / `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` /
-    `Rc<T>` interop conversions) to cover additional smart pointers and
-    standard wrappers
+    Rust list/map/set collections, `Result<T, E>`, `Arc<Mutex<T>>` /
+    `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
+    conversions) to cover additional smart pointers and standard wrappers
   - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
     including `dyn Trait`, `impl Trait`, associated type projections, and
     generic associated types
+  - Detect Rust result aliases that represent Galvan's flexible error type and
+    lift them as `T!` instead of `T!__UnknownRustError`
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, explicit Galvan syntax for generic type

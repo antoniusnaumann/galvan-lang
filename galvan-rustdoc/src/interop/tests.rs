@@ -740,11 +740,9 @@ fn rustdoc_lifts_never_types() {
 }
 
 #[test]
-fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
+fn rustdoc_lifts_arc_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     for wrapper in [
-        resolved("Mutex", vec![generic("T")]),
-        resolved("RwLock", vec![generic("T")]),
         resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
         resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
     ] {
@@ -758,7 +756,33 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
 }
 
 #[test]
-fn rustdoc_lifts_shared_atomic_primitives_to_ref_parameters() {
+fn rustdoc_keeps_single_owner_shared_wrappers_nominal() {
+    let mut interop = RustInterop::empty();
+    for name in ["Mutex", "RwLock"] {
+        let param = interop
+            .param_from_json(
+                "std",
+                &json!(["tickets", resolved(name, vec![generic("T")])]),
+            )
+            .unwrap();
+
+        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Move));
+        let TypeElement::Parametric(parametric) = param.param_type else {
+            panic!("expected parametric {name}<T>");
+        };
+        assert_eq!(parametric.base_type, TypeIdent::new(name));
+        assert_eq!(parametric.type_args, vec![generic_type("T")]);
+    }
+
+    let atomic = interop
+        .param_from_json("std", &json!(["next_id", resolved("AtomicU64", vec![])]))
+        .unwrap();
+    assert_eq!(atomic.decl_modifier, Some(galvan_ast::DeclModifier::Move));
+    assert_eq!(atomic.param_type, plain_type(TypeIdent::new("AtomicU64")));
+}
+
+#[test]
+fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     let param = interop
         .param_from_json(
