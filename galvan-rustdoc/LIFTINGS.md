@@ -92,8 +92,9 @@ Fixed array lengths are not preserved in the lifted Galvan type.
 
 `Option<T>` lifts to `T?`.
 
-`Result<T, E>` lifts to `T!E`. If rustdoc does not provide an error type,
-`galvan-rustdoc` uses `__UnknownRustError`.
+`Result<T, E>` lifts to `T!E`. `galvan::std::FlexResult<T>` and
+`anyhow::Result<T>` lift to `T!`. If rustdoc does not provide an error type for
+another `Result<T>` shape, `galvan-rustdoc` uses `__UnknownRustError`.
 
 Rust tuples lift to Galvan tuples with recursively lifted element types.
 

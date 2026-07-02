@@ -509,7 +509,7 @@ impl RustInterop {
                 .filter_map(|arg| self.lift_type_from_json(crate_name, arg))
                 .collect::<Vec<_>>();
 
-            if let Some(lifted) = self.lift_known_resolved_type(name, args.as_slice()) {
+            if let Some(lifted) = self.lift_known_resolved_type(name, resolved, args.as_slice()) {
                 return Some(lifted);
             }
 
@@ -558,7 +558,12 @@ impl RustInterop {
         }))
     }
 
-    fn lift_known_resolved_type(&mut self, name: &str, args: &[LiftedType]) -> Option<LiftedType> {
+    fn lift_known_resolved_type(
+        &mut self,
+        name: &str,
+        resolved: &Value,
+        args: &[LiftedType],
+    ) -> Option<LiftedType> {
         match name {
             "String" => Some(LiftedType::new(string_type())),
             "Option" => Some(LiftedType::new(TypeElement::Optional(Box::new(
@@ -570,19 +575,16 @@ impl RustInterop {
                     span: Span::default(),
                 },
             )))),
-            "Result" => Some(LiftedType::new(TypeElement::Result(Box::new(
-                ResultTypeItem {
-                    success: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    error: args
-                        .get(1)
-                        .map(|arg| arg.ty.clone())
-                        .or_else(|| Some(plain_type(TypeIdent::new("__UnknownRustError")))),
-                    span: Span::default(),
-                },
-            )))),
+            "FlexResult" => Some(result_type(args.first(), None)),
+            "Result" if resolved_path_matches(resolved, &["anyhow", "Result"]) => {
+                Some(result_type(args.first(), None))
+            }
+            "Result" => Some(result_type(
+                args.first(),
+                args.get(1)
+                    .map(|arg| arg.ty.clone())
+                    .or_else(|| Some(plain_type(TypeIdent::new("__UnknownRustError")))),
+            )),
             "Vec" | "VecDeque" | "LinkedList" => Some(LiftedType::new(TypeElement::Array(
                 Box::new(ArrayTypeItem {
                     elements: args
@@ -631,6 +633,16 @@ impl RustInterop {
             _ => None,
         }
     }
+}
+
+fn result_type(success: Option<&LiftedType>, error: Option<TypeElement>) -> LiftedType {
+    LiftedType::new(TypeElement::Result(Box::new(ResultTypeItem {
+        success: success
+            .map(|arg| arg.ty.clone())
+            .unwrap_or_else(TypeElement::infer),
+        error,
+        span: Span::default(),
+    })))
 }
 
 fn member_arg_conversion(return_conversion: RustReturnConversion) -> RustArgConversion {
@@ -690,6 +702,14 @@ fn function_pointer_input_type(input: &Value) -> &Value {
         .as_array()
         .and_then(|pair| pair.get(1))
         .unwrap_or(input)
+}
+
+fn resolved_path_matches(resolved: &Value, expected: &[&str]) -> bool {
+    let Some(path) = resolved.get("path").and_then(Value::as_array) else {
+        return false;
+    };
+    let actual = path.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+    actual.as_slice() == expected || actual.as_slice() == &expected[..expected.len() - 1]
 }
 
 fn atomic_type(name: &str) -> Option<TypeElement> {

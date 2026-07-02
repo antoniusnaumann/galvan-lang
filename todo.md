@@ -103,8 +103,6 @@ commands remain subcommands.
   - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
     including `dyn Trait`, `impl Trait`, associated type projections, and
     generic associated types
-  - Detect Rust result aliases that represent Galvan's flexible error type and
-    lift them as `T!` instead of `T!__UnknownRustError`
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
     cover unions, repr details, explicit Galvan syntax for generic type

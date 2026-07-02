@@ -666,6 +666,38 @@ fn rustdoc_lifts_common_collections_and_results() {
 }
 
 #[test]
+fn rustdoc_lifts_flexible_result_types() {
+    let mut interop = RustInterop::empty();
+
+    for ty in [
+        resolved_with_path(
+            "FlexResult",
+            &["galvan", "std", "FlexResult"],
+            vec![primitive("u64")],
+        ),
+        resolved_with_path("Result", &["anyhow", "Result"], vec![primitive("u64")]),
+    ] {
+        let result = interop.type_from_json("demo", &ty).unwrap();
+        let TypeElement::Result(result) = result else {
+            panic!("expected flexible result, got {result:?}");
+        };
+        assert_eq!(result.success, u64_type());
+        assert_eq!(result.error, None);
+    }
+
+    let unresolved_result = interop
+        .type_from_json("demo", &resolved("Result", vec![primitive("u64")]))
+        .unwrap();
+    let TypeElement::Result(unresolved_result) = unresolved_result else {
+        panic!("expected result, got {unresolved_result:?}");
+    };
+    assert_eq!(
+        unresolved_result.error,
+        Some(plain_type(TypeIdent::new("__UnknownRustError")))
+    );
+}
+
+#[test]
 fn rustdoc_lifts_slice_and_array_types() {
     let mut interop = RustInterop::empty();
 
@@ -1520,6 +1552,15 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
                     ),
                     "generics": type_generics(vec![generic_param("T")])
                 }
+            })),
+            "3": public_item("FallibleTicket", json!({
+                "type_alias": {
+                    "type": resolved_with_path(
+                        "FlexResult",
+                        &["galvan", "std", "FlexResult"],
+                        vec![resolved("Ticket", vec![])]
+                    )
+                }
             }))
         }
     });
@@ -1554,6 +1595,21 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
         parse_result.error,
         Some(plain_type(TypeIdent::new("Error")))
     );
+
+    let TypeDecl::Alias(fallible_ticket) = imported_type(&interop, "FallibleTicket") else {
+        panic!("expected FallibleTicket alias");
+    };
+    let TypeElement::Result(fallible_ticket) = &fallible_ticket.r#type else {
+        panic!(
+            "expected lifted flexible result alias, got {:?}",
+            fallible_ticket.r#type
+        );
+    };
+    assert_eq!(
+        fallible_ticket.success,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+    assert_eq!(fallible_ticket.error, None);
 }
 
 #[test]
