@@ -61,7 +61,9 @@ impl RustInterop {
                 continue;
             }
             let rust_path = callable_rust_path(crate_name, name, item);
-            let imported = self.function_decl(crate_name, name, signature);
+            let Some(imported) = self.function_decl(crate_name, name, signature) else {
+                continue;
+            };
             let borrowed_return = return_is_borrowed(signature);
             self.push_function(
                 crate_name,
@@ -122,7 +124,11 @@ impl RustInterop {
                     .get("for")
                     .and_then(|ty| self.type_from_json(crate_name, ty))
                     .and_then(|ty| receiver_type_ident(&ty));
-                let imported = self.impl_function_decl(crate_name, name, signature, impl_inner);
+                let Some(imported) =
+                    self.impl_function_decl(crate_name, name, signature, impl_inner)
+                else {
+                    continue;
+                };
                 let rust_path = impl_function_rust_path(crate_name, name, item, impl_inner);
                 let borrowed_return = return_is_borrowed(signature);
                 self.push_function_with_associated_receiver(
@@ -198,7 +204,10 @@ impl RustInterop {
                     if signature_contains_unliftable_type(signature) {
                         continue;
                     }
-                    let imported = self.function_decl(crate_name, exported_name, signature);
+                    let Some(imported) = self.function_decl(crate_name, exported_name, signature)
+                    else {
+                        continue;
+                    };
                     let borrowed_return = return_is_borrowed(signature);
                     self.push_function(
                         crate_name,
@@ -295,7 +304,10 @@ impl RustInterop {
                     if signature_contains_unliftable_type(signature) {
                         continue;
                     }
-                    let imported = self.function_decl(crate_name, exported_name, signature);
+                    let Some(imported) = self.function_decl(crate_name, exported_name, signature)
+                    else {
+                        continue;
+                    };
                     let borrowed_return = return_is_borrowed(signature);
                     self.push_function(
                         crate_name,

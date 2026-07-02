@@ -113,6 +113,14 @@ fn array(ty: Value) -> Value {
     })
 }
 
+fn malformed_array() -> Value {
+    json!({
+        "array": {
+            "len": "3"
+        }
+    })
+}
+
 fn raw_pointer(ty: Value, mutable: bool) -> Value {
     json!({
         "raw_pointer": {
@@ -540,6 +548,20 @@ fn rustdoc_lifts_resolved_string_as_builtin_string() {
 
     assert_eq!(ty, string_type());
     assert!(interop.types.iter().all(|ty| ty.name.as_str() != "String"));
+
+    let path_only = interop
+        .type_from_json(
+            "std",
+            &json!({
+                "resolved_path": {
+                    "path": "alloc::string::String",
+                    "id": 175,
+                    "args": null
+                }
+            }),
+        )
+        .unwrap();
+    assert_eq!(path_only, string_type());
 }
 
 #[test]
@@ -736,6 +758,32 @@ fn rustdoc_does_not_lift_unrepresentable_type_shapes() {
         .is_none());
     assert!(interop.type_from_json("demo", &dyn_trait()).is_none());
     assert!(interop.type_from_json("demo", &impl_trait()).is_none());
+}
+
+#[test]
+fn rustdoc_does_not_lift_partial_type_shapes() {
+    let mut interop = RustInterop::empty();
+
+    assert!(interop
+        .type_from_json("demo", &resolved("Vec", vec![malformed_array()]))
+        .is_none());
+    assert!(interop
+        .type_from_json(
+            "demo",
+            &json!({
+                "tuple": [
+                    primitive("u64"),
+                    malformed_array()
+                ]
+            }),
+        )
+        .is_none());
+    assert!(interop
+        .type_from_json(
+            "demo",
+            &function_pointer(vec![json!(["items", malformed_array()])], primitive("bool")),
+        )
+        .is_none());
 }
 
 #[test]
@@ -976,7 +1024,15 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
                 vec![],
                 impl_trait()
             ),
-            "2": public_constant(
+            "2": public_function(
+                "count_items",
+                vec![
+                    json!(["scope", primitive("str")]),
+                    json!(["items", malformed_array()])
+                ],
+                primitive("u64")
+            ),
+            "3": public_constant(
                 "DEFAULT_OUTPUT",
                 qualified_path("Output", generic("V"))
             )
@@ -990,6 +1046,9 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
         .is_none());
     assert!(interop
         .function(Some("demo"), None, &ident("make_display"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("count_items"), &[])
         .is_none());
     assert!(interop
         .constant(Some("demo"), &ident("DEFAULT_OUTPUT"))

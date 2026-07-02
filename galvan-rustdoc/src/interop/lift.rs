@@ -19,9 +19,9 @@ use super::lift_model::{
 };
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
-    resolved_type_args, type_alias_type, type_contains_unliftable_type,
-    type_decl_contains_unliftable_type, type_generic_params, type_inner_generic_params,
-    type_is_owned,
+    resolved_type_args, resolved_type_args_strict, resolved_type_name, type_alias_type,
+    type_contains_unliftable_type, type_decl_contains_unliftable_type, type_generic_params,
+    type_inner_generic_params, type_is_owned,
 };
 use super::RustInterop;
 
@@ -310,14 +310,16 @@ impl RustInterop {
         crate_name: &str,
         name: &str,
         signature: &Value,
-    ) -> ImportedFunctionDecl {
-        let lifted_params = signature
+    ) -> Option<ImportedFunctionDecl> {
+        let mut lifted_params = Vec::new();
+        for param in signature
             .get("inputs")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter_map(|param| self.lift_param_from_json(crate_name, param))
-            .collect::<Vec<_>>();
+        {
+            lifted_params.push(self.lift_param_from_json(crate_name, param)?);
+        }
         let params = lifted_params
             .iter()
             .map(|param| param.param.clone())
@@ -327,13 +329,13 @@ impl RustInterop {
             .map(|param| param.arg_conversion)
             .collect::<Vec<_>>();
 
-        let return_type = signature
-            .get("output")
-            .filter(|output| !output.is_null())
-            .and_then(|output| self.lift_return_type_from_json(crate_name, output));
-        let (return_type, return_conversion) = return_type
-            .map(|lifted| (lifted.ty, lifted.return_conversion))
-            .unwrap_or_else(|| (TypeElement::void(), RustReturnConversion::None));
+        let (return_type, return_conversion) =
+            if let Some(output) = signature.get("output").filter(|output| !output.is_null()) {
+                let lifted = self.lift_return_type_from_json(crate_name, output)?;
+                (lifted.ty, lifted.return_conversion)
+            } else {
+                (TypeElement::void(), RustReturnConversion::None)
+            };
 
         let decl = FnSignature {
             visibility: Visibility::public(),
@@ -348,11 +350,11 @@ impl RustInterop {
         }
         .into();
 
-        ImportedFunctionDecl {
+        Some(ImportedFunctionDecl {
             decl,
             return_conversion,
             arg_conversions,
-        }
+        })
     }
 
     #[cfg(test)]
@@ -395,8 +397,8 @@ impl RustInterop {
         ty: &Value,
     ) -> Option<LiftedType> {
         let resolved = inner(ty, "resolved_path")?;
-        let name = resolved.get("name").and_then(Value::as_str)?;
-        let conversion = match name {
+        let name = resolved_type_name(resolved)?;
+        let conversion = match name.as_ref() {
             "Box" => RustArgConversion::BoxNew,
             "Rc" => RustArgConversion::RcNew,
             _ => return None,
@@ -409,8 +411,8 @@ impl RustInterop {
 
     fn lift_return_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedReturn> {
         if let Some(resolved) = inner(ty, "resolved_path") {
-            let name = resolved.get("name").and_then(Value::as_str)?;
-            let return_conversion = match name {
+            let name = resolved_type_name(resolved)?;
+            let return_conversion = match name.as_ref() {
                 "Box" => RustReturnConversion::BoxDeref,
                 "Rc" => RustReturnConversion::RcCloneDeref,
                 _ => RustReturnConversion::None,
@@ -440,13 +442,13 @@ impl RustInterop {
         name: &str,
         signature: &Value,
         impl_inner: &Value,
-    ) -> ImportedFunctionDecl {
-        let mut imported = self.function_decl(crate_name, name, signature);
+    ) -> Option<ImportedFunctionDecl> {
+        let mut imported = self.function_decl(crate_name, name, signature)?;
         let Some(first_param) = imported.decl.signature.parameters.params.first_mut() else {
-            return imported;
+            return Some(imported);
         };
         if !first_param.identifier.is_self() {
-            return imported;
+            return Some(imported);
         }
 
         if let Some(receiver_ty) = impl_inner
@@ -456,7 +458,7 @@ impl RustInterop {
             first_param.param_type = receiver_ty;
         }
 
-        imported
+        Some(imported)
     }
 
     pub(super) fn type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<TypeElement> {
@@ -499,38 +501,37 @@ impl RustInterop {
         }
         if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function"))
         {
-            return Some(LiftedType::new(
-                self.function_pointer_type_from_json(crate_name, function),
-            ));
+            return self
+                .function_pointer_type_from_json(crate_name, function)
+                .map(LiftedType::new);
         }
         if let Some(resolved) = inner(ty, "resolved_path") {
-            let name = resolved.get("name").and_then(Value::as_str)?;
-            if name == "Arc" {
+            let name = resolved_type_name(resolved)?;
+            if name.as_ref() == "Arc" {
                 return self.lift_arc_type_from_json(crate_name, resolved);
             }
-            if matches!(name, "Mutex" | "RwLock") {
+            if matches!(name.as_ref(), "Mutex" | "RwLock") {
                 return self.lift_lock_type_from_json(crate_name, resolved);
             }
 
-            let args = resolved_type_args(resolved)
-                .into_iter()
-                .filter_map(|arg| self.lift_type_from_json(crate_name, arg))
-                .collect::<Vec<_>>();
+            let args = self.lift_resolved_type_args_from_json(crate_name, resolved)?;
 
-            if let Some(lifted) = self.lift_known_resolved_type(name, resolved, args.as_slice()) {
+            if let Some(lifted) =
+                self.lift_known_resolved_type(name.as_ref(), resolved, args.as_slice())
+            {
                 return Some(lifted);
             }
 
-            self.push_resolved_type(crate_name, name, resolved);
-            return Some(LiftedType::new(parametric_or_plain_type(name, args)));
+            self.push_resolved_type(crate_name, name.as_ref(), resolved);
+            return Some(LiftedType::new(parametric_or_plain_type(
+                name.as_ref(),
+                args,
+            )));
         }
         if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
             return Some(LiftedType::new(TypeElement::Tuple(Box::new(
                 galvan_ast::TupleTypeItem {
-                    elements: tuple
-                        .iter()
-                        .filter_map(|ty| self.type_from_json(crate_name, ty))
-                        .collect(),
+                    elements: self.lift_tuple_elements_from_json(crate_name, tuple)?,
                     span: Span::default(),
                 },
             ))));
@@ -543,27 +544,52 @@ impl RustInterop {
         &mut self,
         crate_name: &str,
         function: &Value,
-    ) -> TypeElement {
+    ) -> Option<TypeElement> {
         let signature = function.get("sig").unwrap_or(function);
-        let parameters = signature
+        let mut parameters = Vec::new();
+        for input in signature
             .get("inputs")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
             .map(function_pointer_input_type)
-            .filter_map(|input| self.type_from_json(crate_name, input))
-            .collect();
-        let return_ty = signature
-            .get("output")
-            .filter(|output| !output.is_null())
-            .and_then(|output| self.type_from_json(crate_name, output))
-            .unwrap_or_else(TypeElement::void);
+        {
+            parameters.push(self.type_from_json(crate_name, input)?);
+        }
+        let return_ty =
+            if let Some(output) = signature.get("output").filter(|output| !output.is_null()) {
+                self.type_from_json(crate_name, output)?
+            } else {
+                TypeElement::void()
+            };
 
-        TypeElement::Closure(Box::new(ClosureTypeItem {
+        Some(TypeElement::Closure(Box::new(ClosureTypeItem {
             parameters,
             return_ty,
             span: Span::default(),
-        }))
+        })))
+    }
+
+    fn lift_resolved_type_args_from_json(
+        &mut self,
+        crate_name: &str,
+        resolved: &Value,
+    ) -> Option<Vec<LiftedType>> {
+        resolved_type_args_strict(resolved)?
+            .into_iter()
+            .map(|arg| self.lift_type_from_json(crate_name, arg))
+            .collect()
+    }
+
+    fn lift_tuple_elements_from_json(
+        &mut self,
+        crate_name: &str,
+        tuple: &[Value],
+    ) -> Option<Vec<TypeElement>> {
+        tuple
+            .iter()
+            .map(|ty| self.type_from_json(crate_name, ty))
+            .collect()
     }
 
     fn lift_known_resolved_type(
@@ -652,11 +678,11 @@ impl RustInterop {
         }
 
         let inner = self.lift_type_from_json(crate_name, inner)?;
-        let name = resolved.get("name").and_then(Value::as_str)?;
-        self.push_resolved_type(crate_name, name, resolved);
+        let name = resolved_type_name(resolved)?;
+        self.push_resolved_type(crate_name, name.as_ref(), resolved);
         Some(LiftedType::new(TypeElement::Parametric(
             ParametricTypeItem {
-                base_type: TypeIdent::new(name),
+                base_type: TypeIdent::new(name.as_ref()),
                 type_args: vec![inner.ty],
                 span: Span::default(),
             },
@@ -665,12 +691,13 @@ impl RustInterop {
 
     fn lift_arc_shared_inner(&mut self, crate_name: &str, inner: &Value) -> Option<LiftedType> {
         let resolved = inner.get("resolved_path")?;
-        let name = resolved.get("name").and_then(Value::as_str)?;
-        if matches!(name, "Mutex" | "RwLock") {
+        let name = resolved_type_name(resolved)?;
+        if matches!(name.as_ref(), "Mutex" | "RwLock") {
             return self.lift_lock_type_from_json(crate_name, resolved);
         }
 
-        atomic_type(name).map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
+        atomic_type(name.as_ref())
+            .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
     }
 
     fn lift_lock_type_from_json(

@@ -319,28 +319,46 @@ pub(super) fn resolved_type_rust_path(crate_name: &str, name: &str, resolved: &V
 
 fn resolved_rust_type_path(ty: &Value) -> Option<Box<str>> {
     let resolved = inner(ty, "resolved_path")?;
-    let name = resolved.get("name").and_then(Value::as_str)?;
-    let segments = resolved_path_segments(name, resolved)?;
+    let name = resolved_type_name(resolved)?;
+    let segments = resolved_path_segments(name.as_ref(), resolved)?;
 
     if segments.is_empty() {
-        Some(name.into())
+        Some(name)
     } else {
         Some(format!("{}::{name}", segments.join("::")).into())
     }
 }
 
+pub(super) fn resolved_type_name(resolved: &Value) -> Option<Box<str>> {
+    if let Some(name) = resolved.get("name").and_then(Value::as_str) {
+        return Some(name.into());
+    }
+
+    resolved_path_segments_raw(resolved)
+        .and_then(|segments| segments.last().map(|segment| (*segment).into()))
+}
+
 fn resolved_path_segments<'a>(name: &str, resolved: &'a Value) -> Option<Vec<&'a str>> {
-    let mut segments = resolved
-        .get("path")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect::<Vec<_>>();
+    let mut segments = resolved_path_segments_raw(resolved)?;
     if segments.last().is_some_and(|segment| *segment == name) {
         segments.pop();
     }
     Some(segments)
+}
+
+fn resolved_path_segments_raw(resolved: &Value) -> Option<Vec<&str>> {
+    let path = resolved.get("path")?;
+    match path {
+        Value::Array(_) => Some(
+            path.as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect(),
+        ),
+        Value::String(path) => Some(path.split("::").collect()),
+        _ => None,
+    }
 }
 
 fn item_inner_constant(item: &Value) -> Option<&Value> {
@@ -380,13 +398,30 @@ pub(super) fn borrowed_ref_is_mutable(borrowed: &Value) -> bool {
 }
 
 pub(super) fn resolved_type_args(resolved: &Value) -> Vec<&Value> {
-    resolved
+    resolved_type_args_strict(resolved).unwrap_or_default()
+}
+
+pub(super) fn resolved_type_args_strict(resolved: &Value) -> Option<Vec<&Value>> {
+    let Some(args) = resolved
         .get("args")
         .and_then(|args| inner(args, "angle_bracketed"))
         .and_then(|args| args.get("args"))
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|arg| inner(arg, "type"))
-        .collect()
+    else {
+        return Some(Vec::new());
+    };
+
+    let mut types = Vec::new();
+    for arg in args {
+        if let Some(ty) = inner(arg, "type") {
+            types.push(ty);
+            continue;
+        }
+        if arg.get("lifetime").is_some() || arg.get("const").is_some() || arg.get("infer").is_some()
+        {
+            continue;
+        }
+        return None;
+    }
+    Some(types)
 }
