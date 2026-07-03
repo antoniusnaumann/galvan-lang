@@ -123,6 +123,13 @@ shared `ref` storage when they appear behind `Arc`. Other `Arc<T>` shapes remain
 are not treated as Galvan `ref` unless the inner type is one of the recognized
 shared state wrappers above.
 
+Known wrapper lifting is path-aware when rustdoc provides a path. Standard
+library wrappers are lifted from `std`, `core`, or `alloc` paths; `IndexMap` and
+`IndexSet` are lifted from the `indexmap` crate; `anyhow::Result<T>` and
+`galvan::std::FlexResult<T>` lift to `T!`. Same-named dependency types such as a
+crate-local `Option<T>`, `Vec<T>`, `Result<T, E>`, `Arc<T>`, or `Mutex<T>` remain
+nominal imported Rust types instead of being rewritten to Galvan wrapper syntax.
+
 ## Owned Wrapper Conversions
 
 `Box<T>` and `Rc<T>` are lifted away at the Galvan boundary for common owned

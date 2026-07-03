@@ -716,7 +716,14 @@ fn rustdoc_lifts_common_collections_and_results() {
     let mut interop = RustInterop::empty();
 
     let optional = interop
-        .type_from_json("std", &resolved("Option", vec![primitive("u64")]))
+        .type_from_json(
+            "std",
+            &resolved_with_path(
+                "Option",
+                &["core", "option", "Option"],
+                vec![primitive("u64")],
+            ),
+        )
         .unwrap();
     let TypeElement::Optional(optional) = optional else {
         panic!("expected optional, got {optional:?}");
@@ -780,6 +787,91 @@ fn rustdoc_lifts_common_collections_and_results() {
     };
     assert!(matches!(result.success, TypeElement::Array(_)));
     assert_eq!(result.error, Some(plain_type(TypeIdent::new("Error"))));
+}
+
+#[test]
+fn rustdoc_preserves_dependency_types_named_like_known_wrappers() {
+    let mut interop = RustInterop::empty();
+
+    let optional = interop
+        .type_from_json(
+            "demo",
+            &resolved_with_path(
+                "Option",
+                &["demo", "schema", "Option"],
+                vec![primitive("u64")],
+            ),
+        )
+        .unwrap();
+    let TypeElement::Parametric(optional) = optional else {
+        panic!("expected nominal Option<T>, got {optional:?}");
+    };
+    assert_eq!(optional.base_type, TypeIdent::new("Option"));
+    assert_eq!(optional.type_args, vec![u64_type()]);
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["demo", "schema", "Option"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::demo::schema::Option")
+    );
+
+    let list = interop
+        .type_from_json(
+            "demo",
+            &resolved_with_path("Vec", &["demo", "schema", "Vec"], vec![primitive("str")]),
+        )
+        .unwrap();
+    let TypeElement::Parametric(list) = list else {
+        panic!("expected nominal Vec<T>, got {list:?}");
+    };
+    assert_eq!(list.base_type, TypeIdent::new("Vec"));
+    assert_eq!(list.type_args, vec![string_type()]);
+
+    let result = interop
+        .type_from_json(
+            "demo",
+            &resolved_with_path(
+                "Result",
+                &["demo", "schema", "Result"],
+                vec![
+                    primitive("u64"),
+                    resolved_with_path("Error", &["demo", "schema", "Error"], vec![]),
+                ],
+            ),
+        )
+        .unwrap();
+    let TypeElement::Parametric(result) = result else {
+        panic!("expected nominal Result<T, E>, got {result:?}");
+    };
+    assert_eq!(result.base_type, TypeIdent::new("Result"));
+    assert_eq!(
+        result.type_args,
+        vec![u64_type(), plain_type(TypeIdent::new("Error"))]
+    );
+
+    let shared = interop
+        .type_from_json(
+            "demo",
+            &resolved_with_path(
+                "Arc",
+                &["demo", "sync", "Arc"],
+                vec![resolved_with_path(
+                    "Mutex",
+                    &["demo", "sync", "Mutex"],
+                    vec![primitive("u64")],
+                )],
+            ),
+        )
+        .unwrap();
+    let TypeElement::Parametric(shared) = shared else {
+        panic!("expected nominal Arc<T>, got {shared:?}");
+    };
+    assert_eq!(shared.base_type, TypeIdent::new("Arc"));
+    let TypeElement::Parametric(lock) = &shared.type_args[0] else {
+        panic!("expected nominal Mutex<T>, got {:?}", shared.type_args[0]);
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("Mutex"));
+    assert_eq!(lock.type_args, vec![u64_type()]);
 }
 
 #[test]
@@ -919,6 +1011,18 @@ fn rustdoc_lifts_never_types() {
 fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
     let mut interop = RustInterop::empty();
     for (wrapper, leaked_name) in [
+        (
+            resolved_with_path(
+                "Arc",
+                &["alloc", "sync", "Arc"],
+                vec![resolved_with_path(
+                    "Mutex",
+                    &["std", "sync", "Mutex"],
+                    vec![generic("T")],
+                )],
+            ),
+            "Mutex",
+        ),
         (
             resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
             "Mutex",

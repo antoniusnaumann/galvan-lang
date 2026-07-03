@@ -19,8 +19,9 @@ use super::lift_model::{
 };
 use super::lift_type::{
     array_type, atomic_type, function_pointer_input_type, generic_type, member_arg_conversion,
-    never_type, parametric_or_plain_type, plain_type, primitive_type, resolved_path_matches,
-    result_type, string_type, type_is_copy,
+    never_type, parametric_or_plain_type, plain_type, primitive_type,
+    resolved_path_is_unqualified_or_in_crates, resolved_path_is_unqualified_or_matches_any,
+    resolved_path_matches, result_type, string_type, type_is_copy,
 };
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
@@ -404,6 +405,9 @@ impl RustInterop {
     ) -> Option<LiftedType> {
         let resolved = inner(ty, "resolved_path")?;
         let name = resolved_type_name(resolved)?;
+        if !resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]) {
+            return None;
+        }
         let conversion = match name.as_ref() {
             "Box" => RustArgConversion::BoxNew,
             "Rc" => RustArgConversion::RcNew,
@@ -418,9 +422,11 @@ impl RustInterop {
     fn lift_return_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedReturn> {
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved_type_name(resolved)?;
+            let standard_wrapper =
+                resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
             let return_conversion = match name.as_ref() {
-                "Box" => RustReturnConversion::BoxDeref,
-                "Rc" => RustReturnConversion::RcCloneDeref,
+                "Box" if standard_wrapper => RustReturnConversion::BoxDeref,
+                "Rc" if standard_wrapper => RustReturnConversion::RcCloneDeref,
                 _ => RustReturnConversion::None,
             };
             if return_conversion != RustReturnConversion::None {
@@ -513,10 +519,12 @@ impl RustInterop {
         }
         if let Some(resolved) = inner(ty, "resolved_path") {
             let name = resolved_type_name(resolved)?;
-            if name.as_ref() == "Arc" {
+            let standard_wrapper =
+                resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
+            if name.as_ref() == "Arc" && standard_wrapper {
                 return self.lift_arc_type_from_json(crate_name, resolved);
             }
-            if matches!(name.as_ref(), "Mutex" | "RwLock") {
+            if matches!(name.as_ref(), "Mutex" | "RwLock") && standard_wrapper {
                 return self.lift_lock_type_from_json(crate_name, resolved);
             }
 
@@ -604,9 +612,17 @@ impl RustInterop {
         resolved: &Value,
         args: &[LiftedType],
     ) -> Option<LiftedType> {
+        let standard_wrapper =
+            resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
+        let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(resolved, &["indexmap"]);
+        let flex_result = resolved_path_is_unqualified_or_matches_any(
+            resolved,
+            &[&["galvan", "std", "FlexResult"]],
+        );
+
         match name {
-            "String" => Some(LiftedType::new(string_type())),
-            "Option" => Some(LiftedType::new(TypeElement::Optional(Box::new(
+            "String" if standard_wrapper => Some(LiftedType::new(string_type())),
+            "Option" if standard_wrapper => Some(LiftedType::new(TypeElement::Optional(Box::new(
                 OptionalTypeItem {
                     inner: args
                         .first()
@@ -615,26 +631,26 @@ impl RustInterop {
                     span: Span::default(),
                 },
             )))),
-            "FlexResult" => Some(result_type(args.first(), None)),
+            "FlexResult" if flex_result => Some(result_type(args.first(), None)),
             "Result" if resolved_path_matches(resolved, &["anyhow", "Result"]) => {
                 Some(result_type(args.first(), None))
             }
-            "Result" => Some(result_type(
+            "Result" if standard_wrapper => Some(result_type(
                 args.first(),
                 args.get(1)
                     .map(|arg| arg.ty.clone())
                     .or_else(|| Some(plain_type(TypeIdent::new("__UnknownRustError")))),
             )),
-            "Vec" | "VecDeque" | "LinkedList" => Some(LiftedType::new(TypeElement::Array(
-                Box::new(ArrayTypeItem {
+            "Vec" | "VecDeque" | "LinkedList" if standard_wrapper => Some(LiftedType::new(
+                TypeElement::Array(Box::new(ArrayTypeItem {
                     elements: args
                         .first()
                         .map(|arg| arg.ty.clone())
                         .unwrap_or_else(TypeElement::infer),
                     span: Span::default(),
-                }),
-            ))),
-            "HashSet" | "BTreeSet" | "IndexSet" => {
+                })),
+            )),
+            "HashSet" | "BTreeSet" if standard_wrapper => {
                 Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
                     elements: args
                         .first()
@@ -643,21 +659,17 @@ impl RustInterop {
                     span: Span::default(),
                 }))))
             }
-            "HashMap" => Some(LiftedType::new(TypeElement::Dictionary(Box::new(
-                DictionaryTypeItem {
-                    key: args
+            "IndexSet" if indexmap_wrapper => {
+                Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
+                    elements: args
                         .first()
                         .map(|arg| arg.ty.clone())
                         .unwrap_or_else(TypeElement::infer),
-                    value: args
-                        .get(1)
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
                     span: Span::default(),
-                },
-            )))),
-            "BTreeMap" | "IndexMap" => Some(LiftedType::new(TypeElement::OrderedDictionary(
-                Box::new(OrderedDictionaryTypeItem {
+                }))))
+            }
+            "HashMap" if standard_wrapper => Some(LiftedType::new(TypeElement::Dictionary(
+                Box::new(DictionaryTypeItem {
                     key: args
                         .first()
                         .map(|arg| arg.ty.clone())
@@ -669,6 +681,32 @@ impl RustInterop {
                     span: Span::default(),
                 }),
             ))),
+            "BTreeMap" if standard_wrapper => Some(LiftedType::new(
+                TypeElement::OrderedDictionary(Box::new(OrderedDictionaryTypeItem {
+                    key: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    value: args
+                        .get(1)
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                })),
+            )),
+            "IndexMap" if indexmap_wrapper => Some(LiftedType::new(
+                TypeElement::OrderedDictionary(Box::new(OrderedDictionaryTypeItem {
+                    key: args
+                        .first()
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    value: args
+                        .get(1)
+                        .map(|arg| arg.ty.clone())
+                        .unwrap_or_else(TypeElement::infer),
+                    span: Span::default(),
+                })),
+            )),
             _ => None,
         }
     }
@@ -698,6 +736,9 @@ impl RustInterop {
     fn lift_arc_shared_inner(&mut self, crate_name: &str, inner: &Value) -> Option<LiftedType> {
         let resolved = inner.get("resolved_path")?;
         let name = resolved_type_name(resolved)?;
+        if !resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]) {
+            return None;
+        }
         if matches!(name.as_ref(), "Mutex" | "RwLock") {
             return self.lift_lock_type_from_json(crate_name, resolved);
         }

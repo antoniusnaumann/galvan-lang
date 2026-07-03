@@ -61,6 +61,28 @@ pub(super) fn resolved_path_matches(resolved: &Value, expected: &[&str]) -> bool
     actual.as_slice() == expected || actual.as_slice() == &expected[..expected.len() - 1]
 }
 
+pub(super) fn resolved_path_is_unqualified_or_in_crates(
+    resolved: &Value,
+    crate_names: &[&str],
+) -> bool {
+    let Some(actual) = resolved_path_segments_raw(resolved) else {
+        return true;
+    };
+    actual
+        .first()
+        .is_none_or(|first| crate_names.contains(first))
+}
+
+pub(super) fn resolved_path_is_unqualified_or_matches_any(
+    resolved: &Value,
+    expected_paths: &[&[&str]],
+) -> bool {
+    resolved_path_segments_raw(resolved).is_none()
+        || expected_paths
+            .iter()
+            .any(|expected| resolved_path_matches(resolved, expected))
+}
+
 pub(super) fn atomic_type(name: &str) -> Option<TypeElement> {
     let galvan = match name {
         "AtomicBool" => "Bool",
