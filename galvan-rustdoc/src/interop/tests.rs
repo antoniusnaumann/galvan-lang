@@ -229,6 +229,16 @@ fn public_item_at_path(id: &str, name: &str, path: &[&str], inner: Value) -> Val
     })
 }
 
+fn public_item_at_string_path(id: &str, name: &str, path: &str, inner: Value) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "visibility": "public",
+        "path": path,
+        "inner": inner
+    })
+}
+
 fn public_field(name: &str, ty: Value) -> Value {
     json!({
         "id": name,
@@ -511,6 +521,12 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
                     "kind": "plain",
                     "fields": []
                 }
+            })),
+            "2": public_item_at_string_path("auth_error", "Error", "demo::auth::Error", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
             }))
         }
     });
@@ -526,7 +542,11 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
     error_paths.sort();
     assert_eq!(
         error_paths,
-        vec!["::demo::db::Error", "::demo::http::Error"]
+        vec![
+            "::demo::auth::Error",
+            "::demo::db::Error",
+            "::demo::http::Error"
+        ]
     );
 
     assert_eq!(
@@ -540,6 +560,12 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
             .type_by_qualified_path(&["demo", "db", "Error"])
             .map(|ty| ty.rust_path.as_ref()),
         Some("::demo::db::Error")
+    );
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["demo", "auth", "Error"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::demo::auth::Error")
     );
 }
 

@@ -240,14 +240,8 @@ pub(super) fn impl_constant_ids(index: &serde_json::Map<String, Value>) -> HashS
 
 pub(super) fn rust_path(crate_name: &str, name: &str, item: &Value) -> Box<str> {
     item.get("path")
-        .and_then(Value::as_array)
-        .map(|segments| {
-            segments
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join("::")
-        })
+        .and_then(path_segments)
+        .map(|segments| segments.join("::"))
         .filter(|path| !path.is_empty())
         .map(|path| format!("::{path}").into())
         .unwrap_or_else(|| format!("::{crate_name}::{name}").into())
@@ -347,7 +341,10 @@ fn resolved_path_segments<'a>(name: &str, resolved: &'a Value) -> Option<Vec<&'a
 }
 
 pub(super) fn resolved_path_segments_raw(resolved: &Value) -> Option<Vec<&str>> {
-    let path = resolved.get("path")?;
+    resolved.get("path").and_then(path_segments)
+}
+
+fn path_segments(path: &Value) -> Option<Vec<&str>> {
     match path {
         Value::Array(_) => Some(
             path.as_array()
