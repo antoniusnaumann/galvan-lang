@@ -6,7 +6,7 @@ use dashmap::DashMap;
 use galvan_lsp::document::Document;
 use galvan_lsp::features::{
     completion, diagnostics, goto_definition, hover, inlay_hints, references, rename,
-    signature_help, symbols,
+    semantic_tokens, signature_help, symbols,
 };
 use galvan_lsp::workspace::Crate;
 use tower_lsp::lsp_types::{
@@ -1161,6 +1161,210 @@ fn no_signature_help_outside_a_call() {
     assert!(help_at(SOURCE, position_of(SOURCE, "type Dog", 0)).is_none());
     // Behind the closed call `greet(name)` there is no open argument list.
     assert!(help_at(SOURCE, position_after(SOURCE, "greet(name)", 0)).is_none());
+}
+
+// ----------------------------------------------------------------------
+// Semantic tokens
+// ----------------------------------------------------------------------
+
+/// A decoded semantic token: the byte range it covers plus its legend indices.
+struct DecodedToken {
+    range: (usize, usize),
+    token_type: u32,
+    modifiers: u32,
+}
+
+/// Run the semantic-tokens feature and undo the LSP delta encoding.
+fn decoded_tokens(source: &str) -> Vec<DecodedToken> {
+    let doc = Document::new(source);
+    let krate = single_file_crate(source);
+    let tokens = semantic_tokens::semantic_tokens(&doc, &krate, Some(&main_path()));
+
+    let mut line = 0u32;
+    let mut character = 0u32;
+    tokens
+        .data
+        .iter()
+        .map(|token| {
+            if token.delta_line > 0 {
+                line += token.delta_line;
+                character = token.delta_start;
+            } else {
+                character += token.delta_start;
+            }
+            let start = doc
+                .line_index
+                .offset(source, Position { line, character })
+                .unwrap();
+            let end = doc
+                .line_index
+                .offset(
+                    source,
+                    Position {
+                        line,
+                        character: character + token.length,
+                    },
+                )
+                .unwrap();
+            DecodedToken {
+                range: (start, end),
+                token_type: token.token_type,
+                modifiers: token.token_modifiers_bitset,
+            }
+        })
+        .collect()
+}
+
+/// The `(token_type, modifiers)` of the token covering the `nth` occurrence
+/// of `needle`.
+fn token_at(source: &str, needle: &str, nth: usize) -> Option<(u32, u32)> {
+    let byte = byte_of(source, needle, nth);
+    decoded_tokens(source)
+        .iter()
+        .find(|token| token.range.0 <= byte && byte < token.range.1)
+        .map(|token| (token.token_type, token.modifiers))
+}
+
+/// Legend index of `token_type` (tests stay valid if the legend is reordered).
+fn legend_index(token_type: &tower_lsp::lsp_types::SemanticTokenType) -> u32 {
+    semantic_tokens::legend()
+        .token_types
+        .iter()
+        .position(|t| t == token_type)
+        .expect("token type missing from legend") as u32
+}
+
+const DECLARATION: u32 = 1 << 0;
+const DEFAULT_LIBRARY: u32 = 1 << 1;
+
+#[test]
+fn semantic_tokens_classify_declarations_and_references() {
+    use tower_lsp::lsp_types::SemanticTokenType as T;
+
+    // Keywords.
+    assert_eq!(token_at(SOURCE, "fn", 0), Some((legend_index(&T::KEYWORD), 0)));
+    assert_eq!(token_at(SOURCE, "let", 0), Some((legend_index(&T::KEYWORD), 0)));
+    // Function: declaration vs call.
+    assert_eq!(
+        token_at(SOURCE, "greet", 0),
+        Some((legend_index(&T::FUNCTION), DECLARATION))
+    );
+    assert_eq!(token_at(SOURCE, "greet", 1), Some((legend_index(&T::FUNCTION), 0)));
+    // Method call.
+    assert_eq!(token_at(SOURCE, "dog.walk", 0).map(|_| ()), Some(()));
+    assert_eq!(
+        token_at(SOURCE, "walk(5", 0),
+        Some((legend_index(&T::METHOD), 0))
+    );
+    // User type: declaration and use.
+    assert_eq!(
+        token_at(SOURCE, "Dog", 0),
+        Some((legend_index(&T::STRUCT), DECLARATION))
+    );
+    assert_eq!(token_at(SOURCE, "Dog", 1), Some((legend_index(&T::STRUCT), 0)));
+    // Builtin type and builtin function.
+    assert_eq!(
+        token_at(SOURCE, "String", 0),
+        Some((legend_index(&T::STRUCT), DEFAULT_LIBRARY))
+    );
+    assert_eq!(
+        token_at(SOURCE, "println", 0),
+        Some((legend_index(&T::FUNCTION), DEFAULT_LIBRARY))
+    );
+    // Parameter, local variable, field access.
+    assert_eq!(
+        token_at(SOURCE, "name", 1), // `greet(name)`
+        Some((legend_index(&T::PARAMETER), 0))
+    );
+    assert_eq!(
+        token_at(SOURCE, "dog", 0), // `let dog`
+        Some((legend_index(&T::VARIABLE), DECLARATION))
+    );
+    assert_eq!(
+        token_at(SOURCE, "name)", 1), // `println(dog.name)`
+        Some((legend_index(&T::PROPERTY), 0))
+    );
+    // String and number literals.
+    assert_eq!(token_at(SOURCE, "\"Rex\"", 0), Some((legend_index(&T::STRING), 0)));
+    assert_eq!(token_at(SOURCE, "5", 0), Some((legend_index(&T::NUMBER), 0)));
+}
+
+#[test]
+fn semantic_tokens_classify_enums_and_cases() {
+    use tower_lsp::lsp_types::SemanticTokenType as T;
+    let source = "\
+type Shade {
+    Gray,
+    Rgb(r: Int, g: Int, b: Int),
+}
+
+fn main_fn() {
+    let s = Shade::Gray
+}
+";
+    assert_eq!(
+        token_at(source, "Shade", 0),
+        Some((legend_index(&T::ENUM), DECLARATION))
+    );
+    assert_eq!(token_at(source, "Shade", 1), Some((legend_index(&T::ENUM), 0)));
+    assert_eq!(
+        token_at(source, "Gray", 1),
+        Some((legend_index(&T::ENUM_MEMBER), 0))
+    );
+}
+
+#[test]
+fn semantic_tokens_treat_contextual_control_words_as_keywords() {
+    use tower_lsp::lsp_types::SemanticTokenType as T;
+    let source = "\
+fn main_fn() {
+    if true {
+        println \"hi\"
+    }
+}
+";
+    assert_eq!(token_at(source, "if", 0), Some((legend_index(&T::KEYWORD), 0)));
+    assert_eq!(token_at(source, "true", 0), Some((legend_index(&T::KEYWORD), 0)));
+}
+
+#[test]
+fn semantic_tokens_keep_code_inside_string_interpolation() {
+    use tower_lsp::lsp_types::SemanticTokenType as T;
+    let source = "\
+fn shout(name: String) {
+    println \"Hello \\(name)!\"
+}
+";
+    // The literal parts are strings; the interpolated expression is not.
+    assert_eq!(token_at(source, "Hello", 0), Some((legend_index(&T::STRING), 0)));
+    assert_eq!(token_at(source, "!\"", 0), Some((legend_index(&T::STRING), 0)));
+    assert_eq!(
+        token_at(source, "name)", 0),
+        Some((legend_index(&T::PARAMETER), 0))
+    );
+}
+
+#[test]
+fn semantic_tokens_split_multiline_strings_per_line() {
+    use tower_lsp::lsp_types::SemanticTokenType as T;
+    let source = "fn main_fn() {\n    let s = #\"line one\nline two\"#\n}\n";
+    assert_eq!(
+        token_at(source, "line one", 0),
+        Some((legend_index(&T::STRING), 0))
+    );
+    assert_eq!(
+        token_at(source, "line two", 0),
+        Some((legend_index(&T::STRING), 0))
+    );
+    // No token may span the newline (clients reject multi-line tokens).
+    let newline = byte_of(source, "\nline two", 0);
+    for token in decoded_tokens(source) {
+        assert!(
+            !(token.range.0 <= newline && newline < token.range.1),
+            "token {:?} spans a newline",
+            token.range
+        );
+    }
 }
 
 /// Exercise the real on-disk loader: a crate laid out as `<tmp>/src/*.galvan`,

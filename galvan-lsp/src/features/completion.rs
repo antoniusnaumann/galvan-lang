@@ -31,7 +31,7 @@ use galvan_ast::TypeDecl;
 use galvan_hir::{query, DefinitionKind, SymbolIndex};
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Position};
 
-use crate::analysis::{receiver_type_name, render_definition};
+use crate::analysis::{enum_type_names, receiver_type_name, render_definition};
 use crate::document::Document;
 use crate::features::is_ident_byte;
 use crate::workspace::{Analysis, Crate};
@@ -57,7 +57,7 @@ const STATEMENT_KEYWORDS: &[&str] = &[
 const EXPRESSION_KEYWORDS: &[&str] = &["true", "false", "none", "and", "or", "not", "if", "match", "try"];
 /// Built-in statement functions the typechecker handles specially, which
 /// therefore never appear in the symbol index.
-const BUILTIN_FUNCTIONS: &[&str] = &["print", "println", "assert", "panic"];
+pub(crate) const BUILTIN_FUNCTIONS: &[&str] = &["print", "println", "assert", "panic"];
 
 /// Sort-group prefixes: clients order completions by `sort_text`, so items
 /// are ranked locals < functions < types < keywords within a response.
@@ -509,17 +509,6 @@ fn type_completion(krate: &Crate) -> Vec<CompletionItem> {
     };
     items.extend(builtin_type_items());
     items
-}
-
-/// Names of all types that have enum variants.
-fn enum_type_names(index: &SymbolIndex) -> HashSet<&str> {
-    index
-        .definitions()
-        .filter_map(|(_, definition)| match &definition.kind {
-            DefinitionKind::EnumVariant { owner } => Some(owner.as_str()),
-            _ => None,
-        })
-        .collect()
 }
 
 fn type_kind(enums: &HashSet<&str>, name: &str) -> CompletionItemKind {

@@ -13,7 +13,7 @@ use tower_lsp::{Client, LanguageServer};
 use crate::document::Document;
 use crate::features::{
     completion, diagnostics, goto_definition, hover, inlay_hints, references, rename,
-    signature_help, symbols,
+    semantic_tokens, signature_help, symbols,
 };
 use crate::workspace::{crate_root, Crate};
 
@@ -161,6 +161,16 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 inlay_hint_provider: Some(OneOf::Left(true)),
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: semantic_tokens::legend(),
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            range: None,
+                            work_done_progress_options: Default::default(),
+                        },
+                    ),
+                ),
                 signature_help_provider: Some(SignatureHelpOptions {
                     trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
                     retrigger_characters: Some(vec![",".to_string()]),
@@ -274,6 +284,21 @@ impl LanguageServer for Backend {
             params.context.include_declaration,
         );
         Ok(Some(locations))
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let uri = params.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(Some(SemanticTokensResult::Tokens(
+            semantic_tokens::semantic_tokens(&document, &krate, file.as_deref()),
+        )))
     }
 
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {

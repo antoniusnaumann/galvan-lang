@@ -9,6 +9,7 @@ pub mod hover;
 pub mod inlay_hints;
 pub mod references;
 pub mod rename;
+pub mod semantic_tokens;
 pub mod signature_help;
 pub mod symbols;
 

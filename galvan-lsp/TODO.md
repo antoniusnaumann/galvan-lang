@@ -45,8 +45,18 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   struct/tuple constructors and enum-case constructors. Labelled arguments
   select the parameter by name (constructor arguments may be reordered).
   Tests: `signature_help_*` in `tests/features.rs` (12 cases).
-- [ ] **23. semanticTokens / code actions / formatting** — future work, largest
-  items; not started.
+- [x] **23a. semanticTokens** — implemented in `features/semantic_tokens.rs`
+  (`textDocument/semanticTokens/full`). Two layers: the tree-sitter parse tree
+  supplies comments, string/char/number literals and grammar keyword tokens
+  (string interpolations are carved out so the embedded expression highlights
+  as code); the symbol index classifies identifiers (function/method/
+  struct/enum/enumMember/property/parameter/variable, `declaration` on the
+  defining occurrence). Unresolved identifiers fall back to contextual control
+  words as keywords and builtins with `defaultLibrary`. Multi-line tokens are
+  split per line. Tests: `semantic_tokens_*` in `tests/features.rs`.
+- [ ] **23b. code actions** — not started.
+- [ ] **23c. formatting** — not started; needs a real formatter, see notes at
+  the bottom.
 
 ## How to verify
 

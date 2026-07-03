@@ -92,6 +92,18 @@ pub fn render_definition(definition: &Definition) -> String {
     }
 }
 
+/// Names of all types that have enum variants (the index does not record
+/// whether a `Type` definition is a struct or an enum, but its variants do).
+pub(crate) fn enum_type_names(index: &SymbolIndex) -> std::collections::HashSet<&str> {
+    index
+        .definitions()
+        .filter_map(|(_, definition)| match &definition.kind {
+            DefinitionKind::EnumVariant { owner } => Some(owner.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The named type members are looked up on, if the receiver has one.
 pub(crate) fn receiver_type_name(ty: &galvan_ast::TypeElement) -> Option<&str> {
     match ty {
