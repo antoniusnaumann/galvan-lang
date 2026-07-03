@@ -5,6 +5,7 @@
 pub mod code_actions;
 pub mod completion;
 pub mod diagnostics;
+pub mod foreign_syntax;
 pub mod formatting;
 pub mod goto_definition;
 pub mod hover;

@@ -914,6 +914,7 @@ fn code_action_adds_inferred_type_annotation() {
             start: at_binding,
             end: at_binding,
         },
+        &Default::default(),
     );
 
     assert_eq!(actions.len(), 1, "actions were: {actions:?}");
@@ -949,6 +950,7 @@ fn code_actions_are_scoped_to_the_requested_lines() {
             start: elsewhere,
             end: elsewhere,
         },
+        &Default::default(),
     );
     assert!(actions.is_empty(), "actions were: {actions:?}");
 }
@@ -969,6 +971,7 @@ fn code_action_not_offered_for_annotated_bindings() {
             start: at_binding,
             end: at_binding,
         },
+        &Default::default(),
     );
     assert!(actions.is_empty(), "actions were: {actions:?}");
 }
@@ -1195,6 +1198,166 @@ fn clean_program_has_no_semantic_diagnostics() {
         diags.is_empty(),
         "expected no diagnostics, got: {:?}",
         diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}
+
+// ----------------------------------------------------------------------
+// Foreign keywords & quickfixes
+// ----------------------------------------------------------------------
+
+fn diagnostics_for(source: &str) -> Vec<tower_lsp::lsp_types::Diagnostic> {
+    let doc = Document::new(source);
+    let krate = single_file_crate(source);
+    diagnostics::diagnostics(&doc, &krate, Some(&main_path()))
+}
+
+/// Quickfix actions produced by round-tripping `source`'s diagnostics
+/// through the code-action context, the way a client would.
+fn quickfixes_for(source: &str) -> Vec<tower_lsp::lsp_types::CodeAction> {
+    use tower_lsp::lsp_types::{CodeActionContext, CodeActionOrCommand, Range};
+
+    let doc = Document::new(source);
+    let krate = single_file_crate(source);
+    let context = CodeActionContext {
+        diagnostics: diagnostics_for(source),
+        ..Default::default()
+    };
+    let whole_file = Range {
+        start: Position::new(0, 0),
+        end: Position::new(u32::MAX, 0),
+    };
+    code_actions::code_actions(&doc, &krate, Some(&main_path()), whole_file, &context)
+        .into_iter()
+        .filter_map(|action| match action {
+            CodeActionOrCommand::CodeAction(action)
+                if action.kind == Some(tower_lsp::lsp_types::CodeActionKind::QUICKFIX) =>
+            {
+                Some(action)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn quickfix_edit(action: &tower_lsp::lsp_types::CodeAction) -> &tower_lsp::lsp_types::TextEdit {
+    let changes = action
+        .edit
+        .as_ref()
+        .and_then(|edit| edit.changes.as_ref())
+        .expect("quickfix carries a workspace edit");
+    &changes.values().next().unwrap()[0]
+}
+
+#[test]
+fn foreign_keyword_in_unparseable_code_is_explained() {
+    let source = "func greet() {\n}\n";
+    let diags = diagnostics_for(source);
+
+    assert_eq!(diags.len(), 1, "diagnostics: {diags:?}");
+    let diag = &diags[0];
+    assert_eq!(
+        diag.message,
+        "`func` is not a Galvan keyword — Galvan uses `fn`"
+    );
+    assert_eq!(
+        diag.code,
+        Some(tower_lsp::lsp_types::NumberOrString::String(
+            "foreign_keyword".into()
+        ))
+    );
+    // Narrowed to the keyword, not the whole error region.
+    assert_eq!(diag.range.start, Position::new(0, 0));
+    assert_eq!(diag.range.end, Position::new(0, 4));
+}
+
+#[test]
+fn foreign_keyword_parsing_as_a_call_is_explained() {
+    // `switch color { }` parses as a trailing-closure call, so the parser
+    // never complains; detection goes through the unresolved callee.
+    let source = "fn main_fn() {\n    let color = 1\n    switch color {\n    }\n}\n";
+    let diags = diagnostics_for(source);
+
+    let foreign: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("not a Galvan keyword"))
+        .collect();
+    assert_eq!(foreign.len(), 1, "diagnostics: {diags:?}");
+    assert_eq!(
+        foreign[0].message,
+        "`switch` is not a Galvan keyword — Galvan uses `match`"
+    );
+    assert_eq!(foreign[0].range.start, position_of(source, "switch", 0));
+}
+
+#[test]
+fn foreign_keyword_in_expression_position_is_explained() {
+    // `null` parses as a plain identifier and fails typechecking; the
+    // unknown-identifier diagnostic is rewritten to explain the mapping.
+    let source = "fn main_fn() {\n    let x = null\n}\n";
+    let diags = diagnostics_for(source);
+
+    assert_eq!(diags.len(), 1, "diagnostics: {diags:?}");
+    assert_eq!(
+        diags[0].message,
+        "`null` is not a Galvan keyword — Galvan uses `none`"
+    );
+}
+
+#[test]
+fn identifiers_matching_foreign_keywords_are_legal_in_valid_code() {
+    // `def` is a perfectly legal Galvan identifier; only error regions and
+    // unresolved names are checked.
+    let source = "fn main_fn() {\n    let def = 1\n    println(def)\n}\n";
+    let diags = diagnostics_for(source);
+    assert!(diags.is_empty(), "diagnostics: {diags:?}");
+}
+
+#[test]
+fn foreign_keywords_in_comments_are_not_flagged() {
+    // The comment mentions `class` right next to broken code; only the
+    // actual foreign keyword is reported.
+    let source = "// a class comment\nfunc greet() {\n}\n";
+    let diags = diagnostics_for(source);
+
+    assert_eq!(diags.len(), 1, "diagnostics: {diags:?}");
+    assert!(diags[0].message.contains("`func`"), "got: {}", diags[0].message);
+}
+
+#[test]
+fn quickfix_replaces_foreign_keyword() {
+    let source = "func greet() {\n}\n";
+    let fixes = quickfixes_for(source);
+
+    assert_eq!(fixes.len(), 1, "quickfixes: {fixes:?}");
+    let fix = &fixes[0];
+    assert_eq!(fix.title, "Replace `func` with `fn`");
+    assert_eq!(fix.is_preferred, Some(true));
+    assert_eq!(fix.diagnostics.as_ref().map(Vec::len), Some(1));
+
+    let edit = quickfix_edit(fix);
+    assert_eq!(edit.new_text, "fn");
+    let fixed = apply_edits(source, std::slice::from_ref(edit));
+    assert_eq!(fixed, "fn greet() {\n}\n");
+    assert!(
+        diagnostics_for(&fixed).is_empty(),
+        "applying the fix should produce a clean file"
+    );
+}
+
+#[test]
+fn quickfix_applies_did_you_mean_suggestions() {
+    let source = "fn main_fn() {\n    let color = 1\n    println(colr)\n}\n";
+    let fixes = quickfixes_for(source);
+
+    assert_eq!(fixes.len(), 1, "quickfixes: {fixes:?}");
+    let fix = &fixes[0];
+    assert_eq!(fix.title, "Replace `colr` with `color`");
+
+    let edit = quickfix_edit(fix);
+    let fixed = apply_edits(source, std::slice::from_ref(edit));
+    assert!(
+        diagnostics_for(&fixed).is_empty(),
+        "applying the fix should produce a clean file"
     );
 }
 

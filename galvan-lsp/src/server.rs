@@ -307,6 +307,7 @@ impl LanguageServer for Backend {
             &krate,
             file.as_deref(),
             params.range,
+            &params.context,
         )))
     }
 
