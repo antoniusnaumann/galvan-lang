@@ -147,6 +147,10 @@ interop cases:
   `Rc<T>` lift as `T` and carry the same constructor, field, and match
   conversions
 
+As with the shared-state wrappers above, these conversions are path-aware when
+rustdoc provides a path. Only standard-library `Box` and `Rc` shapes are lifted
+away; dependency types with the same names remain nominal imported Rust types.
+
 ## Explicit Exclusions
 
 `galvan-rustdoc` does not bridge raw pointers, unsafe functions, or other unsafe

@@ -1490,6 +1490,94 @@ fn rustdoc_lifts_owned_wrapper_parameters_with_call_conversions() {
 }
 
 #[test]
+fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "takes_box",
+                vec![json!([
+                    "value",
+                    resolved_with_path("Box", &["demo", "smart", "Box"], vec![primitive("u64")])
+                ])],
+                primitive("bool")
+            ),
+            "1": public_function(
+                "returns_rc",
+                vec![],
+                resolved_with_path("Rc", &["demo", "smart", "Rc"], vec![primitive("str")])
+            ),
+            "2": public_item("Envelope", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["3"]
+                }
+            })),
+            "3": public_field(
+                "ticket",
+                resolved_with_path(
+                    "Box",
+                    &["demo", "smart", "Box"],
+                    vec![resolved("Ticket", vec![])]
+                )
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let takes_box = interop
+        .function(Some("demo"), None, &ident("takes_box"), &[])
+        .expect("expected imported function using dependency Box");
+    assert_eq!(takes_box.arg_conversions, vec![RustArgConversion::None]);
+    let TypeElement::Parametric(param_type) =
+        &takes_box.decl.item.signature.parameters.params[0].param_type
+    else {
+        panic!(
+            "expected dependency Box<T> parameter, got {:?}",
+            takes_box.decl.item.signature.parameters.params[0].param_type
+        );
+    };
+    assert_eq!(param_type.base_type, TypeIdent::new("Box"));
+    assert_eq!(param_type.type_args, vec![u64_type()]);
+
+    let returns_rc = interop
+        .function(Some("demo"), None, &ident("returns_rc"), &[])
+        .expect("expected imported function returning dependency Rc");
+    assert_eq!(returns_rc.return_conversion, RustReturnConversion::None);
+    let TypeElement::Parametric(return_type) = &returns_rc.decl.item.signature.return_type else {
+        panic!(
+            "expected dependency Rc<T> return, got {:?}",
+            returns_rc.decl.item.signature.return_type
+        );
+    };
+    assert_eq!(return_type.base_type, TypeIdent::new("Rc"));
+    assert_eq!(return_type.type_args, vec![string_type()]);
+
+    let TypeDecl::Struct(envelope) = imported_type(&interop, "Envelope") else {
+        panic!("expected Envelope struct");
+    };
+    let TypeElement::Parametric(field_type) = &envelope.members[0].r#type else {
+        panic!(
+            "expected dependency Box<T> field, got {:?}",
+            envelope.members[0].r#type
+        );
+    };
+    assert_eq!(field_type.base_type, TypeIdent::new("Box"));
+    assert_eq!(
+        field_type.type_args,
+        vec![plain_type(TypeIdent::new("Ticket"))]
+    );
+    assert_eq!(
+        interop.field_return_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
+        RustReturnConversion::None
+    );
+    assert_eq!(
+        interop.field_arg_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
+        RustArgConversion::None
+    );
+}
+
+#[test]
 fn rustdoc_lifts_box_returns_with_return_conversions() {
     let json = json!({
         "index": {
