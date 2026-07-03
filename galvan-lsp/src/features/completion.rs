@@ -24,7 +24,7 @@
 //!   valid at the position. Items are ranked locals first, then functions,
 //!   types and keywords.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use galvan_ast::{TypeDecl, TypeElement};
@@ -35,14 +35,28 @@ use crate::analysis::render_definition;
 use crate::document::Document;
 use crate::workspace::{Analysis, Crate};
 
+// The keyword groups mirror the grammar (tree-sitter-galvan/grammar/keywords.js
+// and symbols.js). `if`/`for`/`while`/`loop`/`try`/`return`/`throw` are not
+// grammar keywords — they parse as contextual identifiers (trailing-closure
+// expressions / free functions) — but they read as keywords, so they are
+// offered where they can occur. `and`/`or`/`not` are the word spellings of
+// operator tokens. `async`/`const` exist in the grammar but are not wired to
+// any rule yet, so they are not offered.
+
 /// Keywords that introduce a top-level declaration.
-const TOPLEVEL_KEYWORDS: &[&str] = &["fn", "type", "test", "main", "pub", "use", "async", "build", "cmd"];
-/// Keywords that can start a statement inside a body.
+const TOPLEVEL_KEYWORDS: &[&str] = &["fn", "type", "test", "pub", "use", "build", "cmd"];
+/// Words that can start a statement inside a body: declaration modifiers,
+/// real statement keywords, and contextual statement starters.
 const STATEMENT_KEYWORDS: &[&str] = &[
-    "let", "mut", "ref", "if", "else", "while", "for", "return", "match", "break", "continue",
+    "let", "mut", "ref", "move", "if", "else", "while", "for", "loop", "try", "return", "throw",
+    "match", "break", "continue",
 ];
-/// Keywords that can occur inside an expression.
-const EXPRESSION_KEYWORDS: &[&str] = &["true", "false", "and", "or", "not", "if", "match"];
+/// Words that can occur inside an expression: literal keywords and word
+/// operators.
+const EXPRESSION_KEYWORDS: &[&str] = &["true", "false", "none", "and", "or", "not", "if", "match", "try"];
+/// Built-in statement functions the typechecker handles specially, which
+/// therefore never appear in the symbol index.
+const BUILTIN_FUNCTIONS: &[&str] = &["print", "println", "assert", "panic"];
 
 /// Sort-group prefixes: clients order completions by `sort_text`, so items
 /// are ranked locals < functions < types < keywords within a response.
@@ -166,7 +180,7 @@ fn context_at(text: &str, offset: usize) -> Context {
     }
     if matches!(
         &text[word_start..prev],
-        "let" | "mut" | "ref" | "fn" | "type" | "for"
+        "let" | "mut" | "ref" | "move" | "fn" | "type" | "for"
     ) {
         return Context::NewName;
     }
@@ -203,7 +217,7 @@ fn colon_introduces_type(text: &str, colon: usize) -> bool {
         return false;
     }
 
-    // `let name:` / `mut name:` / `ref name:` annotate a binding.
+    // `let name:` / `mut name:` / `ref name:` / `move name:` annotate a binding.
     let mut prev = name_start;
     while prev > 0 && matches!(bytes[prev - 1], b' ' | b'\t') {
         prev -= 1;
@@ -212,7 +226,7 @@ fn colon_introduces_type(text: &str, colon: usize) -> bool {
     while word_start > 0 && is_ident_byte(bytes[word_start - 1]) {
         word_start -= 1;
     }
-    if matches!(&text[word_start..prev], "let" | "mut" | "ref") {
+    if matches!(&text[word_start..prev], "let" | "mut" | "ref" | "move") {
         return true;
     }
 
@@ -560,7 +574,20 @@ fn value_completion(
 
     let mut items = Vec::new();
 
+    // Shadowed bindings share a name; keep only the innermost (the latest
+    // declaration before the cursor).
+    let mut locals: HashMap<&str, &galvan_hir::Definition> = HashMap::new();
     for (_, definition) in index.visible_locals(file, offset) {
+        locals
+            .entry(definition.name.as_str())
+            .and_modify(|current| {
+                if definition.span.range.0 > current.span.range.0 {
+                    *current = definition;
+                }
+            })
+            .or_insert(definition);
+    }
+    for definition in locals.into_values() {
         items.push(item(
             definition.name.clone(),
             CompletionItemKind::VARIABLE,
@@ -586,6 +613,15 @@ fn value_completion(
             kind,
             Some(render_definition(definition)),
             sort_group,
+        ));
+    }
+
+    for builtin in BUILTIN_FUNCTIONS {
+        items.push(item(
+            builtin.to_string(),
+            CompletionItemKind::FUNCTION,
+            None,
+            SORT_FUNCTION,
         ));
     }
 

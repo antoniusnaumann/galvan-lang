@@ -66,14 +66,14 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 
 ## Spec alignment
 
-- [ ] **14. Keyword list vs grammar** — real keywords per
-  `tree-sitter-galvan/grammar/keywords.js`: `build test fn cmd type use`,
-  `ref let mut move`, `pub`, `else match break continue where`, `true false none`.
-  `if for while loop try return throw` are contextual identifiers (still worth
-  offering — mark as such), `and or not in` are operator tokens (worth offering),
-  `async`/`const`/`main`/`struct`/`enum` are not valid — drop. Add `none`, `move`,
-  `loop`, `try`, `throw`; also offer the built-in statement functions
-  `print println assert panic` (parsed as free functions, not indexed).
+- [x] **14. Keyword list vs grammar** — fixed: keyword groups in `completion.rs`
+  mirror `tree-sitter-galvan/grammar/keywords.js` (see the comment above the
+  constants). Contextual statement starters (`if for while loop try return throw`)
+  and word operators (`and or not`) are still offered; `async const main struct
+  enum` are not. Built-in statement functions `print println assert panic` are
+  offered as FUNCTION items (they never appear in the symbol index). `move` is
+  also recognized as a binding keyword in `context_at`/`colon_introduces_type`.
+  Test: `completion_keywords_match_the_grammar`.
 - [-] **16. `:` as completion trigger fires on single colons** — kept deliberately:
   without it, clients don't auto-trigger after typing `::`, which would break the
   enum-case popup. `context_at` gates the results, so a single `:` yields only
@@ -91,8 +91,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   `SymbolIndex::references` + definition span; skip builtins/synthetic spans.
 - [ ] **19. documentSymbol / workspaceSymbol** — new `features/symbols.rs` from
   `index.definitions()`: types with field/variant/method children, free functions.
-- [ ] **21. Shadowed locals appear twice in completion** — dedupe by name in
-  `value_completion`, innermost (latest declaration before the cursor) wins.
+- [x] **21. Shadowed locals appear twice in completion** — fixed: deduped by name
+  in `value_completion`, latest declaration before the cursor wins.
+  Test: `completion_dedupes_shadowed_locals`.
 - [ ] **20. signatureHelp** — needs call-site argument-index detection; not started.
 - [ ] **22. Inlay type hints** for `let` bindings — `Definition::ty()` has the data;
   not started.

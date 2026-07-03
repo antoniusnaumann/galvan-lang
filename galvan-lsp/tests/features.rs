@@ -474,6 +474,34 @@ fn completion_at_toplevel_offers_declaration_keywords_only() {
 }
 
 #[test]
+fn completion_keywords_match_the_grammar() {
+    // At statement start inside a body.
+    let position = position_of(SOURCE, "dog.walk", 0);
+    let labels = completion_labels(SOURCE, position);
+    let names: Vec<&str> = labels.iter().map(|(l, _)| l.as_str()).collect();
+
+    // Contextual statement starters and declaration modifiers are offered...
+    for keyword in ["loop", "throw", "move", "none"] {
+        assert!(names.contains(&keyword), "missing {keyword}: {names:?}");
+    }
+    // ...built-in statement functions too...
+    assert!(names.contains(&"println"), "labels were: {names:?}");
+    // ...but words that are not part of the language are not.
+    for absent in ["async", "const", "main", "struct", "enum"] {
+        assert!(!names.contains(&absent), "unexpected {absent}: {names:?}");
+    }
+}
+
+#[test]
+fn completion_dedupes_shadowed_locals() {
+    let src = "fn f() {\n    let x = 1\n    let x = 2\n    println(x)\n}\n";
+    let position = position_of(src, "x)", 0);
+    let labels = completion_labels(src, position);
+    let count = labels.iter().filter(|(l, _)| l == "x").count();
+    assert_eq!(count, 1, "labels were: {labels:?}");
+}
+
+#[test]
 fn completion_ranks_locals_before_types_and_keywords() {
     let position = position_of(SOURCE, "dog.walk", 0);
     let doc = Document::new(SOURCE);
