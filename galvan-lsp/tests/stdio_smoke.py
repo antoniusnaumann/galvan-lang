@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Smoke test: drive galvan-lsp over stdio through a realistic session."""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+BINARY = "/Users/anaumann/Development/galvan/target/debug/galvan-lsp"
+
+SOURCE = """fn greet(name: String) {
+    greet(name)
+}
+
+type Color {
+    Transparent
+    Gray(U8)
+}
+
+fn main_fn() {
+    let color = Color::Transparent
+    println(color)
+}
+"""
+
+
+def message(payload: dict) -> bytes:
+    body = json.dumps(payload).encode()
+    return f"Content-Length: {len(body)}\r\n\r\n".encode() + body
+
+
+def read_message(stream):
+    headers = {}
+    while True:
+        line = stream.readline().decode()
+        if line in ("\r\n", "\n", ""):
+            break
+        key, _, value = line.partition(":")
+        headers[key.strip().lower()] = value.strip()
+    length = int(headers["content-length"])
+    return json.loads(stream.read(length))
+
+
+def main():
+    root = tempfile.mkdtemp(prefix="galvan_lsp_smoke_")
+    src = os.path.join(root, "src")
+    os.makedirs(src)
+    path = os.path.join(src, "main.galvan")
+    with open(path, "w") as f:
+        f.write(SOURCE)
+    uri = "file://" + path
+
+    proc = subprocess.Popen(
+        [BINARY], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    w = proc.stdin
+
+    def send(payload):
+        w.write(message(payload))
+        w.flush()
+
+    def request(rid, method, params):
+        send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        while True:
+            msg = read_message(proc.stdout)
+            if msg.get("id") == rid:
+                return msg
+
+    def expect_notification(method):
+        while True:
+            msg = read_message(proc.stdout)
+            if msg.get("method") == method:
+                return msg
+
+    # -- initialize ------------------------------------------------------
+    reply = request(1, "initialize", {"capabilities": {}})
+    caps = reply["result"]["capabilities"]
+    for cap in [
+        "hoverProvider", "definitionProvider", "referencesProvider",
+        "completionProvider", "renameProvider", "documentSymbolProvider",
+        "workspaceSymbolProvider", "inlayHintProvider",
+    ]:
+        assert cap in caps, f"missing capability {cap}: {caps.keys()}"
+    send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+
+    # -- didOpen (expect publishDiagnostics notification) ----------------
+    send({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+        "textDocument": {"uri": uri, "languageId": "galvan", "version": 1, "text": SOURCE},
+    }})
+    note = expect_notification("textDocument/publishDiagnostics")
+    assert note["params"]["diagnostics"] == [], note["params"]
+
+    # -- completion after `Color::` --------------------------------------
+    line = SOURCE.splitlines().index("    let color = Color::Transparent")
+    char = len("    let color = Color::")
+    reply = request(2, "textDocument/completion", {
+        "textDocument": {"uri": uri},
+        "position": {"line": line, "character": char},
+    })
+    labels = sorted(item["label"] for item in reply["result"])
+    assert labels == ["Gray", "Transparent"], labels
+
+    # -- hover at END of identifier (the end-inclusive fix) --------------
+    reply = request(3, "textDocument/hover", {
+        "textDocument": {"uri": uri},
+        "position": {"line": 1, "character": len("    greet")},
+    })
+    assert "fn greet" in reply["result"]["contents"]["value"], reply["result"]
+
+    # -- documentSymbol ---------------------------------------------------
+    reply = request(4, "textDocument/documentSymbol", {"textDocument": {"uri": uri}})
+    names = {s["name"]: s for s in reply["result"]}
+    assert "Color" in names and "greet" in names, names.keys()
+    children = [c["name"] for c in names["Color"].get("children") or []]
+    assert "Transparent" in children, children
+
+    # -- rename `greet` ----------------------------------------------------
+    reply = request(5, "textDocument/rename", {
+        "textDocument": {"uri": uri},
+        "position": {"line": 0, "character": 4},
+        "newName": "welcome",
+    })
+    edits = reply["result"]["changes"][uri]
+    assert len(edits) == 2, edits  # declaration + recursive call
+
+    # -- inlayHint ---------------------------------------------------------
+    reply = request(6, "textDocument/inlayHint", {
+        "textDocument": {"uri": uri},
+        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 99, "character": 0}},
+    })
+    hint_labels = [h["label"] for h in reply["result"]]
+    assert ": Color" in hint_labels, hint_labels
+
+    # -- didClose clears diagnostics ---------------------------------------
+    send({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {
+        "textDocument": {"uri": uri},
+    }})
+    note = expect_notification("textDocument/publishDiagnostics")
+    assert note["params"]["diagnostics"] == [], note["params"]
+
+    request(7, "shutdown", None)
+    send({"jsonrpc": "2.0", "method": "exit"})
+    w.close()
+    try:
+        proc.wait(timeout=5)
+        print("server exited cleanly on exit notification")
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print("NOTE: server did not exit within 5s of the exit notification")
+    print("SMOKE TEST PASSED: capabilities, diagnostics, ::-completion, "
+          "end-of-ident hover, symbols, rename, inlay hints, close-clears-diags")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

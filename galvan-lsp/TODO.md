@@ -115,7 +115,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 
 ## How to verify
 
-`cargo test -p galvan-lsp` (e2e tests in `tests/features.rs` drive the same pure
-feature functions the server dispatches to, through the real parser+typechecker).
-For manual testing: `cargo run -p galvan-lsp` speaks LSP over stdio; point an editor
-at it with `example-projects/*/src/main.galvan`.
+- `cargo test -p galvan-lsp` — e2e tests in `tests/features.rs` drive the same pure
+  feature functions the server dispatches to, through the real parser+typechecker.
+- `cargo build -p galvan-lsp && python3 galvan-lsp/tests/stdio_smoke.py` — drives the
+  real binary over stdio through a full session (initialize, didOpen/diagnostics,
+  `::`-completion, hover at end of identifier, documentSymbol, rename, inlayHint,
+  didClose clearing diagnostics). Run it after touching `server.rs`; the Rust e2e
+  tests do not cover the protocol layer.
+- For manual testing: `cargo run -p galvan-lsp` speaks LSP over stdio; point an
+  editor at it with `example-projects/*/src/main.galvan`.
