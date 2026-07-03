@@ -54,7 +54,14 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   defining occurrence). Unresolved identifiers fall back to contextual control
   words as keywords and builtins with `defaultLibrary`. Multi-line tokens are
   split per line. Tests: `semantic_tokens_*` in `tests/features.rs`.
-- [ ] **23b. code actions** — not started.
+- [x] **23b. code actions** — implemented in `features/code_actions.rs`.
+  "Add type annotation" (`refactor.rewrite`) writes the inferred type of an
+  unannotated local into the source; the inference is shared with inlay hints
+  (`inlay_hints::unannotated_locals`), and each inlay hint now also carries
+  the same insertion as its `text_edits`. Diagnostics carry no structured fix
+  data yet, so there are no quickfixes — new actions should follow the
+  pattern in that module. Tests: `code_action_*` /
+  `inlay_hints_carry_the_annotation_as_text_edit` in `tests/features.rs`.
 - [ ] **23c. formatting** — not started; needs a real formatter, see notes at
   the bottom.
 

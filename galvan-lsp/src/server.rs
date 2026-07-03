@@ -12,8 +12,8 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
 use crate::features::{
-    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename,
-    semantic_tokens, signature_help, symbols,
+    code_actions, completion, diagnostics, goto_definition, hover, inlay_hints, references,
+    rename, semantic_tokens, signature_help, symbols,
 };
 use crate::workspace::{crate_root, Crate};
 
@@ -161,6 +161,7 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 inlay_hint_provider: Some(OneOf::Left(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
@@ -284,6 +285,21 @@ impl LanguageServer for Backend {
             params.context.include_declaration,
         );
         Ok(Some(locations))
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(Some(code_actions::code_actions(
+            &document,
+            &krate,
+            file.as_deref(),
+            params.range,
+        )))
     }
 
     async fn semantic_tokens_full(

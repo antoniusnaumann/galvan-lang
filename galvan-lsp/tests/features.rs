@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use dashmap::DashMap;
 use galvan_lsp::document::Document;
 use galvan_lsp::features::{
-    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename,
-    semantic_tokens, signature_help, symbols,
+    code_actions, completion, diagnostics, goto_definition, hover, inlay_hints, references,
+    rename, semantic_tokens, signature_help, symbols,
 };
 use galvan_lsp::workspace::Crate;
 use tower_lsp::lsp_types::{
@@ -869,6 +869,108 @@ fn inlay_hints_skip_annotated_bindings() {
     let hints = inlay_hints::inlay_hints(&doc, &krate, Some(&main_path()), whole_file);
     // Only the unannotated `m` gets a hint.
     assert_eq!(hints.len(), 1, "hints were: {hints:?}");
+}
+
+#[test]
+fn inlay_hints_carry_the_annotation_as_text_edit() {
+    use tower_lsp::lsp_types::{InlayHintLabel, Position, Range};
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let whole_file = Range {
+        start: Position::new(0, 0),
+        end: Position::new(u32::MAX, 0),
+    };
+    let hints = inlay_hints::inlay_hints(&doc, &krate, Some(&main_path()), whole_file);
+    let dog_hint = hints
+        .iter()
+        .find(|hint| matches!(&hint.label, InlayHintLabel::String(l) if l == ": Dog"))
+        .unwrap();
+
+    let edits = dog_hint.text_edits.as_ref().expect("hint has an edit");
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].new_text, ": Dog");
+    assert_eq!(edits[0].range.start, dog_hint.position);
+    assert_eq!(edits[0].range.end, dog_hint.position);
+}
+
+// ----------------------------------------------------------------------
+// Code actions
+// ----------------------------------------------------------------------
+
+#[test]
+fn code_action_adds_inferred_type_annotation() {
+    use tower_lsp::lsp_types::{CodeActionOrCommand, Range};
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    // Request on the line of `let dog = Dog(name: "Rex")`.
+    let at_binding = position_of(SOURCE, "let dog", 0);
+    let actions = code_actions::code_actions(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        Range {
+            start: at_binding,
+            end: at_binding,
+        },
+    );
+
+    assert_eq!(actions.len(), 1, "actions were: {actions:?}");
+    let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
+        panic!("expected a code action");
+    };
+    assert_eq!(action.title, "Add type annotation `: Dog` to `dog`");
+
+    let changes = action
+        .edit
+        .as_ref()
+        .and_then(|edit| edit.changes.as_ref())
+        .expect("action carries a workspace edit");
+    let edits = changes.values().next().unwrap();
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].new_text, ": Dog");
+    assert_eq!(edits[0].range.start, position_of(SOURCE, " = Dog(", 0));
+}
+
+#[test]
+fn code_actions_are_scoped_to_the_requested_lines() {
+    use tower_lsp::lsp_types::Range;
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    // A range on the type declaration: no binding there, no actions.
+    let elsewhere = position_of(SOURCE, "type Dog", 0);
+    let actions = code_actions::code_actions(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        Range {
+            start: elsewhere,
+            end: elsewhere,
+        },
+    );
+    assert!(actions.is_empty(), "actions were: {actions:?}");
+}
+
+#[test]
+fn code_action_not_offered_for_annotated_bindings() {
+    use tower_lsp::lsp_types::Range;
+
+    let source = "fn f() {\n    let n: Int = 1\n}\n";
+    let doc = Document::new(source);
+    let krate = single_file_crate(source);
+    let at_binding = position_of(source, "let n", 0);
+    let actions = code_actions::code_actions(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        Range {
+            start: at_binding,
+            end: at_binding,
+        },
+    );
+    assert!(actions.is_empty(), "actions were: {actions:?}");
 }
 
 // ----------------------------------------------------------------------

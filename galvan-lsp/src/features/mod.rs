@@ -2,6 +2,7 @@
 //! over a [`Document`](crate::document::Document) and request parameters, which
 //! keeps the server glue in [`crate::server`] thin and the features unit-testable.
 
+pub mod code_actions;
 pub mod completion;
 pub mod diagnostics;
 pub mod goto_definition;
