@@ -2,12 +2,11 @@
 
 use std::path::Path;
 
-use galvan_files::Source;
-use tower_lsp::lsp_types::{Location, Position, Url};
+use tower_lsp::lsp_types::{Location, Position};
 
 use crate::analysis;
 use crate::document::Document;
-use crate::position::LineIndex;
+use crate::features::Locations;
 use crate::workspace::Crate;
 
 /// Find all references to the symbol at `position`, across every file of the
@@ -36,14 +35,19 @@ pub fn references(
         return Vec::new();
     };
 
+    let mut converter = Locations::new();
     let mut locations = Vec::new();
     if include_declaration {
         if let Some(site) = analysis::definition_site(definition) {
-            locations.extend(location(site.source, site.target.range.0, site.target.range.1));
+            locations.extend(converter.location(
+                site.source,
+                site.target.range.0,
+                site.target.range.1,
+            ));
         }
     }
     for reference in analysis.index.references(id) {
-        locations.extend(location(
+        locations.extend(converter.location(
             &reference.source,
             reference.span.range.0,
             reference.span.range.1,
@@ -51,12 +55,4 @@ pub fn references(
     }
 
     locations
-}
-
-fn location(source: &Source, start: usize, end: usize) -> Option<Location> {
-    let path = source.origin()?;
-    let uri = Url::from_file_path(path).ok()?;
-    let text = source.content();
-    let range = LineIndex::new(text).byte_range(text, start, end);
-    Some(Location { uri, range })
 }

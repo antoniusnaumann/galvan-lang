@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 use dashmap::DashMap;
 use galvan_lsp::document::Document;
-use galvan_lsp::features::{completion, diagnostics, goto_definition, hover, references};
+use galvan_lsp::features::{
+    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename, symbols,
+};
 use galvan_lsp::workspace::Crate;
 use tower_lsp::lsp_types::{
     CompletionItemKind, DiagnosticSeverity, HoverContents, MarkupContent, Position, Url,
@@ -666,6 +668,205 @@ fn completion_aggregates_symbols_from_all_crate_files() {
     assert!(labels.iter().any(|l| l == "alpha"));
     assert!(labels.iter().any(|l| l == "beta"));
     assert!(labels.iter().any(|l| l == "Gamma"));
+}
+
+// ----------------------------------------------------------------------
+// Rename
+// ----------------------------------------------------------------------
+
+#[test]
+fn prepare_rename_returns_range_and_placeholder() {
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let response = rename::prepare_rename(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        position_of(SOURCE, "dog", 1),
+    )
+    .expect("expected a renamable symbol");
+
+    match response {
+        tower_lsp::lsp_types::PrepareRenameResponse::RangeWithPlaceholder {
+            placeholder, ..
+        } => assert_eq!(placeholder, "dog"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+}
+
+#[test]
+fn rename_local_variable_edits_every_use() {
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let edit = rename::rename(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        position_of(SOURCE, "dog", 1),
+        "hound",
+    )
+    .expect("expected a workspace edit");
+
+    let changes = edit.changes.expect("expected changes");
+    let uri = Url::from_file_path(main_path()).unwrap();
+    let edits = changes.get(&uri).expect("edits for the main file");
+    // Declaration + `dog.walk(5)` + `println(dog.name)`.
+    assert_eq!(edits.len(), 3, "edits were: {edits:?}");
+    assert!(edits.iter().all(|e| e.new_text == "hound"));
+}
+
+#[test]
+fn rename_type_edits_annotations_and_constructors() {
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let edit = rename::rename(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        position_of(SOURCE, "Dog", 0),
+        "Hound",
+    )
+    .expect("expected a workspace edit");
+
+    let changes = edit.changes.expect("expected changes");
+    let uri = Url::from_file_path(main_path()).unwrap();
+    let edits = changes.get(&uri).expect("edits for the main file");
+    // Declaration + `self: Dog` twice + constructor `Dog(name: ...)`.
+    assert_eq!(edits.len(), 4, "edits were: {edits:?}");
+}
+
+#[test]
+fn rename_rejects_invalid_identifiers() {
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    for invalid in ["", "1abc", "a b", "a-b"] {
+        let edit = rename::rename(
+            &doc,
+            &krate,
+            Some(&main_path()),
+            position_of(SOURCE, "dog", 1),
+            invalid,
+        );
+        assert!(edit.is_none(), "accepted invalid name {invalid:?}");
+    }
+}
+
+// ----------------------------------------------------------------------
+// Symbols
+// ----------------------------------------------------------------------
+
+#[test]
+fn document_symbols_nest_members_under_their_type() {
+    use tower_lsp::lsp_types::SymbolKind;
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let outline = symbols::document_symbols(&doc, &krate, Some(&main_path()));
+
+    let names: Vec<(&str, SymbolKind)> = outline
+        .iter()
+        .map(|symbol| (symbol.name.as_str(), symbol.kind))
+        .collect();
+    assert!(names.contains(&("greet", SymbolKind::FUNCTION)), "{names:?}");
+    assert!(names.contains(&("Dog", SymbolKind::STRUCT)), "{names:?}");
+
+    let dog = outline.iter().find(|symbol| symbol.name == "Dog").unwrap();
+    let children: Vec<(&str, SymbolKind)> = dog
+        .children
+        .as_ref()
+        .expect("Dog has members")
+        .iter()
+        .map(|child| (child.name.as_str(), child.kind))
+        .collect();
+    assert!(children.contains(&("name", SymbolKind::FIELD)), "{children:?}");
+    assert!(children.contains(&("walk", SymbolKind::METHOD)), "{children:?}");
+    // Methods nested under their type do not repeat at the top level.
+    assert!(!names.iter().any(|(name, _)| *name == "walk"), "{names:?}");
+}
+
+#[test]
+fn document_symbols_mark_enums() {
+    use tower_lsp::lsp_types::SymbolKind;
+
+    let doc = Document::new(ENUM_SOURCE);
+    let krate = single_file_crate(ENUM_SOURCE);
+    let outline = symbols::document_symbols(&doc, &krate, Some(&main_path()));
+
+    let color = outline.iter().find(|symbol| symbol.name == "Color").unwrap();
+    assert_eq!(color.kind, SymbolKind::ENUM);
+    let children = color.children.as_ref().expect("Color has cases");
+    assert!(
+        children
+            .iter()
+            .any(|child| child.name == "Transparent" && child.kind == SymbolKind::ENUM_MEMBER),
+        "children were: {children:?}"
+    );
+}
+
+#[test]
+fn workspace_symbols_filter_by_query() {
+    use tower_lsp::lsp_types::SymbolKind;
+
+    let krate = single_file_crate(SOURCE);
+    let hits = symbols::workspace_symbols(&krate, "walk");
+    assert!(
+        hits.iter()
+            .any(|hit| hit.name == "walk" && hit.kind == SymbolKind::METHOD),
+        "hits were: {hits:?}"
+    );
+    // Case-insensitive; locals are never workspace symbols.
+    let hits = symbols::workspace_symbols(&krate, "dOg");
+    assert!(hits.iter().any(|hit| hit.name == "Dog"), "hits: {hits:?}");
+    assert!(hits.iter().all(|hit| hit.name != "dog"), "hits: {hits:?}");
+}
+
+// ----------------------------------------------------------------------
+// Inlay hints
+// ----------------------------------------------------------------------
+
+#[test]
+fn inlay_hints_show_inferred_types_of_unannotated_lets() {
+    use tower_lsp::lsp_types::{InlayHintLabel, Position, Range};
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let whole_file = Range {
+        start: Position::new(0, 0),
+        end: Position::new(u32::MAX, 0),
+    };
+    let hints = inlay_hints::inlay_hints(&doc, &krate, Some(&main_path()), whole_file);
+
+    // `let dog = Dog(...)` has no annotation: a `: Dog` hint after the name.
+    let labels: Vec<&str> = hints
+        .iter()
+        .map(|hint| match &hint.label {
+            InlayHintLabel::String(label) => label.as_str(),
+            other => panic!("unexpected label: {other:?}"),
+        })
+        .collect();
+    assert!(labels.contains(&": Dog"), "hints were: {labels:?}");
+    let dog_hint = hints
+        .iter()
+        .find(|hint| matches!(&hint.label, InlayHintLabel::String(l) if l == ": Dog"))
+        .unwrap();
+    let expected = position_of(SOURCE, " = Dog(", 0);
+    assert_eq!(dog_hint.position, expected, "hint in the wrong place");
+}
+
+#[test]
+fn inlay_hints_skip_annotated_bindings() {
+    use tower_lsp::lsp_types::{Position, Range};
+
+    let src = "fn f() {\n    let n: Int = 1\n    let m = 2\n}\n";
+    let doc = Document::new(src);
+    let krate = single_file_crate(src);
+    let whole_file = Range {
+        start: Position::new(0, 0),
+        end: Position::new(u32::MAX, 0),
+    };
+    let hints = inlay_hints::inlay_hints(&doc, &krate, Some(&main_path()), whole_file);
+    // Only the unannotated `m` gets a hint.
+    assert_eq!(hints.len(), 1, "hints were: {hints:?}");
 }
 
 // ----------------------------------------------------------------------

@@ -3,11 +3,11 @@
 use std::path::Path;
 
 use galvan_files::Source;
-use tower_lsp::lsp_types::{Location, Position, Url};
+use tower_lsp::lsp_types::{Location, Position};
 
 use crate::analysis;
 use crate::document::Document;
-use crate::position::LineIndex;
+use crate::features::Locations;
 use crate::workspace::Crate;
 
 /// Resolve the declaration of the symbol at `position`.
@@ -45,9 +45,5 @@ pub fn goto_definition(
 }
 
 fn location(source: &Source, start: usize, end: usize) -> Option<Location> {
-    let path = source.origin()?;
-    let uri = Url::from_file_path(path).ok()?;
-    let text = source.content();
-    let range = LineIndex::new(text).byte_range(text, start, end);
-    Some(Location { uri, range })
+    Locations::new().location(source, start, end)
 }

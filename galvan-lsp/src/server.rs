@@ -11,7 +11,9 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
-use crate::features::{completion, diagnostics, goto_definition, hover, references};
+use crate::features::{
+    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename, symbols,
+};
 use crate::workspace::{crate_root, Crate};
 
 pub struct Backend {
@@ -151,6 +153,13 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                workspace_symbol_provider: Some(OneOf::Left(true)),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
                     // `:` is kept so clients auto-trigger after `::` (each
                     // colon fires individually; `context_at` gates results).
@@ -259,6 +268,97 @@ impl LanguageServer for Backend {
             params.context.include_declaration,
         );
         Ok(Some(locations))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let uri = params.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(rename::prepare_rename(
+            &document,
+            &krate,
+            file.as_deref(),
+            params.position,
+        ))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let position = params.text_document_position;
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(rename::rename(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
+            &params.new_name,
+        ))
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(Some(DocumentSymbolResponse::Nested(
+            symbols::document_symbols(&document, &krate, file.as_deref()),
+        )))
+    }
+
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        // Search every crate that has an open document.
+        let uris: Vec<Url> = self
+            .documents
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect();
+        let mut seen_roots = Vec::new();
+        let mut results = Vec::new();
+        for uri in uris {
+            let root = uri.to_file_path().ok().as_deref().and_then(crate_root);
+            if let Some(root) = &root {
+                if seen_roots.contains(root) {
+                    continue;
+                }
+                seen_roots.push(root.clone());
+            }
+            let krate = self.crate_for(&uri);
+            results.extend(symbols::workspace_symbols(&krate, &params.query));
+        }
+        Ok(Some(results))
+    }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = params.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(Some(inlay_hints::inlay_hints(
+            &document,
+            &krate,
+            file.as_deref(),
+            params.range,
+        )))
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {

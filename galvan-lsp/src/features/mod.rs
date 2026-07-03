@@ -6,9 +6,48 @@ pub mod completion;
 pub mod diagnostics;
 pub mod goto_definition;
 pub mod hover;
+pub mod inlay_hints;
 pub mod references;
+pub mod rename;
+pub mod symbols;
+
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use galvan_ast::Span;
+use galvan_files::Source;
+use tower_lsp::lsp_types::{Location, Url};
+
+use crate::position::LineIndex;
+
+/// Converts byte ranges in crate sources to LSP [`Location`]s, building at
+/// most one [`LineIndex`] per source file however many results point into it.
+#[derive(Default)]
+pub(crate) struct Locations {
+    indexes: HashMap<PathBuf, LineIndex>,
+}
+
+impl Locations {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The location of `start..end` in `source`, or `None` for sources
+    /// without an on-disk path (builtins, untitled buffers).
+    pub fn location(&mut self, source: &Source, start: usize, end: usize) -> Option<Location> {
+        let path = source.origin()?;
+        let uri = Url::from_file_path(path).ok()?;
+        let text = source.content();
+        let index = self
+            .indexes
+            .entry(path.to_path_buf())
+            .or_insert_with(|| LineIndex::new(text));
+        Some(Location {
+            uri,
+            range: index.byte_range(text, start, end),
+        })
+    }
+}
 
 /// Extract a leading `///` doc comment immediately preceding `span`, if any.
 ///

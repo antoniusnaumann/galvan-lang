@@ -61,8 +61,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   `Clone` (galvan-ast). With memoization this now costs one extra parse per
   document version — low priority; fix by deriving `Clone` in galvan-ast and
   merging the per-file `SegmentedAsts` in `analyze()`.
-- [ ] **13. `LineIndex` rebuilt per result location** in references. Fix: build one
-  index per distinct source file.
+- [x] **13. `LineIndex` rebuilt per result location** — fixed: shared
+  `features::Locations` converter builds one index per distinct source file
+  (used by references, goto, rename, workspace symbols).
 
 ## Spec alignment
 
@@ -87,16 +88,28 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 
 ## Features
 
-- [ ] **18. Rename + prepareRename** — new `features/rename.rs` on top of
-  `SymbolIndex::references` + definition span; skip builtins/synthetic spans.
-- [ ] **19. documentSymbol / workspaceSymbol** — new `features/symbols.rs` from
-  `index.definitions()`: types with field/variant/method children, free functions.
+- [x] **18. Rename + prepareRename** — done: `features/rename.rs`; renames the
+  definition token plus every recorded reference across the crate, validates the
+  new name is an identifier, refuses builtins/synthetic definitions. Tests:
+  `prepare_rename_returns_range_and_placeholder`, `rename_*`.
+  Not covered yet: conflict detection (renaming to an existing name succeeds
+  silently) and casing rules (type idents are uppercase by convention).
+- [x] **19. documentSymbol / workspaceSymbol** — done: `features/symbols.rs`;
+  nested outline (types with field/case/method children, free functions),
+  case-insensitive substring workspace search across all open crates. Tests:
+  `document_symbols_*`, `workspace_symbols_filter_by_query`.
+  Limitation: no symbols for a file that fails to parse (index-only; an AST/
+  tree-sitter fallback could be added).
 - [x] **21. Shadowed locals appear twice in completion** — fixed: deduped by name
   in `value_completion`, latest declaration before the cursor wins.
   Test: `completion_dedupes_shadowed_locals`.
-- [ ] **20. signatureHelp** — needs call-site argument-index detection; not started.
-- [ ] **22. Inlay type hints** for `let` bindings — `Definition::ty()` has the data;
-  not started.
+- [x] **22. Inlay type hints** — done: `features/inlay_hints.rs`; `: Type` after
+  every local binding without an explicit annotation (detected textually: next
+  non-whitespace char after the name is `:`). Tests: `inlay_hints_*`.
+- [ ] **20. signatureHelp** — needs call-site argument-index detection (find the
+  enclosing call's function definition via the index, count commas back to the
+  active parameter); the signature data is all in `Definition::decl_span`.
+  Not started.
 - [ ] **23. semanticTokens / code actions / formatting** — future work, largest
   items; not started.
 
