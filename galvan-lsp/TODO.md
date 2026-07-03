@@ -36,10 +36,15 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 
 ## Features
 
-- [ ] **20. signatureHelp** — needs call-site argument-index detection (find the
-  enclosing call's function definition via the index, count commas back to the
-  active parameter); the signature data is all in `Definition::decl_span`.
-  Not started.
+- [x] **20. signatureHelp** — implemented in `features/signature_help.rs`.
+  Call sites are found by a forward text scan (string-/comment-/interpolation-
+  aware bracket tracking in `call_at`), so help works while the argument list
+  is still unclosed and the file does not parse; candidates come from the
+  segmented ASTs of every file that parses. Covers free functions (all
+  overloads), methods (receiver-filtered through the analysis when available),
+  struct/tuple constructors and enum-case constructors. Labelled arguments
+  select the parameter by name (constructor arguments may be reordered).
+  Tests: `signature_help_*` in `tests/features.rs` (12 cases).
 - [ ] **23. semanticTokens / code actions / formatting** — future work, largest
   items; not started.
 

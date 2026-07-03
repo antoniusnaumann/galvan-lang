@@ -5,11 +5,13 @@ use std::path::{Path, PathBuf};
 use dashmap::DashMap;
 use galvan_lsp::document::Document;
 use galvan_lsp::features::{
-    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename, symbols,
+    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename,
+    signature_help, symbols,
 };
 use galvan_lsp::workspace::Crate;
 use tower_lsp::lsp_types::{
-    CompletionItemKind, DiagnosticSeverity, HoverContents, MarkupContent, Position, Url,
+    CompletionItemKind, DiagnosticSeverity, HoverContents, MarkupContent, ParameterLabel,
+    Position, SignatureHelp, Url,
 };
 
 const SOURCE: &str = "\
@@ -938,6 +940,227 @@ fn clean_program_has_no_semantic_diagnostics() {
         "expected no diagnostics, got: {:?}",
         diags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
+}
+
+// ----------------------------------------------------------------------
+// Signature help
+// ----------------------------------------------------------------------
+
+/// LSP position just past the `nth` occurrence of `needle`.
+fn position_after(text: &str, needle: &str, nth: usize) -> Position {
+    let byte = byte_of(text, needle, nth) + needle.len();
+    Document::new(text).line_index.position(text, byte)
+}
+
+fn help_at(source: &str, position: Position) -> Option<SignatureHelp> {
+    let doc = Document::new(source);
+    let krate = single_file_crate(source);
+    signature_help::signature_help(&doc, &krate, Some(&main_path()), position)
+}
+
+fn active_label(help: &SignatureHelp) -> &str {
+    &help.signatures[help.active_signature.unwrap_or(0) as usize].label
+}
+
+#[test]
+fn signature_help_for_free_function_call() {
+    // Inside `greet(name)` in the body of `greet`.
+    let help = help_at(SOURCE, position_after(SOURCE, "greet(", 1)).expect("expected help");
+    assert_eq!(active_label(&help), "fn greet(name: String)");
+    assert_eq!(help.active_parameter, Some(0));
+}
+
+#[test]
+fn signature_help_shows_receiver_but_does_not_count_it() {
+    // Inside `dog.walk(5)`: `self: Dog` is shown in the label, but argument 0
+    // is `distance`.
+    let help = help_at(SOURCE, position_after(SOURCE, "dog.walk(", 0)).expect("expected help");
+    let label = active_label(&help);
+    assert_eq!(label, "fn walk(self: Dog, distance: Int)");
+
+    let signature = &help.signatures[0];
+    let params = signature.parameters.as_ref().unwrap();
+    assert_eq!(params.len(), 1, "receiver must not be a parameter");
+    let expected_start = label.find("distance: Int").unwrap() as u32;
+    let expected_end = expected_start + "distance: Int".len() as u32;
+    assert_eq!(
+        params[0].label,
+        ParameterLabel::LabelOffsets([expected_start, expected_end])
+    );
+    assert_eq!(help.active_parameter, Some(0));
+}
+
+#[test]
+fn signature_help_advances_on_commas_and_renders_return_type() {
+    let source = "\
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fn main_fn() {
+    let x = add(1, 2)
+}
+";
+    let help = help_at(source, position_after(source, "add(1, ", 0)).expect("expected help");
+    assert_eq!(active_label(&help), "fn add(a: Int, b: Int) -> Int");
+    assert_eq!(help.active_parameter, Some(1));
+}
+
+#[test]
+fn signature_help_filters_methods_by_receiver_type() {
+    let source = "\
+type Dog {
+    name: String
+}
+
+type Cat {
+    name: String
+}
+
+fn walk(self: Dog, distance: Int) {
+}
+
+fn walk(self: Cat, distance: Int) {
+}
+
+fn main_fn() {
+    let dog = Dog(name: \"Rex\")
+    dog.walk(5)
+}
+";
+    let help = help_at(source, position_after(source, "dog.walk(", 0)).expect("expected help");
+    assert_eq!(help.signatures.len(), 1, "only Dog's walk expected");
+    assert_eq!(active_label(&help), "fn walk(self: Dog, distance: Int)");
+}
+
+#[test]
+fn signature_help_for_struct_constructor() {
+    let help = help_at(SOURCE, position_after(SOURCE, "Dog(", 0)).expect("expected help");
+    assert_eq!(active_label(&help), "Dog(name: String)");
+    assert_eq!(help.active_parameter, Some(0));
+}
+
+#[test]
+fn signature_help_matches_labelled_constructor_arguments_by_name() {
+    let source = "\
+type Point {
+    x: Int,
+    y: Int,
+}
+
+fn main_fn() {
+    let p = Point(y: 2, x: 1)
+}
+";
+    // The cursor is on the *first* argument positionally, but it is labelled
+    // `y:`, which is the *second* field.
+    let help = help_at(source, position_after(source, "Point(y: 2", 0)).expect("expected help");
+    assert_eq!(help.active_parameter, Some(1));
+}
+
+#[test]
+fn signature_help_for_enum_case_constructor() {
+    let source = "\
+type Shade {
+    Rgb(r: Int, g: Int, b: Int),
+    Gray,
+}
+
+fn main_fn() {
+    let color = Shade::Rgb(r: 1, g: 2, b: 3)
+}
+";
+    let help =
+        help_at(source, position_after(source, "Shade::Rgb(r: 1, ", 0)).expect("expected help");
+    assert_eq!(active_label(&help), "Shade::Rgb(r: Int, g: Int, b: Int)");
+    assert_eq!(help.active_parameter, Some(1));
+}
+
+#[test]
+fn signature_help_survives_parse_error_when_siblings_parse() {
+    // The current file has a dangling `helper(` and does not parse; the
+    // declaration lives in a sibling file.
+    let broken = "fn main_fn() {\n    helper(\n}\n";
+    let other_path = PathBuf::from("/galvan_lsp_test/src/other.galvan");
+    let krate = Crate::in_memory([
+        (main_path(), broken.to_string()),
+        (
+            other_path,
+            "fn helper(a: Int, b: Int) {\n}\n".to_string(),
+        ),
+    ]);
+    let doc = Document::new(broken);
+    let help = signature_help::signature_help(
+        &doc,
+        &krate,
+        Some(&main_path()),
+        position_after(broken, "helper(", 0),
+    )
+    .expect("expected help from the sibling file");
+    assert_eq!(active_label(&help), "fn helper(a: Int, b: Int)");
+    assert_eq!(help.active_parameter, Some(0));
+}
+
+#[test]
+fn signature_help_ignores_commas_in_nested_literals_and_strings() {
+    let source = "\
+fn plot(points: [Int], label: String) {
+}
+
+fn main_fn() {
+    plot([1, 2], \"a, b\")
+}
+";
+    // Inside the array literal: still argument 0.
+    let help = help_at(source, position_after(source, "plot([1, ", 0)).expect("expected help");
+    assert_eq!(help.active_parameter, Some(0), "comma inside `[]`");
+
+    // Inside the string literal (after its comma): argument 1.
+    let help = help_at(source, position_after(source, "\"a, ", 0)).expect("expected help");
+    assert_eq!(help.active_parameter, Some(1), "comma inside a string");
+}
+
+#[test]
+fn signature_help_beyond_last_parameter_highlights_nothing() {
+    let source = "\
+fn greet(name: String) {
+}
+
+fn main_fn() {
+    greet(\"a\", \"b\")
+}
+";
+    let help = help_at(source, position_after(source, "greet(\"a\", ", 0)).expect("expected help");
+    assert_eq!(help.active_parameter, None);
+}
+
+#[test]
+fn signature_help_selects_matching_overload() {
+    let source = "\
+fn area(width w: Int, height h: Int) -> Int {
+    w * h
+}
+
+fn area(radius r: Int) -> Int {
+    r * r
+}
+
+fn main_fn() {
+    let x = area(radius: 2)
+}
+";
+    let help = help_at(source, position_after(source, "area(radius: 2", 0)).expect("expected help");
+    assert_eq!(help.signatures.len(), 2, "both overloads offered");
+    // The labelled argument `radius:` selects the single-parameter overload.
+    assert_eq!(active_label(&help), "fn area(radius r: Int) -> Int");
+    assert_eq!(help.active_parameter, Some(0));
+}
+
+#[test]
+fn no_signature_help_outside_a_call() {
+    assert!(help_at(SOURCE, position_of(SOURCE, "type Dog", 0)).is_none());
+    // Behind the closed call `greet(name)` there is no open argument list.
+    assert!(help_at(SOURCE, position_after(SOURCE, "greet(name)", 0)).is_none());
 }
 
 /// Exercise the real on-disk loader: a crate laid out as `<tmp>/src/*.galvan`,

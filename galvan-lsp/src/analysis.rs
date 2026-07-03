@@ -92,6 +92,15 @@ pub fn render_definition(definition: &Definition) -> String {
     }
 }
 
+/// The named type members are looked up on, if the receiver has one.
+pub(crate) fn receiver_type_name(ty: &galvan_ast::TypeElement) -> Option<&str> {
+    match ty {
+        galvan_ast::TypeElement::Plain(basic) => Some(basic.ident.as_str()),
+        galvan_ast::TypeElement::Parametric(parametric) => Some(parametric.base_type.as_str()),
+        _ => None,
+    }
+}
+
 // ----------------------------------------------------------------------
 // Name-based fallback (used when the crate fails to typecheck)
 // ----------------------------------------------------------------------

@@ -9,6 +9,7 @@ pub mod hover;
 pub mod inlay_hints;
 pub mod references;
 pub mod rename;
+pub mod signature_help;
 pub mod symbols;
 
 use std::collections::HashMap;
@@ -87,4 +88,10 @@ pub fn doc_comment(text: &str, span: Span) -> Option<String> {
 pub fn span_text(text: &str, span: Span) -> &str {
     let (start, end) = span.range;
     text.get(start..end).unwrap_or("").trim()
+}
+
+/// Whether `byte` can occur in an identifier (`ident` and `type_ident` are
+/// both ASCII in the grammar).
+pub(crate) fn is_ident_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }

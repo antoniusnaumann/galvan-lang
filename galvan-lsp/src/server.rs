@@ -12,7 +12,8 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
 use crate::features::{
-    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename, symbols,
+    completion, diagnostics, goto_definition, hover, inlay_hints, references, rename,
+    signature_help, symbols,
 };
 use crate::workspace::{crate_root, Crate};
 
@@ -160,6 +161,11 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 inlay_hint_provider: Some(OneOf::Left(true)),
+                signature_help_provider: Some(SignatureHelpOptions {
+                    trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+                    retrigger_characters: Some(vec![",".to_string()]),
+                    work_done_progress_options: Default::default(),
+                }),
                 completion_provider: Some(CompletionOptions {
                     // `:` is kept so clients auto-trigger after `::` (each
                     // colon fires individually; `context_at` gates results).
@@ -268,6 +274,22 @@ impl LanguageServer for Backend {
             params.context.include_declaration,
         );
         Ok(Some(locations))
+    }
+
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(signature_help::signature_help(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
+        ))
     }
 
     async fn prepare_rename(

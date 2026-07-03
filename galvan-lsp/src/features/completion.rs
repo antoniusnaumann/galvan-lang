@@ -27,12 +27,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use galvan_ast::{TypeDecl, TypeElement};
+use galvan_ast::TypeDecl;
 use galvan_hir::{query, DefinitionKind, SymbolIndex};
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Position};
 
-use crate::analysis::render_definition;
+use crate::analysis::{receiver_type_name, render_definition};
 use crate::document::Document;
+use crate::features::is_ident_byte;
 use crate::workspace::{Analysis, Crate};
 
 // The keyword groups mirror the grammar (tree-sitter-galvan/grammar/keywords.js
@@ -192,10 +193,6 @@ fn context_at(text: &str, offset: usize) -> Context {
     }
 
     Context::Value { word_start: ident_start }
-}
-
-fn is_ident_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 /// Whether the `:` at byte `colon` annotates a name with its type (binding
@@ -413,15 +410,6 @@ fn insert_placeholder(text: &str, offset: usize, placeholder: char) -> Option<St
     let mut probe = text.to_string();
     probe.insert(offset, placeholder);
     Some(probe)
-}
-
-/// The named type members are looked up on, if the receiver has one.
-fn receiver_type_name(ty: &TypeElement) -> Option<&str> {
-    match ty {
-        TypeElement::Plain(basic) => Some(basic.ident.as_str()),
-        TypeElement::Parametric(parametric) => Some(parametric.base_type.as_str()),
-        _ => None,
-    }
 }
 
 /// Completion after `qualifier::` — the cases of the enum named `qualifier`.
