@@ -561,7 +561,7 @@ impl RustInterop {
             ))));
         }
 
-        Some(LiftedType::new(TypeElement::infer()))
+        None
     }
 
     fn function_pointer_type_from_json(

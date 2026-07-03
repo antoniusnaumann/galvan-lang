@@ -94,6 +94,10 @@ commands remain subcommands.
   - Support qualified external Rust type paths in Galvan type syntax; rustdoc
     metadata preserves module paths, but imported Rust types currently become
     unqualified only through `use`
+  - Key rustdoc field, constructor, and enum variant conversion metadata by
+    qualified Rust type path once Galvan has qualified type syntax, so same-named
+    imported Rust types from different modules can carry distinct conversion
+    metadata
   - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
     typechecker support for imported inherent associated functions
   - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,

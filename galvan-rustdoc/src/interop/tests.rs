@@ -137,6 +137,14 @@ fn malformed_array() -> Value {
     })
 }
 
+fn unknown_type_shape() -> Value {
+    json!({
+        "opaque_future_rustdoc_shape": {
+            "name": "Ticket"
+        }
+    })
+}
+
 fn raw_pointer(ty: Value, mutable: bool) -> Value {
     json!({
         "raw_pointer": {
@@ -967,6 +975,9 @@ fn rustdoc_does_not_lift_partial_type_shapes() {
         .type_from_json("demo", &resolved("Vec", vec![malformed_array()]))
         .is_none());
     assert!(interop
+        .type_from_json("demo", &unknown_type_shape())
+        .is_none());
+    assert!(interop
         .type_from_json(
             "demo",
             &json!({
@@ -1245,9 +1256,23 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
                 ],
                 primitive("u64")
             ),
-            "3": public_constant(
+            "3": public_function(
+                "unknown_input",
+                vec![json!(["ticket", unknown_type_shape()])],
+                primitive("bool")
+            ),
+            "4": public_function(
+                "unknown_output",
+                vec![],
+                unknown_type_shape()
+            ),
+            "5": public_constant(
                 "DEFAULT_OUTPUT",
                 qualified_path("Output", generic("V"))
+            ),
+            "6": public_constant(
+                "UNKNOWN_OUTPUT",
+                unknown_type_shape()
             )
         }
     });
@@ -1264,7 +1289,16 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
         .function(Some("demo"), None, &ident("count_items"), &[])
         .is_none());
     assert!(interop
+        .function(Some("demo"), None, &ident("unknown_input"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("unknown_output"), &[])
+        .is_none());
+    assert!(interop
         .constant(Some("demo"), &ident("DEFAULT_OUTPUT"))
+        .is_none());
+    assert!(interop
+        .constant(Some("demo"), &ident("UNKNOWN_OUTPUT"))
         .is_none());
 }
 
