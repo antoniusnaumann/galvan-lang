@@ -254,8 +254,12 @@ fn completion_includes_declarations_and_keywords() {
     let names: Vec<&str> = labels.iter().map(|(l, _)| l.as_str()).collect();
     assert!(names.contains(&"greet"));
     assert!(names.contains(&"Dog"));
-    assert!(names.contains(&"fn"));
-    assert!(names.contains(&"type"));
+    // Statement keywords are offered at statement start...
+    assert!(names.contains(&"let"));
+    assert!(names.contains(&"return"));
+    // ...but declaration keywords only make sense at the top level.
+    assert!(!names.contains(&"fn"));
+    assert!(!names.contains(&"type"));
 }
 
 #[test]
@@ -314,6 +318,168 @@ fn completion_after_dot_offers_fields_and_methods() {
         !labels.iter().any(|(l, _)| l == "greet"),
         "labels were: {labels:?}"
     );
+}
+
+const ENUM_SOURCE: &str = "\
+type Color {
+    Transparent
+    Gray(U8)
+    Rgb(r: U8, g: U8, b: U8)
+}
+
+fn describe(color: Color) {
+    println(color)
+}
+
+fn main_fn() {
+    let color = Color::Transparent
+    describe(color)
+}
+";
+
+#[test]
+fn completion_after_enum_path_offers_only_variants() {
+    // Complete on the `Transparent` in `Color::Transparent`.
+    let position = position_of(ENUM_SOURCE, "Transparent", 1);
+    let labels = completion_labels(ENUM_SOURCE, position);
+
+    for variant in ["Transparent", "Gray", "Rgb"] {
+        assert!(
+            labels
+                .iter()
+                .any(|(l, k)| l == variant && *k == Some(CompletionItemKind::ENUM_MEMBER)),
+            "missing variant {variant}, labels were: {labels:?}"
+        );
+    }
+    // No functions, types or keywords after `::`.
+    assert_eq!(labels.len(), 3, "labels were: {labels:?}");
+}
+
+#[test]
+fn completion_directly_after_dangling_enum_path() {
+    // Add an incomplete `Color::` and complete right behind it.
+    let mut source = ENUM_SOURCE.to_string();
+    let insert_at = byte_of(ENUM_SOURCE, "    describe(color)", 0);
+    source.insert_str(insert_at, "    let other = Color::\n");
+    let offset = insert_at + "    let other = Color::".len();
+    let doc = Document::new(source.as_str());
+    let position = doc.line_index.position(&source, offset);
+
+    let labels = completion_labels(&source, position);
+    assert!(
+        labels
+            .iter()
+            .any(|(l, k)| l == "Gray" && *k == Some(CompletionItemKind::ENUM_MEMBER)),
+        "labels were: {labels:?}"
+    );
+    assert!(
+        !labels.iter().any(|(l, _)| l == "describe"),
+        "labels were: {labels:?}"
+    );
+}
+
+#[test]
+fn completion_after_unknown_path_qualifier_offers_nothing() {
+    // `color::` (a value, not an enum) resolves to no variants — better
+    // nothing than unrelated names.
+    let source = ENUM_SOURCE.replace("describe(color)", "describe(color::x)");
+    let position = position_of(&source, "x)", 0);
+    let labels = completion_labels(&source, position);
+    assert!(labels.is_empty(), "labels were: {labels:?}");
+}
+
+#[test]
+fn completion_in_type_position_offers_only_types() {
+    // Complete on the `String` in the parameter `name: String`.
+    let position = position_of(SOURCE, "String", 0);
+    let labels = completion_labels(SOURCE, position);
+
+    assert!(
+        labels
+            .iter()
+            .any(|(l, k)| l == "Dog" && *k == Some(CompletionItemKind::STRUCT)),
+        "labels were: {labels:?}"
+    );
+    // Builtin types are offered too.
+    assert!(
+        labels.iter().any(|(l, _)| l == "Int"),
+        "labels were: {labels:?}"
+    );
+    // No functions or keywords where a type is expected.
+    assert!(
+        !labels.iter().any(|(l, _)| l == "greet" || l == "fn" || l == "let"),
+        "labels were: {labels:?}"
+    );
+}
+
+#[test]
+fn completion_in_field_type_position_offers_only_types() {
+    // Complete on the `String` in the field `name: String` of `type Dog`.
+    let position = position_of(SOURCE, "String", 1);
+    let labels = completion_labels(SOURCE, position);
+
+    assert!(
+        labels.iter().any(|(l, _)| l == "Dog"),
+        "labels were: {labels:?}"
+    );
+    assert!(
+        !labels.iter().any(|(l, _)| l == "greet" || l == "pet"),
+        "labels were: {labels:?}"
+    );
+}
+
+#[test]
+fn completion_after_constructor_arg_label_offers_values_not_types_only() {
+    // The `:` in `Dog(name: "Rex")` labels an argument, so an expression is
+    // expected: functions are offered again.
+    let position = position_of(SOURCE, "\"Rex\"", 0);
+    let labels = completion_labels(SOURCE, position);
+    assert!(
+        labels
+            .iter()
+            .any(|(l, k)| l == "greet" && *k == Some(CompletionItemKind::FUNCTION)),
+        "labels were: {labels:?}"
+    );
+}
+
+#[test]
+fn completion_offers_nothing_for_new_names() {
+    // Right on the fresh binding name in `let dog = ...`.
+    let position = position_of(SOURCE, "dog", 0);
+    let labels = completion_labels(SOURCE, position);
+    assert!(labels.is_empty(), "labels were: {labels:?}");
+}
+
+#[test]
+fn completion_at_toplevel_offers_declaration_keywords_only() {
+    // On the `type` keyword of `type Dog`, at the top level of the file.
+    let position = position_of(SOURCE, "type Dog", 0);
+    let labels = completion_labels(SOURCE, position);
+
+    let names: Vec<&str> = labels.iter().map(|(l, _)| l.as_str()).collect();
+    assert!(names.contains(&"fn"));
+    assert!(names.contains(&"type"));
+    assert!(!names.contains(&"greet"), "labels were: {labels:?}");
+    assert!(!names.contains(&"let"), "labels were: {labels:?}");
+}
+
+#[test]
+fn completion_ranks_locals_before_types_and_keywords() {
+    let position = position_of(SOURCE, "dog.walk", 0);
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let items = completion::completion(&doc, &krate, Some(&main_path()), position);
+
+    let sort_key = |label: &str| {
+        items
+            .iter()
+            .find(|item| item.label == label)
+            .and_then(|item| item.sort_text.clone())
+            .unwrap_or_else(|| panic!("no completion for {label}"))
+    };
+    assert!(sort_key("dog") < sort_key("greet"), "local before function");
+    assert!(sort_key("greet") < sort_key("Dog"), "function before type");
+    assert!(sort_key("Dog") < sort_key("let"), "type before keyword");
 }
 
 // ----------------------------------------------------------------------
