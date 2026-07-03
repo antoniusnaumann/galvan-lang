@@ -9,7 +9,7 @@ pub mod mapping;
 pub mod query;
 pub mod typecheck;
 
-pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, TranspilerError};
+pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, Fix, TranspilerError};
 pub use hir::*;
 pub use index::{Definition, DefinitionId, DefinitionKind, Reference, SymbolIndex};
 pub use typecheck::{typecheck, Typechecked};
