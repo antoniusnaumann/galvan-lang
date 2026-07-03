@@ -22,18 +22,22 @@
 //!   scope at the cursor (from the typechecker's symbol index), top-level
 //!   functions and types from every file of the crate, and the keywords
 //!   valid at the position. Items are ranked locals first, then functions,
-//!   types and keywords.
+//!   types and keywords. Keywords come with *familiarity aliases*: typing a
+//!   well-known keyword from another language (`func`, `switch`, …) matches
+//!   an item that shows and inserts the Galvan equivalent.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use galvan_ast::TypeDecl;
 use galvan_hir::{query, DefinitionKind, SymbolIndex};
-use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Position};
+use tower_lsp::lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionItemLabelDetails, Position,
+};
 
 use crate::analysis::{enum_type_names, receiver_type_name, render_definition};
 use crate::document::Document;
-use crate::features::is_ident_byte;
+use crate::features::{foreign_syntax, is_ident_byte};
 use crate::workspace::{Analysis, Crate};
 
 // The keyword groups mirror the grammar (tree-sitter-galvan/grammar/keywords.js
@@ -65,6 +69,7 @@ const SORT_LOCAL: char = '0';
 const SORT_FUNCTION: char = '1';
 const SORT_TYPE: char = '2';
 const SORT_KEYWORD: char = '3';
+const SORT_FOREIGN_ALIAS: char = '4';
 
 pub fn completion(
     current: &Document,
@@ -337,10 +342,35 @@ fn item(
 }
 
 fn keyword_items(keywords: impl IntoIterator<Item = &'static str>) -> Vec<CompletionItem> {
-    keywords
-        .into_iter()
+    let keywords: Vec<&str> = keywords.into_iter().collect();
+    let mut items: Vec<CompletionItem> = keywords
+        .iter()
         .map(|keyword| item(keyword.to_string(), CompletionItemKind::KEYWORD, None, SORT_KEYWORD))
-        .collect()
+        .collect();
+
+    // Familiarity aliases: typing a keyword from another language (`func`,
+    // `switch`, …) surfaces the Galvan equivalent. The alias only filters —
+    // what is shown and inserted is the Galvan keyword. Ranked after the
+    // real keywords so aliases never displace them in an unfiltered list.
+    for (foreign, galvan) in foreign_syntax::aliases() {
+        // Multi-word replacements (`else if`) key on their leading keyword.
+        let leading = galvan.split(' ').next().unwrap_or(galvan);
+        if !keywords.contains(&leading) {
+            continue;
+        }
+        items.push(CompletionItem {
+            label: galvan.to_string(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            filter_text: Some(foreign.to_string()),
+            label_details: Some(CompletionItemLabelDetails {
+                detail: None,
+                description: Some(format!("Galvan for `{foreign}`")),
+            }),
+            sort_text: Some(format!("{SORT_FOREIGN_ALIAS}_{galvan}")),
+            ..Default::default()
+        });
+    }
+    items
 }
 
 /// Completion of the members (fields and methods) of the receiver before the

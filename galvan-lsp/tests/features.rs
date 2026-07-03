@@ -277,6 +277,53 @@ fn completion_includes_declarations_and_keywords() {
 }
 
 #[test]
+fn completion_aliases_foreign_keywords_in_statement_position() {
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    let position = position_of(SOURCE, "dog.walk", 0);
+    let items = completion::completion(&doc, &krate, Some(&main_path()), position);
+
+    // Typing `switch` surfaces `match`: the alias filters, the label inserts.
+    let alias = items
+        .iter()
+        .find(|item| item.filter_text.as_deref() == Some("switch"))
+        .expect("alias for `switch` offered");
+    assert_eq!(alias.label, "match");
+    assert_eq!(alias.kind, Some(CompletionItemKind::KEYWORD));
+
+    let var_alias = items
+        .iter()
+        .find(|item| item.filter_text.as_deref() == Some("var"))
+        .expect("alias for `var` offered");
+    assert_eq!(var_alias.label, "mut");
+
+    // `fn` is a top-level keyword; its aliases make no sense mid-body.
+    assert!(
+        !items
+            .iter()
+            .any(|item| item.filter_text.as_deref() == Some("func")),
+        "no `func` alias inside a body"
+    );
+}
+
+#[test]
+fn completion_aliases_foreign_keywords_at_top_level() {
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    // On the `fn` of a top-level declaration: only declarations can follow.
+    let position = position_of(SOURCE, "fn main_fn", 0);
+    let items = completion::completion(&doc, &krate, Some(&main_path()), position);
+
+    for (foreign, galvan) in [("func", "fn"), ("class", "type"), ("import", "use")] {
+        let alias = items
+            .iter()
+            .find(|item| item.filter_text.as_deref() == Some(foreign))
+            .unwrap_or_else(|| panic!("alias for `{foreign}` offered"));
+        assert_eq!(alias.label, galvan);
+    }
+}
+
+#[test]
 fn completion_offers_locals_in_scope() {
     let position = position_of(SOURCE, "dog.walk", 0);
     let labels = completion_labels(SOURCE, position);

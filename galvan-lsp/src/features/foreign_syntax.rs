@@ -44,6 +44,11 @@ const FOREIGN_KEYWORDS: &[(&str, &str)] = &[
     ("False", "false"),
 ];
 
+/// All `(foreign keyword, Galvan equivalent)` pairs, for completion aliases.
+pub fn aliases() -> impl Iterator<Item = (&'static str, &'static str)> {
+    FOREIGN_KEYWORDS.iter().copied()
+}
+
 /// The Galvan equivalent of `word`, when `word` is a well-known keyword of
 /// another language.
 pub fn galvan_equivalent(word: &str) -> Option<&'static str> {
