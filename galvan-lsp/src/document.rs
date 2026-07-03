@@ -19,10 +19,17 @@ pub struct Document {
     pub tree: Option<ParseTree>,
     /// Position <-> byte-offset index for the current text.
     pub line_index: LineIndex,
+    /// The client-reported document version this text belongs to (`0` when
+    /// unknown). Used to key crate-analysis caching.
+    pub version: i32,
 }
 
 impl Document {
     pub fn new(text: impl Into<String>) -> Self {
+        Self::with_version(text, 0)
+    }
+
+    pub fn with_version(text: impl Into<String>, version: i32) -> Self {
         let text: String = text.into();
         let line_index = LineIndex::new(&text);
         let tree = parse_source(&Source::from_string(text.clone())).ok();
@@ -31,6 +38,7 @@ impl Document {
             text,
             tree,
             line_index,
+            version,
         }
     }
 

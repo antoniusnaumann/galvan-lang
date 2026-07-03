@@ -33,7 +33,7 @@ use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Position};
 
 use crate::analysis::render_definition;
 use crate::document::Document;
-use crate::workspace::Crate;
+use crate::workspace::{Analysis, Crate};
 
 /// Keywords that introduce a top-level declaration.
 const TOPLEVEL_KEYWORDS: &[&str] = &["fn", "type", "test", "main", "pub", "use", "async", "build", "cmd"];
@@ -340,24 +340,32 @@ fn member_completion(
     file: &Path,
     dot: usize,
 ) -> Vec<CompletionItem> {
-    // If the document does not parse as-is (e.g. the cursor sits directly
-    // behind the dot), analyze a probe with a placeholder member name.
-    let analysis = krate.analyze().or_else(|| {
-        let mut probe = current.text.clone();
-        probe.insert(dot + 1, 'x');
-        krate.with_file_text(file, &probe).analyze()
-    });
-    let Some(analysis) = analysis else {
-        return Vec::new();
-    };
+    if let Some(items) = krate
+        .analyze()
+        .and_then(|analysis| member_items(analysis, file, dot))
+    {
+        return items;
+    }
 
+    // The receiver was not found: the document does not parse as-is (e.g.
+    // the cursor sits directly behind the dot) and is absent from the
+    // analysis. Retry on a probe with a placeholder member name.
+    let Some(probe) = insert_placeholder(&current.text, dot + 1, 'x') else {
+        return Vec::new();
+    };
+    let probe_crate = krate.with_file_text(file, &probe);
+    probe_crate
+        .analyze()
+        .and_then(|analysis| member_items(analysis, file, dot))
+        .unwrap_or_default()
+}
+
+/// The members of the receiver expression ending at `dot`, or `None` when the
+/// receiver cannot be found (as opposed to a receiver without members).
+fn member_items(analysis: &Analysis, file: &Path, dot: usize) -> Option<Vec<CompletionItem>> {
     // The receiver is the innermost expression ending at the dot.
-    let Some(receiver) = query::expression_at(&analysis.module, file, dot.saturating_sub(1)) else {
-        return Vec::new();
-    };
-    let Some(receiver_type) = receiver_type_name(&receiver.ty) else {
-        return Vec::new();
-    };
+    let receiver = query::expression_at(&analysis.module, file, dot.saturating_sub(1))?;
+    let receiver_type = receiver_type_name(&receiver.ty)?;
 
     let mut items = Vec::new();
     for (_, definition) in analysis.index.definitions() {
@@ -378,7 +386,19 @@ fn member_completion(
             SORT_LOCAL,
         ));
     }
-    items
+    Some(items)
+}
+
+/// `text` with `placeholder` inserted at byte `offset`, or `None` if the
+/// offset is not a character boundary (never the case for offsets derived
+/// from ASCII tokens like `.` and `::`, but guarded to keep probes panic-free).
+fn insert_placeholder(text: &str, offset: usize, placeholder: char) -> Option<String> {
+    if !text.is_char_boundary(offset) {
+        return None;
+    }
+    let mut probe = text.to_string();
+    probe.insert(offset, placeholder);
+    Some(probe)
 }
 
 /// The named type members are looked up on, if the receiver has one.
@@ -408,12 +428,13 @@ fn path_completion(
     // A dangling `Enum::` can keep the file from parsing (dropping it from
     // the analysis); retry with a placeholder case name (enum cases are
     // type identifiers, hence uppercase) at the cursor.
-    let mut probe = current.text.clone();
-    probe.insert(ident_start, 'X');
-    if let Some(analysis) = krate.with_file_text(file, &probe).analyze() {
-        let items = variant_items(&analysis.index, qualifier);
-        if !items.is_empty() {
-            return items;
+    if let Some(probe) = insert_placeholder(&current.text, ident_start, 'X') {
+        let probe_crate = krate.with_file_text(file, &probe);
+        if let Some(analysis) = probe_crate.analyze() {
+            let items = variant_items(&analysis.index, qualifier);
+            if !items.is_empty() {
+                return items;
+            }
         }
     }
     variant_items_from_asts(krate, qualifier)

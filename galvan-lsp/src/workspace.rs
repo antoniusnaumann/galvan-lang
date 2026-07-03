@@ -11,7 +11,7 @@
 
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use dashmap::DashMap;
 use galvan_ast::{Ast, SegmentedAsts};
@@ -41,6 +41,9 @@ pub struct CrateFile {
 /// All files belonging to one Galvan crate, parsed and ready for resolution.
 pub struct Crate {
     files: Vec<CrateFile>,
+    /// Memoized result of [`Crate::analyze`]: the crate is typechecked at
+    /// most once per `Crate` instance, however many features ask for it.
+    analysis: OnceLock<Option<Analysis>>,
 }
 
 impl Crate {
@@ -52,9 +55,12 @@ impl Crate {
     pub fn load(uri: &Url, open: &DashMap<Url, Document>) -> Self {
         let mut sources: Vec<Source> = Vec::new();
 
-        if let Ok(path) = uri.to_file_path() {
-            let root = crate_root(&path);
-            sources = read_sources(&root, vec![]).unwrap_or_default();
+        if let Some(root) = uri.to_file_path().ok().as_deref().and_then(crate_root) {
+            sources = read_sources(&root, vec![]).unwrap_or_else(|error| {
+                // Stderr goes to the client's server log.
+                eprintln!("galvan-lsp: failed to read crate sources at {root:?}: {error}");
+                Vec::new()
+            });
 
             for entry in open.iter() {
                 let Ok(buffer_path) = entry.key().to_file_path() else {
@@ -65,7 +71,8 @@ impl Crate {
                 }
             }
         } else if let Some(doc) = open.get(uri) {
-            // Non-file documents (e.g. untitled buffers) resolve in isolation.
+            // Non-file documents (e.g. untitled buffers) and files without a
+            // resolvable crate root are analyzed in isolation.
             sources.push(Source::from_string(doc.text().to_string()));
         }
 
@@ -94,7 +101,19 @@ impl Crate {
                 CrateFile { source, segmented }
             })
             .collect();
-        Self { files }
+        Self {
+            files,
+            analysis: OnceLock::new(),
+        }
+    }
+
+    /// Whether `file` parses (and therefore participates in [`Crate::analyze`]).
+    /// Files that fail to parse are silently absent from the analysis, so
+    /// features must fall back to probes or name-based resolution for them.
+    pub fn file_parses(&self, file: &Path) -> bool {
+        self.files
+            .iter()
+            .any(|f| f.source.origin() == Some(file) && f.segmented.is_some())
     }
 
     /// Build a combined lookup context spanning every file in the crate.
@@ -143,7 +162,16 @@ impl Crate {
     ///
     /// Returns `None` when the crate does not parse (analysis then degrades
     /// gracefully; syntax errors are reported separately).
-    pub fn analyze(&self) -> Option<Analysis> {
+    ///
+    /// The result is computed once per `Crate` instance and memoized, so
+    /// features may call this freely.
+    pub fn analyze(&self) -> Option<&Analysis> {
+        self.analysis
+            .get_or_init(|| self.run_analysis())
+            .as_ref()
+    }
+
+    fn run_analysis(&self) -> Option<Analysis> {
         let asts: Vec<Ast> = self
             .files
             .iter()
@@ -153,7 +181,17 @@ impl Crate {
 
         // Guard against the typechecker panicking on pathological input: a
         // language server must keep running whatever the buffer contains.
-        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| typecheck(segmented))).ok()?;
+        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| typecheck(segmented)))
+            .map_err(|panic| {
+                let message = panic
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .map(str::to_owned)
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "<non-string panic>".to_string());
+                eprintln!("galvan-lsp: typechecker panicked: {message}");
+            })
+            .ok()?;
         Some(Analysis {
             module: checked.module,
             diagnostics: checked.errors.diagnostics().to_vec(),
@@ -165,16 +203,15 @@ impl Crate {
 /// The source root of the crate containing `file`: the nearest ancestor
 /// directory named `src` (matching the compiler, which transpiles `src`). If
 /// the file is not inside a `src` directory, its own directory is used so that
-/// loose files still resolve against their siblings.
-fn crate_root(file: &Path) -> PathBuf {
+/// loose files still resolve against their siblings. `None` when the file has
+/// no parent directory (never a directory of the server's own choosing).
+pub fn crate_root(file: &Path) -> Option<PathBuf> {
     for ancestor in file.ancestors() {
         if ancestor.file_name() == Some("src".as_ref()) {
-            return ancestor.to_path_buf();
+            return Some(ancestor.to_path_buf());
         }
     }
-    file.parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
+    file.parent().map(Path::to_path_buf)
 }
 
 /// Construct a file-backed [`Source`] from in-memory contents, mirroring how

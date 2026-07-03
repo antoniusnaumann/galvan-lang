@@ -26,13 +26,19 @@ pub fn hover(
     let offset = current.line_index.offset(&current.text, position)?;
 
     if let (Some(analysis), Some(file)) = (krate.analyze(), file) {
-        if let Some(hover) = index_hover(current, &analysis, file, offset) {
+        if let Some(hover) = index_hover(current, analysis, file, offset) {
             return Some(hover);
         }
-        if let Some(hover) = expression_hover(current, &analysis, file, offset) {
+        if let Some(hover) = expression_hover(current, analysis, file, offset) {
             return Some(hover);
         }
-        return None;
+        // When the current file parses, the analysis is authoritative and
+        // there is genuinely nothing at this position. When it does not
+        // parse, it is silently absent from the analysis — fall through to
+        // the name-based fallback so hover keeps working while typing.
+        if krate.file_parses(file) {
+            return None;
+        }
     }
 
     fallback_hover(current, krate, offset)

@@ -31,9 +31,9 @@ fn semantic_diagnostics(document: &Document, krate: &Crate, file: &Path) -> Vec<
     };
     analysis
         .diagnostics
-        .into_iter()
+        .iter()
         .filter_map(|diagnostic| {
-            let span = diagnostic.span?;
+            let span = diagnostic.span.as_ref()?;
             if Path::new(&span.file) != file {
                 return None;
             }

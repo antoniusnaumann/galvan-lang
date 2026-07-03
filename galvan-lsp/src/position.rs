@@ -39,7 +39,9 @@ impl LineIndex {
             .copied()
             .unwrap_or(text.len());
 
-        let line = &text[line_start..line_end];
+        // Clamp to before the trailing newline so an out-of-range character
+        // stays on its own line instead of mapping to the next line's start.
+        let line = text[line_start..line_end].trim_end_matches(['\n', '\r']);
         let mut utf16 = 0u32;
         for (byte_idx, ch) in line.char_indices() {
             if utf16 >= pos.character {
@@ -47,7 +49,7 @@ impl LineIndex {
             }
             utf16 += ch.len_utf16() as u32;
         }
-        Some(line_end)
+        Some(line_start + line.len())
     }
 
     /// Convert a byte offset into an LSP position.

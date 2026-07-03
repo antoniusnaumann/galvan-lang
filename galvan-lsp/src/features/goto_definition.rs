@@ -25,9 +25,15 @@ pub fn goto_definition(
     let offset = current.line_index.offset(&current.text, position)?;
 
     if let (Some(analysis), Some(file)) = (krate.analyze(), file) {
-        let (_, definition) = analysis::symbol_at(&analysis.index, file, offset)?;
-        let site = analysis::definition_site(definition)?;
-        return location(site.source, site.target.range.0, site.target.range.1);
+        if let Some((_, definition)) = analysis::symbol_at(&analysis.index, file, offset) {
+            let site = analysis::definition_site(definition)?;
+            return location(site.source, site.target.range.0, site.target.range.1);
+        }
+        // A file with a parse error is silently absent from the analysis;
+        // only give up here when the file actually participated in it.
+        if krate.file_parses(file) {
+            return None;
+        }
     }
 
     // Fallback: resolve the token under the cursor by name.

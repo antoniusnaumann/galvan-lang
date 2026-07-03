@@ -129,6 +129,16 @@ fn hover_on_method_call_shows_signature() {
     assert!(text.contains("fn walk(self: Dog"), "hover was: {text}");
 }
 
+#[test]
+fn hover_at_end_of_identifier_still_resolves() {
+    // Cursor directly BEHIND `dog` in `dog.walk(5)` — the position right
+    // after typing the name.
+    let mut position = position_of(SOURCE, "dog.walk", 0);
+    position.character += "dog".len() as u32;
+    let text = hover_text(SOURCE, position).expect("expected hover at end of identifier");
+    assert!(text.contains("let dog: Dog"), "hover was: {text}");
+}
+
 // ----------------------------------------------------------------------
 // Go to definition
 // ----------------------------------------------------------------------
@@ -540,6 +550,66 @@ fn references_resolve_across_files_in_the_same_crate() {
     assert_eq!(locations.len(), 2, "locations: {locations:?}");
     assert!(uris.contains(&&Url::from_file_path(&a_path).unwrap()));
     assert!(uris.contains(&&Url::from_file_path(&b_path).unwrap()));
+}
+
+#[test]
+fn member_completion_survives_parse_error_when_siblings_parse() {
+    // The current file has a dangling `dog.` (a parse error), but the crate
+    // still analyzes because b.galvan parses — the probe must run anyway.
+    let a_path = PathBuf::from("/galvan_lsp_test/src/a.galvan");
+    let a_src = "fn f(dog: Dog) {\n    dog.\n}\n";
+    let b_src = "type Dog {\n    name: String\n}\n\nfn walk(self: Dog) {\n}\n";
+    let krate = Crate::in_memory([
+        (a_path.clone(), a_src.to_string()),
+        (
+            PathBuf::from("/galvan_lsp_test/src/b.galvan"),
+            b_src.to_string(),
+        ),
+    ]);
+    let doc = Document::new(a_src);
+    let offset = byte_of(a_src, "dog.", 0) + "dog.".len();
+    let position = doc.line_index.position(a_src, offset);
+
+    let labels: Vec<(String, Option<CompletionItemKind>)> =
+        completion::completion(&doc, &krate, Some(&a_path), position)
+            .into_iter()
+            .map(|item| (item.label, item.kind))
+            .collect();
+    assert!(
+        labels
+            .iter()
+            .any(|(l, k)| l == "walk" && *k == Some(CompletionItemKind::METHOD)),
+        "labels were: {labels:?}"
+    );
+}
+
+#[test]
+fn hover_and_goto_fall_back_when_current_file_has_parse_error() {
+    // a.galvan contains a parse error further down; greet lives in b.galvan.
+    let a_path = PathBuf::from("/galvan_lsp_test/src/a.galvan");
+    let a_src = "fn caller() {\n    greet()\n}\n\nfn broken() {\n    let x = \n}\n";
+    let b_src = "fn greet() {\n}\n";
+    let krate = Crate::in_memory([
+        (a_path.clone(), a_src.to_string()),
+        (
+            PathBuf::from("/galvan_lsp_test/src/b.galvan"),
+            b_src.to_string(),
+        ),
+    ]);
+    let doc = Document::new(a_src);
+    let position = position_of(a_src, "greet", 0);
+
+    let hover = hover::hover(&doc, &krate, Some(&a_path), position);
+    assert!(
+        hover.is_some(),
+        "expected name-based hover despite the parse error"
+    );
+
+    let location = goto_definition::goto_definition(&doc, &krate, Some(&a_path), position);
+    assert!(
+        location.is_some(),
+        "expected name-based goto despite the parse error"
+    );
 }
 
 #[test]

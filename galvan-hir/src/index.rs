@@ -128,26 +128,29 @@ impl SymbolIndex {
     }
 
     /// The definition whose defining identifier token covers `offset` in
-    /// `file`.
+    /// `file`. Ties (nested spans) resolve to the smallest covering token.
     pub fn definition_at(&self, file: &Path, offset: usize) -> Option<DefinitionId> {
         self.definitions
             .iter()
-            .position(|def| {
+            .enumerate()
+            .filter(|(_, def)| {
                 def.is_positional()
-                    && contains(def.span, offset)
+                    && contains_token(def.span, offset)
                     && def.source.origin() == Some(file)
             })
-            .map(DefinitionId)
+            .min_by_key(|(_, def)| width(def.span))
+            .map(|(i, _)| DefinitionId(i))
     }
 
     /// The definition referenced by the identifier token covering `offset`
-    /// in `file`.
+    /// in `file`. Ties (nested spans) resolve to the smallest covering token.
     pub fn reference_at(&self, file: &Path, offset: usize) -> Option<DefinitionId> {
         self.references
             .iter()
-            .find(|reference| {
-                contains(reference.span, offset) && reference.source.origin() == Some(file)
+            .filter(|reference| {
+                contains_token(reference.span, offset) && reference.source.origin() == Some(file)
             })
+            .min_by_key(|reference| width(reference.span))
             .map(|reference| reference.definition)
     }
 
@@ -193,6 +196,17 @@ impl SymbolIndex {
 
 fn contains(span: Span, offset: usize) -> bool {
     span.range.0 <= offset && offset < span.range.1
+}
+
+/// Point-query containment for identifier tokens: end-inclusive, so that the
+/// cursor sitting directly *behind* a name (the position right after typing
+/// it) still hits the token.
+fn contains_token(span: Span, offset: usize) -> bool {
+    span.range.0 <= offset && offset <= span.range.1
+}
+
+fn width(span: Span) -> usize {
+    span.range.1.saturating_sub(span.range.0)
 }
 
 /// Records definitions, references and scopes while the typechecker lowers a
