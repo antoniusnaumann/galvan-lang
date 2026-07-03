@@ -250,6 +250,17 @@ fn public_field(name: &str, ty: Value) -> Value {
     })
 }
 
+fn private_field(name: &str, ty: Value) -> Value {
+    json!({
+        "id": name,
+        "name": name,
+        "visibility": "private",
+        "inner": {
+            "struct_field": ty
+        }
+    })
+}
+
 fn public_function(name: &str, inputs: Vec<Value>, output: Value) -> Value {
     json!({
         "id": name,
@@ -1371,6 +1382,53 @@ fn rustdoc_keeps_types_with_incomplete_field_metadata_opaque() {
     interop.add_crate("demo", &json);
 
     for name in ["PartialTicket", "PartialTuple", "PartialEvent"] {
+        let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
+            panic!("expected {name} to import as an opaque type");
+        };
+        assert_eq!(opaque.ident, TypeIdent::new(name));
+    }
+}
+
+#[test]
+fn rustdoc_keeps_types_with_non_public_fields_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("Ticket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1", "2"]
+                }
+            })),
+            "1": public_field("title", primitive("str")),
+            "2": private_field("secret", primitive("str")),
+            "3": public_item("UserId", json!({
+                "struct": {
+                    "kind": "tuple",
+                    "fields": ["4"]
+                }
+            })),
+            "4": private_field("0", primitive("u64")),
+            "5": public_item("TicketEvent", json!({
+                "enum": {
+                    "variants": ["6"]
+                }
+            })),
+            "6": public_item("Moved", json!({
+                "variant": {
+                    "kind": {
+                        "struct": {
+                            "fields": ["7"]
+                        }
+                    }
+                }
+            })),
+            "7": private_field("queue", primitive("str"))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    for name in ["Ticket", "UserId", "TicketEvent"] {
         let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
             panic!("expected {name} to import as an opaque type");
         };

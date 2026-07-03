@@ -160,8 +160,10 @@ Constants with unliftable types are skipped. Data declarations whose public
 surface contains raw pointers or unliftable type shapes are kept opaque instead
 of exposing those fields or variants. Data declarations are also kept opaque
 when rustdoc metadata is incomplete enough that fields or variants would
-otherwise be silently dropped. If an API requires raw pointers or unsafe
-contracts, write that boundary in Rust and expose a safe wrapper to Galvan.
+otherwise be silently dropped, or when rustdoc exposes non-public fields that
+Galvan cannot represent as part of a constructible public data declaration. If
+an API requires raw pointers or unsafe contracts, write that boundary in Rust
+and expose a safe wrapper to Galvan.
 
 The following safe Rust shapes are also not lifted yet:
 

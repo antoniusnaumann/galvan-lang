@@ -89,6 +89,9 @@ impl RustInterop {
             let mut lifted_members = Vec::new();
             for id in field_ids {
                 let field = index.get(id)?;
+                if !is_public(field) {
+                    return None;
+                }
                 lifted_members.push(self.tuple_member_from_json(crate_name, field)?);
             }
             let constructor_arg_conversions = lifted_members
@@ -116,9 +119,10 @@ impl RustInterop {
         let mut lifted_members = Vec::new();
         for id in field_ids {
             let field = index.get(id)?;
-            if is_public(field) {
-                lifted_members.push(self.struct_member_from_json(crate_name, field)?);
+            if !is_public(field) {
+                return None;
             }
+            lifted_members.push(self.struct_member_from_json(crate_name, field)?);
         }
         let mut members = Vec::new();
         let mut field_conversions = Vec::new();
@@ -275,6 +279,9 @@ impl RustInterop {
             let mut fields = Vec::new();
             for id in item_ids(tuple, "fields") {
                 let field = index.get(id)?;
+                if !is_public(field) {
+                    return None;
+                }
                 fields.push(self.enum_variant_field_from_json(crate_name, None, field)?);
             }
             return Some(fields);
@@ -284,6 +291,9 @@ impl RustInterop {
             let mut fields = Vec::new();
             for id in item_ids(struct_variant, "fields") {
                 let field = index.get(id)?;
+                if !is_public(field) {
+                    return None;
+                }
                 let name = field.get("name").and_then(Value::as_str).map(Ident::new);
                 fields.push(self.enum_variant_field_from_json(crate_name, name, field)?);
             }
