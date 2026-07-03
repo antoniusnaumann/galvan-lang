@@ -4,7 +4,7 @@ use galvan_ast::{
 
 use crate::model::RustReturnConversion;
 
-use super::lift::{generic_type, plain_type};
+use super::lift_type::{generic_type, plain_type};
 use super::RustInterop;
 
 impl RustInterop {
