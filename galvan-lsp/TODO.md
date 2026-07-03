@@ -4,6 +4,10 @@ Working document for the fixes from the 2026-07-03 language-server audit.
 Kept up to date as work progresses so anyone can pick up where it stops.
 Item numbers refer to the audit report (plan `squishy-humming-flamingo`).
 
+**Status: every actionable audit item is done.** What remains below is either
+deliberately deferred with rationale (`[-]`, mostly blocked on compiler or
+grammar work) or listed under "Possible next steps".
+
 Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not done (rationale given)
 
 ## Correctness
@@ -74,6 +78,25 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   into a full token-reflowing formatter (line-length limits, spacing rules)
   would be a compiler-side project (`galvan-format`), not an LSP patch.
 
+## Possible next steps
+
+- **Quickfix code actions** — needs the typechecker to attach structured fix
+  data (or at least stable error codes) to `Diagnostic`; the action plumbing
+  in `features/code_actions.rs` is ready for it.
+- **signatureHelp for builtin statement functions** (`println`, `assert`, …) —
+  they are special-cased in the typechecker and have no `FnDecl` to render;
+  needs signature metadata in `galvan_hir::builtins`.
+- **semanticTokens/range + delta** — the full-document handler is fast enough
+  for now (analysis is memoized per document version); add
+  `semantic_tokens_range`/`_full_delta` if large files ever appear.
+- **analyze() re-parses sources** instead of reusing `CrateFile::segmented` —
+  blocked on `Clone` for `SegmentedAsts`/`ToplevelItem` in `galvan-ast`; cost
+  is bounded by the per-version memoization, so low priority.
+- **A real `galvan-format`** — token-level formatting (spacing, line-length
+  reflow) belongs in a compiler-side crate the LSP would call into; the LSP's
+  whitespace formatter is deliberately limited to indentation and trailing
+  whitespace.
+
 ## How to verify
 
 - `cargo test -p galvan-lsp` — e2e tests in `tests/features.rs` drive the same pure
@@ -81,7 +104,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 - `cargo build -p galvan-lsp && python3 galvan-lsp/tests/stdio_smoke.py` — drives the
   real binary over stdio through a full session (initialize, didOpen/diagnostics,
   `::`-completion, hover at end of identifier, documentSymbol, rename, inlayHint,
-  didClose clearing diagnostics). Run it after touching `server.rs`; the Rust e2e
-  tests do not cover the protocol layer.
+  signatureHelp, semanticTokens, codeAction, formatting, didClose clearing
+  diagnostics). Run it after touching `server.rs`; the Rust e2e tests do not
+  cover the protocol layer.
 - For manual testing: `cargo run -p galvan-lsp` speaks LSP over stdio; point an
   editor at it with `example-projects/*/src/main.galvan`.

@@ -78,7 +78,8 @@ def main():
     for cap in [
         "hoverProvider", "definitionProvider", "referencesProvider",
         "completionProvider", "renameProvider", "documentSymbolProvider",
-        "workspaceSymbolProvider", "inlayHintProvider",
+        "workspaceSymbolProvider", "inlayHintProvider", "signatureHelpProvider",
+        "semanticTokensProvider", "codeActionProvider", "documentFormattingProvider",
     ]:
         assert cap in caps, f"missing capability {cap}: {caps.keys()}"
     send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
@@ -131,6 +132,39 @@ def main():
     hint_labels = [h["label"] for h in reply["result"]]
     assert ": Color" in hint_labels, hint_labels
 
+    # -- signatureHelp inside `greet(name)` --------------------------------
+    reply = request(7, "textDocument/signatureHelp", {
+        "textDocument": {"uri": uri},
+        "position": {"line": 1, "character": len("    greet(")},
+    })
+    signatures = reply["result"]["signatures"]
+    assert signatures[0]["label"] == "fn greet(name: String)", signatures
+    assert reply["result"]["activeParameter"] == 0, reply["result"]
+
+    # -- semanticTokens/full ------------------------------------------------
+    reply = request(8, "textDocument/semanticTokens/full", {
+        "textDocument": {"uri": uri},
+    })
+    data = reply["result"]["data"]
+    assert data and len(data) % 5 == 0, f"malformed token data: {data[:10]}"
+
+    # -- codeAction on the unannotated `let color` --------------------------
+    reply = request(9, "textDocument/codeAction", {
+        "textDocument": {"uri": uri},
+        "range": {"start": {"line": line, "character": 0},
+                  "end": {"line": line, "character": 0}},
+        "context": {"diagnostics": []},
+    })
+    titles = [action["title"] for action in reply["result"]]
+    assert "Add type annotation `: Color` to `color`" in titles, titles
+
+    # -- formatting (the source is already well formatted) -------------------
+    reply = request(10, "textDocument/formatting", {
+        "textDocument": {"uri": uri},
+        "options": {"tabSize": 4, "insertSpaces": True},
+    })
+    assert reply["result"] == [], reply["result"]
+
     # -- didClose clears diagnostics ---------------------------------------
     send({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {
         "textDocument": {"uri": uri},
@@ -138,7 +172,7 @@ def main():
     note = expect_notification("textDocument/publishDiagnostics")
     assert note["params"]["diagnostics"] == [], note["params"]
 
-    request(7, "shutdown", None)
+    request(11, "shutdown", None)
     send({"jsonrpc": "2.0", "method": "exit"})
     w.close()
     try:
@@ -148,7 +182,8 @@ def main():
         proc.kill()
         print("NOTE: server did not exit within 5s of the exit notification")
     print("SMOKE TEST PASSED: capabilities, diagnostics, ::-completion, "
-          "end-of-ident hover, symbols, rename, inlay hints, close-clears-diags")
+          "end-of-ident hover, symbols, rename, inlay hints, signature help, "
+          "semantic tokens, code actions, formatting, close-clears-diags")
 
 
 if __name__ == "__main__":
