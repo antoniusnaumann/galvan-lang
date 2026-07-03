@@ -346,7 +346,7 @@ fn resolved_path_segments<'a>(name: &str, resolved: &'a Value) -> Option<Vec<&'a
     Some(segments)
 }
 
-fn resolved_path_segments_raw(resolved: &Value) -> Option<Vec<&str>> {
+pub(super) fn resolved_path_segments_raw(resolved: &Value) -> Option<Vec<&str>> {
     let path = resolved.get("path")?;
     match path {
         Value::Array(_) => Some(

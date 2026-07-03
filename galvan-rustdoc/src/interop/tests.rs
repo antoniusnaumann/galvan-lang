@@ -100,6 +100,22 @@ fn resolved_with_path(name: &str, path: &[&str], args: Vec<Value>) -> Value {
     })
 }
 
+fn resolved_with_string_path(path: &str, args: Vec<Value>) -> Value {
+    json!({
+        "resolved_path": {
+            "path": path,
+            "args": {
+                "angle_bracketed": {
+                    "args": args
+                        .into_iter()
+                        .map(|arg| json!({ "type": arg }))
+                        .collect::<Vec<_>>()
+                }
+            }
+        }
+    })
+}
+
 fn slice(ty: Value) -> Value {
     json!({ "slice": ty })
 }
@@ -598,6 +614,23 @@ fn rustdoc_preserves_qualified_paths_for_referenced_types() {
             .map(|ty| ty.rust_path.as_ref()),
         Some("::axum::response::Json")
     );
+
+    let string_path_ty = interop
+        .type_from_json(
+            "axum",
+            &resolved_with_string_path("axum::extract::State", vec![primitive("str")]),
+        )
+        .unwrap();
+    let TypeElement::Parametric(parametric) = string_path_ty else {
+        panic!("expected State<T>, got {string_path_ty:?}");
+    };
+    assert_eq!(parametric.base_type.as_str(), "State");
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["axum", "extract", "State"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::axum::extract::State")
+    );
 }
 
 #[test]
@@ -707,6 +740,7 @@ fn rustdoc_lifts_flexible_result_types() {
             vec![primitive("u64")],
         ),
         resolved_with_path("Result", &["anyhow", "Result"], vec![primitive("u64")]),
+        resolved_with_string_path("anyhow::Result", vec![primitive("u64")]),
     ] {
         let result = interop.type_from_json("demo", &ty).unwrap();
         let TypeElement::Result(result) = result else {

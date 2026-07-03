@@ -19,9 +19,9 @@ use super::lift_model::{
 };
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
-    resolved_type_args, resolved_type_args_strict, resolved_type_name, type_alias_type,
-    type_contains_unliftable_type, type_decl_contains_unliftable_type, type_generic_params,
-    type_inner_generic_params, type_is_owned,
+    resolved_path_segments_raw, resolved_type_args, resolved_type_args_strict, resolved_type_name,
+    type_alias_type, type_contains_unliftable_type, type_decl_contains_unliftable_type,
+    type_generic_params, type_inner_generic_params, type_is_owned,
 };
 use super::RustInterop;
 
@@ -759,10 +759,9 @@ fn function_pointer_input_type(input: &Value) -> &Value {
 }
 
 fn resolved_path_matches(resolved: &Value, expected: &[&str]) -> bool {
-    let Some(path) = resolved.get("path").and_then(Value::as_array) else {
+    let Some(actual) = resolved_path_segments_raw(resolved) else {
         return false;
     };
-    let actual = path.iter().filter_map(Value::as_str).collect::<Vec<_>>();
     actual.as_slice() == expected || actual.as_slice() == &expected[..expected.len() - 1]
 }
 
