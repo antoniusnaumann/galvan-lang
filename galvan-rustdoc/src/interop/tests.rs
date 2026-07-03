@@ -522,7 +522,13 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
                     "fields": []
                 }
             })),
-            "2": public_item_at_string_path("auth_error", "Error", "demo::auth::Error", json!({
+            "2": public_item_at_string_path("auth_error", "Error", "crate::auth::Error", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "3": public_item_at_string_path("internal_error", "Error", "$crate::internal::Error", json!({
                 "struct": {
                     "kind": "plain",
                     "fields": []
@@ -545,7 +551,8 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
         vec![
             "::demo::auth::Error",
             "::demo::db::Error",
-            "::demo::http::Error"
+            "::demo::http::Error",
+            "::demo::internal::Error"
         ]
     );
 
@@ -566,6 +573,12 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
             .type_by_qualified_path(&["demo", "auth", "Error"])
             .map(|ty| ty.rust_path.as_ref()),
         Some("::demo::auth::Error")
+    );
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["demo", "internal", "Error"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::demo::internal::Error")
     );
 }
 
@@ -656,6 +669,20 @@ fn rustdoc_preserves_qualified_paths_for_referenced_types() {
             .type_by_qualified_path(&["axum", "extract", "State"])
             .map(|ty| ty.rust_path.as_ref()),
         Some("::axum::extract::State")
+    );
+
+    let crate_path_ty = interop
+        .type_from_json(
+            "axum",
+            &resolved_with_string_path("crate::routing::Router", vec![]),
+        )
+        .unwrap();
+    assert_eq!(crate_path_ty, plain_type(TypeIdent::new("Router")));
+    assert_eq!(
+        interop
+            .type_by_qualified_path(&["axum", "routing", "Router"])
+            .map(|ty| ty.rust_path.as_ref()),
+        Some("::axum::routing::Router")
     );
 }
 
@@ -2218,8 +2245,8 @@ fn rustdoc_imports_trait_impl_methods() {
                 "visibility": "public",
                 "inner": {
                     "impl": {
-                        "for": resolved_with_path("Ticket", &["demo", "Ticket"], vec![]),
-                        "trait": resolved_with_path("DisplayName", &["demo", "DisplayName"], vec![]),
+                        "for": resolved_with_string_path("crate::Ticket", vec![]),
+                        "trait": resolved_with_string_path("$crate::DisplayName", vec![]),
                         "items": ["3"]
                     }
                 }
@@ -2235,7 +2262,7 @@ fn rustdoc_imports_trait_impl_methods() {
                             "inputs": [
                                 ["self", {
                                     "borrowed_ref": {
-                                        "type": resolved_with_path("Ticket", &["demo", "Ticket"], vec![]),
+                                        "type": resolved_with_string_path("crate::Ticket", vec![]),
                                         "mutable": false
                                     }
                                 }]

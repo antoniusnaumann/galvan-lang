@@ -56,6 +56,8 @@ parametric type arguments. If the resolved type is not one of the known wrapper
 types below, `galvan-rustdoc` records the type as an imported dependency type.
 When rustdoc provides the resolved module path, that path is preserved in the
 Rust metadata so same-named Rust types from different modules remain distinct.
+Self-crate rustdoc prefixes such as `crate::` and `$crate::` are normalized to
+the imported crate name before Galvan stores Rust paths.
 
 Qualified external type paths are preserved in the rustdoc metadata, but Galvan
 type syntax does not yet expose qualified type paths all the way through the

@@ -3,11 +3,11 @@ use std::collections::HashSet;
 use serde_json::Value;
 
 use super::rustdoc_json::{
-    callable_rust_path, constant_inner, constant_type, function_is_unsafe, impl_constant_ids,
-    impl_constant_rust_path, impl_function_ids, impl_function_rust_path, is_public, item_ids,
-    item_inner, public_type_name, receiver_type_ident, return_is_borrowed,
+    constant_inner, constant_type, function_is_unsafe, impl_constant_ids, impl_function_ids,
+    is_public, item_ids, item_inner, public_type_name, receiver_type_ident, return_is_borrowed,
     signature_contains_unliftable_type, type_contains_unliftable_type,
 };
+use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_function_rust_path};
 use super::RustInterop;
 
 impl RustInterop {

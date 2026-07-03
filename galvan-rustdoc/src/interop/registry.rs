@@ -11,9 +11,8 @@ use crate::model::{
 
 use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
-use super::rustdoc_json::{
-    public_type_name, receiver_type_ident, resolved_type_rust_path, rust_path, type_generic_params,
-};
+use super::rustdoc_json::{public_type_name, receiver_type_ident, type_generic_params};
+use super::rustdoc_path::{resolved_type_rust_path, rust_path};
 use super::RustInterop;
 
 impl RustInterop {

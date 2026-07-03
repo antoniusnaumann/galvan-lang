@@ -6,6 +6,7 @@ mod lift_model;
 mod query;
 mod registry;
 mod rustdoc_json;
+mod rustdoc_path;
 mod state;
 mod uses;
 
