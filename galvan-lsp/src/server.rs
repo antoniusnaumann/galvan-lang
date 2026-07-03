@@ -12,8 +12,8 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
 use crate::features::{
-    code_actions, completion, diagnostics, goto_definition, hover, inlay_hints, references,
-    rename, semantic_tokens, signature_help, symbols,
+    code_actions, completion, diagnostics, formatting, goto_definition, hover, inlay_hints,
+    references, rename, semantic_tokens, signature_help, symbols,
 };
 use crate::workspace::{crate_root, Crate};
 
@@ -162,6 +162,7 @@ impl LanguageServer for Backend {
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
@@ -285,6 +286,13 @@ impl LanguageServer for Backend {
             params.context.include_declaration,
         );
         Ok(Some(locations))
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let Some(document) = self.documents.get(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        Ok(formatting::formatting(&document, &params.options))
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {

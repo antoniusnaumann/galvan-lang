@@ -62,8 +62,17 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   data yet, so there are no quickfixes — new actions should follow the
   pattern in that module. Tests: `code_action_*` /
   `inlay_hints_carry_the_annotation_as_text_edit` in `tests/features.rs`.
-- [ ] **23c. formatting** — not started; needs a real formatter, see notes at
-  the bottom.
+- [x] **23c. formatting** — implemented in `features/formatting.rs` as a
+  deliberately *scoped* whitespace formatter: it normalizes leading
+  indentation (one unit per open bracket, dedent on leading closers, one
+  extra unit for `.`/`?.` member-chain continuations) and strips trailing
+  whitespace, and it never reflows tokens across lines, so it cannot change
+  program meaning. Multi-line string content is protected via the parse
+  tree; files that do not parse are refused. Conformance is pinned by
+  `formatting_leaves_the_example_projects_unchanged` (zero edits on the
+  hand-formatted example projects) and an idempotence test. Extending it
+  into a full token-reflowing formatter (line-length limits, spacing rules)
+  would be a compiler-side project (`galvan-format`), not an LSP patch.
 
 ## How to verify
 

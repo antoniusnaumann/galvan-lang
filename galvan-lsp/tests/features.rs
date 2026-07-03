@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use dashmap::DashMap;
 use galvan_lsp::document::Document;
 use galvan_lsp::features::{
-    code_actions, completion, diagnostics, goto_definition, hover, inlay_hints, references,
-    rename, semantic_tokens, signature_help, symbols,
+    code_actions, completion, diagnostics, formatting, goto_definition, hover, inlay_hints,
+    references, rename, semantic_tokens, signature_help, symbols,
 };
 use galvan_lsp::workspace::Crate;
 use tower_lsp::lsp_types::{
@@ -971,6 +971,160 @@ fn code_action_not_offered_for_annotated_bindings() {
         },
     );
     assert!(actions.is_empty(), "actions were: {actions:?}");
+}
+
+// ----------------------------------------------------------------------
+// Formatting
+// ----------------------------------------------------------------------
+
+fn default_format_options() -> tower_lsp::lsp_types::FormattingOptions {
+    tower_lsp::lsp_types::FormattingOptions {
+        tab_size: 4,
+        insert_spaces: true,
+        ..Default::default()
+    }
+}
+
+/// Apply `edits` (non-overlapping, as produced by the formatter) to `source`.
+fn apply_edits(source: &str, edits: &[tower_lsp::lsp_types::TextEdit]) -> String {
+    let doc = Document::new(source);
+    let mut byte_edits: Vec<(usize, usize, &str)> = edits
+        .iter()
+        .map(|edit| {
+            (
+                doc.line_index.offset(source, edit.range.start).unwrap(),
+                doc.line_index.offset(source, edit.range.end).unwrap(),
+                edit.new_text.as_str(),
+            )
+        })
+        .collect();
+    byte_edits.sort_by_key(|(start, _, _)| *start);
+
+    let mut text = source.to_string();
+    for (start, end, new_text) in byte_edits.into_iter().rev() {
+        text.replace_range(start..end, new_text);
+    }
+    text
+}
+
+fn format_text(source: &str) -> Option<String> {
+    let doc = Document::new(source);
+    let edits = formatting::formatting(&doc, &default_format_options())?;
+    Some(apply_edits(source, &edits))
+}
+
+#[test]
+fn formatting_normalizes_indentation() {
+    let source = "fn main_fn() {\nlet x = 1\n        let y = 2\n}\n";
+    assert_eq!(
+        format_text(source).unwrap(),
+        "fn main_fn() {\n    let x = 1\n    let y = 2\n}\n"
+    );
+}
+
+#[test]
+fn formatting_indents_member_chains_one_extra_level() {
+    let source = "fn f() {\n    let x = foo()\n.bar()\n}\n";
+    assert_eq!(
+        format_text(source).unwrap(),
+        "fn f() {\n    let x = foo()\n        .bar()\n}\n"
+    );
+}
+
+#[test]
+fn formatting_dedents_lines_starting_with_closers() {
+    let source = "\
+fn f() {
+    let state = Api(
+        id: 1,
+        )
+}
+";
+    assert_eq!(
+        format_text(source).unwrap(),
+        "fn f() {\n    let state = Api(\n        id: 1,\n    )\n}\n"
+    );
+}
+
+#[test]
+fn formatting_removes_trailing_whitespace_and_blanks() {
+    let source = "fn f() {   \n    let x = 1  \n   \n}\n";
+    assert_eq!(
+        format_text(source).unwrap(),
+        "fn f() {\n    let x = 1\n\n}\n"
+    );
+}
+
+#[test]
+fn formatting_preserves_multiline_string_content() {
+    let source = "fn f() {\n    let s = #\"keep\n  weird   \nindent\"#\n}\n";
+    // The lines inside the raw string keep their exact whitespace.
+    assert_eq!(format_text(source).unwrap(), source);
+}
+
+#[test]
+fn formatting_refuses_files_that_do_not_parse() {
+    let source = "fn broken( {\n";
+    let doc = Document::new(source);
+    assert!(formatting::formatting(&doc, &default_format_options()).is_none());
+}
+
+#[test]
+fn formatting_makes_no_edits_on_well_formatted_source_and_is_idempotent() {
+    let doc = Document::new(SOURCE);
+    let edits = formatting::formatting(&doc, &default_format_options()).unwrap();
+    assert!(edits.is_empty(), "unexpected edits: {edits:?}");
+
+    // Idempotence on a source that does need work.
+    let messy = "fn main_fn() {\nlet x = foo()\n.bar()   \n}\n";
+    let once = format_text(messy).unwrap();
+    let twice = format_text(&once).unwrap();
+    assert_eq!(once, twice);
+}
+
+/// The example projects are hand-formatted; the formatter must agree with
+/// them (files the grammar cannot parse yet are skipped — the formatter
+/// refuses those by design).
+#[test]
+fn formatting_leaves_the_example_projects_unchanged() {
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../example-projects");
+    let mut checked = 0;
+    for project in std::fs::read_dir(&examples).unwrap() {
+        let src = project.unwrap().path().join("src");
+        let Ok(files) = std::fs::read_dir(&src) else {
+            continue;
+        };
+        for file in files {
+            let path = file.unwrap().path();
+            if path.extension().is_none_or(|ext| ext != "galvan") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let doc = Document::new(&source);
+            let Some(edits) = formatting::formatting(&doc, &default_format_options()) else {
+                continue; // Grammar gap (e.g. `async fn`): formatter refuses.
+            };
+            assert!(
+                edits.is_empty(),
+                "formatter wants to change {path:?}: {edits:?}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no example files were parseable");
+}
+
+#[test]
+fn formatting_uses_tabs_when_requested() {
+    let source = "fn f() {\n    let x = 1\n}\n";
+    let doc = Document::new(source);
+    let options = tower_lsp::lsp_types::FormattingOptions {
+        tab_size: 4,
+        insert_spaces: false,
+        ..Default::default()
+    };
+    let edits = formatting::formatting(&doc, &options).unwrap();
+    assert_eq!(apply_edits(source, &edits), "fn f() {\n\tlet x = 1\n}\n");
 }
 
 // ----------------------------------------------------------------------
