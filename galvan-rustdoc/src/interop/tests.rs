@@ -174,6 +174,15 @@ fn mut_borrowed(ty: Value) -> Value {
     })
 }
 
+fn rustdoc_mut_borrowed(ty: Value) -> Value {
+    json!({
+        "borrowed_ref": {
+            "type": ty,
+            "is_mutable": true
+        }
+    })
+}
+
 fn borrowed(ty: Value) -> Value {
     json!({
         "borrowed_ref": {
@@ -900,15 +909,17 @@ fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
 #[test]
 fn rustdoc_lifts_mutable_borrowed_parameters_to_mut() {
     let mut interop = RustInterop::empty();
-    let param = interop
-        .param_from_json(
-            "demo",
-            &json!(["ticket", mut_borrowed(resolved("Ticket", vec![]))]),
-        )
-        .unwrap();
+    for borrowed in [
+        mut_borrowed(resolved("Ticket", vec![])),
+        rustdoc_mut_borrowed(resolved("Ticket", vec![])),
+    ] {
+        let param = interop
+            .param_from_json("demo", &json!(["ticket", borrowed]))
+            .unwrap();
 
-    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Mut));
-    assert_eq!(param.param_type, plain_type(TypeIdent::new("Ticket")));
+        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Mut));
+        assert_eq!(param.param_type, plain_type(TypeIdent::new("Ticket")));
+    }
 }
 
 #[test]

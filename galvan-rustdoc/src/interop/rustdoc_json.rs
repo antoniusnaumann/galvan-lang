@@ -394,6 +394,7 @@ pub(super) fn type_is_owned(ty: &Value) -> bool {
 
 pub(super) fn borrowed_ref_is_mutable(borrowed: &Value) -> bool {
     borrowed.get("mutable").and_then(Value::as_bool) == Some(true)
+        || borrowed.get("is_mutable").and_then(Value::as_bool) == Some(true)
         || borrowed.get("mutability").and_then(Value::as_str) == Some("mut")
 }
 
