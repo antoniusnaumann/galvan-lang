@@ -16,6 +16,7 @@ galvan-into-ast = { path = "galvan-into-ast", version = "0.0.3" }
 galvan-parse = { path = "galvan-parse", version = "0.0.3" }
 galvan-rustdoc = { path = "galvan-rustdoc", version = "0.0.3" }
 galvan-lsp = { path = "galvan-lsp", version = "0.0.3" }
+galvan-format = { path = "galvan-format", version = "0.0.3" }
 
 thiserror = "1.0.61"
 itertools = "0.13.0"
@@ -57,5 +58,6 @@ members = [
   "galvan-test-macro",
   "galvan-test",
   "galvan-lsp",
+  "galvan-format",
   "tree-sitter-galvan",
 ]
