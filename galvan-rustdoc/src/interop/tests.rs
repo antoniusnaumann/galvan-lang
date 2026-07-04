@@ -1783,6 +1783,33 @@ fn rustdoc_does_not_import_incomplete_owned_wrapper_parameters() {
 }
 
 #[test]
+fn rustdoc_does_not_import_incomplete_owned_wrapper_returns() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "returns_box",
+                vec![],
+                resolved("Box", vec![])
+            ),
+            "1": public_function(
+                "returns_rc",
+                vec![],
+                resolved("Rc", vec![])
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("returns_box"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("returns_rc"), &[])
+        .is_none());
+}
+
+#[test]
 fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
     let json = json!({
         "index": {
@@ -1989,6 +2016,29 @@ fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
         interop.field_arg_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
         RustArgConversion::RcNew
     );
+}
+
+#[test]
+fn rustdoc_keeps_types_with_incomplete_owned_wrapper_fields_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("TicketEnvelope", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1", "2"]
+                }
+            })),
+            "1": public_field("ticket", resolved("Box", vec![])),
+            "2": public_field("latest", resolved("Rc", vec![]))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(envelope) = imported_type(&interop, "TicketEnvelope") else {
+        panic!("expected TicketEnvelope to import as an opaque type");
+    };
+    assert_eq!(envelope.ident, TypeIdent::new("TicketEnvelope"));
 }
 
 #[test]
