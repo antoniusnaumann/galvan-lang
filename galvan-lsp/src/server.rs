@@ -7,13 +7,15 @@ use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
 use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::request::{GotoTypeDefinitionParams, GotoTypeDefinitionResponse};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::document::Document;
 use crate::features::{
-    code_actions, completion, diagnostics, formatting, goto_definition, hover, inlay_hints,
-    references, rename, semantic_tokens, signature_help, symbols,
+    code_actions, completion, diagnostics, document_highlight, folding_range, formatting,
+    goto_definition, hover, inlay_hints, references, rename, selection_range, semantic_tokens,
+    signature_help, symbols, type_definition,
 };
 use crate::workspace::{crate_root, Crate};
 
@@ -153,7 +155,11 @@ impl LanguageServer for Backend {
                 )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                type_definition_provider: Some(TypeDefinitionProviderCapability::Simple(true)),
                 references_provider: Some(OneOf::Left(true)),
+                document_highlight_provider: Some(OneOf::Left(true)),
+                folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+                selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
                 rename_provider: Some(OneOf::Right(RenameOptions {
                     prepare_provider: Some(true),
                     work_done_progress_options: Default::default(),
@@ -163,6 +169,11 @@ impl LanguageServer for Backend {
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                document_range_formatting_provider: Some(OneOf::Left(true)),
+                document_on_type_formatting_provider: Some(DocumentOnTypeFormattingOptions {
+                    first_trigger_character: "}".to_string(),
+                    more_trigger_character: None,
+                }),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
@@ -293,6 +304,110 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         Ok(formatting::formatting(&document, &params.options))
+    }
+
+    async fn range_formatting(
+        &self,
+        params: DocumentRangeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let Some(document) = self.documents.get(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        Ok(formatting::range_formatting(
+            &document,
+            &params.options,
+            params.range,
+        ))
+    }
+
+    async fn on_type_formatting(
+        &self,
+        params: DocumentOnTypeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let position = params.text_document_position;
+        let Some(document) = self.documents.get(&position.text_document.uri) else {
+            return Ok(None);
+        };
+        Ok(formatting::on_type_formatting(
+            &document,
+            &params.options,
+            position.position,
+        ))
+    }
+
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(Some(document_highlight::document_highlight(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
+        )))
+    }
+
+    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
+        let Some(document) = self.documents.get(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        Ok(Some(folding_range::folding_ranges(&document)))
+    }
+
+    async fn selection_range(
+        &self,
+        params: SelectionRangeParams,
+    ) -> Result<Option<Vec<SelectionRange>>> {
+        let Some(document) = self.documents.get(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        // One result per requested position, in order (the protocol requires
+        // the arrays to correspond); positions that resolve to nothing get an
+        // empty range at the position itself.
+        Ok(Some(
+            params
+                .positions
+                .into_iter()
+                .map(|position| {
+                    selection_range::selection_range(&document, position).unwrap_or(
+                        SelectionRange {
+                            range: Range {
+                                start: position,
+                                end: position,
+                            },
+                            parent: None,
+                        },
+                    )
+                })
+                .collect(),
+        ))
+    }
+
+    async fn goto_type_definition(
+        &self,
+        params: GotoTypeDefinitionParams,
+    ) -> Result<Option<GotoTypeDefinitionResponse>> {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        let Some(document) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let krate = self.crate_for(&uri);
+        let file = uri.to_file_path().ok();
+        Ok(type_definition::type_definition(
+            &document,
+            &krate,
+            file.as_deref(),
+            position.position,
+        )
+        .map(GotoTypeDefinitionResponse::Scalar))
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {

@@ -1866,3 +1866,188 @@ fn load_reads_crate_files_from_disk_with_open_overrides() {
 
     std::fs::remove_dir_all(&root).ok();
 }
+
+// ----------------------------------------------------------------------
+// Document highlight
+// ----------------------------------------------------------------------
+
+#[test]
+fn document_highlight_marks_definition_write_and_uses_read() {
+    use tower_lsp::lsp_types::DocumentHighlightKind;
+    use galvan_lsp::features::document_highlight;
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    // On a *use* of `dog`; expect the binding plus both uses, in one file.
+    let position = position_of(SOURCE, "dog.walk", 0);
+    let highlights =
+        document_highlight::document_highlight(&doc, &krate, Some(&main_path()), position);
+
+    assert_eq!(highlights.len(), 3, "highlights: {highlights:?}");
+    let writes: Vec<_> = highlights
+        .iter()
+        .filter(|h| h.kind == Some(DocumentHighlightKind::WRITE))
+        .collect();
+    assert_eq!(writes.len(), 1, "exactly the binding is a write");
+    assert_eq!(writes[0].range.start, position_of(SOURCE, "dog = Dog(", 0));
+}
+
+// ----------------------------------------------------------------------
+// Folding ranges
+// ----------------------------------------------------------------------
+
+#[test]
+fn folding_ranges_cover_bodies_and_runs() {
+    use tower_lsp::lsp_types::FoldingRangeKind;
+    use galvan_lsp::features::folding_range;
+
+    let source = "\
+use foo::bar
+use baz::qux
+
+// one
+// two
+// three
+fn f() {
+    let xs = [
+        1,
+        2,
+    ]
+}
+";
+    let doc = Document::new(source);
+    let ranges = folding_range::folding_ranges(&doc);
+
+    // The two use lines fold as imports.
+    assert!(
+        ranges.iter().any(|r| r.kind == Some(FoldingRangeKind::Imports)
+            && (r.start_line, r.end_line) == (0, 1)),
+        "ranges: {ranges:?}"
+    );
+    // The comment block folds as a comment.
+    assert!(
+        ranges.iter().any(|r| r.kind == Some(FoldingRangeKind::Comment)
+            && (r.start_line, r.end_line) == (3, 5)),
+        "ranges: {ranges:?}"
+    );
+    // The function body folds from its `{` to the line before the `}`.
+    assert!(
+        ranges.iter().any(|r| r.kind == Some(FoldingRangeKind::Region)
+            && (r.start_line, r.end_line) == (6, 10)),
+        "ranges: {ranges:?}"
+    );
+    // The multi-line collection literal folds too.
+    assert!(
+        ranges.iter().any(|r| r.kind == Some(FoldingRangeKind::Region)
+            && (r.start_line, r.end_line) == (7, 9)),
+        "ranges: {ranges:?}"
+    );
+}
+
+// ----------------------------------------------------------------------
+// Selection ranges
+// ----------------------------------------------------------------------
+
+#[test]
+fn selection_range_expands_outward_to_the_whole_file() {
+    use galvan_lsp::features::selection_range;
+
+    let doc = Document::new(SOURCE);
+    // Inside `name` of `greet(self.name)`.
+    let position = position_of(SOURCE, "name)", 1);
+    let innermost =
+        selection_range::selection_range(&doc, position).expect("selection range resolved");
+
+    // Walk outward: every step must contain the previous one, and the
+    // outermost range is the whole file.
+    let mut ranges = vec![innermost.range];
+    let mut current = innermost.parent;
+    while let Some(next) = current {
+        ranges.push(next.range);
+        current = next.parent;
+    }
+    assert!(ranges.len() >= 4, "expected several steps, got: {ranges:?}");
+    for pair in ranges.windows(2) {
+        assert!(
+            pair[1].start <= pair[0].start && pair[0].end <= pair[1].end,
+            "each step contains the previous: {ranges:?}"
+        );
+    }
+    let outermost = ranges.last().unwrap();
+    assert_eq!(outermost.start, Position::new(0, 0));
+    // The innermost selects the identifier under the cursor.
+    assert_eq!(ranges[0].start, position_of(SOURCE, "name)", 1));
+}
+
+// ----------------------------------------------------------------------
+// Type definition
+// ----------------------------------------------------------------------
+
+#[test]
+fn type_definition_jumps_from_variable_to_its_type() {
+    use galvan_lsp::features::type_definition;
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    // On a use of `dog` (a `Dog`): jump to `type Dog`.
+    let position = position_of(SOURCE, "dog.walk", 0);
+    let location = type_definition::type_definition(&doc, &krate, Some(&main_path()), position)
+        .expect("type definition resolved");
+    assert_eq!(location.range.start, position_of(SOURCE, "Dog {", 0));
+}
+
+#[test]
+fn type_definition_jumps_from_parameter_to_its_type() {
+    use galvan_lsp::features::type_definition;
+
+    let doc = Document::new(SOURCE);
+    let krate = single_file_crate(SOURCE);
+    // On the use of `self` inside `pet` (`self: Dog`).
+    let position = position_of(SOURCE, "self.name", 0);
+    let location = type_definition::type_definition(&doc, &krate, Some(&main_path()), position)
+        .expect("type definition resolved");
+    assert_eq!(location.range.start, position_of(SOURCE, "Dog {", 0));
+}
+
+// ----------------------------------------------------------------------
+// Range & on-type formatting
+// ----------------------------------------------------------------------
+
+#[test]
+fn range_formatting_touches_only_the_requested_lines() {
+    use tower_lsp::lsp_types::Range;
+
+    // Two misindented lines; only the second is in the requested range.
+    let source = "fn f() {\n        let a = 1\n        let b = 2\n}\n";
+    let doc = Document::new(source);
+    let range = Range {
+        start: Position::new(2, 0),
+        end: Position::new(2, 0),
+    };
+    let edits = formatting::range_formatting(&doc, &default_format_options(), range)
+        .expect("file parses");
+
+    assert_eq!(edits.len(), 1, "edits: {edits:?}");
+    assert_eq!(edits[0].range.start.line, 2);
+    // A full format agrees but also fixes line 1.
+    let full = formatting::formatting(&doc, &default_format_options()).unwrap();
+    assert_eq!(full.len(), 2);
+    assert!(full.contains(&edits[0]));
+}
+
+#[test]
+fn on_type_formatting_dedents_a_closing_brace() {
+    // The `}` was just typed with too much indentation.
+    let source = "fn f() {\n    let a = 1\n        }\n";
+    let doc = Document::new(source);
+    let edits =
+        formatting::on_type_formatting(&doc, &default_format_options(), Position::new(2, 9))
+            .expect("file parses");
+
+    assert_eq!(edits.len(), 1, "edits: {edits:?}");
+    assert_eq!(edits[0].range.start, Position::new(2, 0));
+    assert_eq!(edits[0].range.end, Position::new(2, 8));
+    assert_eq!(edits[0].new_text, "");
+    // Other lines are untouched even though the whole file was analysed.
+    assert!(edits.iter().all(|e| e.range.start.line == 2));
+}

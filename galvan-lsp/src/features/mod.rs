@@ -5,6 +5,8 @@
 pub mod code_actions;
 pub mod completion;
 pub mod diagnostics;
+pub mod document_highlight;
+pub mod folding_range;
 pub mod foreign_syntax;
 pub mod formatting;
 pub mod goto_definition;
@@ -12,9 +14,11 @@ pub mod hover;
 pub mod inlay_hints;
 pub mod references;
 pub mod rename;
+pub mod selection_range;
 pub mod semantic_tokens;
 pub mod signature_help;
 pub mod symbols;
+pub mod type_definition;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

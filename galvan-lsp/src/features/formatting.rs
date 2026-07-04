@@ -19,11 +19,49 @@
 //!
 //! The indent unit follows the request options (`tab_size` spaces, or a tab).
 
-use tower_lsp::lsp_types::{FormattingOptions, TextEdit};
+use tower_lsp::lsp_types::{FormattingOptions, Position, Range, TextEdit};
 
 use crate::document::Document;
 use crate::features::is_ident_byte;
 use galvan_parse::Node;
+
+/// `textDocument/rangeFormatting`: the whole-document edits restricted to
+/// the requested lines. The bracket depth is always computed from the top
+/// of the file, so a range format never disagrees with a full format.
+pub fn range_formatting(
+    current: &Document,
+    options: &FormattingOptions,
+    range: Range,
+) -> Option<Vec<TextEdit>> {
+    let edits = formatting(current, options)?;
+    Some(
+        edits
+            .into_iter()
+            .filter(|edit| {
+                edit.range.start.line >= range.start.line
+                    && edit.range.start.line <= range.end.line
+            })
+            .collect(),
+    )
+}
+
+/// `textDocument/onTypeFormatting`, triggered by `}`: re-indents the line
+/// the closing bracket was typed on (the closer usually dedents it). Only
+/// the current line is touched; like the document formatter, this does
+/// nothing while the file has syntax errors.
+pub fn on_type_formatting(
+    current: &Document,
+    options: &FormattingOptions,
+    position: Position,
+) -> Option<Vec<TextEdit>> {
+    let edits = formatting(current, options)?;
+    Some(
+        edits
+            .into_iter()
+            .filter(|edit| edit.range.start.line == position.line)
+            .collect(),
+    )
+}
 
 pub fn formatting(current: &Document, options: &FormattingOptions) -> Option<Vec<TextEdit>> {
     let tree = current.tree.as_ref()?;

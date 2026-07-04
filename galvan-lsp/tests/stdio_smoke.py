@@ -80,6 +80,9 @@ def main():
         "completionProvider", "renameProvider", "documentSymbolProvider",
         "workspaceSymbolProvider", "inlayHintProvider", "signatureHelpProvider",
         "semanticTokensProvider", "codeActionProvider", "documentFormattingProvider",
+        "typeDefinitionProvider", "documentHighlightProvider", "foldingRangeProvider",
+        "selectionRangeProvider", "documentRangeFormattingProvider",
+        "documentOnTypeFormattingProvider",
     ]:
         assert cap in caps, f"missing capability {cap}: {caps.keys()}"
     send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
@@ -165,6 +168,69 @@ def main():
     })
     assert reply["result"] == [], reply["result"]
 
+    # -- documentHighlight on a use of `color` -------------------------------
+    println_line = SOURCE.splitlines().index("    println(color)")
+    reply = request(11, "textDocument/documentHighlight", {
+        "textDocument": {"uri": uri},
+        "position": {"line": println_line, "character": len("    println(c")},
+    })
+    assert len(reply["result"]) == 2, reply["result"]  # binding + use
+
+    # -- foldingRange ---------------------------------------------------------
+    reply = request(12, "textDocument/foldingRange", {"textDocument": {"uri": uri}})
+    kinds = {r.get("kind") for r in reply["result"]}
+    assert "region" in kinds, reply["result"]
+
+    # -- typeDefinition on `color` jumps to `type Color` ----------------------
+    reply = request(13, "textDocument/typeDefinition", {
+        "textDocument": {"uri": uri},
+        "position": {"line": println_line, "character": len("    println(c")},
+    })
+    type_line = SOURCE.splitlines().index("type Color {")
+    assert reply["result"]["range"]["start"]["line"] == type_line, reply["result"]
+
+    # -- selectionRange expands outward ---------------------------------------
+    reply = request(14, "textDocument/selectionRange", {
+        "textDocument": {"uri": uri},
+        "positions": [{"line": println_line, "character": len("    println(c")}],
+    })
+    assert len(reply["result"]) == 1 and "parent" in reply["result"][0], reply["result"]
+
+    # -- rangeFormatting / onTypeFormatting (source is well formatted) --------
+    reply = request(15, "textDocument/rangeFormatting", {
+        "textDocument": {"uri": uri},
+        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 99, "character": 0}},
+        "options": {"tabSize": 4, "insertSpaces": True},
+    })
+    assert reply["result"] == [], reply["result"]
+    reply = request(16, "textDocument/onTypeFormatting", {
+        "textDocument": {"uri": uri},
+        "position": {"line": 2, "character": 1},
+        "ch": "}",
+        "options": {"tabSize": 4, "insertSpaces": True},
+    })
+    assert reply["result"] == [], reply["result"]
+
+    # -- foreign keyword: didChange breaks the file, quickfix repairs it ------
+    broken = SOURCE.replace("fn greet", "func greet")
+    send({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+        "textDocument": {"uri": uri, "version": 2},
+        "contentChanges": [{"text": broken}],
+    }})
+    note = expect_notification("textDocument/publishDiagnostics")
+    foreign = [d for d in note["params"]["diagnostics"]
+               if d.get("code") == "foreign_keyword"]
+    assert foreign, note["params"]
+    assert "Galvan uses `fn`" in foreign[0]["message"], foreign[0]
+
+    reply = request(17, "textDocument/codeAction", {
+        "textDocument": {"uri": uri},
+        "range": foreign[0]["range"],
+        "context": {"diagnostics": foreign},
+    })
+    titles = [action["title"] for action in reply["result"]]
+    assert "Replace `func` with `fn`" in titles, titles
+
     # -- didClose clears diagnostics ---------------------------------------
     send({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {
         "textDocument": {"uri": uri},
@@ -172,7 +238,7 @@ def main():
     note = expect_notification("textDocument/publishDiagnostics")
     assert note["params"]["diagnostics"] == [], note["params"]
 
-    request(11, "shutdown", None)
+    request(18, "shutdown", None)
     send({"jsonrpc": "2.0", "method": "exit"})
     w.close()
     try:
@@ -183,7 +249,9 @@ def main():
         print("NOTE: server did not exit within 5s of the exit notification")
     print("SMOKE TEST PASSED: capabilities, diagnostics, ::-completion, "
           "end-of-ident hover, symbols, rename, inlay hints, signature help, "
-          "semantic tokens, code actions, formatting, close-clears-diags")
+          "semantic tokens, code actions, formatting, document highlight, "
+          "folding, type definition, selection range, range/on-type formatting, "
+          "foreign-keyword quickfix, close-clears-diags")
 
 
 if __name__ == "__main__":
