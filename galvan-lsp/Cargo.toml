@@ -14,6 +14,7 @@ galvan-hir.workspace = true
 galvan-into-ast.workspace = true
 galvan-parse.workspace = true
 galvan-resolver.workspace = true
+galvan-format.workspace = true
 
 itertools.workspace = true
 serde_json.workspace = true

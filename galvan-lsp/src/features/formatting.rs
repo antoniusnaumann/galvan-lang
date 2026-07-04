@@ -1,33 +1,26 @@
-//! `textDocument/formatting` — whitespace normalization.
+//! `textDocument/formatting` — full formatting via the `galvan-format` crate.
 //!
-//! This is deliberately a *scoped* formatter: it only rewrites whitespace and
-//! never reflows tokens across lines, so it cannot change what the program
-//! means. The rules:
-//!
-//! - Each line is indented by one unit per open `{`/`(`/`[` bracket. A line
-//!   that begins with closing brackets is dedented to their level, and a
-//!   continuation line beginning with `.` / `?.` (a member chain) is indented
-//!   one extra unit.
-//! - Trailing whitespace is removed (unless the client opts out).
-//! - Lines that begin inside a multi-line string literal are untouched, and
-//!   bracket counting skips string, char and comment tokens entirely — their
-//!   content is data, not structure.
+//! The heavy lifting (token spacing, indentation, line reflow, comment and
+//! blank-line preservation) lives in `galvan-format`; this module adapts it
+//! to the LSP: the formatted text is diffed line-by-line against the buffer
+//! and returned as minimal [`TextEdit`]s, so cursors outside changed regions
+//! stay put and range/on-type formatting can filter edits by line.
 //!
 //! Formatting refuses to run (returns `None`) when the file does not parse:
-//! reindenting around a syntax error would move code by whatever the broken
-//! bracket structure happens to suggest.
+//! rewriting a broken tree would move code around based on garbage structure.
 //!
-//! The indent unit follows the request options (`tab_size` spaces, or a tab).
+//! The indent unit follows the request options (`tab_size` spaces, or a
+//! tab); everything else uses the canonical Galvan style (see
+//! `galvan-format/STYLE.md`).
 
+use galvan_format::{format_source, FormatOptions};
 use tower_lsp::lsp_types::{FormattingOptions, Position, Range, TextEdit};
 
 use crate::document::Document;
-use crate::features::is_ident_byte;
-use galvan_parse::Node;
 
 /// `textDocument/rangeFormatting`: the whole-document edits restricted to
-/// the requested lines. The bracket depth is always computed from the top
-/// of the file, so a range format never disagrees with a full format.
+/// the requested lines. The full document is always formatted, so a range
+/// format never disagrees with a full format.
 pub fn range_formatting(
     current: &Document,
     options: &FormattingOptions,
@@ -45,10 +38,8 @@ pub fn range_formatting(
     )
 }
 
-/// `textDocument/onTypeFormatting`, triggered by `}`: re-indents the line
-/// the closing bracket was typed on (the closer usually dedents it). Only
-/// the current line is touched; like the document formatter, this does
-/// nothing while the file has syntax errors.
+/// `textDocument/onTypeFormatting`, triggered by `}`: the edits touching
+/// the line the closing bracket was typed on (usually its re-indentation).
 pub fn on_type_formatting(
     current: &Document,
     options: &FormattingOptions,
@@ -64,211 +55,182 @@ pub fn on_type_formatting(
 }
 
 pub fn formatting(current: &Document, options: &FormattingOptions) -> Option<Vec<TextEdit>> {
-    let tree = current.tree.as_ref()?;
-    if tree.root_node().has_error() {
-        return None;
+    let format_options = FormatOptions {
+        indent_width: options.tab_size.max(1) as usize,
+        use_tabs: !options.insert_spaces,
+        ..FormatOptions::default()
+    };
+    let formatted = format_source(&current.text, &format_options).ok()?;
+    Some(line_edits(current, &formatted))
+}
+
+/// Diff the buffer against its formatted form, line by line, and emit
+/// per-line edits so range/on-type formatting can filter by line and
+/// cursors outside the changed region stay put. Changed lines that pair up
+/// are trimmed to the differing span (a re-indented line yields a
+/// whitespace-only edit at its start).
+fn line_edits(current: &Document, formatted: &str) -> Vec<TextEdit> {
+    let original = &current.text;
+    let old: Vec<&str> = original.split_inclusive('\n').collect();
+    let new: Vec<&str> = formatted.split_inclusive('\n').collect();
+
+    // Byte offset where each original line starts (plus the end of file).
+    let mut offsets = Vec::with_capacity(old.len() + 1);
+    let mut offset = 0;
+    for line in &old {
+        offsets.push(offset);
+        offset += line.len();
+    }
+    offsets.push(offset);
+
+    let mut prefix = 0;
+    while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
+        prefix += 1;
+    }
+    let mut suffix = 0;
+    while suffix < old.len() - prefix
+        && suffix < new.len() - prefix
+        && old[old.len() - 1 - suffix] == new[new.len() - 1 - suffix]
+    {
+        suffix += 1;
     }
 
-    let text = &current.text;
-    let protected = protected_ranges(tree.root_node());
-    let unit = if options.insert_spaces {
-        " ".repeat(options.tab_size.max(1) as usize)
-    } else {
-        "\t".to_string()
-    };
-    let trim_trailing = options.trim_trailing_whitespace.unwrap_or(true);
+    let old_mid = &old[prefix..old.len() - suffix];
+    let new_mid = &new[prefix..new.len() - suffix];
 
     let mut edits = Vec::new();
-    let mut depth: usize = 0;
-    let mut line_start = 0usize;
+    for (old_run, new_run) in diff_runs(old_mid, new_mid) {
+        let old_lines: Vec<&str> = old_mid[old_run.clone()].to_vec();
+        let new_lines: Vec<&str> = new_mid[new_run].to_vec();
+        let first_line = prefix + old_run.start;
+        let run_end = prefix + old_run.end;
 
-    while line_start <= text.len() {
-        let line_end = text[line_start..]
-            .find('\n')
-            .map(|i| line_start + i)
-            .unwrap_or(text.len());
-        let content_end = if text[line_start..line_end].ends_with('\r') {
-            line_end - 1
-        } else {
-            line_end
-        };
-        let line = &text[line_start..content_end];
-
-        if !inside(&protected, line_start) {
-            format_line(
-                text,
-                line_start,
-                content_end,
-                line,
-                depth,
-                &unit,
-                trim_trailing,
-                &protected,
-                current,
-                &mut edits,
-            );
-        }
-        depth = update_depth(depth, text, line_start, content_end, &protected);
-
-        if line_end == text.len() {
-            break;
-        }
-        line_start = line_end + 1;
-    }
-
-    if let Some(true) = options.insert_final_newline {
-        if !text.is_empty() && !text.ends_with('\n') {
-            let end = current.line_index.position(text, text.len());
+        let paired = old_lines.len().min(new_lines.len());
+        for index in 0..paired {
+            if old_lines[index] == new_lines[index] {
+                continue;
+            }
+            let (skip, old_tail, replacement) = trim_line(old_lines[index], new_lines[index]);
+            let line_start = offsets[first_line + index];
             edits.push(TextEdit {
-                range: tower_lsp::lsp_types::Range { start: end, end },
-                new_text: "\n".to_string(),
+                range: current.line_index.byte_range(
+                    original,
+                    line_start + skip,
+                    line_start + old_lines[index].len() - old_tail,
+                ),
+                new_text: replacement,
+            });
+        }
+        if old_lines.len() > paired {
+            // Surplus original lines: delete them.
+            edits.push(TextEdit {
+                range: current.line_index.byte_range(
+                    original,
+                    offsets[first_line + paired],
+                    offsets[run_end],
+                ),
+                new_text: String::new(),
+            });
+        } else if new_lines.len() > paired {
+            // Surplus formatted lines: insert them after the paired ones.
+            edits.push(TextEdit {
+                range: current.line_index.byte_range(
+                    original,
+                    offsets[run_end],
+                    offsets[run_end],
+                ),
+                new_text: new_lines[paired..].concat(),
             });
         }
     }
-
-    Some(edits)
+    edits
 }
 
-/// Emit the (at most two) whitespace edits for one line: the leading indent
-/// and the trailing whitespace.
-#[allow(clippy::too_many_arguments)]
-fn format_line(
-    text: &str,
-    line_start: usize,
-    content_end: usize,
-    line: &str,
-    depth: usize,
-    unit: &str,
-    trim_trailing: bool,
-    protected: &[(usize, usize)],
-    current: &Document,
-    edits: &mut Vec<TextEdit>,
-) {
-    let bytes = line.as_bytes();
-    let first_content = bytes.iter().position(|b| !matches!(b, b' ' | b'\t'));
+/// The byte lengths of the common prefix and suffix of two lines, plus the
+/// replacement for the differing middle of the old line.
+fn trim_line(old: &str, new: &str) -> (usize, usize, String) {
+    let prefix = old
+        .char_indices()
+        .zip(new.char_indices())
+        .find(|((_, old_char), (_, new_char))| old_char != new_char)
+        .map(|((index, _), _)| index)
+        .unwrap_or_else(|| old.len().min(new.len()));
 
-    let Some(first_content) = first_content else {
-        // Whitespace-only line: reduce to an empty line.
-        if trim_trailing && !line.is_empty() {
-            edits.push(replace(current, text, line_start, content_end, String::new()));
-        }
-        return;
-    };
+    let old_rest = &old[prefix..];
+    let new_rest = &new[prefix..];
+    let suffix = old_rest
+        .chars()
+        .rev()
+        .zip(new_rest.chars().rev())
+        .take_while(|(old_char, new_char)| old_char == new_char)
+        .map(|(old_char, _)| old_char.len_utf8())
+        .sum::<usize>();
 
-    let expected = unit.repeat(indent_level(depth, &line[first_content..]));
-    if expected != line[..first_content] {
-        edits.push(replace(
-            current,
-            text,
-            line_start,
-            line_start + first_content,
-            expected,
-        ));
-    }
-
-    if trim_trailing && !inside(protected, content_end) {
-        let trailing = bytes
-            .iter()
-            .rposition(|b| !matches!(b, b' ' | b'\t'))
-            .map(|i| i + 1)
-            .unwrap_or(0);
-        if trailing < line.len() {
-            edits.push(replace(
-                current,
-                text,
-                line_start + trailing,
-                content_end,
-                String::new(),
-            ));
-        }
-    }
+    (
+        prefix,
+        suffix,
+        new_rest[..new_rest.len() - suffix].to_string(),
+    )
 }
 
-/// The indent level of a line given the bracket depth it starts at:
-/// leading closing brackets dedent the line to their own level, and a
-/// member-chain continuation (`.` / `?.`) indents one extra unit.
-fn indent_level(depth: usize, stripped: &str) -> usize {
-    let bytes = stripped.as_bytes();
+/// Aligned runs of differing lines (`old range` ↔ `new range`), from a
+/// longest-common-subsequence alignment so edits stay local. Very large
+/// diffs fall back to one whole-range run.
+fn diff_runs(
+    old: &[&str],
+    new: &[&str],
+) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+    if old.is_empty() && new.is_empty() {
+        return Vec::new();
+    }
+    // The document was parseable, so the two sides are usually similar and
+    // small. Guard the quadratic table anyway.
+    if old.len() * new.len() > 1_000_000 {
+        return vec![(0..old.len(), 0..new.len())];
+    }
 
-    let mut closers = 0usize;
-    for &byte in bytes {
-        match byte {
-            b')' | b']' | b'}' => closers += 1,
-            b' ' | b'\t' => {}
-            _ => break,
+    // lcs[i][j]: length of the LCS of old[i..] and new[j..].
+    let mut lcs = vec![vec![0u32; new.len() + 1]; old.len() + 1];
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            lcs[i][j] = if old[i] == new[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
         }
     }
-    // A `.member` / `?.member` chain link. `.` followed by anything else
-    // (there are no `.5` literals — the grammar requires a leading digit)
-    // is not a continuation.
-    let continuation = match bytes {
-        [b'.', rest @ ..] | [b'?', b'.', rest @ ..] => {
-            rest.first().copied().is_some_and(is_ident_byte)
-        }
-        _ => false,
-    };
 
-    depth.saturating_sub(closers) + usize::from(continuation)
-}
-
-/// Bracket depth after the line `[start..end)`, skipping protected tokens.
-fn update_depth(depth: usize, text: &str, start: usize, end: usize, protected: &[(usize, usize)]) -> usize {
-    let mut depth = depth;
-    let bytes = text.as_bytes();
-    let mut i = start;
-    while i < end {
-        if let Some(&(_, range_end)) = protected
-            .iter()
-            .find(|(range_start, range_end)| *range_start <= i && i < *range_end)
-        {
-            i = range_end;
+    let mut runs: Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    let mut run_start: Option<(usize, usize)> = None;
+    loop {
+        let matched =
+            i < old.len() && j < new.len() && old[i] == new[j] && lcs[i][j] == lcs[i + 1][j + 1] + 1;
+        if matched {
+            if let Some((old_start, new_start)) = run_start.take() {
+                runs.push((old_start..i, new_start..j));
+            }
+            i += 1;
+            j += 1;
             continue;
         }
-        match bytes[i] {
-            b'{' | b'(' | b'[' => depth += 1,
-            b'}' | b')' | b']' => depth = depth.saturating_sub(1),
-            _ => {}
+        let take_old = i < old.len() && (j >= new.len() || lcs[i + 1][j] >= lcs[i][j + 1]);
+        let take_new = !take_old && j < new.len();
+        if !take_old && !take_new {
+            break;
         }
-        i += 1;
-    }
-    depth
-}
-
-/// Byte ranges whose content must not be treated as code structure: string,
-/// char and comment tokens. Interpolations inside strings are included —
-/// their brackets are balanced, so skipping them cannot skew the depth.
-fn protected_ranges(root: Node<'_>) -> Vec<(usize, usize)> {
-    fn collect(node: Node<'_>, ranges: &mut Vec<(usize, usize)>) {
-        match node.kind() {
-            "string_literal" | "raw_string_literal" | "char_literal" | "comment" => {
-                ranges.push((node.start_byte(), node.end_byte()));
-            }
-            _ => {
-                let mut cursor = node.walk();
-                for child in node.children(&mut cursor) {
-                    collect(child, ranges);
-                }
-            }
+        if run_start.is_none() {
+            run_start = Some((i, j));
+        }
+        if take_old {
+            i += 1;
+        } else {
+            j += 1;
         }
     }
-    let mut ranges = Vec::new();
-    collect(root, &mut ranges);
-    ranges.sort_unstable();
-    ranges
-}
-
-/// Whether `offset` falls strictly inside a protected range that began
-/// earlier. Used both for line starts (the line continues a multi-line
-/// token) and line ends ("trailing whitespace" would be token content).
-fn inside(protected: &[(usize, usize)], offset: usize) -> bool {
-    protected
-        .iter()
-        .any(|(start, end)| *start < offset && offset < *end)
-}
-
-fn replace(current: &Document, text: &str, start: usize, end: usize, new_text: String) -> TextEdit {
-    TextEdit {
-        range: current.line_index.byte_range(text, start, end),
-        new_text,
+    if let Some((old_start, new_start)) = run_start {
+        runs.push((old_start..i, new_start..j));
     }
+    runs
 }

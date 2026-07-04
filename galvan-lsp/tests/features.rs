@@ -20,15 +20,14 @@ fn greet(name: String) {
 }
 
 type Dog {
-    name: String
+    name: String,
 }
 
 fn pet(self: Dog) {
     greet(self.name)
 }
 
-fn walk(self: Dog, distance: Int) {
-}
+fn walk(self: Dog, distance: Int) {}
 
 fn main_fn() {
     let dog = Dog(name: \"Rex\")
@@ -1073,16 +1072,27 @@ fn formatting_normalizes_indentation() {
 }
 
 #[test]
-fn formatting_indents_member_chains_one_extra_level() {
+fn formatting_collapses_short_member_chains() {
     let source = "fn f() {\n    let x = foo()\n.bar()\n}\n";
+    assert_eq!(format_text(source).unwrap(), "fn f() {\n    let x = foo().bar()\n}\n");
+}
+
+#[test]
+fn formatting_breaks_long_member_chains_one_link_per_line() {
+    let source = "fn f(state: ApiState) {\n    let app = router.route(\"/health\", get(health)).route(\"/tickets\", get(list_tickets)).with_state(state)\n}\n";
     assert_eq!(
         format_text(source).unwrap(),
-        "fn f() {\n    let x = foo()\n        .bar()\n}\n"
+        "fn f(state: ApiState) {
+    let app = router.route(\"/health\", get(health))
+        .route(\"/tickets\", get(list_tickets))
+        .with_state(state)
+}
+"
     );
 }
 
 #[test]
-fn formatting_dedents_lines_starting_with_closers() {
+fn formatting_collapses_short_argument_lists() {
     let source = "\
 fn f() {
     let state = Api(
@@ -1090,19 +1100,13 @@ fn f() {
         )
 }
 ";
-    assert_eq!(
-        format_text(source).unwrap(),
-        "fn f() {\n    let state = Api(\n        id: 1,\n    )\n}\n"
-    );
+    assert_eq!(format_text(source).unwrap(), "fn f() {\n    let state = Api(id: 1)\n}\n");
 }
 
 #[test]
 fn formatting_removes_trailing_whitespace_and_blanks() {
     let source = "fn f() {   \n    let x = 1  \n   \n}\n";
-    assert_eq!(
-        format_text(source).unwrap(),
-        "fn f() {\n    let x = 1\n\n}\n"
-    );
+    assert_eq!(format_text(source).unwrap(), "fn f() {\n    let x = 1\n}\n");
 }
 
 #[test]

@@ -19,8 +19,8 @@ SOURCE = """fn greet(name: String) {
 }
 
 type Color {
-    Transparent
-    Gray(U8)
+    Transparent,
+    Gray(U8),
 }
 
 fn main_fn() {

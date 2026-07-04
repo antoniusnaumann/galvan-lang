@@ -10,43 +10,6 @@ blocked on compiler or grammar work) or listed under "Possible next steps".
 
 Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not done (rationale given)
 
-## Improvement roadmap (2026-07-04)
-
-- [x] **Structured diagnostics** — `galvan_hir::Diagnostic` carries a stable
-  `code` (one per `TranspilerError` variant, see `TranspilerError::code`) and
-  an optional machine-applicable `fix` (span + replacement). The Levenshtein
-  did-you-mean helpers attach the matched candidate as a fix. The LSP forwards
-  both through `Diagnostic.code`/`Diagnostic.data`.
-- [x] **Foreign-keyword recognition** — `features/foreign_syntax.rs` maps
-  keywords from other languages to Galvan (`func`/`def` → `fn`, `switch` →
-  `match`, `class`/`struct` → `type`, `var` → `mut`, `null` → `none`,
-  `import` → `use`, …; `&&`/`||` are excluded because the grammar already
-  accepts them). Three detection layers: tree-sitter error regions (skipping
-  comments/strings), unresolved callees of calls that *parse*
-  (`switch color { }` is a trailing-closure call the typechecker lowers
-  silently), and unknown-identifier/type diagnostics. Tests:
-  `foreign_keyword_*` in `tests/features.rs`.
-- [x] **Quickfix code actions** — every context diagnostic carrying fix data
-  becomes a preferred `quickfix` action (`Replace \`func\` with \`fn\``,
-  did-you-mean typo fixes). Decoding lives in `features/diagnostics.rs`
-  (`decode_fix`); the actions in `features/code_actions.rs`. Tests:
-  `quickfix_*`.
-- [x] **Completion familiarity aliases** — keyword items match foreign
-  spellings via `filter_text` (typing `switch` offers `match`), scoped to the
-  keyword sets they belong to and sorted after real keywords. Tests:
-  `completion_aliases_*`.
-- [x] **documentHighlight / foldingRange / selectionRange / typeDefinition /
-  rangeFormatting / onTypeFormatting** — one pure module each; folding covers
-  multi-line bracket pairs, comment runs and import runs; on-type formatting
-  triggers on `}`; partial formats reuse the document formatter so they can
-  never disagree with it. Tests: `document_highlight_*`, `folding_ranges_*`,
-  `selection_range_*`, `type_definition_*`, `range_formatting_*`,
-  `on_type_formatting_*`.
-- [x] **Code quality** — the thirteen semantic handlers share
-  `Backend::request_context`; text sync is INCREMENTAL (ranged edits applied
-  in order, whole-document changes still accepted); the smoke test resolves
-  the binary relative to itself (`GALVAN_LSP_BIN` overrides).
-
 ## Correctness
 
 - [-] **5. Types/members keyed by name only in the symbol index** — duplicate type
@@ -76,44 +39,6 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   `tree-sitter-galvan`, out of LSP scope. See repo `todo.md:79-84`.
 
 ## Features
-
-- [x] **20. signatureHelp** — implemented in `features/signature_help.rs`.
-  Call sites are found by a forward text scan (string-/comment-/interpolation-
-  aware bracket tracking in `call_at`), so help works while the argument list
-  is still unclosed and the file does not parse; candidates come from the
-  segmented ASTs of every file that parses. Covers free functions (all
-  overloads), methods (receiver-filtered through the analysis when available),
-  struct/tuple constructors and enum-case constructors. Labelled arguments
-  select the parameter by name (constructor arguments may be reordered).
-  Tests: `signature_help_*` in `tests/features.rs` (12 cases).
-- [x] **23a. semanticTokens** — implemented in `features/semantic_tokens.rs`
-  (`textDocument/semanticTokens/full`). Two layers: the tree-sitter parse tree
-  supplies comments, string/char/number literals and grammar keyword tokens
-  (string interpolations are carved out so the embedded expression highlights
-  as code); the symbol index classifies identifiers (function/method/
-  struct/enum/enumMember/property/parameter/variable, `declaration` on the
-  defining occurrence). Unresolved identifiers fall back to contextual control
-  words as keywords and builtins with `defaultLibrary`. Multi-line tokens are
-  split per line. Tests: `semantic_tokens_*` in `tests/features.rs`.
-- [x] **23b. code actions** — implemented in `features/code_actions.rs`.
-  "Add type annotation" (`refactor.rewrite`) writes the inferred type of an
-  unannotated local into the source; the inference is shared with inlay hints
-  (`inlay_hints::unannotated_locals`), and each inlay hint now also carries
-  the same insertion as its `text_edits`. Diagnostics carry no structured fix
-  data yet, so there are no quickfixes — new actions should follow the
-  pattern in that module. Tests: `code_action_*` /
-  `inlay_hints_carry_the_annotation_as_text_edit` in `tests/features.rs`.
-- [x] **23c. formatting** — implemented in `features/formatting.rs` as a
-  deliberately *scoped* whitespace formatter: it normalizes leading
-  indentation (one unit per open bracket, dedent on leading closers, one
-  extra unit for `.`/`?.` member-chain continuations) and strips trailing
-  whitespace, and it never reflows tokens across lines, so it cannot change
-  program meaning. Multi-line string content is protected via the parse
-  tree; files that do not parse are refused. Conformance is pinned by
-  `formatting_leaves_the_example_projects_unchanged` (zero edits on the
-  hand-formatted example projects) and an idempotence test. Extending it
-  into a full token-reflowing formatter (line-length limits, spacing rules)
-  would be a compiler-side project (`galvan-format`), not an LSP patch.
 
 ## Possible next steps
 
