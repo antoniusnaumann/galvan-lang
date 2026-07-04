@@ -17,8 +17,36 @@ use galvan_files::Source;
 use galvan_parse::parse_source;
 use thiserror::Error;
 
+/// Spelling of operators that exist in a Unicode and an ASCII variant
+/// (`≠`/`!=`, `≥`/`>=`, `≤`/`<=`, `≡`/`===`, `≢`/`!==`, `→`/`->`,
+/// `⇒`/`=>`, `±`/`+-`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UnicodeStyle {
+    /// Keep whichever spelling the author wrote.
+    #[default]
+    Untouched,
+    /// Normalize to the Unicode spelling (`≠`, `→`, `±`).
+    Unicode,
+    /// Normalize to the ASCII spelling (`!=`, `->`, `+-`).
+    Ascii,
+}
+
+/// Spelling of logical/containment operators that exist as a word and as a
+/// symbol (`and`/`&&`, `or`/`||`, `not`/`!`, `in`/`∈`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LogicalStyle {
+    /// Keep whichever spelling the author wrote.
+    #[default]
+    Untouched,
+    /// Normalize to the word spelling (`and`, `or`, `not`, `in`).
+    Word,
+    /// Normalize to the symbol spelling (`&&`, `||`, `!`, `∈`).
+    Symbol,
+}
+
 /// Formatting configuration. [`FormatOptions::default`] is the canonical
-/// Galvan style: 4-space indents, 100-column line width.
+/// Galvan style: 4-space indents, 100-column line width, operator
+/// spellings left untouched.
 #[derive(Debug, Clone)]
 pub struct FormatOptions {
     /// Columns per indentation level (also the width a tab is accounted as).
@@ -28,6 +56,10 @@ pub struct FormatOptions {
     /// Target maximum line width. Lines that cannot be broken (long tokens,
     /// deeply nested code) may still exceed it.
     pub max_width: usize,
+    /// Normalize Unicode/ASCII operator pairs to one spelling.
+    pub unicode_operators: UnicodeStyle,
+    /// Normalize word/symbol logical-operator pairs to one spelling.
+    pub logical_operators: LogicalStyle,
 }
 
 impl Default for FormatOptions {
@@ -36,6 +68,8 @@ impl Default for FormatOptions {
             indent_width: 4,
             use_tabs: false,
             max_width: 100,
+            unicode_operators: UnicodeStyle::default(),
+            logical_operators: LogicalStyle::default(),
         }
     }
 }
@@ -56,7 +90,7 @@ pub fn format_source(text: &str, options: &FormatOptions) -> Result<String, Form
         return Err(FormatError::SyntaxErrors);
     }
 
-    let doc = emit::source_doc(tree.root_node(), text);
+    let doc = emit::source_doc(tree.root_node(), text, options);
     let mut formatted = doc.render(options);
 
     while formatted.ends_with('\n') || formatted.ends_with(' ') || formatted.ends_with('\t') {

@@ -81,7 +81,10 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   is bounded by the per-version memoization, so low priority.
 - **galvan-format follow-ups** — sort `use` declarations (needs careful
   comment reattachment), break overlong infix expressions at operators,
-  and honor `.editorconfig`/config files for the width options.
+  honor `.editorconfig`/config files for the width options, and expose the
+  operator-spelling settings (`unicode_operators`/`logical_operators`,
+  CLI `--operators`/`--logical`) through LSP `initializationOptions` —
+  the LSP currently always formats with both set to untouched.
 
 ## How to verify
 

@@ -18,7 +18,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use galvan_format::{format_source, FormatOptions};
+use galvan_format::{format_source, FormatOptions, LogicalStyle, UnicodeStyle};
 
 const USAGE: &str = "\
 Usage: galvan-format [OPTIONS] [FILES...]
@@ -31,6 +31,10 @@ Options:
       --line-width <N>     Target maximum line width (default 100)
       --indent-width <N>   Spaces per indentation level (default 4)
       --use-tabs           Indent with tabs instead of spaces
+      --operators <STYLE>  unicode | ascii | untouched (default untouched):
+                           normalize operator pairs like ≠/!=, →/->, ±/+-
+      --logical <STYLE>    word | symbol | untouched (default untouched):
+                           normalize and/&&, or/||, not/!, in/∈
   -h, --help               Show this help
 ";
 
@@ -52,6 +56,24 @@ fn parse_args() -> Result<Args, String> {
         match arg.as_str() {
             "--check" => args.check = true,
             "--use-tabs" => args.options.use_tabs = true,
+            "--operators" => {
+                let value = raw.next().ok_or_else(|| format!("{arg} requires a value"))?;
+                args.options.unicode_operators = match value.as_str() {
+                    "unicode" => UnicodeStyle::Unicode,
+                    "ascii" => UnicodeStyle::Ascii,
+                    "untouched" => UnicodeStyle::Untouched,
+                    other => return Err(format!("--operators: unknown style: {other}")),
+                };
+            }
+            "--logical" => {
+                let value = raw.next().ok_or_else(|| format!("{arg} requires a value"))?;
+                args.options.logical_operators = match value.as_str() {
+                    "word" => LogicalStyle::Word,
+                    "symbol" => LogicalStyle::Symbol,
+                    "untouched" => LogicalStyle::Untouched,
+                    other => return Err(format!("--logical: unknown style: {other}")),
+                };
+            }
             "--line-width" | "--indent-width" => {
                 let value = raw
                     .next()

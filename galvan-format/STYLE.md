@@ -2,8 +2,9 @@
 
 Every style decision `galvan-format` makes, with the chosen default and the
 precedent it follows. The formatter is deliberately low-configuration
-(rustfmt/gofmt philosophy): only the indent unit and line width are
-adjustable; everything else is canonical style.
+(rustfmt/gofmt philosophy): the indent unit, line width and the two
+operator-spelling dimensions below are adjustable; everything else is
+canonical style.
 
 ## Layout basics
 
@@ -39,15 +40,35 @@ adjustable; everything else is canonical style.
 - One space before every `{` that opens a body or type declaration:
   `fn f() {`, `type Dog {` (Rust, Go, Swift, JS).
 
+## Operator spelling (configurable)
+
+Galvan accepts several spellings for some operators; two independent
+settings decide whether the formatter normalizes them. Both default to
+**untouched** — the author's spelling wins — because normalizing taste is
+closer to a linter's job.
+
+- **Unicode vs. ASCII** (`--operators unicode|ascii|untouched`,
+  `FormatOptions::unicode_operators`) covers the symbol pairs
+  `≠`/`!=`, `≥`/`>=`, `≤`/`<=`, `≡`/`===`, `≢`/`!==`, `→`/`->`,
+  `⇒`/`=>` and `±`/`+-`.
+- **Word vs. symbol** (`--logical word|symbol|untouched`,
+  `FormatOptions::logical_operators`) covers `and`/`&&`, `or`/`||`,
+  `not`/`!` and containment `in`/`∈` (the rare `∊` also normalizes to
+  `∈` under `symbol`). `xor` has only a word form and is never changed.
+
+The two settings compose (e.g. `--operators ascii --logical word` gives
+`!=` but `and`). Spacing is unaffected by spelling.
+
 ## Line breaking
 
 - **Bodies always break** — one statement per line, even single-statement
   `if`/`for`/`try`/`else` bodies (rustfmt; Galvan's control flow is
   trailing-closure syntax, so this also keeps `if` and closures visually
-  consistent). Two exceptions stay on one line when they fit and hold a
+  consistent). Three exceptions stay on one line when they fit and hold a
   single statement:
   - match arms: `Blue { foo() }` (the established Galvan corpus style),
   - closure bodies: `|x| { x + 1 }`.
+  - trailing closures (also if, for, try, else) in expression position if they fit. They are collapsed if they suddenly fit, e.g., `let color = if dark { blue } else { red }` is a one-liner
 - **Bracketed lists** (call arguments, parameters, collection literals,
   tuple/variant fields) fit on one line, or break with one element per
   line, indented once, with a **trailing comma** — and collapse back when
@@ -82,9 +103,8 @@ adjustable; everything else is canonical style.
 
 ## What the formatter never touches
 
-- **Token spellings**: Unicode operator variants (`≠`, `≥`, `→`, `±`),
-  keyword synonyms (`and` vs `&&`) and number formats stay exactly as
-  written — normalizing them is a linter's job.
+- **Token spellings, by default**: operator variants stay as written
+  unless the settings above opt in; number formats are never rewritten.
 - **String contents**, including interpolations: `"a  \( x+1 )  b"` is
   emitted byte-for-byte.
 - **Comment text** (only placement is managed: own-line comments keep
@@ -100,7 +120,8 @@ adjustable; everything else is canonical style.
 ## Invariants
 
 - Idempotent: `format(format(x)) == format(x)` (enforced by every test).
-- Loss-free: comments, blank-line paragraphs and token spellings survive.
+- Loss-free: comments and blank-line paragraphs survive; token spellings
+  survive under the default untouched settings.
 - The example projects under `example-projects/` are formatted in exactly
   this style and are checked by tests in both `galvan-format` and
   `galvan-lsp`.

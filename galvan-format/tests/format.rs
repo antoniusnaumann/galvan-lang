@@ -154,12 +154,38 @@ fn trailing_closures_and_else() {
 }
 
 #[test]
-fn else_with_error_binding() {
+fn else_with_error_binding_collapses_in_expression_position() {
     assert_eq!(
         fmt("fn f() {\nlet payload = serde_json::to_string(scores) else |error| {\n\"encoding failed\"\n}\n}"),
+        "fn f() {\n    let payload = serde_json::to_string(scores) else |error| { \"encoding failed\" }\n}\n"
+    );
+}
+
+#[test]
+fn expression_position_control_flow_collapses_when_it_fits() {
+    assert_eq!(
+        fmt("fn f(dark: Bool) {\nlet color = if dark {\nblue\n} else {\nred\n}\ncolor\n}"),
+        "fn f(dark: Bool) {\n    let color = if dark { blue } else { red }\n    color\n}\n"
+    );
+}
+
+#[test]
+fn statement_position_control_flow_always_breaks() {
+    assert_eq!(
+        fmt("fn f(dark: Bool) {\nif dark { blue }\n}"),
+        "fn f(dark: Bool) {\n    if dark {\n        blue\n    }\n}\n"
+    );
+}
+
+#[test]
+fn overlong_expression_position_control_flow_breaks_all_bodies() {
+    assert_eq!(
+        fmt("fn f() {\nlet value = if some_long_condition_name { compute_something_long(a, b) } else { fallback_value_generator(c) }\n}"),
         "fn f() {
-    let payload = serde_json::to_string(scores) else |error| {
-        \"encoding failed\"
+    let value = if some_long_condition_name {
+        compute_something_long(a, b)
+    } else {
+        fallback_value_generator(c)
     }
 }
 "
@@ -226,11 +252,56 @@ fn syntax_errors_refuse_to_format() {
 }
 
 #[test]
+fn operator_spelling_is_untouched_by_default() {
+    assert_eq!(
+        fmt("fn f(a: Int, b: Int) -> Bool {\na != b and a ≠ b or c ∊ d\n}"),
+        "fn f(a: Int, b: Int) -> Bool {\n    a != b and a ≠ b or c ∊ d\n}\n"
+    );
+}
+
+#[test]
+fn operators_normalize_to_unicode_and_words() {
+    let options = FormatOptions {
+        unicode_operators: galvan_format::UnicodeStyle::Unicode,
+        logical_operators: galvan_format::LogicalStyle::Word,
+        ..FormatOptions::default()
+    };
+    let formatted = format_source(
+        "fn f(a: Int, b: Int) -> Bool {\nlet x = a != b && c >= d || e ∊ f\nx\n}",
+        &options,
+    )
+    .unwrap();
+    assert_eq!(
+        formatted,
+        "fn f(a: Int, b: Int) → Bool {\n    let x = a ≠ b and c ≥ d or e in f\n    x\n}\n"
+    );
+}
+
+#[test]
+fn operators_normalize_to_ascii_and_symbols() {
+    let options = FormatOptions {
+        unicode_operators: galvan_format::UnicodeStyle::Ascii,
+        logical_operators: galvan_format::LogicalStyle::Symbol,
+        ..FormatOptions::default()
+    };
+    let formatted = format_source(
+        "fn f(a: Int, b: Int) → Bool {\nlet x = a ≠ b and c ≥ d or e in f\nx\n}",
+        &options,
+    )
+    .unwrap();
+    assert_eq!(
+        formatted,
+        "fn f(a: Int, b: Int) -> Bool {\n    let x = a != b && c >= d || e ∈ f\n    x\n}\n"
+    );
+}
+
+#[test]
 fn respects_indent_and_width_options() {
     let options = FormatOptions {
         indent_width: 2,
         use_tabs: false,
         max_width: 20,
+        ..FormatOptions::default()
     };
     let formatted = format_source("fn f() {\nlet p = Point(x: 1, y: 22)\n}", &options).unwrap();
     assert_eq!(

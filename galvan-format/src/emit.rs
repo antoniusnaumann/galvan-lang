@@ -13,14 +13,16 @@
 use galvan_parse::Node;
 
 use crate::doc::Doc;
+use crate::{FormatOptions, LogicalStyle, UnicodeStyle};
 
-pub fn source_doc(root: Node<'_>, src: &str) -> Doc {
-    let ctx = Ctx { src };
+pub fn source_doc(root: Node<'_>, src: &str, options: &FormatOptions) -> Doc {
+    let ctx = Ctx { src, options };
     Doc::Concat(ctx.block_items(&collect(root), None, false))
 }
 
 struct Ctx<'a> {
     src: &'a str,
+    options: &'a FormatOptions,
 }
 
 /// All non-empty children of a node, in source order. Semicolons are dropped
@@ -159,16 +161,60 @@ impl<'a> Ctx<'a> {
             }
 
             "closure" | "closure_type" => self.closure(node),
-            "trailing_closure_expression" => self.trailing_closure(node),
-            "else_expression" => self.else_expression(node),
+
+            // In expression position (`let color = if dark { blue } else
+            // { red }`) control flow collapses onto one line when every
+            // body holds a single statement and the whole thing fits; as
+            // a statement its bodies always break. All bodies of one
+            // expression share the decision.
+            "trailing_closure_expression" | "else_expression" => {
+                if expression_position(node) {
+                    Doc::Group(self.control_parts(node, true))
+                } else {
+                    Doc::Concat(self.control_parts(node, false))
+                }
+            }
 
             _ => {
-                if node.child_count() == 0 {
+                if let Some(respelled) = self.respell(node) {
+                    Doc::Text(respelled)
+                } else if node.child_count() == 0 {
                     self.verbatim(node)
                 } else {
                     self.join(&collect(node))
                 }
             }
+        }
+    }
+
+    /// The configured spelling for operator tokens that exist in several
+    /// variants, or `None` when the token is not one of them (or the
+    /// options say untouched).
+    fn respell(&self, node: Node<'_>) -> Option<String> {
+        let unicode = |unicode: &str, ascii: &str| match self.options.unicode_operators {
+            UnicodeStyle::Untouched => None,
+            UnicodeStyle::Unicode => Some(unicode.to_owned()),
+            UnicodeStyle::Ascii => Some(ascii.to_owned()),
+        };
+        let logical = |word: &str, symbol: &str| match self.options.logical_operators {
+            LogicalStyle::Untouched => None,
+            LogicalStyle::Word => Some(word.to_owned()),
+            LogicalStyle::Symbol => Some(symbol.to_owned()),
+        };
+        match node.kind() {
+            "not_equal" => unicode("≠", "!="),
+            "greater_equal" => unicode("≥", ">="),
+            "less_equal" => unicode("≤", "<="),
+            "identical" => unicode("≡", "==="),
+            "not_identical" => unicode("≢", "!=="),
+            "single_arrow" => unicode("→", "->"),
+            "double_arrow" => unicode("⇒", "=>"),
+            "tolerance_range" => unicode("±", "+-"),
+            "and" => logical("and", "&&"),
+            "or" => logical("or", "||"),
+            "not" => logical("not", "!"),
+            "contains" => logical("in", "∈"),
+            _ => None,
         }
     }
 
@@ -497,45 +543,43 @@ impl<'a> Ctx<'a> {
         Doc::Concat(parts)
     }
 
-    /// `ident args |params| { ... }` — `if cond { }`, `for xs |x| { }`,
-    /// `try value |v| { }` all share this shape.
-    fn trailing_closure(&self, node: Node<'_>) -> Doc {
+    /// The parts of a control-flow expression: `ident args |params| body`
+    /// (`if cond { }`, `for xs |x| { }`, `try value |v| { }`) or
+    /// `receiver else |err| body`. With `inline`, bodies become soft
+    /// line breaks so the *enclosing* group collapses or breaks them all
+    /// together; otherwise every body is hard-broken. An `else` receiver
+    /// that is itself control flow is spliced into the same parts list so
+    /// a chain like `if c { a } else { b }` is one layout unit.
+    fn control_parts(&self, node: Node<'_>, inline: bool) -> Vec<Doc> {
         let children = collect(node);
-        let mut parts = vec![self.doc(children[0])];
+        let mut parts = Vec::new();
         let mut index = 1;
 
-        let mut first_argument = true;
-        while index < children.len()
-            && !matches!(children[index].kind(), "pipe" | "body")
-        {
-            let child = children[index];
-            index += 1;
-            if is_comma(&child) {
-                continue;
+        if node.kind() == "else_expression" {
+            let receiver = children[0];
+            match unwrap_expression(receiver).map(|inner| inner.kind()) {
+                Some("trailing_closure_expression") | Some("else_expression") => {
+                    let inner = unwrap_expression(receiver).expect("just matched");
+                    parts.extend(self.control_parts(inner, inline));
+                }
+                _ => parts.push(self.doc(receiver)),
             }
-            parts.push(Doc::text(if first_argument { " " } else { ", " }));
-            parts.push(self.doc(child));
-            first_argument = false;
+        } else {
+            parts.push(self.doc(children[0]));
+
+            let mut first_argument = true;
+            while index < children.len() && !matches!(children[index].kind(), "pipe" | "body") {
+                let child = children[index];
+                index += 1;
+                if is_comma(&child) {
+                    continue;
+                }
+                parts.push(Doc::text(if first_argument { " " } else { ", " }));
+                parts.push(self.doc(child));
+                first_argument = false;
+            }
         }
 
-        if index < children.len() && children[index].kind() == "pipe" {
-            parts.push(Doc::text(" "));
-            parts.push(self.pipe_section(&children, &mut index));
-        }
-        while index < children.len() {
-            parts.push(Doc::text(" "));
-            parts.push(self.body(children[index], false));
-            index += 1;
-        }
-        Doc::Concat(parts)
-    }
-
-    /// `receiver else { ... }` / `receiver else |err| { ... }`. The body
-    /// always breaks, matching the other control-flow bodies.
-    fn else_expression(&self, node: Node<'_>) -> Doc {
-        let children = collect(node);
-        let mut parts = vec![self.doc(children[0])];
-        let mut index = 1;
         while index < children.len() {
             let child = children[index];
             parts.push(Doc::text(" "));
@@ -544,12 +588,42 @@ impl<'a> Ctx<'a> {
                     parts.push(self.pipe_section(&children, &mut index));
                     continue;
                 }
-                "body" => parts.push(self.body(child, false)),
+                "body" => parts.push(self.control_body(child, inline)),
                 _ => parts.push(self.doc(child)),
             }
             index += 1;
         }
-        Doc::Concat(parts)
+        parts
+    }
+
+    /// A control-flow body: soft-breaking `{ statement }` parts when the
+    /// body may collapse (single statement, no comments) — the enclosing
+    /// group decides — and the usual hard-broken body otherwise.
+    fn control_body(&self, node: Node<'_>, inline: bool) -> Doc {
+        if !inline {
+            return self.body(node, false);
+        }
+        let children = collect(node);
+        let open = children
+            .iter()
+            .position(|child| child.kind() == "brace_open")
+            .expect("body has an opening brace");
+        let close = children
+            .iter()
+            .rposition(|child| child.kind() == "brace_close")
+            .expect("body has a closing brace");
+        let inner = &children[open + 1..close];
+
+        match inner {
+            [] => Doc::text("{}"),
+            [statement] if !is_comment(statement) => Doc::Concat(vec![
+                Doc::text("{"),
+                Doc::Indent(vec![Doc::Line, self.doc(*statement)]),
+                Doc::Line,
+                Doc::text("}"),
+            ]),
+            _ => self.body(node, false),
+        }
     }
 
     /// Consume `| a, b |` starting at `children[*index]` (an opening pipe)
@@ -583,6 +657,23 @@ impl<'a> Ctx<'a> {
         }
         parts.push(Doc::text("|"));
         Doc::Concat(parts)
+    }
+}
+
+/// Whether a control-flow expression is used as a value (the right-hand
+/// side of a declaration, a call argument, an `else` receiver, …) rather
+/// than standing alone as a statement. Statements keep broken bodies;
+/// values may collapse.
+fn expression_position(node: Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    if parent.kind() != "expression" {
+        return true;
+    }
+    match parent.parent() {
+        Some(grandparent) => grandparent.kind() != "statement",
+        None => false,
     }
 }
 
