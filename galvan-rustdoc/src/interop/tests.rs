@@ -975,6 +975,30 @@ fn rustdoc_does_not_lift_partial_type_shapes() {
         .type_from_json("demo", &resolved("Vec", vec![malformed_array()]))
         .is_none());
     assert!(interop
+        .type_from_json("std", &resolved("Option", vec![]))
+        .is_none());
+    assert!(interop
+        .type_from_json("std", &resolved("Vec", vec![]))
+        .is_none());
+    assert!(interop
+        .type_from_json("std", &resolved("HashMap", vec![primitive("str")]))
+        .is_none());
+    assert!(interop
+        .type_from_json("std", &resolved("Result", vec![]))
+        .is_none());
+    assert!(interop
+        .type_from_json(
+            "demo",
+            &resolved_with_path("Result", &["anyhow", "Result"], vec![])
+        )
+        .is_none());
+    assert!(interop
+        .type_from_json(
+            "demo",
+            &resolved_with_path("FlexResult", &["galvan", "std", "FlexResult"], vec![])
+        )
+        .is_none());
+    assert!(interop
         .type_from_json("demo", &unknown_type_shape())
         .is_none());
     assert!(interop

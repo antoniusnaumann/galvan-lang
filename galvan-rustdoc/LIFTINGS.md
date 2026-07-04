@@ -59,6 +59,10 @@ Rust metadata so same-named Rust types from different modules remain distinct.
 Self-crate rustdoc prefixes such as `crate::` and `$crate::` are normalized to
 the imported crate name before Galvan stores Rust paths.
 
+Known generic wrappers are lifted only when rustdoc includes the required type
+arguments. Incomplete wrapper metadata is treated as unliftable rather than
+filled with inferred Galvan types.
+
 Qualified external type paths are preserved in the rustdoc metadata, but Galvan
 type syntax does not yet expose qualified type paths all the way through the
 parser and typechecker. Imported dependency types are therefore currently used

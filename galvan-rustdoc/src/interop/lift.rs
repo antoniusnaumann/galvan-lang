@@ -1,11 +1,9 @@
 use serde_json::Value;
 
 use galvan_ast::{
-    AliasTypeDecl, ArrayTypeItem, ClosureTypeItem, DictionaryTypeItem, EnumTypeDecl,
-    EnumTypeMember, EnumVariantField, FnSignature, Ident, OptionalTypeItem,
-    OrderedDictionaryTypeItem, Param, ParamList, ParametricTypeItem, SetTypeItem, Span,
-    StructTypeDecl, StructTypeMember, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement,
-    TypeIdent, Visibility,
+    AliasTypeDecl, ClosureTypeItem, EnumTypeDecl, EnumTypeMember, EnumVariantField, FnSignature,
+    Ident, Param, ParamList, Span, StructTypeDecl, StructTypeMember, TupleTypeDecl,
+    TupleTypeMember, TypeDecl, TypeElement, TypeIdent, Visibility,
 };
 
 use crate::model::{
@@ -18,11 +16,11 @@ use super::lift_model::{
     LiftedReturn, LiftedStructMember, LiftedTupleMember, LiftedType,
 };
 use super::lift_type::{
-    array_type, atomic_type, function_pointer_input_type, generic_type, member_arg_conversion,
-    never_type, parametric_or_plain_type, plain_type, primitive_type,
-    resolved_path_is_unqualified_or_in_crates, resolved_path_is_unqualified_or_matches_any,
-    resolved_path_matches, result_type, string_type, type_is_copy,
+    array_type, function_pointer_input_type, generic_type, member_arg_conversion, never_type,
+    parametric_or_plain_type, primitive_type, resolved_path_is_unqualified_or_in_crates,
+    type_is_copy,
 };
+use super::lift_wrappers::known_lifted_resolved_type;
 use super::rustdoc_json::{
     borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
     resolved_type_args, resolved_type_args_strict, type_alias_type, type_contains_unliftable_type,
@@ -488,7 +486,11 @@ impl RustInterop {
             .map(|lifted| lifted.ty)
     }
 
-    fn lift_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedType> {
+    pub(super) fn lift_type_from_json(
+        &mut self,
+        crate_name: &str,
+        ty: &Value,
+    ) -> Option<LiftedType> {
         if type_contains_unliftable_type(ty) {
             return None;
         }
@@ -544,6 +546,9 @@ impl RustInterop {
                 self.lift_known_resolved_type(name.as_ref(), resolved, args.as_slice())
             {
                 return Some(lifted);
+            }
+            if known_lifted_resolved_type(name.as_ref(), resolved) {
+                return None;
             }
 
             self.push_resolved_type(crate_name, name.as_ref(), resolved);
@@ -614,159 +619,5 @@ impl RustInterop {
             .iter()
             .map(|ty| self.type_from_json(crate_name, ty))
             .collect()
-    }
-
-    fn lift_known_resolved_type(
-        &mut self,
-        name: &str,
-        resolved: &Value,
-        args: &[LiftedType],
-    ) -> Option<LiftedType> {
-        let standard_wrapper =
-            resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
-        let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(resolved, &["indexmap"]);
-        let flex_result = resolved_path_is_unqualified_or_matches_any(
-            resolved,
-            &[&["galvan", "std", "FlexResult"]],
-        );
-
-        match name {
-            "String" if standard_wrapper => Some(LiftedType::new(string_type())),
-            "Option" if standard_wrapper => Some(LiftedType::new(TypeElement::Optional(Box::new(
-                OptionalTypeItem {
-                    inner: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                },
-            )))),
-            "FlexResult" if flex_result => Some(result_type(args.first(), None)),
-            "Result" if resolved_path_matches(resolved, &["anyhow", "Result"]) => {
-                Some(result_type(args.first(), None))
-            }
-            "Result" if standard_wrapper => Some(result_type(
-                args.first(),
-                args.get(1)
-                    .map(|arg| arg.ty.clone())
-                    .or_else(|| Some(plain_type(TypeIdent::new("__UnknownRustError")))),
-            )),
-            "Vec" | "VecDeque" | "LinkedList" if standard_wrapper => Some(LiftedType::new(
-                TypeElement::Array(Box::new(ArrayTypeItem {
-                    elements: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                })),
-            )),
-            "HashSet" | "BTreeSet" if standard_wrapper => {
-                Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
-                    elements: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                }))))
-            }
-            "IndexSet" if indexmap_wrapper => {
-                Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
-                    elements: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                }))))
-            }
-            "HashMap" if standard_wrapper => Some(LiftedType::new(TypeElement::Dictionary(
-                Box::new(DictionaryTypeItem {
-                    key: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    value: args
-                        .get(1)
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                }),
-            ))),
-            "BTreeMap" if standard_wrapper => Some(LiftedType::new(
-                TypeElement::OrderedDictionary(Box::new(OrderedDictionaryTypeItem {
-                    key: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    value: args
-                        .get(1)
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                })),
-            )),
-            "IndexMap" if indexmap_wrapper => Some(LiftedType::new(
-                TypeElement::OrderedDictionary(Box::new(OrderedDictionaryTypeItem {
-                    key: args
-                        .first()
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    value: args
-                        .get(1)
-                        .map(|arg| arg.ty.clone())
-                        .unwrap_or_else(TypeElement::infer),
-                    span: Span::default(),
-                })),
-            )),
-            _ => None,
-        }
-    }
-
-    fn lift_arc_type_from_json(
-        &mut self,
-        crate_name: &str,
-        resolved: &Value,
-    ) -> Option<LiftedType> {
-        let inner = resolved_type_args(resolved).into_iter().next()?;
-        if let Some(shared) = self.lift_arc_shared_inner(crate_name, inner) {
-            return Some(shared);
-        }
-
-        let inner = self.lift_type_from_json(crate_name, inner)?;
-        let name = resolved_type_name(resolved)?;
-        self.push_resolved_type(crate_name, name.as_ref(), resolved);
-        Some(LiftedType::new(TypeElement::Parametric(
-            ParametricTypeItem {
-                base_type: TypeIdent::new(name.as_ref()),
-                type_args: vec![inner.ty],
-                span: Span::default(),
-            },
-        )))
-    }
-
-    fn lift_arc_shared_inner(&mut self, crate_name: &str, inner: &Value) -> Option<LiftedType> {
-        let resolved = inner.get("resolved_path")?;
-        let name = resolved_type_name(resolved)?;
-        if !resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]) {
-            return None;
-        }
-        if matches!(name.as_ref(), "Mutex" | "RwLock") {
-            return self.lift_lock_type_from_json(crate_name, resolved);
-        }
-
-        atomic_type(name.as_ref())
-            .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
-    }
-
-    fn lift_lock_type_from_json(
-        &mut self,
-        crate_name: &str,
-        resolved: &Value,
-    ) -> Option<LiftedType> {
-        let arg = resolved_type_args(resolved).into_iter().next()?;
-        let inner = self.lift_type_from_json(crate_name, arg)?;
-        Some(LiftedType::with_modifier(
-            inner.ty,
-            galvan_ast::DeclModifier::Ref,
-        ))
     }
 }

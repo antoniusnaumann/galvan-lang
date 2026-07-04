@@ -1,14 +1,15 @@
+mod cargo_metadata;
+mod rustdoc;
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
-use serde_json::Value;
-
-use crate::RustdocError;
+use self::cargo_metadata::dependency_manifest_path;
+use self::rustdoc::{generated_json_path, run_rustdoc_json};
 
 pub(crate) struct RustdocCache {
-    crate_name: String,
+    crate_name: Box<str>,
     root: PathBuf,
 }
 
@@ -18,7 +19,7 @@ impl RustdocCache {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
         Self {
-            crate_name: crate_name.to_string(),
+            crate_name: crate_name.into(),
             root: manifest_dir
                 .join("target")
                 .join("galvan")
@@ -63,32 +64,11 @@ impl RustdocCache {
         };
 
         let target_dir = self.root.join("target");
-        let output = Command::new("rustup")
-            .arg("run")
-            .arg("nightly")
-            .arg("cargo")
-            .arg("rustdoc")
-            .arg("--manifest-path")
-            .arg(&manifest_path)
-            .arg("--lib")
-            .arg("--target-dir")
-            .arg(&target_dir)
-            .arg("--")
-            .arg("-Z")
-            .arg("unstable-options")
-            .arg("--output-format")
-            .arg("json")
-            .env("GALVAN_RUSTDOC_CACHE_UPDATING", "1")
-            .env_remove("RUSTC")
-            .env_remove("RUSTDOC")
-            .env_remove("RUSTC_WRAPPER")
-            .output();
+        let output = run_rustdoc_json(&manifest_path, &target_dir);
 
         match output {
             Ok(output) if output.status.success() => {
-                let generated = target_dir
-                    .join("doc")
-                    .join(format!("{}.json", self.crate_name));
+                let generated = generated_json_path(&self.crate_name, &target_dir);
                 let cached = self.root.join(format!("{}.json", self.crate_name));
                 if fs::copy(&generated, &cached).is_ok() {
                     self.clear_diagnostics();
@@ -126,36 +106,4 @@ impl RustdocCache {
         let _ = fs::remove_file(self.root.join(format!("{}.stderr", self.crate_name)));
         let _ = fs::remove_file(self.root.join(format!("{}.stdout", self.crate_name)));
     }
-}
-
-fn dependency_manifest_path(crate_name: &str) -> Result<Option<PathBuf>, RustdocError> {
-    let manifest_dir = env::var_os("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let manifest_path = manifest_dir.join("Cargo.toml");
-    let output = Command::new("cargo")
-        .arg("metadata")
-        .arg("--format-version")
-        .arg("1")
-        .arg("--manifest-path")
-        .arg(manifest_path)
-        .env_remove("RUSTC")
-        .env_remove("RUSTDOC")
-        .env_remove("RUSTC_WRAPPER")
-        .output()
-        .map_err(RustdocError::CargoMetadata)?;
-
-    let metadata: Value =
-        serde_json::from_slice(&output.stdout).map_err(RustdocError::InvalidCargoMetadata)?;
-    let manifest_path = metadata
-        .get("packages")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .find(|package| package.get("name").and_then(Value::as_str) == Some(crate_name))
-        .and_then(|package| package.get("manifest_path"))
-        .and_then(Value::as_str)
-        .map(PathBuf::from);
-
-    Ok(manifest_path)
 }

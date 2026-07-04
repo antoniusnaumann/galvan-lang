@@ -10,11 +10,9 @@ use crate::model::{RustArgConversion, RustReturnConversion};
 use super::lift_model::LiftedType;
 use super::rustdoc_path::resolved_path_segments_raw;
 
-pub(super) fn result_type(success: Option<&LiftedType>, error: Option<TypeElement>) -> LiftedType {
+pub(super) fn result_type(success: &LiftedType, error: Option<TypeElement>) -> LiftedType {
     LiftedType::new(TypeElement::Result(Box::new(ResultTypeItem {
-        success: success
-            .map(|arg| arg.ty.clone())
-            .unwrap_or_else(TypeElement::infer),
+        success: success.ty.clone(),
         error,
         span: Span::default(),
     })))

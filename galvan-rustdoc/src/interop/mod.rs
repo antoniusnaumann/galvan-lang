@@ -4,6 +4,7 @@ mod import;
 mod lift;
 mod lift_model;
 mod lift_type;
+mod lift_wrappers;
 mod query;
 mod registry;
 mod rustdoc_json;
