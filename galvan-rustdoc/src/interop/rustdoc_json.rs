@@ -162,7 +162,7 @@ pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
             .is_some_and(type_contains_unliftable_type);
     }
     if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function")) {
-        if function_pointer_is_unsafe(function) {
+        if function_pointer_has_unliftable_header(function) {
             return true;
         }
         let signature = function.get("sig").unwrap_or(function);
@@ -186,15 +186,27 @@ fn function_header_is_unsafe(header: &Value) -> bool {
         || header.get("unsafety").and_then(Value::as_str) == Some("unsafe")
 }
 
-fn function_pointer_is_unsafe(function: &Value) -> bool {
-    function_header_is_unsafe(function)
+fn function_pointer_has_unliftable_header(function: &Value) -> bool {
+    function_header_is_unliftable(function)
         || function
             .get("header")
-            .is_some_and(function_header_is_unsafe)
+            .is_some_and(function_header_is_unliftable)
         || function
             .get("sig")
             .and_then(|signature| signature.get("header"))
-            .is_some_and(function_header_is_unsafe)
+            .is_some_and(function_header_is_unliftable)
+}
+
+fn function_header_is_unliftable(header: &Value) -> bool {
+    function_header_is_unsafe(header) || function_header_has_non_rust_abi(header)
+}
+
+fn function_header_has_non_rust_abi(header: &Value) -> bool {
+    header
+        .get("abi")
+        .or_else(|| header.get("extern_abi"))
+        .and_then(Value::as_str)
+        .is_some_and(|abi| !matches!(abi, "Rust" | "rust"))
 }
 
 fn signature_input_type(input: &Value) -> &Value {

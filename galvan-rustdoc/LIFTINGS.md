@@ -108,8 +108,9 @@ another `Result<T>` shape, `galvan-rustdoc` uses `__UnknownRustError`.
 
 Rust tuples lift to Galvan tuples with recursively lifted element types.
 
-Safe Rust function pointers and bare function types lift to Galvan closure types
-`|A, B| R`. Unsafe function pointer types are not lifted.
+Safe Rust-ABI function pointers and bare function types lift to Galvan closure
+types `|A, B| R`. Unsafe function pointer types and non-Rust ABI function
+pointer types are not lifted.
 
 ## Shared State Wrappers
 
@@ -162,16 +163,17 @@ away; dependency types with the same names remain nominal imported Rust types.
 ## Explicit Exclusions
 
 `galvan-rustdoc` does not bridge raw pointers, unsafe functions, unsafe function
-pointer types, or other unsafe Rust-only surfaces into Galvan. Functions whose
-signatures contain raw pointers, currently unliftable type shapes, or incomplete
-type metadata are skipped. Constants with unliftable types are skipped. Data
-declarations whose public surface contains raw pointers or unliftable type
-shapes are kept opaque instead of exposing those fields or variants. Data
-declarations are also kept opaque when rustdoc metadata is incomplete enough
-that fields or variants would otherwise be silently dropped, or when rustdoc
-exposes non-public fields that Galvan cannot represent as part of a
-constructible public data declaration. If an API requires raw pointers or unsafe
-contracts, write that boundary in Rust and expose a safe wrapper to Galvan.
+pointer types, non-Rust ABI function pointer types, or other Rust-only surfaces
+that Galvan cannot represent safely. Functions whose signatures contain raw
+pointers, currently unliftable type shapes, or incomplete type metadata are
+skipped. Constants with unliftable types are skipped. Data declarations whose
+public surface contains raw pointers or unliftable type shapes are kept opaque
+instead of exposing those fields or variants. Data declarations are also kept
+opaque when rustdoc metadata is incomplete enough that fields or variants would
+otherwise be silently dropped, or when rustdoc exposes non-public fields that
+Galvan cannot represent as part of a constructible public data declaration. If
+an API requires raw pointers or unsafe contracts, write that boundary in Rust
+and expose a safe wrapper to Galvan.
 
 Unknown rustdoc type forms are treated as unliftable. Functions and constants
 using them are skipped; data declarations containing them are kept opaque.

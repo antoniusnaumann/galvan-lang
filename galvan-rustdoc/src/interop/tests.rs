@@ -203,6 +203,20 @@ fn unsafe_function_pointer(inputs: Vec<Value>, output: Value) -> Value {
     })
 }
 
+fn extern_function_pointer(abi: &str, inputs: Vec<Value>, output: Value) -> Value {
+    json!({
+        "function_pointer": {
+            "sig": {
+                "inputs": inputs,
+                "output": output,
+                "header": {
+                    "abi": abi
+                }
+            }
+        }
+    })
+}
+
 fn mut_borrowed(ty: Value) -> Value {
     json!({
         "borrowed_ref": {
@@ -1026,6 +1040,18 @@ fn rustdoc_does_not_lift_unsafe_function_pointer_types() {
 }
 
 #[test]
+fn rustdoc_does_not_lift_non_rust_abi_function_pointer_types() {
+    let mut interop = RustInterop::empty();
+
+    assert!(interop
+        .type_from_json(
+            "std",
+            &extern_function_pointer("C", vec![primitive("u64")], primitive("bool"))
+        )
+        .is_none());
+}
+
+#[test]
 fn rustdoc_does_not_lift_unrepresentable_type_shapes() {
     let mut interop = RustInterop::empty();
 
@@ -1107,6 +1133,14 @@ fn rustdoc_lifts_function_pointer_types() {
     };
     assert_eq!(closure.parameters, vec![u64_type(), string_type()]);
     assert_eq!(closure.return_ty, TypeElement::bool());
+
+    let rust_abi = interop
+        .type_from_json(
+            "std",
+            &extern_function_pointer("Rust", vec![primitive("u64")], primitive("bool")),
+        )
+        .unwrap();
+    assert!(matches!(rust_abi, TypeElement::Closure(_)));
 }
 
 #[test]
