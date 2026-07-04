@@ -15,7 +15,7 @@ Galvan typechecker as dependency declarations:
 - public type aliases with lifted target types
 - public free functions and constants
 - public inherent associated functions, methods, and constants
-- public trait-impl methods
+- public trait-impl methods and associated constants
 - rustdoc re-exports for local type, function, constant, and glob targets
 
 External type re-exports without target metadata are imported as empty types

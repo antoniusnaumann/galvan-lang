@@ -2450,6 +2450,60 @@ fn rustdoc_imports_associated_constants() {
 }
 
 #[test]
+fn rustdoc_imports_trait_impl_associated_constants() {
+    let json = json!({
+        "index": {
+            "0": public_item("Ticket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": public_item("TicketKind", json!({
+                "trait": {
+                    "items": []
+                }
+            })),
+            "2": {
+                "id": "2",
+                "name": null,
+                "visibility": "public",
+                "inner": {
+                    "impl": {
+                        "for": resolved_with_string_path("crate::Ticket", vec![]),
+                        "trait": resolved_with_string_path("$crate::TicketKind", vec![]),
+                        "items": ["3"]
+                    }
+                }
+            },
+            "3": {
+                "id": "3",
+                "name": "KIND",
+                "visibility": "public",
+                "path": ["demo", "TicketKind"],
+                "inner": {
+                    "assoc_const": {
+                        "type": primitive("str")
+                    }
+                }
+            }
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop.constant(Some("demo"), &ident("KIND")).is_none());
+    let constant = interop
+        .associated_constant(Some("demo"), &TypeIdent::new("Ticket"), &ident("KIND"))
+        .expect("expected trait impl associated constant");
+    assert_eq!(
+        constant.rust_path.as_ref(),
+        "<::demo::Ticket as ::demo::TicketKind>::KIND"
+    );
+    assert_eq!(constant.ty, string_type());
+}
+
+#[test]
 fn rustdoc_imports_reexported_type_aliases() {
     let json = json!({
         "index": {
