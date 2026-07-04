@@ -159,6 +159,8 @@ interop cases:
 As with the shared-state wrappers above, these conversions are path-aware when
 rustdoc provides a path. Only standard-library `Box` and `Rc` shapes are lifted
 away; dependency types with the same names remain nominal imported Rust types.
+Owned wrapper conversions require rustdoc metadata for the wrapped type.
+Incomplete `Box` or `Rc` conversion metadata is treated as unliftable.
 
 ## Explicit Exclusions
 

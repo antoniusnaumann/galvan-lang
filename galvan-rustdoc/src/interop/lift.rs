@@ -382,9 +382,11 @@ impl RustInterop {
         let pair = param.as_array()?;
         let name = pair.first().and_then(Value::as_str).unwrap_or("_");
         let ty = pair.get(1)?;
-        let lifted = self
-            .lift_param_wrapper_type_from_json(crate_name, ty)
-            .or_else(|| self.lift_type_from_json(crate_name, ty))?;
+        let lifted = if param_type_requires_wrapper_conversion(ty) {
+            self.lift_param_wrapper_type_from_json(crate_name, ty)?
+        } else {
+            self.lift_type_from_json(crate_name, ty)?
+        };
         let decl_modifier = lifted.decl_modifier.or_else(|| {
             if type_is_owned(ty) && !type_is_copy(&lifted.ty) {
                 Some(galvan_ast::DeclModifier::Move)
@@ -620,4 +622,15 @@ impl RustInterop {
             .map(|ty| self.type_from_json(crate_name, ty))
             .collect()
     }
+}
+
+fn param_type_requires_wrapper_conversion(ty: &Value) -> bool {
+    let Some(resolved) = inner(ty, "resolved_path") else {
+        return false;
+    };
+    let Some(name) = resolved_type_name(resolved) else {
+        return false;
+    };
+    matches!(name.as_ref(), "Box" | "Rc")
+        && resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"])
 }

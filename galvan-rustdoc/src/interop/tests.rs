@@ -1756,6 +1756,33 @@ fn rustdoc_lifts_owned_wrapper_parameters_with_call_conversions() {
 }
 
 #[test]
+fn rustdoc_does_not_import_incomplete_owned_wrapper_parameters() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "takes_box",
+                vec![json!(["value", resolved("Box", vec![])])],
+                primitive("bool")
+            ),
+            "1": public_function(
+                "takes_rc",
+                vec![json!(["value", resolved("Rc", vec![])])],
+                primitive("bool")
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("takes_box"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("takes_rc"), &[])
+        .is_none());
+}
+
+#[test]
 fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
     let json = json!({
         "index": {
