@@ -11,27 +11,41 @@ use crate::model::{
 
 use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
-use super::rustdoc_json::{public_type_name, receiver_type_ident, type_generic_params};
+use super::rustdoc_json::{
+    public_type_name, receiver_type_ident, resolved_type_generic_params, type_generic_params,
+};
 use super::rustdoc_path::{resolved_type_rust_path, rust_path};
 use super::RustInterop;
 
 impl RustInterop {
     pub(super) fn push_type(&mut self, crate_name: &str, name: &str) {
         let rust_path = format!("::{crate_name}::{name}").into_boxed_str();
-        self.push_empty_type(crate_name, name, rust_path);
+        self.push_empty_type(crate_name, name, rust_path, Vec::new());
     }
 
     pub(super) fn push_resolved_type(&mut self, crate_name: &str, name: &str, resolved: &Value) {
         let rust_path = resolved_type_rust_path(crate_name, name, resolved);
-        self.push_empty_type(crate_name, name, rust_path);
+        self.push_empty_type(
+            crate_name,
+            name,
+            rust_path,
+            resolved_type_generic_params(resolved),
+        );
     }
 
-    fn push_empty_type(&mut self, crate_name: &str, name: &str, rust_path: Box<str>) {
-        if self
+    fn push_empty_type(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        rust_path: Box<str>,
+        generic_params: Vec<Ident>,
+    ) {
+        if let Some(existing) = self
             .types
             .iter()
-            .any(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
+            .position(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
         {
+            self.update_empty_type_generics(existing, generic_params);
             return;
         }
 
@@ -47,12 +61,25 @@ impl RustInterop {
                 item: TypeDecl::Empty(EmptyTypeDecl {
                     visibility: Visibility::public(),
                     ident,
-                    generic_params: Vec::new(),
+                    generic_params,
                     span: Span::default(),
                 }),
                 source: Source::Builtin,
             },
         });
+    }
+
+    fn update_empty_type_generics(&mut self, index: usize, generic_params: Vec<Ident>) {
+        if generic_params.is_empty() {
+            return;
+        }
+
+        let TypeDecl::Empty(empty) = &mut self.types[index].decl.item else {
+            return;
+        };
+        if generic_params.len() > empty.generic_params.len() {
+            empty.generic_params = generic_params;
+        }
     }
 
     pub(super) fn push_type_from_item(

@@ -54,6 +54,10 @@ Resolved Rust paths lift by their item name. If the resolved type has generic
 arguments, those arguments are lifted recursively and preserved as Galvan
 parametric type arguments. If the resolved type is not one of the known wrapper
 types below, `galvan-rustdoc` records the type as an imported dependency type.
+When only a referenced path is available, the imported dependency placeholder
+keeps the generic arity with names from generic use-site arguments where
+possible and stable synthetic names otherwise. Full Rust type declarations use
+the generic parameter names from rustdoc.
 When rustdoc provides the resolved module path, that path is preserved in the
 Rust metadata so same-named Rust types from different modules remain distinct.
 Self-crate rustdoc prefixes such as `crate::` and `$crate::` are normalized to

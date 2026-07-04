@@ -94,6 +94,9 @@ commands remain subcommands.
   - Support qualified external Rust type paths in Galvan type syntax; rustdoc
     metadata preserves module paths, but imported Rust types currently become
     unqualified only through `use`
+  - Replace synthetic generic parameter names on resolved-only dependency type
+    placeholders with the real Rust names once the declaring rustdoc item is
+    available
   - Key rustdoc field, constructor, and enum variant conversion metadata by
     qualified Rust type path once Galvan has qualified type syntax, so same-named
     imported Rust types from different modules can carry distinct conversion
@@ -137,5 +140,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-03*
+*Last updated: 2026-07-04*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

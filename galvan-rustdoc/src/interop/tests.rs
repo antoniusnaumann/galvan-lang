@@ -617,6 +617,49 @@ fn rustdoc_preserves_generic_resolved_paths() {
     assert_eq!(parametric.base_type.as_str(), "Json");
     assert_eq!(parametric.type_args.len(), 1);
     assert!(matches!(parametric.type_args[0], TypeElement::Array(_)));
+
+    let TypeDecl::Empty(json) = imported_type(&interop, "Json") else {
+        panic!("expected referenced Json type to be recorded");
+    };
+    assert_eq!(json.generic_params, vec![Ident::new("T")]);
+}
+
+#[test]
+fn rustdoc_preserves_generic_arity_for_referenced_type_placeholders() {
+    let mut interop = RustInterop::empty();
+    interop.type_from_json(
+        "demo",
+        &resolved_with_path(
+            "Pair",
+            &["demo", "Pair"],
+            vec![generic("Item"), primitive("u64")],
+        ),
+    );
+
+    let TypeDecl::Empty(pair) = imported_type(&interop, "Pair") else {
+        panic!("expected referenced Pair type to be recorded");
+    };
+    assert_eq!(
+        pair.generic_params,
+        vec![Ident::new("Item"), Ident::new("U")]
+    );
+
+    interop.type_from_json(
+        "demo",
+        &resolved_with_path(
+            "Pair",
+            &["demo", "Pair"],
+            vec![generic("Item"), primitive("u64"), primitive("str")],
+        ),
+    );
+
+    let TypeDecl::Empty(pair) = imported_type(&interop, "Pair") else {
+        panic!("expected referenced Pair type to remain opaque");
+    };
+    assert_eq!(
+        pair.generic_params,
+        vec![Ident::new("Item"), Ident::new("U"), Ident::new("V")]
+    );
 }
 
 #[test]

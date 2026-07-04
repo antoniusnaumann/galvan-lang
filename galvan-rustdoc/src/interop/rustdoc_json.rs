@@ -303,3 +303,47 @@ pub(super) fn resolved_type_args_strict(resolved: &Value) -> Option<Vec<&Value>>
     }
     Some(types)
 }
+
+pub(super) fn resolved_type_generic_params(resolved: &Value) -> Vec<Ident> {
+    let mut params = Vec::new();
+    for (index, arg) in resolved_type_args(resolved).into_iter().enumerate() {
+        let candidate = inner_string(arg, "generic")
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| synthetic_generic_name(index));
+        let name = if generic_param_exists(&params, &candidate) {
+            unique_synthetic_generic_name(index, &params)
+        } else {
+            candidate
+        };
+        params.push(Ident::new(name));
+    }
+    params
+}
+
+fn unique_synthetic_generic_name(index: usize, existing: &[Ident]) -> String {
+    let mut offset = index;
+    loop {
+        let candidate = synthetic_generic_name(offset);
+        if !generic_param_exists(existing, &candidate) {
+            return candidate;
+        }
+        offset += 1;
+    }
+}
+
+fn generic_param_exists(params: &[Ident], name: &str) -> bool {
+    params.iter().any(|param| param.as_str() == name)
+}
+
+fn synthetic_generic_name(index: usize) -> String {
+    match index {
+        0 => "T".to_string(),
+        1 => "U".to_string(),
+        2 => "V".to_string(),
+        3 => "W".to_string(),
+        4 => "X".to_string(),
+        5 => "Y".to_string(),
+        6 => "Z".to_string(),
+        _ => format!("T{}", index - 7),
+    }
+}
