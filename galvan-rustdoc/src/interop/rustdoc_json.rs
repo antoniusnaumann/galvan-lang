@@ -81,7 +81,7 @@ fn generic_type_params(generics: &Value) -> Vec<Ident> {
 }
 
 pub(super) fn function_is_unsafe(function: &Value) -> bool {
-    function.get("is_unsafe").and_then(Value::as_bool) == Some(true)
+    function_header_is_unsafe(function)
         || function
             .get("header")
             .is_some_and(function_header_is_unsafe)
@@ -162,6 +162,9 @@ pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
             .is_some_and(type_contains_unliftable_type);
     }
     if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function")) {
+        if function_pointer_is_unsafe(function) {
+            return true;
+        }
         let signature = function.get("sig").unwrap_or(function);
         return signature_contains_unliftable_type(signature);
     }
@@ -181,6 +184,17 @@ fn function_header_is_unsafe(header: &Value) -> bool {
     header.get("is_unsafe").and_then(Value::as_bool) == Some(true)
         || header.get("unsafe").and_then(Value::as_bool) == Some(true)
         || header.get("unsafety").and_then(Value::as_str) == Some("unsafe")
+}
+
+fn function_pointer_is_unsafe(function: &Value) -> bool {
+    function_header_is_unsafe(function)
+        || function
+            .get("header")
+            .is_some_and(function_header_is_unsafe)
+        || function
+            .get("sig")
+            .and_then(|signature| signature.get("header"))
+            .is_some_and(function_header_is_unsafe)
 }
 
 fn signature_input_type(input: &Value) -> &Value {

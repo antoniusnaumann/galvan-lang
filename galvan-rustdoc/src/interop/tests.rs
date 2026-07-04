@@ -189,6 +189,20 @@ fn function_pointer(inputs: Vec<Value>, output: Value) -> Value {
     })
 }
 
+fn unsafe_function_pointer(inputs: Vec<Value>, output: Value) -> Value {
+    json!({
+        "function_pointer": {
+            "sig": {
+                "inputs": inputs,
+                "output": output,
+                "header": {
+                    "is_unsafe": true
+                }
+            }
+        }
+    })
+}
+
 fn mut_borrowed(ty: Value) -> Value {
     json!({
         "borrowed_ref": {
@@ -1000,6 +1014,18 @@ fn rustdoc_does_not_lift_raw_pointer_types() {
 }
 
 #[test]
+fn rustdoc_does_not_lift_unsafe_function_pointer_types() {
+    let mut interop = RustInterop::empty();
+
+    assert!(interop
+        .type_from_json(
+            "std",
+            &unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
+        )
+        .is_none());
+}
+
+#[test]
 fn rustdoc_does_not_lift_unrepresentable_type_shapes() {
     let mut interop = RustInterop::empty();
 
@@ -1302,6 +1328,28 @@ fn rustdoc_does_not_import_functions_with_raw_pointer_signatures() {
 }
 
 #[test]
+fn rustdoc_does_not_import_functions_with_unsafe_function_pointer_signatures() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "visit",
+                vec![json!([
+                    "callback",
+                    unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
+                ])],
+                primitive("bool")
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("visit"), &[])
+        .is_none());
+}
+
+#[test]
 fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
     let json = json!({
         "index": {
@@ -1420,6 +1468,31 @@ fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
         panic!("expected Buffer to import as an opaque type");
     };
     assert_eq!(buffer.ident, TypeIdent::new("Buffer"));
+}
+
+#[test]
+fn rustdoc_keeps_types_with_unsafe_function_pointer_fields_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("CallbackRegistry", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field(
+                "callback",
+                unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(registry) = imported_type(&interop, "CallbackRegistry") else {
+        panic!("expected CallbackRegistry to import as an opaque type");
+    };
+    assert_eq!(registry.ident, TypeIdent::new("CallbackRegistry"));
 }
 
 #[test]
