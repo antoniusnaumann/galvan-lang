@@ -37,6 +37,25 @@ struct CachedCrate {
     krate: Arc<Crate>,
 }
 
+/// Everything a per-document request needs: the open document, the (cached)
+/// crate it belongs to, and its on-disk path when it has one. Holds a read
+/// guard on the document — resolve it before any `.await`.
+struct RequestContext<'a> {
+    document: dashmap::mapref::one::Ref<'a, Url, Document>,
+    krate: Arc<Crate>,
+    file: Option<PathBuf>,
+}
+
+impl RequestContext<'_> {
+    fn document(&self) -> &Document {
+        &self.document
+    }
+
+    fn file(&self) -> Option<&Path> {
+        self.file.as_deref()
+    }
+}
+
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
@@ -44,6 +63,17 @@ impl Backend {
             documents: DashMap::new(),
             crates: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The context for a request against the document at `uri`; `None` when
+    /// the document is not open.
+    fn request_context(&self, uri: &Url) -> Option<RequestContext<'_>> {
+        let document = self.documents.get(uri)?;
+        Some(RequestContext {
+            krate: self.crate_for(uri),
+            file: uri.to_file_path().ok(),
+            document,
+        })
     }
 
     /// The (cached) crate the document at `uri` belongs to.
@@ -148,7 +178,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
                         open_close: Some(true),
-                        change: Some(TextDocumentSyncKind::FULL),
+                        change: Some(TextDocumentSyncKind::INCREMENTAL),
                         save: Some(TextDocumentSyncSaveOptions::Supported(true)),
                         ..Default::default()
                     },
@@ -218,15 +248,35 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        // Full-sync mode: the last change contains the entire document text.
-        if let Some(change) = params.content_changes.into_iter().last() {
-            let uri = params.text_document.uri;
-            self.documents.insert(
-                uri.clone(),
-                Document::with_version(change.text, params.text_document.version),
-            );
-            self.refresh(uri).await;
+        let uri = params.text_document.uri;
+        // Incremental sync: apply each change in order, each against the
+        // text produced by the previous one. A change without a range
+        // replaces the whole document (clients may still send those).
+        let mut text = self
+            .documents
+            .get(&uri)
+            .map(|document| document.text.clone())
+            .unwrap_or_default();
+        for change in params.content_changes {
+            match change.range {
+                Some(range) => {
+                    let index = crate::position::LineIndex::new(&text);
+                    let (Some(start), Some(end)) = (
+                        index.offset(&text, range.start),
+                        index.offset(&text, range.end),
+                    ) else {
+                        continue;
+                    };
+                    text.replace_range(start..end, &change.text);
+                }
+                None => text = change.text,
+            }
         }
+        self.documents.insert(
+            uri.clone(),
+            Document::with_version(text, params.text_document.version),
+        );
+        self.refresh(uri).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
@@ -248,15 +298,13 @@ impl LanguageServer for Backend {
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let position = params.text_document_position_params;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(hover::hover(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
         ))
     }
@@ -267,15 +315,13 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         let position = params.text_document_position_params;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(goto_definition::goto_definition(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
         )
         .map(GotoDefinitionResponse::Scalar))
@@ -284,15 +330,13 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let position = params.text_document_position;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         let locations = references::references(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
             params.context.include_declaration,
         );
@@ -341,15 +385,13 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<DocumentHighlight>>> {
         let position = params.text_document_position_params;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(Some(document_highlight::document_highlight(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
         )))
     }
@@ -396,15 +438,13 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoTypeDefinitionResponse>> {
         let position = params.text_document_position_params;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(type_definition::type_definition(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
         )
         .map(GotoTypeDefinitionResponse::Scalar))
@@ -412,15 +452,13 @@ impl LanguageServer for Backend {
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(Some(code_actions::code_actions(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             params.range,
             &params.context,
         )))
@@ -431,28 +469,24 @@ impl LanguageServer for Backend {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(Some(SemanticTokensResult::Tokens(
-            semantic_tokens::semantic_tokens(&document, &krate, file.as_deref()),
+            semantic_tokens::semantic_tokens(context.document(), &context.krate, context.file()),
         )))
     }
 
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let position = params.text_document_position_params;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(signature_help::signature_help(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
         ))
     }
@@ -462,15 +496,13 @@ impl LanguageServer for Backend {
         params: TextDocumentPositionParams,
     ) -> Result<Option<PrepareRenameResponse>> {
         let uri = params.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(rename::prepare_rename(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             params.position,
         ))
     }
@@ -478,15 +510,13 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let position = params.text_document_position;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(rename::rename(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
             &params.new_name,
         ))
@@ -497,13 +527,11 @@ impl LanguageServer for Backend {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(Some(DocumentSymbolResponse::Nested(
-            symbols::document_symbols(&document, &krate, file.as_deref()),
+            symbols::document_symbols(context.document(), &context.krate, context.file()),
         )))
     }
 
@@ -535,15 +563,13 @@ impl LanguageServer for Backend {
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         let uri = params.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(Some(inlay_hints::inlay_hints(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             params.range,
         )))
     }
@@ -551,15 +577,13 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let position = params.text_document_position;
         let uri = position.text_document.uri;
-        let Some(document) = self.documents.get(&uri) else {
+        let Some(context) = self.request_context(&uri) else {
             return Ok(None);
         };
-        let krate = self.crate_for(&uri);
-        let file = uri.to_file_path().ok();
         Ok(Some(CompletionResponse::Array(completion::completion(
-            &document,
-            &krate,
-            file.as_deref(),
+            context.document(),
+            &context.krate,
+            context.file(),
             position.position,
         ))))
     }

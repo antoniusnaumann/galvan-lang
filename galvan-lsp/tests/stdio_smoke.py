@@ -6,7 +6,13 @@ import subprocess
 import sys
 import tempfile
 
-BINARY = "/Users/anaumann/Development/galvan/target/debug/galvan-lsp"
+# Resolved relative to this file; override with GALVAN_LSP_BIN.
+BINARY = os.environ.get(
+    "GALVAN_LSP_BIN",
+    os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "target", "debug", "galvan-lsp",
+    )),
+)
 
 SOURCE = """fn greet(name: String) {
     greet(name)
@@ -231,6 +237,17 @@ def main():
     titles = [action["title"] for action in reply["result"]]
     assert "Replace `func` with `fn`" in titles, titles
 
+    # -- apply the quickfix through an *incremental* didChange ---------------
+    fix = next(action for action in reply["result"]
+               if action["title"] == "Replace `func` with `fn`")
+    edit = fix["edit"]["changes"][uri][0]
+    send({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+        "textDocument": {"uri": uri, "version": 3},
+        "contentChanges": [{"range": edit["range"], "text": edit["newText"]}],
+    }})
+    note = expect_notification("textDocument/publishDiagnostics")
+    assert note["params"]["diagnostics"] == [], note["params"]
+
     # -- didClose clears diagnostics ---------------------------------------
     send({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {
         "textDocument": {"uri": uri},
@@ -251,7 +268,7 @@ def main():
           "end-of-ident hover, symbols, rename, inlay hints, signature help, "
           "semantic tokens, code actions, formatting, document highlight, "
           "folding, type definition, selection range, range/on-type formatting, "
-          "foreign-keyword quickfix, close-clears-diags")
+          "foreign-keyword quickfix, incremental sync, close-clears-diags")
 
 
 if __name__ == "__main__":
