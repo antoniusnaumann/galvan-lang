@@ -538,9 +538,6 @@ impl RustInterop {
             if name.as_ref() == "Arc" && standard_wrapper {
                 return self.lift_arc_type_from_json(crate_name, resolved);
             }
-            if matches!(name.as_ref(), "Mutex" | "RwLock") && standard_wrapper {
-                return self.lift_lock_type_from_json(crate_name, resolved);
-            }
 
             let args = self.lift_resolved_type_args_from_json(crate_name, resolved)?;
 

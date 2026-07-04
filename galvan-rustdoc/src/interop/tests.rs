@@ -1180,8 +1180,6 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
             resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
             "RwLock",
         ),
-        (resolved("Mutex", vec![generic("T")]), "Mutex"),
-        (resolved("RwLock", vec![generic("T")]), "RwLock"),
     ] {
         let param = interop
             .param_from_json("std", &json!(["tickets", wrapper]))
@@ -1193,6 +1191,21 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
             .types
             .iter()
             .all(|ty| !matches!(ty.name.as_str(), "Arc") && ty.name.as_str() != leaked_name));
+    }
+}
+
+#[test]
+fn rustdoc_skips_bare_standard_lock_wrappers() {
+    let mut interop = RustInterop::empty();
+
+    for wrapper in [
+        resolved("Mutex", vec![generic("T")]),
+        resolved("RwLock", vec![generic("T")]),
+    ] {
+        assert!(interop.type_from_json("std", &wrapper).is_none());
+        assert!(interop
+            .param_from_json("std", &json!(["tickets", wrapper]))
+            .is_none());
     }
 }
 
@@ -2059,7 +2072,7 @@ fn rustdoc_imports_public_struct_fields() {
             ),
             "4": public_field(
                 "draft",
-                resolved("Mutex", vec![resolved("TicketDraft", vec![])])
+                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketDraft", vec![])])])
             )
         }
     });
@@ -2091,6 +2104,31 @@ fn rustdoc_imports_public_struct_fields() {
         ticket.members[3].r#type,
         plain_type(TypeIdent::new("TicketDraft"))
     );
+}
+
+#[test]
+fn rustdoc_keeps_types_with_bare_lock_fields_opaque() {
+    let json = json!({
+        "index": {
+            "0": public_item("TicketStore", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field(
+                "tickets",
+                resolved("Mutex", vec![resolved("Ticket", vec![])])
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(store) = imported_type(&interop, "TicketStore") else {
+        panic!("expected TicketStore to import as an opaque type");
+    };
+    assert_eq!(store.ident, TypeIdent::new("TicketStore"));
 }
 
 #[test]

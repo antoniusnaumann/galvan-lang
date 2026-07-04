@@ -114,30 +114,34 @@ pointer types are not lifted.
 
 ## Shared State Wrappers
 
-Rust shared synchronization wrappers lift to Galvan `ref` fields and parameters:
+Rust shared synchronization wrappers lift to Galvan `ref` fields and parameters
+only when the Rust type carries shared ownership:
 
 | Rust | Galvan |
 | --- | --- |
-| `Mutex<T>`, `RwLock<T>` | `ref T` |
 | `Arc<Mutex<T>>`, `Arc<RwLock<T>>` | `ref T` |
 | `Arc<AtomicBool>` | `ref Bool` |
 | `Arc<AtomicI8>`, `Arc<AtomicI16>`, `Arc<AtomicI32>`, `Arc<AtomicI64>`, `Arc<AtomicIsize>` | `ref I8`, `ref I16`, `ref I32`, `ref I64`, `ref ISize` |
 | `Arc<AtomicU8>`, `Arc<AtomicU16>`, `Arc<AtomicU32>`, `Arc<AtomicU64>`, `Arc<AtomicUsize>` | `ref U8`, `ref U16`, `ref U32`, `ref U64`, `ref USize` |
 
 When a shared-state wrapper is consumed, the `Arc`, lock, or atomic wrapper type
-is not recorded as part of the Galvan API surface. Naked `Atomic*` types remain
-nominal Rust dependency types because Galvan only treats atomic primitives as
-shared `ref` storage when they appear behind `Arc`. Other `Arc<T>` shapes remain
-`Arc<T>` in the lifted Galvan type and are recorded as dependency types. They
-are not treated as Galvan `ref` unless the inner type is one of the recognized
-shared state wrappers above.
+is not recorded as part of the Galvan API surface. Bare `Mutex<T>` and
+`RwLock<T>` are not lifted to `ref`; they are skipped because Galvan `ref`
+represents shared state, and a lock without `Arc` does not provide shared
+ownership across the boundary. Naked `Atomic*` types remain nominal Rust
+dependency types because Galvan only treats atomic primitives as shared `ref`
+storage when they appear behind `Arc`. Other `Arc<T>` shapes remain `Arc<T>` in
+the lifted Galvan type and are recorded as dependency types. They are not
+treated as Galvan `ref` unless the inner type is one of the recognized shared
+state wrappers above.
 
 Known wrapper lifting is path-aware when rustdoc provides a path. Standard
 library wrappers are lifted from `std`, `core`, or `alloc` paths; `IndexMap` and
 `IndexSet` are lifted from the `indexmap` crate; `anyhow::Result<T>` and
 `galvan::std::FlexResult<T>` lift to `T!`. Same-named dependency types such as a
-crate-local `Option<T>`, `Vec<T>`, `Result<T, E>`, `Arc<T>`, or `Mutex<T>` remain
-nominal imported Rust types instead of being rewritten to Galvan wrapper syntax.
+crate-local `Option<T>`, `Vec<T>`, `Result<T, E>`, `Arc<T>`, or `Mutex<T>`
+remain nominal imported Rust types instead of being rewritten to Galvan wrapper
+syntax.
 
 ## Owned Wrapper Conversions
 

@@ -158,7 +158,9 @@ pub(super) fn known_lifted_resolved_type(name: &str, resolved: &Value) -> bool {
             | "HashSet"
             | "BTreeSet"
             | "HashMap"
-            | "BTreeMap" if standard_wrapper
+            | "BTreeMap"
+            | "Mutex"
+            | "RwLock" if standard_wrapper
     ) || matches!(name, "IndexSet" | "IndexMap" if indexmap_wrapper)
         || matches!(name, "FlexResult" if flex_result)
         || resolved_path_matches(resolved, &["anyhow", "Result"])
