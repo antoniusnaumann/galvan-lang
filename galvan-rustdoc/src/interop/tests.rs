@@ -2758,6 +2758,58 @@ fn rustdoc_imports_inherent_associated_functions() {
 }
 
 #[test]
+fn rustdoc_does_not_import_impl_items_with_unliftable_receivers() {
+    let json = json!({
+        "index": {
+            "0": {
+                "id": "0",
+                "name": null,
+                "visibility": "public",
+                "inner": {
+                    "impl": {
+                        "for": raw_pointer(primitive("u8"), false),
+                        "trait": null,
+                        "items": ["1", "2"]
+                    }
+                }
+            },
+            "1": {
+                "id": "1",
+                "name": "from_address",
+                "visibility": "public",
+                "path": ["demo", "PointerExt"],
+                "inner": {
+                    "function": {
+                        "sig": {
+                            "inputs": [],
+                            "output": primitive("bool")
+                        }
+                    }
+                }
+            },
+            "2": {
+                "id": "2",
+                "name": "KIND",
+                "visibility": "public",
+                "path": ["demo", "PointerExt"],
+                "inner": {
+                    "assoc_const": {
+                        "type": primitive("str")
+                    }
+                }
+            }
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("from_address"), &[])
+        .is_none());
+    assert!(interop.constant(Some("demo"), &ident("KIND")).is_none());
+}
+
+#[test]
 fn rustdoc_does_not_import_unsafe_associated_functions() {
     let json = json!({
         "index": {

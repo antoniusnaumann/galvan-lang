@@ -173,9 +173,10 @@ public surface contains raw pointers or unliftable type shapes are kept opaque
 instead of exposing those fields or variants. Data declarations are also kept
 opaque when rustdoc metadata is incomplete enough that fields or variants would
 otherwise be silently dropped, or when rustdoc exposes non-public fields that
-Galvan cannot represent as part of a constructible public data declaration. If
-an API requires raw pointers or unsafe contracts, write that boundary in Rust
-and expose a safe wrapper to Galvan.
+Galvan cannot represent as part of a constructible public data declaration. Impl
+items are skipped when their receiver type cannot be lifted into a Galvan
+associated receiver. If an API requires raw pointers or unsafe contracts, write
+that boundary in Rust and expose a safe wrapper to Galvan.
 
 Unknown rustdoc type forms are treated as unliftable. Functions and constants
 using them are skipped; data declarations containing them are kept opaque.

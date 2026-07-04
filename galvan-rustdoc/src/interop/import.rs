@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use galvan_ast::TypeIdent;
 use serde_json::Value;
 
 use super::rustdoc_json::{
@@ -95,7 +96,12 @@ impl RustInterop {
             let Some(impl_inner) = item_inner(impl_item, "impl") else {
                 continue;
             };
-            found_item |= self.import_impl_constants(crate_name, impl_inner, index);
+            let Some(associated_receiver) = self.impl_associated_receiver(crate_name, impl_inner)
+            else {
+                continue;
+            };
+            found_item |=
+                self.import_impl_constants(crate_name, impl_inner, index, &associated_receiver);
 
             for id in item_ids(impl_inner, "items") {
                 let Some(item) = index.get(id) else {
@@ -120,10 +126,6 @@ impl RustInterop {
                     continue;
                 }
 
-                let associated_receiver = impl_inner
-                    .get("for")
-                    .and_then(|ty| self.type_from_json(crate_name, ty))
-                    .and_then(|ty| receiver_type_ident(&ty));
                 let Some(imported) =
                     self.impl_function_decl(crate_name, name, signature, impl_inner)
                 else {
@@ -137,7 +139,7 @@ impl RustInterop {
                     rust_path,
                     imported.decl,
                     borrowed_return,
-                    associated_receiver,
+                    Some(associated_receiver.clone()),
                     imported.return_conversion,
                     imported.arg_conversions,
                 );
@@ -386,12 +388,8 @@ impl RustInterop {
         crate_name: &str,
         impl_inner: &Value,
         index: &serde_json::Map<String, Value>,
+        receiver: &TypeIdent,
     ) -> bool {
-        let receiver = impl_inner
-            .get("for")
-            .and_then(|ty| self.type_from_json(crate_name, ty))
-            .and_then(|ty| receiver_type_ident(&ty));
-
         let mut found_item = false;
         for id in item_ids(impl_inner, "items") {
             let Some(item) = index.get(id) else {
@@ -415,10 +413,21 @@ impl RustInterop {
                 continue;
             }
             let rust_path = impl_constant_rust_path(crate_name, name, item, impl_inner);
-            self.push_constant(crate_name, receiver.clone(), name, rust_path, ty);
+            self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
             found_item = true;
         }
         found_item
+    }
+
+    fn impl_associated_receiver(
+        &mut self,
+        crate_name: &str,
+        impl_inner: &Value,
+    ) -> Option<TypeIdent> {
+        impl_inner
+            .get("for")
+            .and_then(|ty| self.type_from_json(crate_name, ty))
+            .and_then(|ty| receiver_type_ident(&ty))
     }
 }
 
