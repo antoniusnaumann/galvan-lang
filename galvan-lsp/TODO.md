@@ -40,6 +40,15 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 
 ## Features
 
+- [x] **A real `galvan-format`** (2026-07-04) — token-level formatter in the new
+  `galvan-format` crate: a Wadler-style pretty-printer over the tree-sitter CST
+  (spacing, indentation, 100-column reflow of bracketed lists and member
+  chains, comment/blank-line preservation, refuses syntax errors). Style
+  decisions are documented in `galvan-format/STYLE.md`. The LSP calls it as a
+  library and diffs line-by-line into minimal `TextEdit`s; the `galvan-format`
+  binary is a stdin/stdout + in-place + `--check` CLI usable from Helix
+  (`formatter = { command = "galvan-format" }`).
+
 ## Possible next steps
 
 - **Grammar gap: `use` paths with capitalized segments** — `use foo::Bar`
@@ -70,15 +79,17 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
 - **analyze() re-parses sources** instead of reusing `CrateFile::segmented` —
   blocked on `Clone` for `SegmentedAsts`/`ToplevelItem` in `galvan-ast`; cost
   is bounded by the per-version memoization, so low priority.
-- **A real `galvan-format`** — token-level formatting (spacing, line-length
-  reflow) belongs in a compiler-side crate the LSP would call into; the LSP's
-  whitespace formatter is deliberately limited to indentation and trailing
-  whitespace.
+- **galvan-format follow-ups** — sort `use` declarations (needs careful
+  comment reattachment), break overlong infix expressions at operators,
+  and honor `.editorconfig`/config files for the width options.
 
 ## How to verify
 
 - `cargo test -p galvan-lsp` — e2e tests in `tests/features.rs` drive the same pure
   feature functions the server dispatches to, through the real parser+typechecker.
+- `cargo test -p galvan-format` — formatter construct-by-construct expectations;
+  every case also asserts idempotency, and the example projects must already be
+  in canonical style.
 - `cargo build -p galvan-lsp && python3 galvan-lsp/tests/stdio_smoke.py` — drives the
   real binary over stdio through a full session (initialize, didOpen/diagnostics,
   `::`-completion, hover at end of identifier, documentSymbol, rename, inlayHint,
