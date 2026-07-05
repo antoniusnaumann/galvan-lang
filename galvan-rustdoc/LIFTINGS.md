@@ -162,6 +162,14 @@ ordering. Compound assignments without a dedicated atomic intrinsic (`*=`, `/=`,
 `%=`, `^=`) lower to an atomic `fetch_update` compare-and-swap loop rather than a
 load/modify/store pair, so the whole read-modify-write stays atomic.
 
+Passing an atomic-backed `ref` as a `.mut` argument to a single-argument
+function (e.g. `bump(counter.mut)`) also lowers to a `fetch_update` loop that
+runs the whole call atomically. Because a compare-and-swap loop may retry, the
+called function may run more than once and must have no observable effect beyond
+mutating its argument. Calls with additional arguments or several atomic `.mut`
+arguments currently fall back to a non-atomic load/call/store and are not yet
+race-free.
+
 Known wrapper lifting is path-aware when rustdoc provides a path. Standard
 library wrappers are lifted from `std`, `core`, or `alloc` paths; `IndexMap` and
 `IndexSet` are lifted from the `indexmap` crate; `anyhow::Result<T>` and
