@@ -21,72 +21,50 @@ impl RustInterop {
         resolved: &Value,
         args: &[LiftedType],
     ) -> Option<LiftedType> {
-        let standard_wrapper =
-            resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
-        let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(resolved, &["indexmap"]);
-        let flex_result = resolved_path_is_unqualified_or_matches_any(
-            resolved,
-            &[&["galvan", "std", "FlexResult"]],
-        );
-
-        match name {
-            "String" if standard_wrapper => Some(LiftedType::new(string_type())),
-            "Option" if standard_wrapper => Some(LiftedType::new(TypeElement::Optional(Box::new(
+        match classify_wrapper(name, resolved)? {
+            WrapperShape::String => Some(LiftedType::new(string_type())),
+            WrapperShape::Option => Some(LiftedType::new(TypeElement::Optional(Box::new(
                 OptionalTypeItem {
                     inner: args.first()?.ty.clone(),
                     span: Span::default(),
                 },
             )))),
-            "FlexResult" if flex_result => Some(result_type(args.first()?, None)),
-            "Result" if resolved_path_matches(resolved, &["anyhow", "Result"]) => {
-                Some(result_type(args.first()?, None))
-            }
-            "Result" if standard_wrapper => Some(result_type(
+            WrapperShape::ResultSingle => Some(result_type(args.first()?, None)),
+            WrapperShape::ResultDouble => Some(result_type(
                 args.first()?,
                 args.get(1)
                     .map(|arg| arg.ty.clone())
                     .or_else(|| Some(plain_type(TypeIdent::new("__UnknownRustError")))),
             )),
-            "Vec" | "VecDeque" | "LinkedList" if standard_wrapper => Some(LiftedType::new(
-                TypeElement::Array(Box::new(ArrayTypeItem {
+            WrapperShape::Array => Some(LiftedType::new(TypeElement::Array(Box::new(
+                ArrayTypeItem {
                     elements: args.first()?.ty.clone(),
                     span: Span::default(),
-                })),
-            )),
-            "HashSet" | "BTreeSet" if standard_wrapper => {
+                },
+            )))),
+            WrapperShape::Set => {
                 Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
                     elements: args.first()?.ty.clone(),
                     span: Span::default(),
                 }))))
             }
-            "IndexSet" if indexmap_wrapper => {
-                Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
-                    elements: args.first()?.ty.clone(),
-                    span: Span::default(),
-                }))))
-            }
-            "HashMap" if standard_wrapper => Some(LiftedType::new(TypeElement::Dictionary(
-                Box::new(DictionaryTypeItem {
+            WrapperShape::Dictionary => Some(LiftedType::new(TypeElement::Dictionary(Box::new(
+                DictionaryTypeItem {
                     key: args.first()?.ty.clone(),
                     value: args.get(1)?.ty.clone(),
                     span: Span::default(),
-                }),
-            ))),
-            "BTreeMap" if standard_wrapper => Some(LiftedType::new(
+                },
+            )))),
+            WrapperShape::OrderedDictionary => Some(LiftedType::new(
                 TypeElement::OrderedDictionary(Box::new(OrderedDictionaryTypeItem {
                     key: args.first()?.ty.clone(),
                     value: args.get(1)?.ty.clone(),
                     span: Span::default(),
                 })),
             )),
-            "IndexMap" if indexmap_wrapper => Some(LiftedType::new(
-                TypeElement::OrderedDictionary(Box::new(OrderedDictionaryTypeItem {
-                    key: args.first()?.ty.clone(),
-                    value: args.get(1)?.ty.clone(),
-                    span: Span::default(),
-                })),
-            )),
-            _ => None,
+            // Bare locks are recognized as known wrappers (so incomplete metadata is
+            // treated as unliftable) but are intentionally not lifted here.
+            WrapperShape::Lock => None,
         }
     }
 
@@ -141,27 +119,50 @@ impl RustInterop {
 }
 
 pub(super) fn known_lifted_resolved_type(name: &str, resolved: &Value) -> bool {
+    classify_wrapper(name, resolved).is_some()
+}
+
+/// The shape a known wrapper type lifts to. This is the single source of truth for
+/// which `(name, resolved path)` pairs are recognized wrappers; both the lifter
+/// (`lift_known_resolved_type`) and the predicate (`known_lifted_resolved_type`)
+/// consult it, so their name/path membership can never drift apart.
+enum WrapperShape {
+    String,
+    Option,
+    /// Single-payload result (`FlexResult`, `anyhow::Result`).
+    ResultSingle,
+    /// Standard two-parameter `Result`.
+    ResultDouble,
+    Array,
+    Set,
+    Dictionary,
+    OrderedDictionary,
+    /// `Mutex`/`RwLock`: recognized but not lifted (bare locks stay unliftable).
+    Lock,
+}
+
+fn classify_wrapper(name: &str, resolved: &Value) -> Option<WrapperShape> {
     let standard_wrapper =
         resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
     let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(resolved, &["indexmap"]);
     let flex_result =
         resolved_path_is_unqualified_or_matches_any(resolved, &[&["galvan", "std", "FlexResult"]]);
 
-    matches!(
-        name,
-        "String"
-            | "Option"
-            | "Result"
-            | "Vec"
-            | "VecDeque"
-            | "LinkedList"
-            | "HashSet"
-            | "BTreeSet"
-            | "HashMap"
-            | "BTreeMap"
-            | "Mutex"
-            | "RwLock" if standard_wrapper
-    ) || matches!(name, "IndexSet" | "IndexMap" if indexmap_wrapper)
-        || matches!(name, "FlexResult" if flex_result)
-        || resolved_path_matches(resolved, &["anyhow", "Result"])
+    match name {
+        "String" if standard_wrapper => Some(WrapperShape::String),
+        "Option" if standard_wrapper => Some(WrapperShape::Option),
+        "FlexResult" if flex_result => Some(WrapperShape::ResultSingle),
+        "Result" if resolved_path_matches(resolved, &["anyhow", "Result"]) => {
+            Some(WrapperShape::ResultSingle)
+        }
+        "Result" if standard_wrapper => Some(WrapperShape::ResultDouble),
+        "Vec" | "VecDeque" | "LinkedList" if standard_wrapper => Some(WrapperShape::Array),
+        "HashSet" | "BTreeSet" if standard_wrapper => Some(WrapperShape::Set),
+        "IndexSet" if indexmap_wrapper => Some(WrapperShape::Set),
+        "HashMap" if standard_wrapper => Some(WrapperShape::Dictionary),
+        "BTreeMap" if standard_wrapper => Some(WrapperShape::OrderedDictionary),
+        "IndexMap" if indexmap_wrapper => Some(WrapperShape::OrderedDictionary),
+        "Mutex" | "RwLock" if standard_wrapper => Some(WrapperShape::Lock),
+        _ => None,
+    }
 }

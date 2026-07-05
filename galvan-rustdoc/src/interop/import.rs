@@ -276,52 +276,56 @@ impl RustInterop {
                 continue;
             };
             let rust_path = callable_rust_path(crate_name, exported_name, item);
-
-            if public_type_name(target).is_some() {
-                self.push_reexported_type_from_item(
-                    crate_name,
-                    exported_name,
-                    rust_path,
-                    target,
-                    index,
-                );
-                found_item = true;
-                continue;
-            }
-
-            if let Some(function) = item_inner(target, "function") {
-                if function_is_unsafe(function) {
-                    continue;
-                }
-                if let Some(signature) = function.get("sig") {
-                    if signature_contains_unliftable_type(signature) {
-                        continue;
-                    }
-                    let Some(imported) = self.function_decl(crate_name, exported_name, signature)
-                    else {
-                        continue;
-                    };
-                    let borrowed_return = return_is_borrowed(signature);
-                    self.push_function(
-                        crate_name,
-                        exported_name,
-                        rust_path,
-                        imported.decl,
-                        borrowed_return,
-                        imported.return_conversion,
-                        imported.arg_conversions,
-                    );
-                    found_item = true;
-                }
-                continue;
-            }
-
-            if let Some(constant) = constant_inner(target) {
-                found_item |=
-                    self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
-            }
+            found_item |=
+                self.import_reexport_target(crate_name, exported_name, rust_path, target, index);
         }
         found_item
+    }
+
+    fn import_reexport_target(
+        &mut self,
+        crate_name: &str,
+        exported_name: &str,
+        rust_path: Box<str>,
+        target: &Value,
+        index: &serde_json::Map<String, Value>,
+    ) -> bool {
+        if public_type_name(target).is_some() {
+            self.push_reexported_type_from_item(crate_name, exported_name, rust_path, target, index);
+            return true;
+        }
+
+        if let Some(function) = item_inner(target, "function") {
+            if function_is_unsafe(function) {
+                return false;
+            }
+            let Some(signature) = function.get("sig") else {
+                return false;
+            };
+            if signature_contains_unliftable_type(signature) {
+                return false;
+            }
+            let Some(imported) = self.function_decl(crate_name, exported_name, signature) else {
+                return false;
+            };
+            let borrowed_return = return_is_borrowed(signature);
+            self.push_function(
+                crate_name,
+                exported_name,
+                rust_path,
+                imported.decl,
+                borrowed_return,
+                imported.return_conversion,
+                imported.arg_conversions,
+            );
+            return true;
+        }
+
+        if let Some(constant) = constant_inner(target) {
+            return self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
+        }
+
+        false
     }
 
     fn import_external_reexported_type(
@@ -371,50 +375,8 @@ impl RustInterop {
                 continue;
             };
             let rust_path = callable_rust_path(crate_name, exported_name, item);
-
-            if public_type_name(target).is_some() {
-                self.push_reexported_type_from_item(
-                    crate_name,
-                    exported_name,
-                    rust_path,
-                    target,
-                    index,
-                );
-                found_item = true;
-                continue;
-            }
-
-            if let Some(function) = item_inner(target, "function") {
-                if function_is_unsafe(function) {
-                    continue;
-                }
-                if let Some(signature) = function.get("sig") {
-                    if signature_contains_unliftable_type(signature) {
-                        continue;
-                    }
-                    let Some(imported) = self.function_decl(crate_name, exported_name, signature)
-                    else {
-                        continue;
-                    };
-                    let borrowed_return = return_is_borrowed(signature);
-                    self.push_function(
-                        crate_name,
-                        exported_name,
-                        rust_path,
-                        imported.decl,
-                        borrowed_return,
-                        imported.return_conversion,
-                        imported.arg_conversions,
-                    );
-                    found_item = true;
-                }
-                continue;
-            }
-
-            if let Some(constant) = constant_inner(target) {
-                found_item |=
-                    self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
-            }
+            found_item |=
+                self.import_reexport_target(crate_name, exported_name, rust_path, target, index);
         }
 
         found_item
@@ -493,14 +455,15 @@ impl RustInterop {
             let Some(constant) = constant_inner(item) else {
                 continue;
             };
-            let Some(ty) =
-                constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-            else {
+            let Some(constant_ty) = constant_type(constant) else {
                 continue;
             };
-            if constant_type(constant).is_some_and(type_contains_unliftable_type) {
+            if type_contains_unliftable_type(constant_ty) {
                 continue;
             }
+            let Some(ty) = self.type_from_json(crate_name, constant_ty) else {
+                continue;
+            };
             self.push_constant(
                 crate_name,
                 None,
@@ -534,14 +497,15 @@ impl RustInterop {
             let Some(constant) = constant_inner(item) else {
                 continue;
             };
-            let Some(ty) =
-                constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-            else {
+            let Some(constant_ty) = constant_type(constant) else {
                 continue;
             };
-            if constant_type(constant).is_some_and(type_contains_unliftable_type) {
+            if type_contains_unliftable_type(constant_ty) {
                 continue;
             }
+            let Some(ty) = self.type_from_json(crate_name, constant_ty) else {
+                continue;
+            };
             let rust_path = impl_constant_rust_path(crate_name, name, item, impl_inner);
             self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
             found_item = true;

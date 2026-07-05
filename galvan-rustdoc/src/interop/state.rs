@@ -11,6 +11,20 @@ use crate::RustdocError;
 use super::function_id::RustFunctionId;
 use super::uses::imported_crates;
 
+/// Whether a `(receiver, name/id)` associated item is exposed by exactly one
+/// namespace (`One`) or by more than one (`Many`). Used by the unqualified
+/// associated lookups to answer "is this unambiguous?" in O(1) instead of
+/// scanning every namespaced associated item.
+#[derive(Debug)]
+pub(super) enum Unambiguous {
+    /// Unique so far: the sole exposing namespace and the resolved index. If the
+    /// same namespace re-inserts the pair (a duplicate that overwrites the
+    /// namespaced map) we keep the latest index and stay unambiguous.
+    One { namespace: String, idx: usize },
+    /// Two or more distinct namespaces expose the pair, so it is ambiguous.
+    Many,
+}
+
 #[derive(Debug, Default)]
 pub struct RustInterop {
     pub types: Vec<RustTypeDecl>,
@@ -18,12 +32,14 @@ pub struct RustInterop {
     pub constants: Vec<RustConstantDecl>,
     pub(super) by_imported_type: HashMap<TypeIdent, usize>,
     pub(super) by_namespace_function: HashMap<(String, RustFunctionId), usize>,
-    pub(super) by_imported_function: HashMap<(String, RustFunctionId), usize>,
+    pub(super) by_imported_function: HashMap<RustFunctionId, usize>,
     pub(super) by_namespace_associated_function:
         HashMap<(String, TypeIdent, RustFunctionId), usize>,
+    pub(super) by_associated_function: HashMap<(TypeIdent, RustFunctionId), Unambiguous>,
     pub(super) by_namespace_constant: HashMap<(String, Ident), usize>,
     pub(super) by_imported_constant: HashMap<Ident, usize>,
     pub(super) by_namespace_associated_constant: HashMap<(String, TypeIdent, Ident), usize>,
+    pub(super) by_associated_constant: HashMap<(TypeIdent, Ident), Unambiguous>,
 }
 
 impl RustInterop {

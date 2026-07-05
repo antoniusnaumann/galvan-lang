@@ -15,6 +15,7 @@ use super::rustdoc_json::{
     public_type_name, receiver_type_ident, resolved_type_generic_params, type_generic_params,
 };
 use super::rustdoc_path::{resolved_type_rust_path, rust_path};
+use super::state::Unambiguous;
 use super::RustInterop;
 
 impl RustInterop {
@@ -232,6 +233,12 @@ impl RustInterop {
         });
 
         if let Some(receiver) = associated_receiver {
+            insert_unambiguous_associated(
+                &mut self.by_associated_constant,
+                (receiver.clone(), ident.clone()),
+                crate_name,
+                idx,
+            );
             self.by_namespace_associated_constant
                 .insert((crate_name.to_string(), receiver, ident), idx);
         } else {
@@ -283,6 +290,12 @@ impl RustInterop {
         });
         if !has_receiver {
             if let Some(associated_receiver) = associated_receiver {
+                insert_unambiguous_associated(
+                    &mut self.by_associated_function,
+                    (associated_receiver.clone(), id.clone()),
+                    crate_name,
+                    idx,
+                );
                 self.by_namespace_associated_function.insert(
                     (crate_name.to_string(), associated_receiver, id.clone()),
                     idx,
@@ -296,4 +309,41 @@ impl RustInterop {
                 .insert((crate_name.to_string(), id.clone()), idx);
         }
     }
+}
+
+/// Records that `namespace` exposes the associated `key`, tracking whether the
+/// key remains exposed by a single namespace (`One`) or becomes ambiguous
+/// (`Many`). Mirrors the overwrite semantics of the namespaced maps: a repeated
+/// insert from the same namespace keeps the latest index and stays unambiguous.
+fn insert_unambiguous_associated<K>(
+    map: &mut std::collections::HashMap<K, Unambiguous>,
+    key: K,
+    namespace: &str,
+    idx: usize,
+) where
+    K: Eq + std::hash::Hash,
+{
+    match map.get_mut(&key) {
+        None => {
+            map.insert(
+                key,
+                Unambiguous::One {
+                    namespace: namespace.to_string(),
+                    idx,
+                },
+            );
+            return;
+        }
+        Some(Unambiguous::One {
+            namespace: existing_namespace,
+            idx: existing_idx,
+        }) => {
+            if existing_namespace == namespace {
+                *existing_idx = idx;
+                return;
+            }
+        }
+        Some(Unambiguous::Many) => return,
+    }
+    map.insert(key, Unambiguous::Many);
 }

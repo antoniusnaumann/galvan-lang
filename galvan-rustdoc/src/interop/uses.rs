@@ -24,13 +24,14 @@ impl RustInterop {
             match use_decl.path.segments.as_slice() {
                 [_] => self.import_namespace(
                     namespace,
+                    None,
                     &mut ambiguous_types,
                     &mut ambiguous_functions,
                     &mut ambiguous_constants,
                 ),
-                [_, item] => self.import_item(
+                [_, item] => self.import_namespace(
                     namespace,
-                    item.as_str(),
+                    Some(item.as_str()),
                     &mut ambiguous_types,
                     &mut ambiguous_functions,
                     &mut ambiguous_constants,
@@ -43,12 +44,16 @@ impl RustInterop {
     fn import_namespace(
         &mut self,
         namespace: &str,
+        name: Option<&str>,
         ambiguous_types: &mut HashSet<TypeIdent>,
-        ambiguous_functions: &mut HashSet<(String, RustFunctionId)>,
+        ambiguous_functions: &mut HashSet<RustFunctionId>,
         ambiguous_constants: &mut HashSet<Ident>,
     ) {
         for (idx, ty) in self.types.iter().enumerate() {
             if ty.namespace.as_ref() != namespace {
+                continue;
+            }
+            if name.is_some_and(|name| ty.name.as_str() != name) {
                 continue;
             }
             insert_unambiguous(
@@ -63,67 +68,7 @@ impl RustInterop {
                 continue;
             }
             let signature = &function.decl.item.signature;
-            let labels = signature.overload_labels();
-            let labels = labels
-                .iter()
-                .map(|label| label.as_str())
-                .collect::<Vec<_>>();
-            let receiver = signature
-                .receiver()
-                .and_then(|param| match &param.param_type {
-                    TypeElement::Plain(plain) => Some(&plain.ident),
-                    TypeElement::Parametric(parametric) => Some(&parametric.base_type),
-                    _ => None,
-                });
-            let id = RustFunctionId::new(receiver, signature.identifier.as_str(), &labels);
-            insert_unambiguous(
-                &mut self.by_imported_function,
-                ambiguous_functions,
-                ("".to_string(), id),
-                idx,
-            );
-        }
-        for (idx, constant) in self.constants.iter().enumerate() {
-            if constant.namespace.as_ref() != namespace || constant.associated_receiver.is_some() {
-                continue;
-            }
-            insert_unambiguous(
-                &mut self.by_imported_constant,
-                ambiguous_constants,
-                constant.name.clone(),
-                idx,
-            );
-        }
-    }
-
-    fn import_item(
-        &mut self,
-        namespace: &str,
-        name: &str,
-        ambiguous_types: &mut HashSet<TypeIdent>,
-        ambiguous_functions: &mut HashSet<(String, RustFunctionId)>,
-        ambiguous_constants: &mut HashSet<Ident>,
-    ) {
-        for (idx, ty) in self.types.iter().enumerate() {
-            if ty.namespace.as_ref() != namespace {
-                continue;
-            }
-            if ty.name.as_str() != name {
-                continue;
-            }
-            insert_unambiguous(
-                &mut self.by_imported_type,
-                ambiguous_types,
-                ty.name.clone(),
-                idx,
-            );
-        }
-        for (idx, function) in self.functions.iter().enumerate() {
-            if function.namespace.as_ref() != namespace {
-                continue;
-            }
-            let signature = &function.decl.item.signature;
-            if signature.identifier.as_str() != name {
+            if name.is_some_and(|name| signature.identifier.as_str() != name) {
                 continue;
             }
             let labels = signature.overload_labels();
@@ -142,7 +87,7 @@ impl RustInterop {
             insert_unambiguous(
                 &mut self.by_imported_function,
                 ambiguous_functions,
-                ("".to_string(), id),
+                id,
                 idx,
             );
         }
@@ -150,7 +95,7 @@ impl RustInterop {
             if constant.namespace.as_ref() != namespace || constant.associated_receiver.is_some() {
                 continue;
             }
-            if constant.name.as_str() != name {
+            if name.is_some_and(|name| constant.name.as_str() != name) {
                 continue;
             }
             insert_unambiguous(

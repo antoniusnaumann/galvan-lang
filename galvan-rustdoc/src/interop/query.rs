@@ -6,6 +6,7 @@ use crate::model::{
 };
 
 use super::function_id::RustFunctionId;
+use super::state::Unambiguous;
 use super::RustInterop;
 
 impl RustInterop {
@@ -25,7 +26,7 @@ impl RustInterop {
         }
 
         self.by_imported_function
-            .get(&("".to_string(), id))
+            .get(&id)
             .and_then(|idx| self.functions.get(*idx))
     }
 
@@ -184,15 +185,13 @@ impl RustInterop {
         receiver: &TypeIdent,
         id: &RustFunctionId,
     ) -> Option<&RustFunctionDecl> {
-        let mut matches = self
-            .by_namespace_associated_function
-            .iter()
-            .filter(|((_, stored_receiver, stored_id), _)| {
-                stored_receiver == receiver && stored_id == id
-            })
-            .filter_map(|(_, idx)| self.functions.get(*idx));
-        let first = matches.next()?;
-        matches.next().is_none().then_some(first)
+        match self
+            .by_associated_function
+            .get(&(receiver.clone(), id.clone()))?
+        {
+            Unambiguous::One { idx, .. } => self.functions.get(*idx),
+            Unambiguous::Many => None,
+        }
     }
 
     fn unambiguous_associated_constant(
@@ -200,14 +199,12 @@ impl RustInterop {
         receiver: &TypeIdent,
         name: &Ident,
     ) -> Option<&RustConstantDecl> {
-        let mut matches = self
-            .by_namespace_associated_constant
-            .iter()
-            .filter(|((_, stored_receiver, stored_name), _)| {
-                stored_receiver == receiver && stored_name == name
-            })
-            .filter_map(|(_, idx)| self.constants.get(*idx));
-        let first = matches.next()?;
-        matches.next().is_none().then_some(first)
+        match self
+            .by_associated_constant
+            .get(&(receiver.clone(), name.clone()))?
+        {
+            Unambiguous::One { idx, .. } => self.constants.get(*idx),
+            Unambiguous::Many => None,
+        }
     }
 }
