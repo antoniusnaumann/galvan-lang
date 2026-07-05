@@ -96,6 +96,8 @@ commands remain subcommands.
     unqualified only through `use`
   - Surface ambiguous unqualified associated Rust function and constant lookups
     as diagnostics once qualified Galvan paths are available end to end
+  - Surface ambiguous unqualified Rust `use` imports as diagnostics instead of
+    suppressing the lookup silently
   - Replace synthetic generic parameter names on resolved-only dependency type
     placeholders with the real Rust names once the declaring rustdoc item is
     available

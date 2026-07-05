@@ -554,6 +554,98 @@ fn use_declarations_import_constants_unqualified() {
 }
 
 #[test]
+fn use_declarations_suppress_ambiguous_unqualified_items() {
+    let http_json = json!({
+        "index": {
+            "0": public_item_at_path("0", "Ticket", &["http", "Ticket"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": public_function("parse", vec![], resolved("Ticket", vec![])),
+            "2": public_constant("DEFAULT_LIMIT", primitive("u64"))
+        }
+    });
+    let db_json = json!({
+        "index": {
+            "0": public_item_at_path("0", "Ticket", &["db", "Ticket"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": public_function("parse", vec![], resolved("Ticket", vec![])),
+            "2": public_constant("DEFAULT_LIMIT", primitive("u64"))
+        }
+    });
+    let uses = [use_decl(&["http"]), use_decl(&["db"])];
+    let mut interop = RustInterop::empty();
+    interop.add_crate("http", &http_json);
+    interop.add_crate("db", &db_json);
+    interop.import_uses(&uses);
+
+    let imported = interop
+        .imported_types()
+        .map(|ty| format!("{} {}", ty.name.as_str(), ty.rust_path.as_ref()))
+        .collect::<Vec<_>>();
+    assert!(imported.is_empty(), "{imported:?}");
+    assert!(interop.function(None, None, &ident("parse"), &[]).is_none());
+    assert!(interop.constant(None, &ident("DEFAULT_LIMIT")).is_none());
+    assert!(interop
+        .function(Some("http"), None, &ident("parse"), &[])
+        .is_some());
+    assert!(interop
+        .function(Some("db"), None, &ident("parse"), &[])
+        .is_some());
+    assert!(interop
+        .constant(Some("http"), &ident("DEFAULT_LIMIT"))
+        .is_some());
+    assert!(interop
+        .constant(Some("db"), &ident("DEFAULT_LIMIT"))
+        .is_some());
+}
+
+#[test]
+fn path_use_declarations_suppress_ambiguous_unqualified_items() {
+    let http_json = json!({
+        "index": {
+            "0": public_item_at_path("0", "Ticket", &["http", "Ticket"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            }))
+        }
+    });
+    let db_json = json!({
+        "index": {
+            "0": public_item_at_path("0", "Ticket", &["db", "Ticket"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            }))
+        }
+    });
+    let uses = [use_decl(&["http", "Ticket"]), use_decl(&["db", "Ticket"])];
+    let mut interop = RustInterop::empty();
+    interop.add_crate("http", &http_json);
+    interop.add_crate("db", &db_json);
+    interop.import_uses(&uses);
+
+    let imported = interop
+        .imported_types()
+        .map(|ty| format!("{} {}", ty.name.as_str(), ty.rust_path.as_ref()))
+        .collect::<Vec<_>>();
+    assert!(imported.is_empty(), "{imported:?}");
+    assert!(interop
+        .type_by_qualified_path(&["http", "Ticket"])
+        .is_some());
+    assert!(interop.type_by_qualified_path(&["db", "Ticket"]).is_some());
+}
+
+#[test]
 fn rustdoc_preserves_same_named_types_from_different_modules() {
     let json = json!({
         "index": {

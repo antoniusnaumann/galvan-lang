@@ -28,6 +28,11 @@ receiver/name pair identifies a single imported Rust item; if multiple
 namespaces expose the same unqualified associated item, the lookup is
 suppressed until the caller uses a namespace-qualified path.
 
+`use namespace` and `use namespace::item` expose dependency items for
+unqualified lookup only when the imported unqualified name is not ambiguous
+across the active `use` declarations. Ambiguous unqualified type, function, and
+constant imports are suppressed; qualified namespace lookup remains available.
+
 ## Primitive Types
 
 Rust primitive and builtin rustdoc type forms lift as follows:
