@@ -128,7 +128,10 @@ When a shared-state wrapper is consumed, the `Arc`, lock, or atomic wrapper type
 is not recorded as part of the Galvan API surface. Bare `Mutex<T>` and
 `RwLock<T>` are not lifted to `ref`; they are skipped because Galvan `ref`
 represents shared state, and a lock without `Arc` does not provide shared
-ownership across the boundary. Naked `Atomic*` types remain nominal Rust
+ownership across the boundary. A lock is recognized as shared state only when it
+is the immediate payload of `Arc`, so shapes such as `Option<Mutex<T>>` or
+`Vec<RwLock<T>>` are unliftable rather than rewritten to `ref`. Naked `Atomic*`
+types remain nominal Rust
 dependency types because Galvan only treats atomic primitives as shared `ref`
 storage when they appear behind `Arc`. Other `Arc<T>` shapes remain `Arc<T>` in
 the lifted Galvan type and are recorded as dependency types. They are not

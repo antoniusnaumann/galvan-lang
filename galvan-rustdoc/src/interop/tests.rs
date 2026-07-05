@@ -1435,6 +1435,20 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
             "6": public_constant(
                 "UNKNOWN_OUTPUT",
                 unknown_type_shape()
+            ),
+            "7": public_function(
+                "bare_lock_input",
+                vec![json!(["tickets", resolved("Mutex", vec![resolved("Ticket", vec![])])])],
+                primitive("bool")
+            ),
+            "8": public_function(
+                "nested_bare_lock_input",
+                vec![json!(["tickets", resolved("Option", vec![resolved("RwLock", vec![resolved("Ticket", vec![])])])])],
+                primitive("bool")
+            ),
+            "9": public_constant(
+                "LOCKED_TICKETS",
+                resolved("Mutex", vec![resolved("Ticket", vec![])])
             )
         }
     });
@@ -1462,6 +1476,46 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
     assert!(interop
         .constant(Some("demo"), &ident("UNKNOWN_OUTPUT"))
         .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("bare_lock_input"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("nested_bare_lock_input"), &[])
+        .is_none());
+    assert!(interop
+        .constant(Some("demo"), &ident("LOCKED_TICKETS"))
+        .is_none());
+}
+
+#[test]
+fn rustdoc_imports_functions_with_shared_arc_lock_signatures() {
+    let json = json!({
+        "index": {
+            "0": public_function(
+                "replace_tickets",
+                vec![json!(["tickets", resolved("Arc", vec![resolved("Mutex", vec![resolved("Ticket", vec![])])])])],
+                resolved("Arc", vec![resolved("RwLock", vec![resolved("Ticket", vec![])])])
+            )
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let function = interop
+        .function(Some("demo"), None, &ident("replace_tickets"), &[])
+        .expect("expected shared lock wrapper function to import");
+    assert_eq!(
+        function.decl.item.signature.parameters.params[0].decl_modifier,
+        Some(galvan_ast::DeclModifier::Ref)
+    );
+    assert_eq!(
+        function.decl.item.signature.parameters.params[0].param_type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
+    assert_eq!(
+        function.decl.item.signature.return_type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
 }
 
 #[test]

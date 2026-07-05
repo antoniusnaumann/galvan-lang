@@ -4,6 +4,9 @@ use serde_json::Value;
 
 use galvan_ast::{Ident, TypeElement, TypeIdent};
 
+use super::lift_type::resolved_path_is_unqualified_or_in_crates;
+use super::rustdoc_path::resolved_type_name;
+
 pub(super) fn inner<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     match value {
         Value::Object(object) => object.get(key),
@@ -140,6 +143,10 @@ pub(super) fn type_alias_type(alias: &Value) -> Option<&Value> {
 }
 
 pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
+    type_contains_unliftable_type_inner(ty, false)
+}
+
+fn type_contains_unliftable_type_inner(ty: &Value, allow_standard_lock: bool) -> bool {
     if inner(ty, "raw_pointer").is_some()
         || inner(ty, "qualified_path").is_some()
         || inner(ty, "dyn_trait").is_some()
@@ -150,16 +157,16 @@ pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
     if let Some(borrowed) = inner(ty, "borrowed_ref") {
         return borrowed
             .get("type")
-            .is_some_and(type_contains_unliftable_type);
+            .is_some_and(|ty| type_contains_unliftable_type_inner(ty, false));
     }
     if let Some(slice) = inner(ty, "slice") {
-        return type_contains_unliftable_type(slice);
+        return type_contains_unliftable_type_inner(slice, false);
     }
     if let Some(array) = inner(ty, "array") {
         return array
             .get("type")
             .or_else(|| array.get("element"))
-            .is_some_and(type_contains_unliftable_type);
+            .is_some_and(|ty| type_contains_unliftable_type_inner(ty, false));
     }
     if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function")) {
         if function_pointer_has_unliftable_header(function) {
@@ -169,15 +176,35 @@ pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
         return signature_contains_unliftable_type(signature);
     }
     if let Some(resolved) = inner(ty, "resolved_path") {
+        if resolved_type_is_standard_lock(resolved) && !allow_standard_lock {
+            return true;
+        }
+        let allow_nested_standard_lock = resolved_type_is_standard_arc(resolved);
         return resolved_type_args(resolved)
             .into_iter()
-            .any(type_contains_unliftable_type);
+            .any(|ty| type_contains_unliftable_type_inner(ty, allow_nested_standard_lock));
     }
     if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
-        return tuple.iter().any(type_contains_unliftable_type);
+        return tuple
+            .iter()
+            .any(|ty| type_contains_unliftable_type_inner(ty, false));
     }
 
     false
+}
+
+fn resolved_type_is_standard_arc(resolved: &Value) -> bool {
+    resolved_type_has_standard_name(resolved, "Arc")
+}
+
+fn resolved_type_is_standard_lock(resolved: &Value) -> bool {
+    resolved_type_has_standard_name(resolved, "Mutex")
+        || resolved_type_has_standard_name(resolved, "RwLock")
+}
+
+fn resolved_type_has_standard_name(resolved: &Value, expected_name: &str) -> bool {
+    resolved_type_name(resolved).is_some_and(|name| name.as_ref() == expected_name)
+        && resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"])
 }
 
 fn function_header_is_unsafe(header: &Value) -> bool {
