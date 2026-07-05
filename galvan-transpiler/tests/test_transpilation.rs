@@ -259,7 +259,7 @@ fn primitive_ref_locals_and_params_use_atomic_storage() {
 }
 
 #[test]
-fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
+fn primitive_ref_mut_arguments_use_atomic_fetch_update() {
     let output = transpile_source(
         "fn bump(mut value: Int) {
              value += 1
@@ -270,12 +270,23 @@ fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
          }",
     );
 
-    assert!(output.contains(
-        "let mut __galvan_atomic_arg_0 = counter.load(std::sync::atomic::Ordering::SeqCst)"
-    ));
-    assert!(output.contains("bump(&mut __galvan_atomic_arg_0)"));
-    assert!(output
-        .contains("counter.store(__galvan_atomic_arg_0, std::sync::atomic::Ordering::SeqCst)"));
+    // Passing an atomic `ref` as `.mut` must not load/store around the call
+    // (which would race). The whole call runs inside a fetch_update CAS loop.
+    assert!(
+        output.contains(
+            "counter.fetch_update(std::sync::atomic::Ordering::SeqCst, \
+             std::sync::atomic::Ordering::SeqCst, |mut __galvan_current|"
+        ),
+        "got: {output}"
+    );
+    assert!(
+        output.contains("bump(&mut __galvan_current)"),
+        "got: {output}"
+    );
+    assert!(output.contains("Some(__galvan_current)"), "got: {output}");
+    // The old racy load-into-temp / store-back shape must be gone.
+    assert!(!output.contains("__galvan_atomic_arg_0"), "got: {output}");
+    assert!(!output.contains("counter.store("), "got: {output}");
 }
 
 #[test]

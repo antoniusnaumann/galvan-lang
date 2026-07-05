@@ -408,6 +408,20 @@ fn apply_call_return(call: &HirFunctionCall, rendered: String) -> String {
     }
 }
 
+/// Emits a call that passes an atomic-backed `ref` value as a `&mut` argument.
+///
+/// The canonical shape — a single argument that is the atomic `ref`, e.g.
+/// `bump(counter.mut)` — is lifted race-free with `fetch_update`
+/// ([`transpile_sole_atomic_mut_ref_call`]): the whole call runs inside a
+/// compare-and-swap loop, so no update is lost even under contention.
+///
+/// Any other shape (extra arguments, or several atomic `&mut` arguments) falls
+/// back to a load / call / store sequence
+/// ([`transpile_atomic_mut_ref_call_via_copy`]) which is *not* atomic — a
+/// concurrent writer between the load and the store is lost. `fetch_update`
+/// cannot express those cases: it updates a single atomic and may re-run its
+/// closure, which would move any by-value argument or clobber a second atomic.
+/// Narrowing those remaining shapes is tracked in #16.
 fn transpile_call_with_atomic_mut_ref_args(
     call: &HirFunctionCall,
     ctx: &Context,
@@ -417,6 +431,51 @@ fn transpile_call_with_atomic_mut_ref_args(
         return None;
     }
 
+    if call.args.len() == 1 {
+        return Some(transpile_sole_atomic_mut_ref_call(call, ctx, errors));
+    }
+
+    Some(transpile_atomic_mut_ref_call_via_copy(call, ctx, errors))
+}
+
+/// Race-free lift of `f(atomic_ref.mut)`: the whole call runs inside a
+/// `fetch_update` compare-and-swap loop, so the read-modify-write against the
+/// atomic is atomic even under contention.
+///
+/// The callee may be invoked more than once (standard CAS retry), so it must
+/// have no observable effect beyond mutating its argument.
+fn transpile_sole_atomic_mut_ref_call(
+    call: &HirFunctionCall,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let base = transpile_without_adjustments(&call.args[0], ctx, errors);
+    let ordering = atomic_ordering();
+    let rendered = render_call(
+        call_rust_path(call),
+        call.namespace.as_ref(),
+        &call.ident,
+        &call.labels,
+        "&mut __galvan_current",
+    );
+    let rendered = apply_call_return(call, rendered);
+    format!(
+        "{{ let mut __galvan_result = None; \
+         let _ = {base}.fetch_update({ordering}, {ordering}, |mut __galvan_current| {{ \
+         __galvan_result = Some({rendered}); Some(__galvan_current) }}); \
+         __galvan_result.unwrap() }}"
+    )
+}
+
+/// Fallback for atomic `&mut` calls that `fetch_update` cannot express (extra
+/// arguments or multiple atomic `&mut` arguments): load each atomic into a
+/// temporary, call, then store back. This is *not* atomic; see
+/// [`transpile_call_with_atomic_mut_ref_args`].
+fn transpile_atomic_mut_ref_call_via_copy(
+    call: &HirFunctionCall,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
     let conversions = call_arg_conversions(call);
     let mut setup = Vec::new();
     let mut stores = Vec::new();
@@ -456,9 +515,7 @@ fn transpile_call_with_atomic_mut_ref_args(
     let setup = setup.into_iter().map(|line| format!("{line};")).join(" ");
     let stores = stores.into_iter().map(|line| format!("{line};")).join(" ");
 
-    Some(format!(
-        "{{ {setup} let __galvan_result = {rendered}; {stores} __galvan_result }}"
-    ))
+    format!("{{ {setup} let __galvan_result = {rendered}; {stores} __galvan_result }}")
 }
 
 impl Transpile for HirMethodCall {
