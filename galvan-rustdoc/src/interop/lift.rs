@@ -17,8 +17,8 @@ use super::lift_model::{
 };
 use super::lift_type::{
     array_type, function_pointer_input_type, generic_type, member_arg_conversion, never_type,
-    parametric_or_plain_type, plain_type, primitive_type, resolved_path_is_unqualified_or_in_crates,
-    type_is_copy,
+    parametric_or_plain_type, plain_type, primitive_type,
+    resolved_path_is_unqualified_or_in_crates, type_is_copy,
 };
 use super::lift_wrappers::known_lifted_resolved_type;
 use super::rustdoc_json::{
@@ -466,18 +466,11 @@ impl RustInterop {
         impl_inner: &Value,
     ) -> Option<ImportedFunctionDecl> {
         let mut imported = self.function_decl(crate_name, name, signature)?;
-        let Some(first_param) = imported.decl.signature.parameters.params.first_mut() else {
-            return Some(imported);
-        };
-        if !first_param.identifier.is_self() {
-            return Some(imported);
-        }
-
         if let Some(receiver_ty) = impl_inner
             .get("for")
             .and_then(|ty| self.type_from_json(crate_name, ty))
         {
-            first_param.param_type = receiver_ty;
+            substitute_self_in_function_decl(&mut imported.decl, &receiver_ty);
         }
 
         Some(imported)
@@ -491,11 +484,7 @@ impl RustInterop {
         receiver: &TypeIdent,
     ) -> Option<ImportedFunctionDecl> {
         let mut imported = self.function_decl(crate_name, name, signature)?;
-        if let Some(first_param) = imported.decl.signature.parameters.params.first_mut() {
-            if first_param.identifier.is_self() {
-                first_param.param_type = plain_type(receiver.clone());
-            }
-        }
+        substitute_self_in_function_decl(&mut imported.decl, &plain_type(receiver.clone()));
 
         Some(imported)
     }
@@ -647,4 +636,63 @@ fn param_type_requires_wrapper_conversion(ty: &Value) -> bool {
     };
     matches!(name.as_ref(), "Box" | "Rc")
         && resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"])
+}
+
+fn substitute_self_in_function_decl(decl: &mut galvan_ast::FnDecl, receiver_ty: &TypeElement) {
+    for param in &mut decl.signature.parameters.params {
+        substitute_self_type(&mut param.param_type, receiver_ty);
+    }
+    substitute_self_type(&mut decl.signature.return_type, receiver_ty);
+}
+
+fn substitute_self_type(ty: &mut TypeElement, receiver_ty: &TypeElement) {
+    match ty {
+        TypeElement::Plain(plain) if plain.ident.as_str() == "Self" => {
+            *ty = receiver_ty.clone();
+        }
+        TypeElement::Generic(generic) if generic.ident.as_str() == "Self" => {
+            *ty = receiver_ty.clone();
+        }
+        TypeElement::Array(array) => substitute_self_type(&mut array.elements, receiver_ty),
+        TypeElement::Dictionary(dictionary) => {
+            substitute_self_type(&mut dictionary.key, receiver_ty);
+            substitute_self_type(&mut dictionary.value, receiver_ty);
+        }
+        TypeElement::OrderedDictionary(dictionary) => {
+            substitute_self_type(&mut dictionary.key, receiver_ty);
+            substitute_self_type(&mut dictionary.value, receiver_ty);
+        }
+        TypeElement::Set(set) => substitute_self_type(&mut set.elements, receiver_ty),
+        TypeElement::Tuple(tuple) => {
+            for element in &mut tuple.elements {
+                substitute_self_type(element, receiver_ty);
+            }
+        }
+        TypeElement::Optional(optional) => substitute_self_type(&mut optional.inner, receiver_ty),
+        TypeElement::Result(result) => {
+            substitute_self_type(&mut result.success, receiver_ty);
+            if let Some(error) = &mut result.error {
+                substitute_self_type(error, receiver_ty);
+            }
+        }
+        TypeElement::Parametric(parametric) if parametric.base_type.as_str() == "Self" => {
+            *ty = receiver_ty.clone();
+        }
+        TypeElement::Parametric(parametric) => {
+            for arg in &mut parametric.type_args {
+                substitute_self_type(arg, receiver_ty);
+            }
+        }
+        TypeElement::Closure(closure) => {
+            for param in &mut closure.parameters {
+                substitute_self_type(param, receiver_ty);
+            }
+            substitute_self_type(&mut closure.return_ty, receiver_ty);
+        }
+        TypeElement::Plain(_)
+        | TypeElement::Generic(_)
+        | TypeElement::Void(_)
+        | TypeElement::Infer(_)
+        | TypeElement::Never(_) => {}
+    }
 }

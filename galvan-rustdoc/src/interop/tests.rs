@@ -2791,7 +2791,7 @@ fn rustdoc_imports_trait_methods_and_constants() {
         "index": {
             "0": public_item("DisplayName", json!({
                 "trait": {
-                    "items": ["1", "2"]
+                    "items": ["1", "2", "3"]
                 }
             })),
             "1": {
@@ -2812,6 +2812,22 @@ fn rustdoc_imports_trait_methods_and_constants() {
             },
             "2": {
                 "id": "2",
+                "name": "clone_display",
+                "visibility": "public",
+                "path": ["demo", "DisplayName"],
+                "inner": {
+                    "function": {
+                        "sig": {
+                            "inputs": [
+                                ["self", borrowed(resolved("Self", vec![]))]
+                            ],
+                            "output": resolved("Self", vec![])
+                        }
+                    }
+                }
+            },
+            "3": {
+                "id": "3",
                 "name": "KIND",
                 "visibility": "public",
                 "path": ["demo", "DisplayName"],
@@ -2857,6 +2873,19 @@ fn rustdoc_imports_trait_methods_and_constants() {
         vec![RustArgConversion::SharedBorrow]
     );
     assert_eq!(function.decl.item.signature.return_type, string_type());
+
+    let clone_function = interop
+        .function(
+            Some("demo"),
+            Some(&TypeIdent::new("DisplayName")),
+            &ident("clone_display"),
+            &[],
+        )
+        .expect("expected imported DisplayName.clone_display trait method");
+    assert_eq!(
+        clone_function.decl.item.signature.return_type,
+        plain_type(TypeIdent::new("DisplayName"))
+    );
 
     let constant = interop
         .associated_constant(Some("demo"), &TypeIdent::new("DisplayName"), &ident("KIND"))
@@ -3233,9 +3262,10 @@ fn rustdoc_imports_inherent_associated_functions() {
                     "function": {
                         "sig": {
                             "inputs": [
-                                ["title", primitive("str")]
+                                ["title", primitive("str")],
+                                ["parent", resolved("Option", vec![resolved("Self", vec![])])]
                             ],
-                            "output": resolved("Ticket", vec![])
+                            "output": resolved("Self", vec![])
                         }
                     }
                 }
@@ -3257,6 +3287,15 @@ fn rustdoc_imports_inherent_associated_functions() {
         function.decl.item.signature.return_type,
         plain_type(TypeIdent::new("Ticket"))
     );
+    let TypeElement::Optional(parent) =
+        &function.decl.item.signature.parameters.params[1].param_type
+    else {
+        panic!(
+            "expected Option<Ticket> parent parameter, got {:?}",
+            function.decl.item.signature.parameters.params[1].param_type
+        );
+    };
+    assert_eq!(parent.inner, plain_type(TypeIdent::new("Ticket")));
 }
 
 #[test]

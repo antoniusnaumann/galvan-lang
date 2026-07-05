@@ -30,6 +30,9 @@ as their associated receiver. Unqualified associated item lookup is available
 only when the receiver/name pair identifies a single imported Rust item; if
 multiple namespaces expose the same unqualified associated item, the lookup is
 suppressed until the caller uses a namespace-qualified path.
+Inside imported impl and trait associated function signatures, Rust `Self`
+types are substituted with the associated receiver type before Galvan sees the
+signature.
 
 `use namespace` and `use namespace::item` expose dependency items for
 unqualified lookup only when the imported unqualified name is not ambiguous
