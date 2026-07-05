@@ -94,6 +94,8 @@ commands remain subcommands.
   - Support qualified external Rust type paths in Galvan type syntax; rustdoc
     metadata preserves module paths, but imported Rust types currently become
     unqualified only through `use`
+  - Surface ambiguous unqualified associated Rust function and constant lookups
+    as diagnostics once qualified Galvan paths are available end to end
   - Replace synthetic generic parameter names on resolved-only dependency type
     placeholders with the real Rust names once the declaring rustdoc item is
     available

@@ -44,12 +44,7 @@ impl RustInterop {
                 .and_then(|idx| self.functions.get(*idx));
         }
 
-        self.by_namespace_associated_function
-            .iter()
-            .find(|((_, stored_receiver, stored_id), _)| {
-                stored_receiver == receiver && stored_id == &id
-            })
-            .and_then(|(_, idx)| self.functions.get(*idx))
+        self.unambiguous_associated_function(receiver, &id)
     }
 
     pub fn imported_types(&self) -> impl Iterator<Item = &RustTypeDecl> {
@@ -181,11 +176,38 @@ impl RustInterop {
                 .and_then(|idx| self.constants.get(*idx));
         }
 
-        self.by_namespace_associated_constant
+        self.unambiguous_associated_constant(receiver, name)
+    }
+
+    fn unambiguous_associated_function(
+        &self,
+        receiver: &TypeIdent,
+        id: &RustFunctionId,
+    ) -> Option<&RustFunctionDecl> {
+        let mut matches = self
+            .by_namespace_associated_function
             .iter()
-            .find(|((_, stored_receiver, stored_name), _)| {
+            .filter(|((_, stored_receiver, stored_id), _)| {
+                stored_receiver == receiver && stored_id == id
+            })
+            .filter_map(|(_, idx)| self.functions.get(*idx));
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    }
+
+    fn unambiguous_associated_constant(
+        &self,
+        receiver: &TypeIdent,
+        name: &Ident,
+    ) -> Option<&RustConstantDecl> {
+        let mut matches = self
+            .by_namespace_associated_constant
+            .iter()
+            .filter(|((_, stored_receiver, stored_name), _)| {
                 stored_receiver == receiver && stored_name == name
             })
-            .and_then(|(_, idx)| self.constants.get(*idx))
+            .filter_map(|(_, idx)| self.constants.get(*idx));
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
     }
 }

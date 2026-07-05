@@ -22,6 +22,12 @@ External type re-exports without target metadata are imported as empty types
 when their name looks like a type. External function and constant re-exports
 without target metadata are not imported yet.
 
+Associated functions and associated constants can be queried by namespace and
+receiver. Unqualified associated item lookup is available only when the
+receiver/name pair identifies a single imported Rust item; if multiple
+namespaces expose the same unqualified associated item, the lookup is
+suppressed until the caller uses a namespace-qualified path.
+
 ## Primitive Types
 
 Rust primitive and builtin rustdoc type forms lift as follows:

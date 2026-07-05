@@ -2694,6 +2694,126 @@ fn rustdoc_imports_trait_impl_associated_constants() {
 }
 
 #[test]
+fn rustdoc_suppresses_ambiguous_unqualified_associated_items() {
+    let http_json = json!({
+        "index": {
+            "0": public_item("Ticket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": {
+                "id": "1",
+                "name": null,
+                "visibility": "public",
+                "inner": {
+                    "impl": {
+                        "for": resolved("Ticket", vec![]),
+                        "trait": null,
+                        "items": ["2", "3"]
+                    }
+                }
+            },
+            "2": {
+                "id": "2",
+                "name": "new",
+                "visibility": "public",
+                "path": ["http", "Ticket"],
+                "inner": {
+                    "function": {
+                        "sig": {
+                            "inputs": [],
+                            "output": resolved("Ticket", vec![])
+                        }
+                    }
+                }
+            },
+            "3": {
+                "id": "3",
+                "name": "DEFAULT",
+                "visibility": "public",
+                "path": ["http", "Ticket"],
+                "inner": {
+                    "assoc_const": {
+                        "type": resolved("Ticket", vec![])
+                    }
+                }
+            }
+        }
+    });
+    let db_json = json!({
+        "index": {
+            "0": public_item("Ticket", json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": []
+                }
+            })),
+            "1": {
+                "id": "1",
+                "name": null,
+                "visibility": "public",
+                "inner": {
+                    "impl": {
+                        "for": resolved("Ticket", vec![]),
+                        "trait": null,
+                        "items": ["2", "3"]
+                    }
+                }
+            },
+            "2": {
+                "id": "2",
+                "name": "new",
+                "visibility": "public",
+                "path": ["db", "Ticket"],
+                "inner": {
+                    "function": {
+                        "sig": {
+                            "inputs": [],
+                            "output": resolved("Ticket", vec![])
+                        }
+                    }
+                }
+            },
+            "3": {
+                "id": "3",
+                "name": "DEFAULT",
+                "visibility": "public",
+                "path": ["db", "Ticket"],
+                "inner": {
+                    "assoc_const": {
+                        "type": resolved("Ticket", vec![])
+                    }
+                }
+            }
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("http", &http_json);
+    interop.add_crate("db", &db_json);
+
+    assert!(interop
+        .associated_function(None, &TypeIdent::new("Ticket"), &ident("new"), &[])
+        .is_none());
+    assert!(interop
+        .associated_constant(None, &TypeIdent::new("Ticket"), &ident("DEFAULT"))
+        .is_none());
+    assert!(interop
+        .associated_function(Some("http"), &TypeIdent::new("Ticket"), &ident("new"), &[])
+        .is_some());
+    assert!(interop
+        .associated_function(Some("db"), &TypeIdent::new("Ticket"), &ident("new"), &[])
+        .is_some());
+    assert!(interop
+        .associated_constant(Some("http"), &TypeIdent::new("Ticket"), &ident("DEFAULT"))
+        .is_some());
+    assert!(interop
+        .associated_constant(Some("db"), &TypeIdent::new("Ticket"), &ident("DEFAULT"))
+        .is_some());
+}
+
+#[test]
 fn rustdoc_imports_reexported_type_aliases() {
     let json = json!({
         "index": {
