@@ -469,9 +469,10 @@ pub struct HirPrint {
 #[derive(Clone, Debug)]
 pub struct HirFunctionCall {
     pub namespace: Option<UsePath>,
-    pub rust_path: Option<Box<str>>,
-    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
-    pub rust_arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
+    /// `Some` when the call resolved to an imported Rust (rustdoc) function,
+    /// carrying the rendered path and the boundary conversions. `None` for
+    /// native Galvan calls.
+    pub rust: Option<HirRustCall>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
@@ -482,13 +483,30 @@ pub struct HirMethodCall {
     pub receiver: HirExpression,
     pub receiver_modifier: Option<DeclModifier>,
     pub namespace: Option<UsePath>,
-    pub rust_path: Option<Box<str>>,
-    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
-    pub rust_receiver_conversion: galvan_rustdoc::RustArgConversion,
-    pub rust_arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
+    /// `Some` when the call resolved to an imported Rust (rustdoc) method.
+    /// `None` for native Galvan calls.
+    pub rust: Option<HirRustMethodCall>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
+}
+
+/// Rust-interop metadata for an imported free/associated function call.
+#[derive(Clone, Debug)]
+pub struct HirRustCall {
+    pub rust_path: Box<str>,
+    pub return_conversion: galvan_rustdoc::RustReturnConversion,
+    pub arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
+}
+
+/// Rust-interop metadata for an imported method call. Identical to
+/// [`HirRustCall`] but additionally records the receiver conversion.
+#[derive(Clone, Debug)]
+pub struct HirRustMethodCall {
+    pub rust_path: Box<str>,
+    pub return_conversion: galvan_rustdoc::RustReturnConversion,
+    pub receiver_conversion: galvan_rustdoc::RustArgConversion,
+    pub arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
 }
 
 #[derive(Clone, Debug)]

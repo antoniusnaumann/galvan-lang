@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
-    RangeOperator, TypeElement,
+    RangeOperator, TypeElement, UsePath,
 };
 use galvan_hir::hir::*;
 use galvan_resolver::Lookup;
@@ -357,23 +357,54 @@ impl Transpile for HirFunctionCall {
             return call;
         }
 
-        let args = transpile_rust_arguments(
-            &self.args,
-            self.rust_arg_conversions.as_slice(),
-            ctx,
-            errors,
+        let args = transpile_rust_arguments(&self.args, call_arg_conversions(self), ctx, errors);
+        let rendered = render_call(
+            call_rust_path(self),
+            self.namespace.as_ref(),
+            &self.ident,
+            &self.labels,
+            &args,
         );
-        if let Some(rust_path) = &self.rust_path {
-            let call = format!("{rust_path}({args})");
-            return transpile_rust_return(call, self.rust_return_conversion);
-        }
+        apply_call_return(self, rendered)
+    }
+}
 
-        let name = mangle_function_name(self.ident.as_str(), &self.labels);
-        if let Some(namespace) = &self.namespace {
-            return format!("{}::{}({})", sanitize_path(namespace), name, args);
-        }
+/// Renders `path(args)`, `namespace::name(args)`, or `name(args)` depending on
+/// whether the call resolved to an imported Rust path, a namespaced call, or a
+/// plain local call. Shared by the normal and atomic-argument code paths.
+fn render_call(
+    rust_path: Option<&str>,
+    namespace: Option<&UsePath>,
+    ident: &Ident,
+    labels: &[Ident],
+    args: &str,
+) -> String {
+    if let Some(rust_path) = rust_path {
+        return format!("{rust_path}({args})");
+    }
 
-        format!("{}({})", name, args)
+    let name = mangle_function_name(ident.as_str(), labels);
+    match namespace {
+        Some(namespace) => format!("{}::{}({})", sanitize_path(namespace), name, args),
+        None => format!("{name}({args})"),
+    }
+}
+
+fn call_rust_path(call: &HirFunctionCall) -> Option<&str> {
+    call.rust.as_ref().map(|rust| rust.rust_path.as_ref())
+}
+
+fn call_arg_conversions(call: &HirFunctionCall) -> &[RustArgConversion] {
+    call.rust
+        .as_ref()
+        .map(|rust| rust.arg_conversions.as_slice())
+        .unwrap_or_default()
+}
+
+fn apply_call_return(call: &HirFunctionCall, rendered: String) -> String {
+    match &call.rust {
+        Some(rust) => transpile_rust_return(rendered, rust.return_conversion),
+        None => rendered,
     }
 }
 
@@ -386,6 +417,7 @@ fn transpile_call_with_atomic_mut_ref_args(
         return None;
     }
 
+    let conversions = call_arg_conversions(call);
     let mut setup = Vec::new();
     let mut stores = Vec::new();
     let args = call
@@ -405,10 +437,7 @@ fn transpile_call_with_atomic_mut_ref_args(
             } else {
                 transpile_rust_argument(
                     argument,
-                    call.rust_arg_conversions
-                        .get(idx)
-                        .copied()
-                        .unwrap_or_default(),
+                    conversions.get(idx).copied().unwrap_or_default(),
                     ctx,
                     errors,
                 )
@@ -416,17 +445,14 @@ fn transpile_call_with_atomic_mut_ref_args(
         })
         .join(", ");
 
-    let rendered = if let Some(rust_path) = &call.rust_path {
-        format!("{rust_path}({args})")
-    } else {
-        let name = mangle_function_name(call.ident.as_str(), &call.labels);
-        if let Some(namespace) = &call.namespace {
-            format!("{}::{}({})", sanitize_path(namespace), name, args)
-        } else {
-            format!("{}({})", name, args)
-        }
-    };
-    let rendered = transpile_rust_return(rendered, call.rust_return_conversion);
+    let rendered = render_call(
+        call_rust_path(call),
+        call.namespace.as_ref(),
+        &call.ident,
+        &call.labels,
+        &args,
+    );
+    let rendered = apply_call_return(call, rendered);
     let setup = setup.into_iter().map(|line| format!("{line};")).join(" ");
     let stores = stores.into_iter().map(|line| format!("{line};")).join(" ");
 
@@ -450,19 +476,19 @@ impl Transpile for HirMethodCall {
             .join(", ");
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
 
-        if let Some(rust_path) = &self.rust_path {
+        if let Some(rust) = &self.rust {
             let receiver =
-                transpile_rust_argument(&self.receiver, self.rust_receiver_conversion, ctx, errors);
+                transpile_rust_argument(&self.receiver, rust.receiver_conversion, ctx, errors);
             let args = std::iter::once(receiver)
                 .chain(transpile_rust_arguments_vec(
                     &self.args,
-                    self.rust_arg_conversions.as_slice(),
+                    rust.arg_conversions.as_slice(),
                     ctx,
                     errors,
                 ))
                 .join(", ");
-            let call = format!("{rust_path}({args})");
-            return transpile_rust_return(call, self.rust_return_conversion);
+            let call = format!("{}({args})", rust.rust_path);
+            return transpile_rust_return(call, rust.return_conversion);
         }
 
         if let Some(namespace) = &self.namespace {
@@ -1224,9 +1250,11 @@ mod tests {
     fn rust_calls_apply_shared_borrow_argument_conversions() {
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::takes_ref".into()),
-            rust_return_conversion: RustReturnConversion::None,
-            rust_arg_conversions: vec![RustArgConversion::SharedBorrow],
+            rust: Some(HirRustCall {
+                rust_path: "::demo::takes_ref".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: vec![RustArgConversion::SharedBorrow],
+            }),
             ident: Ident::new("takes_ref"),
             labels: Vec::new(),
             args: vec![HirExpression::new(
@@ -1270,9 +1298,11 @@ mod tests {
         ];
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::takes_wrappers".into()),
-            rust_return_conversion: RustReturnConversion::None,
-            rust_arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
+            rust: Some(HirRustCall {
+                rust_path: "::demo::takes_wrappers".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
+            }),
             ident: Ident::new("takes_wrappers"),
             labels: Vec::new(),
             args,
@@ -1291,9 +1321,11 @@ mod tests {
     fn rust_calls_apply_box_return_conversions() {
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::boxed_ticket".into()),
-            rust_return_conversion: RustReturnConversion::BoxDeref,
-            rust_arg_conversions: Vec::new(),
+            rust: Some(HirRustCall {
+                rust_path: "::demo::boxed_ticket".into(),
+                return_conversion: RustReturnConversion::BoxDeref,
+                arg_conversions: Vec::new(),
+            }),
             ident: Ident::new("boxed_ticket"),
             labels: Vec::new(),
             args: Vec::new(),
@@ -1312,9 +1344,11 @@ mod tests {
     fn rust_calls_apply_rc_return_conversions() {
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::shared_ticket".into()),
-            rust_return_conversion: RustReturnConversion::RcCloneDeref,
-            rust_arg_conversions: Vec::new(),
+            rust: Some(HirRustCall {
+                rust_path: "::demo::shared_ticket".into(),
+                return_conversion: RustReturnConversion::RcCloneDeref,
+                arg_conversions: Vec::new(),
+            }),
             ident: Ident::new("shared_ticket"),
             labels: Vec::new(),
             args: Vec::new(),

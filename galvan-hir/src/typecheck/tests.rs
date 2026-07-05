@@ -1040,7 +1040,10 @@ fn qualified_rust_methods_are_typechecked_with_receivers() {
     let HirExpressionKind::MethodCall(call) = &tail.kind else {
         panic!("expected method call, got {:?}", tail.kind);
     };
-    assert_eq!(call.rust_path.as_deref(), Some("::external::nickname"));
+    assert_eq!(
+        call.rust.as_ref().map(|rust| rust.rust_path.as_ref()),
+        Some("::external::nickname")
+    );
     let TypeElement::Plain(ty) = &tail.ty else {
         panic!("expected string result, got {:?}", tail.ty);
     };
@@ -1167,7 +1170,10 @@ fn rust_associated_functions_are_typechecked_as_type_member_calls() {
     let HirExpressionKind::FunctionCall(call) = &tail.kind else {
         panic!("expected associated function call, got {:?}", tail.kind);
     };
-    assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+    assert_eq!(
+        call.rust.as_ref().map(|rust| rust.rust_path.as_ref()),
+        Some("::external::Dog::new")
+    );
     let TypeElement::Plain(ty) = &tail.ty else {
         panic!("expected Dog result, got {:?}", tail.ty);
     };
@@ -1275,7 +1281,10 @@ fn imported_rust_types_are_available_to_typecheck_after_use() {
     let HirExpressionKind::FunctionCall(call) = &tail.kind else {
         panic!("expected associated function call, got {:?}", tail.kind);
     };
-    assert_eq!(call.rust_path.as_deref(), Some("::external::Dog::new"));
+    assert_eq!(
+        call.rust.as_ref().map(|rust| rust.rust_path.as_ref()),
+        Some("::external::Dog::new")
+    );
 }
 
 #[test]
