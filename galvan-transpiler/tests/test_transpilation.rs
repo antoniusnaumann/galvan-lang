@@ -253,9 +253,9 @@ fn primitive_ref_locals_and_params_use_atomic_storage() {
     assert!(output.contains(
         "let mut counter: std::sync::Arc<std::sync::atomic::AtomicI64> = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0))"
     ));
-    assert!(output.contains("counter.store(42, std::sync::atomic::Ordering::Relaxed)"));
-    assert!(output.contains("counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)"));
-    assert!(output.contains("counter.load(std::sync::atomic::Ordering::Relaxed)"));
+    assert!(output.contains("counter.store(42, std::sync::atomic::Ordering::SeqCst)"));
+    assert!(output.contains("counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)"));
+    assert!(output.contains("counter.load(std::sync::atomic::Ordering::SeqCst)"));
 }
 
 #[test]
@@ -271,11 +271,11 @@ fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
     );
 
     assert!(output.contains(
-        "let mut __galvan_atomic_arg_0 = counter.load(std::sync::atomic::Ordering::Relaxed)"
+        "let mut __galvan_atomic_arg_0 = counter.load(std::sync::atomic::Ordering::SeqCst)"
     ));
     assert!(output.contains("bump(&mut __galvan_atomic_arg_0)"));
     assert!(output
-        .contains("counter.store(__galvan_atomic_arg_0, std::sync::atomic::Ordering::Relaxed)"));
+        .contains("counter.store(__galvan_atomic_arg_0, std::sync::atomic::Ordering::SeqCst)"));
 }
 
 #[test]

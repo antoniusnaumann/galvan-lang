@@ -67,8 +67,14 @@ pub(crate) fn atomic_ref_storage_type(ty: &TypeElement) -> Option<&'static str> 
     }
 }
 
+/// Memory ordering used for all atomic-backed `ref` accesses.
+///
+/// Galvan `ref` models shared mutable state, so it must provide
+/// cross-thread happens-before ordering. `SeqCst` gives the strongest,
+/// least-surprising guarantee; `Relaxed` would let updates race in ways a
+/// user treating a `ref` as ordinary shared state would not expect.
 pub(crate) fn atomic_ordering() -> &'static str {
-    "std::sync::atomic::Ordering::Relaxed"
+    "std::sync::atomic::Ordering::SeqCst"
 }
 
 /// Renders the coercions determined by the typechecker around an expression
