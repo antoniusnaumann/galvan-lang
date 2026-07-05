@@ -226,13 +226,8 @@ impl RustInterop {
             }
 
             if let Some(constant) = constant_inner(target) {
-                let Some(ty) =
-                    constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-                else {
-                    continue;
-                };
-                self.push_constant(crate_name, None, exported_name, rust_path, ty);
-                found_item = true;
+                found_item |=
+                    self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
             }
         }
         found_item
@@ -326,17 +321,32 @@ impl RustInterop {
             }
 
             if let Some(constant) = constant_inner(target) {
-                let Some(ty) =
-                    constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-                else {
-                    continue;
-                };
-                self.push_constant(crate_name, None, exported_name, rust_path, ty);
-                found_item = true;
+                found_item |=
+                    self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
             }
         }
 
         found_item
+    }
+
+    fn import_reexported_constant(
+        &mut self,
+        crate_name: &str,
+        exported_name: &str,
+        rust_path: Box<str>,
+        constant: &Value,
+    ) -> bool {
+        let Some(constant_ty) = constant_type(constant) else {
+            return false;
+        };
+        if type_contains_unliftable_type(constant_ty) {
+            return false;
+        }
+        let Some(ty) = self.type_from_json(crate_name, constant_ty) else {
+            return false;
+        };
+        self.push_constant(crate_name, None, exported_name, rust_path, ty);
+        true
     }
 
     fn import_top_level_constants(

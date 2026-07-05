@@ -2679,7 +2679,14 @@ fn rustdoc_imports_reexported_constants() {
     let json = json!({
         "index": {
             "0": public_constant("DEFAULT_LIMIT", primitive("u64")),
-            "1": public_use("1", "LIMIT", "0")
+            "1": public_use("1", "LIMIT", "0"),
+            "2": public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false)),
+            "3": public_use("3", "BUFFER", "2"),
+            "4": public_constant(
+                "LOCKED_TICKETS",
+                resolved("Mutex", vec![resolved("Ticket", vec![])])
+            ),
+            "5": public_use("5", "TICKETS", "4")
         }
     });
     let mut interop = RustInterop::empty();
@@ -2690,13 +2697,15 @@ fn rustdoc_imports_reexported_constants() {
         .expect("expected re-exported constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
     assert_eq!(constant.ty, u64_type());
+    assert!(interop.constant(Some("demo"), &ident("BUFFER")).is_none());
+    assert!(interop.constant(Some("demo"), &ident("TICKETS")).is_none());
 }
 
 #[test]
 fn rustdoc_imports_glob_reexported_items() {
     let json = json!({
         "index": {
-            "0": public_module("internal", vec!["1", "2", "4"]),
+            "0": public_module("internal", vec!["1", "2", "4", "6", "7"]),
             "1": public_item("Ticket", json!({
                 "struct": {
                     "kind": "plain",
@@ -2706,7 +2715,12 @@ fn rustdoc_imports_glob_reexported_items() {
             "2": public_function("display_name", vec![], primitive("str")),
             "3": public_field("title", primitive("str")),
             "4": public_constant("LIMIT", primitive("u64")),
-            "5": public_glob_use("5", "internal", "0")
+            "5": public_glob_use("5", "internal", "0"),
+            "6": public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false)),
+            "7": public_constant(
+                "LOCKED_TICKETS",
+                resolved("RwLock", vec![resolved("Ticket", vec![])])
+            )
         }
     });
     let mut interop = RustInterop::empty();
@@ -2729,6 +2743,12 @@ fn rustdoc_imports_glob_reexported_items() {
         .expect("expected glob re-exported constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
     assert_eq!(constant.ty, u64_type());
+    assert!(interop
+        .constant(Some("demo"), &ident("RAW_BUFFER"))
+        .is_none());
+    assert!(interop
+        .constant(Some("demo"), &ident("LOCKED_TICKETS"))
+        .is_none());
 }
 
 #[test]
