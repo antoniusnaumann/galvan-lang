@@ -74,9 +74,7 @@ impl RustInterop {
         receiver: &TypeIdent,
         field: &Ident,
     ) -> RustReturnConversion {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .and_then(|ty| {
                 ty.field_conversions
                     .iter()
@@ -87,9 +85,7 @@ impl RustInterop {
     }
 
     pub fn field_arg_conversion(&self, receiver: &TypeIdent, field: &Ident) -> RustArgConversion {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .and_then(|ty| {
                 ty.field_conversions
                     .iter()
@@ -100,9 +96,7 @@ impl RustInterop {
     }
 
     pub fn constructor_arg_conversions(&self, receiver: &TypeIdent) -> Vec<RustArgConversion> {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .map(|ty| ty.constructor_arg_conversions.clone())
             .unwrap_or_default()
     }
@@ -138,9 +132,7 @@ impl RustInterop {
         index: usize,
         field: Option<&Ident>,
     ) -> Option<&RustEnumVariantArgConversion> {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .and_then(|ty| {
                 ty.enum_variant_conversions
                     .iter()
@@ -155,6 +147,12 @@ impl RustInterop {
                 }
                 conversion.args.get(index)
             })
+    }
+
+    fn unambiguous_type(&self, receiver: &TypeIdent) -> Option<&RustTypeDecl> {
+        let mut matches = self.types.iter().filter(|ty| ty.name == *receiver);
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
     }
 
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {

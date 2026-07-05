@@ -2086,6 +2086,104 @@ fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
 }
 
 #[test]
+fn rustdoc_suppresses_conversions_for_ambiguous_type_names() {
+    let json = json!({
+        "index": {
+            "0": public_item_at_path("0", "Envelope", &["demo", "http", "Envelope"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["1"]
+                }
+            })),
+            "1": public_field("ticket", resolved("Box", vec![resolved("Ticket", vec![])])),
+            "2": public_item_at_path("2", "Envelope", &["demo", "db", "Envelope"], json!({
+                "struct": {
+                    "kind": "plain",
+                    "fields": ["3"]
+                }
+            })),
+            "3": public_field("ticket", resolved("Rc", vec![resolved("Ticket", vec![])])),
+            "4": public_item_at_path("4", "Pair", &["demo", "http", "Pair"], json!({
+                "struct": {
+                    "kind": "tuple",
+                    "fields": ["5"]
+                }
+            })),
+            "5": public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
+            "6": public_item_at_path("6", "Pair", &["demo", "db", "Pair"], json!({
+                "struct": {
+                    "kind": "tuple",
+                    "fields": ["7"]
+                }
+            })),
+            "7": public_field("0", resolved("Rc", vec![resolved("Ticket", vec![])])),
+            "8": public_item_at_path("8", "Event", &["demo", "http", "Event"], json!({
+                "enum": {
+                    "variants": ["9"]
+                }
+            })),
+            "9": public_item("Assigned", json!({
+                "variant": {
+                    "kind": {
+                        "tuple": {
+                            "fields": ["10"]
+                        }
+                    }
+                }
+            })),
+            "10": public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
+            "11": public_item_at_path("11", "Event", &["demo", "db", "Event"], json!({
+                "enum": {
+                    "variants": ["12"]
+                }
+            })),
+            "12": public_item("Assigned", json!({
+                "variant": {
+                    "kind": {
+                        "tuple": {
+                            "fields": ["13"]
+                        }
+                    }
+                }
+            })),
+            "13": public_field("0", resolved("Rc", vec![resolved("Ticket", vec![])]))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    assert_eq!(
+        interop.field_return_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
+        RustReturnConversion::None
+    );
+    assert_eq!(
+        interop.field_arg_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
+        RustArgConversion::None
+    );
+    assert!(interop
+        .constructor_arg_conversions(&TypeIdent::new("Pair"))
+        .is_empty());
+    assert_eq!(
+        interop.enum_variant_arg_conversion(
+            &TypeIdent::new("Event"),
+            &TypeIdent::new("Assigned"),
+            0,
+            None,
+        ),
+        RustArgConversion::None
+    );
+    assert_eq!(
+        interop.enum_variant_return_conversion(
+            &TypeIdent::new("Event"),
+            &TypeIdent::new("Assigned"),
+            0,
+            None,
+        ),
+        RustReturnConversion::None
+    );
+}
+
+#[test]
 fn rustdoc_keeps_types_with_incomplete_owned_wrapper_fields_opaque() {
     let json = json!({
         "index": {

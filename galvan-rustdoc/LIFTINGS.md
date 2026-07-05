@@ -168,6 +168,9 @@ rustdoc provides a path. Only standard-library `Box` and `Rc` shapes are lifted
 away; dependency types with the same names remain nominal imported Rust types.
 Owned wrapper conversions require rustdoc metadata for the wrapped type.
 Incomplete `Box` or `Rc` conversion metadata is treated as unliftable.
+When multiple imported Rust types share the same unqualified Galvan type name,
+field, constructor, and enum variant wrapper conversions are suppressed for
+that name until Galvan can key those conversions by qualified Rust type paths.
 
 ## Explicit Exclusions
 
