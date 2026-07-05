@@ -279,6 +279,35 @@ fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
 }
 
 #[test]
+fn primitive_ref_compound_assignments_are_atomic() {
+    let output = transpile_source(
+        "fn check() {
+             ref counter = 2
+             counter *= 3
+             counter ^= 4
+         }",
+    );
+
+    // `*=` has no dedicated fetch_* intrinsic, so it must use an atomic
+    // fetch_update compare-and-swap loop rather than a racy load/store pair.
+    assert!(
+        output.contains(
+            "counter.fetch_update(std::sync::atomic::Ordering::SeqCst, \
+             std::sync::atomic::Ordering::SeqCst, |__current| Some(__current * __value))"
+        ),
+        "got: {output}"
+    );
+    assert!(
+        output.contains("Some(__current.pow(__value))"),
+        "got: {output}"
+    );
+    // The right-hand side is bound once so a CAS retry cannot re-evaluate it.
+    assert!(output.contains("let __value = 3"), "got: {output}");
+    // The old non-atomic load/modify/store shape must be gone.
+    assert!(!output.contains("counter.store(__value"), "got: {output}");
+}
+
+#[test]
 fn clones_implicitly_for_move_parameters() {
     let output = transpile_source(
         "fn keep(move message: String) -> String {

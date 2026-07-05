@@ -208,21 +208,36 @@ fn transpile_atomic_ref_assignment(
         HirAssignmentOperator::AddAssign => format!("{target}.fetch_add({value}, {ordering})"),
         HirAssignmentOperator::SubAssign => format!("{target}.fetch_sub({value}, {ordering})"),
         HirAssignmentOperator::MulAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value *= {value}; {target}.store(__value, {ordering}); }}")
+            atomic_read_modify_write(&target, ordering, &value, "__current * __value")
         }
         HirAssignmentOperator::DivAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value /= {value}; {target}.store(__value, {ordering}); }}")
+            atomic_read_modify_write(&target, ordering, &value, "__current / __value")
         }
         HirAssignmentOperator::RemAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value %= {value}; {target}.store(__value, {ordering}); }}")
+            atomic_read_modify_write(&target, ordering, &value, "__current % __value")
         }
         HirAssignmentOperator::PowAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value = __value.pow({value}); {target}.store(__value, {ordering}); }}")
+            atomic_read_modify_write(&target, ordering, &value, "__current.pow(__value)")
         }
         HirAssignmentOperator::ConcatAssign(kind) => {
             transpile_concat_assign(assignment, kind, ctx, errors, "")
         }
     }
+}
+
+/// Emits an atomic read-modify-write for compound assignment operators that
+/// have no dedicated `fetch_*` intrinsic (`*=`, `/=`, `%=`, `**=`).
+///
+/// A plain load / modify / store would race: another thread can update the
+/// atomic between the load and the store, silently losing that write.
+/// `fetch_update` performs the update as a compare-and-swap loop, so the whole
+/// operation is atomic. The right-hand side is bound once up front so a
+/// contended CAS retry never re-evaluates a side-effecting expression.
+fn atomic_read_modify_write(target: &str, ordering: &str, value: &str, update: &str) -> String {
+    format!(
+        "{{ let __value = {value}; \
+         let _ = {target}.fetch_update({ordering}, {ordering}, |__current| Some({update})); }}"
+    )
 }
 
 fn transpile_without_final_lock(
