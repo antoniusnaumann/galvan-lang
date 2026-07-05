@@ -54,6 +54,9 @@ impl RustInterop {
                 .alias_decl_from_json(crate_name, name, alias_item, type_generic_params(item))
                 .map(ImportedTypeDecl::new);
         }
+        if inner.get("union").is_some() {
+            return None;
+        }
 
         None
     }

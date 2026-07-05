@@ -14,6 +14,7 @@ Galvan typechecker as dependency declarations:
 - public enum variants, including tuple and struct variants
 - public type aliases with lifted target types
 - public traits as opaque dependency types
+- public unions as opaque dependency types
 - public free functions and constants
 - public inherent associated functions, methods, and constants
 - public trait methods, trait associated constants, trait-impl methods, and
@@ -197,7 +198,9 @@ that Galvan cannot represent safely. Functions whose signatures contain raw
 pointers, currently unliftable type shapes, or incomplete type metadata are
 skipped. Constants with unliftable types are skipped. Data declarations whose
 public surface contains raw pointers or unliftable type shapes are kept opaque
-instead of exposing those fields or variants. Data declarations are also kept
+instead of exposing those fields or variants. Rust unions are imported as opaque
+types; union fields and representation details are not exposed in Galvan. Data
+declarations are also kept
 opaque when rustdoc metadata is incomplete enough that fields or variants would
 otherwise be silently dropped, or when rustdoc exposes non-public fields that
 Galvan cannot represent as part of a constructible public data declaration. Impl
@@ -214,7 +217,7 @@ The following safe Rust shapes are also not lifted yet:
 - `impl Trait`
 - associated type projections such as `<T as Trait>::Item`
 - generic associated types
-- unions and `repr` details
+- union fields and `repr` details
 - lifetime and const generic parameters
 - external function and constant re-exports that do not have local rustdoc
   target metadata

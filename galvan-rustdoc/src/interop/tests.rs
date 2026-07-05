@@ -1711,6 +1711,29 @@ fn rustdoc_keeps_types_with_unliftable_fields_opaque() {
 }
 
 #[test]
+fn rustdoc_imports_unions_as_opaque_types() {
+    let json = json!({
+        "index": {
+            "0": public_item("Bits", json!({
+                "union": {
+                    "fields": ["1"],
+                    "generics": type_generics(vec![generic_param("T")])
+                }
+            })),
+            "1": public_field("value", generic("T"))
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(bits) = imported_type(&interop, "Bits") else {
+        panic!("expected Bits union to import as an opaque type");
+    };
+    assert_eq!(bits.ident, TypeIdent::new("Bits"));
+    assert_eq!(bits.generic_params, vec![Ident::new("T")]);
+}
+
+#[test]
 fn rustdoc_keeps_types_with_incomplete_field_metadata_opaque() {
     let json = json!({
         "index": {

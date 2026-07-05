@@ -116,9 +116,10 @@ commands remain subcommands.
     generic associated types
   - Extend imported public Rust data declarations beyond the current named
     struct fields, tuple struct fields, enum variants, and type aliases to
-    cover unions, repr details, full trait declarations beyond opaque trait
-    placeholders with associated items, explicit Galvan syntax for generic type
-    declarations, and Rust lifetime/const generic parameters
+    cover safe modeling for union fields and repr details, full trait
+    declarations beyond opaque trait placeholders with associated items,
+    explicit Galvan syntax for generic type declarations, and Rust
+    lifetime/const generic parameters
   - Infer all Galvan passing modes from lifted Rust signatures beyond owned
     copy/value params, mutable refs, shared borrowed refs, and parameter-side
     owned wrapper conversions, including the remaining receiver/argument cases
