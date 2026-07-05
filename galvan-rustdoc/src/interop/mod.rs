@@ -1,4 +1,3 @@
-mod curated;
 mod function_id;
 mod import;
 mod lift;

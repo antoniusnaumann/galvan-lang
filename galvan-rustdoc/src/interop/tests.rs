@@ -510,7 +510,10 @@ fn path_use_declarations_import_only_the_named_type() {
 }
 
 #[test]
-fn rustdoc_type_only_crates_do_not_fall_back_to_curated_metadata() {
+fn rustdoc_crates_expose_only_their_lifted_items() {
+    // A crate's imported surface is exactly what rustdoc lifting produced:
+    // nothing is fabricated on top of it (e.g. a `to_string` fn or `Error`
+    // type that the JSON did not declare).
     let json = json!({
         "index": {
             "0": public_item_at_path("Value", "Value", &["serde_json", "Value"], json!({

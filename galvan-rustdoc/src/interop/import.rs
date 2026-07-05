@@ -15,7 +15,6 @@ use super::RustInterop;
 impl RustInterop {
     pub fn add_crate(&mut self, crate_name: &str, json: &Value) {
         let Some(index) = json.get("index").and_then(Value::as_object) else {
-            self.add_curated_crate(crate_name);
             return;
         };
 
@@ -29,7 +28,6 @@ impl RustInterop {
             }
         }
 
-        let mut found_item = !type_item_ids.is_empty();
         for item in type_item_ids {
             self.push_type_from_item(crate_name, item, index);
         }
@@ -85,29 +83,14 @@ impl RustInterop {
                 imported.return_conversion,
                 imported.arg_conversions,
             );
-            found_item = true;
         }
-        found_item |= self.import_top_level_constants(
-            crate_name,
-            index,
-            &impl_constant_ids,
-            &trait_constant_ids,
-        );
-        found_item |= self.import_impl_functions(crate_name, index);
-        found_item |= self.import_trait_items(crate_name, index);
-        found_item |= self.import_public_reexports(crate_name, index);
-
-        if !found_item {
-            self.add_curated_crate(crate_name);
-        }
+        self.import_top_level_constants(crate_name, index, &impl_constant_ids, &trait_constant_ids);
+        self.import_impl_functions(crate_name, index);
+        self.import_trait_items(crate_name, index);
+        self.import_public_reexports(crate_name, index);
     }
 
-    fn import_impl_functions(
-        &mut self,
-        crate_name: &str,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let mut found_item = false;
+    fn import_impl_functions(&mut self, crate_name: &str, index: &serde_json::Map<String, Value>) {
         for impl_item in index.values() {
             let Some(impl_inner) = item_inner(impl_item, "impl") else {
                 continue;
@@ -116,8 +99,7 @@ impl RustInterop {
             else {
                 continue;
             };
-            found_item |=
-                self.import_impl_constants(crate_name, impl_inner, index, &associated_receiver);
+            self.import_impl_constants(crate_name, impl_inner, index, &associated_receiver);
 
             for id in item_ids(impl_inner, "items") {
                 let Some(item) = index.get(id) else {
@@ -159,19 +141,11 @@ impl RustInterop {
                     imported.return_conversion,
                     imported.arg_conversions,
                 );
-                found_item = true;
             }
         }
-
-        found_item
     }
 
-    fn import_trait_items(
-        &mut self,
-        crate_name: &str,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let mut found_item = false;
+    fn import_trait_items(&mut self, crate_name: &str, index: &serde_json::Map<String, Value>) {
         for trait_item in index.values() {
             if !is_public(trait_item) {
                 continue;
@@ -222,12 +196,11 @@ impl RustInterop {
                         imported.return_conversion,
                         imported.arg_conversions,
                     );
-                    found_item = true;
                     continue;
                 }
 
                 if let Some(constant) = constant_inner(item) {
-                    found_item |= self.import_trait_constant(
+                    self.import_trait_constant(
                         crate_name,
                         item_name,
                         callable_rust_path(crate_name, item_name, item),
@@ -237,16 +210,9 @@ impl RustInterop {
                 }
             }
         }
-
-        found_item
     }
 
-    fn import_public_reexports(
-        &mut self,
-        crate_name: &str,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let mut found_item = false;
+    fn import_public_reexports(&mut self, crate_name: &str, index: &serde_json::Map<String, Value>) {
         for item in index.values() {
             if !is_public(item) {
                 continue;
@@ -255,7 +221,7 @@ impl RustInterop {
                 continue;
             };
             if use_item.get("is_glob").and_then(Value::as_bool) == Some(true) {
-                found_item |= self.import_glob_reexport(crate_name, item, use_item, index);
+                self.import_glob_reexport(crate_name, item, use_item, index);
                 continue;
             }
             let Some(exported_name) = item
@@ -266,20 +232,16 @@ impl RustInterop {
                 continue;
             };
             let Some(target_id) = use_item.get("id").and_then(Value::as_str) else {
-                found_item |=
-                    self.import_external_reexported_type(crate_name, exported_name, use_item);
+                self.import_external_reexported_type(crate_name, exported_name, use_item);
                 continue;
             };
             let Some(target) = index.get(target_id) else {
-                found_item |=
-                    self.import_external_reexported_type(crate_name, exported_name, use_item);
+                self.import_external_reexported_type(crate_name, exported_name, use_item);
                 continue;
             };
             let rust_path = callable_rust_path(crate_name, exported_name, item);
-            found_item |=
-                self.import_reexport_target(crate_name, exported_name, rust_path, target, index);
+            self.import_reexport_target(crate_name, exported_name, rust_path, target, index);
         }
-        found_item
     }
 
     fn import_reexport_target(
@@ -289,24 +251,24 @@ impl RustInterop {
         rust_path: Box<str>,
         target: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> bool {
+    ) {
         if public_type_name(target).is_some() {
             self.push_reexported_type_from_item(crate_name, exported_name, rust_path, target, index);
-            return true;
+            return;
         }
 
         if let Some(function) = item_inner(target, "function") {
             if function_is_unsafe(function) {
-                return false;
+                return;
             }
             let Some(signature) = function.get("sig") else {
-                return false;
+                return;
             };
             if signature_contains_unliftable_type(signature) {
-                return false;
+                return;
             }
             let Some(imported) = self.function_decl(crate_name, exported_name, signature) else {
-                return false;
+                return;
             };
             let borrowed_return = return_is_borrowed(signature);
             self.push_function(
@@ -318,14 +280,12 @@ impl RustInterop {
                 imported.return_conversion,
                 imported.arg_conversions,
             );
-            return true;
+            return;
         }
 
         if let Some(constant) = constant_inner(target) {
-            return self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
+            self.import_reexported_constant(crate_name, exported_name, rust_path, constant);
         }
-
-        false
     }
 
     fn import_external_reexported_type(
@@ -333,17 +293,16 @@ impl RustInterop {
         crate_name: &str,
         exported_name: &str,
         use_item: &Value,
-    ) -> bool {
+    ) {
         if !looks_like_type_name(exported_name) {
-            return false;
+            return;
         }
 
         let Some(source) = use_item.get("source").and_then(Value::as_str) else {
-            return false;
+            return;
         };
 
         self.push_external_reexported_type(crate_name, exported_name, absolute_rust_path(source));
-        true
     }
 
     fn import_glob_reexport(
@@ -352,18 +311,17 @@ impl RustInterop {
         item: &Value,
         use_item: &Value,
         index: &serde_json::Map<String, Value>,
-    ) -> bool {
+    ) {
         let Some(target_id) = use_item.get("id").and_then(Value::as_str) else {
-            return false;
+            return;
         };
         let Some(module) = index
             .get(target_id)
             .and_then(|target| item_inner(target, "module"))
         else {
-            return false;
+            return;
         };
 
-        let mut found_item = false;
         for id in item_ids(module, "items") {
             let Some(target) = index.get(id) else {
                 continue;
@@ -375,11 +333,8 @@ impl RustInterop {
                 continue;
             };
             let rust_path = callable_rust_path(crate_name, exported_name, item);
-            found_item |=
-                self.import_reexport_target(crate_name, exported_name, rust_path, target, index);
+            self.import_reexport_target(crate_name, exported_name, rust_path, target, index);
         }
-
-        found_item
     }
 
     fn import_reexported_constant(
@@ -388,18 +343,17 @@ impl RustInterop {
         exported_name: &str,
         rust_path: Box<str>,
         constant: &Value,
-    ) -> bool {
+    ) {
         let Some(constant_ty) = constant_type(constant) else {
-            return false;
+            return;
         };
         if type_contains_unliftable_type(constant_ty) {
-            return false;
+            return;
         }
         let Some(ty) = self.type_from_json(crate_name, constant_ty) else {
-            return false;
+            return;
         };
         self.push_constant(crate_name, None, exported_name, rust_path, ty);
-        true
     }
 
     fn import_trait_constant(
@@ -409,18 +363,17 @@ impl RustInterop {
         rust_path: Box<str>,
         constant: &Value,
         receiver: &TypeIdent,
-    ) -> bool {
+    ) {
         let Some(constant_ty) = constant_type(constant) else {
-            return false;
+            return;
         };
         if type_contains_unliftable_type(constant_ty) {
-            return false;
+            return;
         }
         let Some(ty) = self.type_from_json(crate_name, constant_ty) else {
-            return false;
+            return;
         };
         self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
-        true
     }
 
     fn import_top_level_constants(
@@ -429,8 +382,7 @@ impl RustInterop {
         index: &serde_json::Map<String, Value>,
         impl_constant_ids: &HashSet<&str>,
         trait_constant_ids: &HashSet<&str>,
-    ) -> bool {
-        let mut found_item = false;
+    ) {
         for item in index.values() {
             if !is_public(item) {
                 continue;
@@ -471,9 +423,7 @@ impl RustInterop {
                 callable_rust_path(crate_name, name, item),
                 ty,
             );
-            found_item = true;
         }
-        found_item
     }
 
     fn import_impl_constants(
@@ -482,8 +432,7 @@ impl RustInterop {
         impl_inner: &Value,
         index: &serde_json::Map<String, Value>,
         receiver: &TypeIdent,
-    ) -> bool {
-        let mut found_item = false;
+    ) {
         for id in item_ids(impl_inner, "items") {
             let Some(item) = index.get(id) else {
                 continue;
@@ -508,9 +457,7 @@ impl RustInterop {
             };
             let rust_path = impl_constant_rust_path(crate_name, name, item, impl_inner);
             self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
-            found_item = true;
         }
-        found_item
     }
 
     fn impl_associated_receiver(

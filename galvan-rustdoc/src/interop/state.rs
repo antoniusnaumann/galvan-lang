@@ -71,8 +71,6 @@ impl RustInterop {
                 let json = serde_json::from_str(&json)
                     .map_err(|error| RustdocError::ParseCache(path.clone(), error))?;
                 interop.add_crate(&crate_name, &json);
-            } else {
-                interop.add_curated_crate(&crate_name);
             }
         }
         interop.import_uses(uses);
