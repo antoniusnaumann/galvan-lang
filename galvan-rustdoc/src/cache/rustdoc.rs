@@ -24,6 +24,8 @@ pub(super) fn run_rustdoc_json(manifest_path: &Path, target_dir: &Path) -> std::
         .output()
 }
 
-pub(super) fn generated_json_path(crate_name: &str, target_dir: &Path) -> PathBuf {
-    target_dir.join("doc").join(format!("{crate_name}.json"))
+/// rustdoc names its JSON output after the library target, not the package or
+/// the Galvan crate ident, so callers must pass the resolved lib name.
+pub(super) fn generated_json_path(lib_name: &str, target_dir: &Path) -> PathBuf {
+    target_dir.join("doc").join(format!("{lib_name}.json"))
 }

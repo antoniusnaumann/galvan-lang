@@ -42,8 +42,8 @@ impl RustdocCache {
         }
 
         let _ = fs::create_dir_all(&self.root);
-        let manifest_path = match dependency_manifest_path(&self.crate_name) {
-            Ok(Some(path)) => path,
+        let dependency = match dependency_manifest_path(&self.crate_name) {
+            Ok(Some(dependency)) => dependency,
             Ok(None) => {
                 let _ = fs::write(
                     self.root.join(format!("{}.stderr", self.crate_name)),
@@ -64,11 +64,11 @@ impl RustdocCache {
         };
 
         let target_dir = self.root.join("target");
-        let output = run_rustdoc_json(&manifest_path, &target_dir);
+        let output = run_rustdoc_json(&dependency.manifest_path, &target_dir);
 
         match output {
             Ok(output) if output.status.success() => {
-                let generated = generated_json_path(&self.crate_name, &target_dir);
+                let generated = generated_json_path(&dependency.lib_name, &target_dir);
                 let cached = self.root.join(format!("{}.json", self.crate_name));
                 if fs::copy(&generated, &cached).is_ok() {
                     self.clear_diagnostics();
