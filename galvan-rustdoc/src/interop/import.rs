@@ -6,7 +6,8 @@ use serde_json::Value;
 use super::rustdoc_json::{
     constant_inner, constant_type, function_is_unsafe, impl_constant_ids, impl_function_ids,
     is_public, item_ids, item_inner, public_type_name, receiver_type_ident, return_is_borrowed,
-    signature_contains_unliftable_type, type_contains_unliftable_type,
+    signature_contains_unliftable_type, trait_constant_ids, trait_function_ids,
+    type_contains_unliftable_type,
 };
 use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_function_rust_path};
 use super::RustInterop;
@@ -35,6 +36,8 @@ impl RustInterop {
 
         let impl_function_ids = impl_function_ids(index);
         let impl_constant_ids = impl_constant_ids(index);
+        let trait_function_ids = trait_function_ids(index);
+        let trait_constant_ids = trait_constant_ids(index);
         for item in index.values() {
             if !is_public(item) {
                 continue;
@@ -43,6 +46,13 @@ impl RustInterop {
                 .get("id")
                 .and_then(Value::as_str)
                 .is_some_and(|id| impl_function_ids.contains(id))
+            {
+                continue;
+            }
+            if item
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| trait_function_ids.contains(id))
             {
                 continue;
             }
@@ -77,8 +87,14 @@ impl RustInterop {
             );
             found_item = true;
         }
-        found_item |= self.import_top_level_constants(crate_name, index, &impl_constant_ids);
+        found_item |= self.import_top_level_constants(
+            crate_name,
+            index,
+            &impl_constant_ids,
+            &trait_constant_ids,
+        );
         found_item |= self.import_impl_functions(crate_name, index);
+        found_item |= self.import_trait_items(crate_name, index);
         found_item |= self.import_public_reexports(crate_name, index);
 
         if !found_item {
@@ -144,6 +160,81 @@ impl RustInterop {
                     imported.arg_conversions,
                 );
                 found_item = true;
+            }
+        }
+
+        found_item
+    }
+
+    fn import_trait_items(
+        &mut self,
+        crate_name: &str,
+        index: &serde_json::Map<String, Value>,
+    ) -> bool {
+        let mut found_item = false;
+        for trait_item in index.values() {
+            if !is_public(trait_item) {
+                continue;
+            }
+            let Some(name) = trait_item.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(trait_inner) = item_inner(trait_item, "trait") else {
+                continue;
+            };
+            let receiver = TypeIdent::new(name);
+
+            for id in item_ids(trait_inner, "items") {
+                let Some(item) = index.get(id) else {
+                    continue;
+                };
+                if !is_public(item) {
+                    continue;
+                }
+                let Some(item_name) = item.get("name").and_then(Value::as_str) else {
+                    continue;
+                };
+
+                if let Some(function) = item_inner(item, "function") {
+                    if function_is_unsafe(function) {
+                        continue;
+                    }
+                    let Some(signature) = function.get("sig") else {
+                        continue;
+                    };
+                    if signature_contains_unliftable_type(signature) {
+                        continue;
+                    }
+                    let Some(imported) =
+                        self.trait_function_decl(crate_name, item_name, signature, &receiver)
+                    else {
+                        continue;
+                    };
+                    let rust_path = callable_rust_path(crate_name, item_name, item);
+                    let borrowed_return = return_is_borrowed(signature);
+                    self.push_function_with_associated_receiver(
+                        crate_name,
+                        item_name,
+                        rust_path,
+                        imported.decl,
+                        borrowed_return,
+                        Some(receiver.clone()),
+                        imported.return_conversion,
+                        imported.arg_conversions,
+                    );
+                    found_item = true;
+                    continue;
+                }
+
+                if let Some(constant) = constant_inner(item) {
+                    found_item |= self.import_trait_constant(
+                        crate_name,
+                        item_name,
+                        callable_rust_path(crate_name, item_name, item),
+                        constant,
+                        &receiver,
+                    );
+                }
             }
         }
 
@@ -349,11 +440,33 @@ impl RustInterop {
         true
     }
 
+    fn import_trait_constant(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        rust_path: Box<str>,
+        constant: &Value,
+        receiver: &TypeIdent,
+    ) -> bool {
+        let Some(constant_ty) = constant_type(constant) else {
+            return false;
+        };
+        if type_contains_unliftable_type(constant_ty) {
+            return false;
+        }
+        let Some(ty) = self.type_from_json(crate_name, constant_ty) else {
+            return false;
+        };
+        self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
+        true
+    }
+
     fn import_top_level_constants(
         &mut self,
         crate_name: &str,
         index: &serde_json::Map<String, Value>,
         impl_constant_ids: &HashSet<&str>,
+        trait_constant_ids: &HashSet<&str>,
     ) -> bool {
         let mut found_item = false;
         for item in index.values() {
@@ -364,6 +477,13 @@ impl RustInterop {
                 .get("id")
                 .and_then(Value::as_str)
                 .is_some_and(|id| impl_constant_ids.contains(id))
+            {
+                continue;
+            }
+            if item
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| trait_constant_ids.contains(id))
             {
                 continue;
             }

@@ -2786,6 +2786,86 @@ fn rustdoc_imports_trait_impl_associated_constants() {
 }
 
 #[test]
+fn rustdoc_imports_trait_methods_and_constants() {
+    let json = json!({
+        "index": {
+            "0": public_item("DisplayName", json!({
+                "trait": {
+                    "items": ["1", "2"]
+                }
+            })),
+            "1": {
+                "id": "1",
+                "name": "display_name",
+                "visibility": "public",
+                "path": ["demo", "DisplayName"],
+                "inner": {
+                    "function": {
+                        "sig": {
+                            "inputs": [
+                                ["self", borrowed(resolved("Self", vec![]))]
+                            ],
+                            "output": primitive("str")
+                        }
+                    }
+                }
+            },
+            "2": {
+                "id": "2",
+                "name": "KIND",
+                "visibility": "public",
+                "path": ["demo", "DisplayName"],
+                "inner": {
+                    "assoc_const": {
+                        "type": primitive("str")
+                    }
+                }
+            }
+        }
+    });
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &json);
+
+    let TypeDecl::Empty(display_name) = imported_type(&interop, "DisplayName") else {
+        panic!("expected DisplayName trait to import as an opaque type");
+    };
+    assert_eq!(display_name.ident, TypeIdent::new("DisplayName"));
+    assert!(interop
+        .function(Some("demo"), None, &ident("display_name"), &[])
+        .is_none());
+    assert!(interop.constant(Some("demo"), &ident("KIND")).is_none());
+
+    let function = interop
+        .function(
+            Some("demo"),
+            Some(&TypeIdent::new("DisplayName")),
+            &ident("display_name"),
+            &[],
+        )
+        .expect("expected imported DisplayName.display_name trait method");
+    assert_eq!(
+        function.rust_path.as_ref(),
+        "::demo::DisplayName::display_name"
+    );
+    let receiver = function.decl.item.signature.receiver().unwrap();
+    assert_eq!(
+        receiver.param_type,
+        plain_type(TypeIdent::new("DisplayName"))
+    );
+    assert_eq!(
+        function.arg_conversions,
+        vec![RustArgConversion::SharedBorrow]
+    );
+    assert_eq!(function.decl.item.signature.return_type, string_type());
+
+    let constant = interop
+        .associated_constant(Some("demo"), &TypeIdent::new("DisplayName"), &ident("KIND"))
+        .expect("expected imported DisplayName.KIND trait constant");
+    assert_eq!(constant.rust_path.as_ref(), "::demo::DisplayName::KIND");
+    assert_eq!(constant.ty, string_type());
+}
+
+#[test]
 fn rustdoc_suppresses_ambiguous_unqualified_associated_items() {
     let http_json = json!({
         "index": {

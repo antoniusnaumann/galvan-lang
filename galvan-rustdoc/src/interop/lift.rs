@@ -17,7 +17,7 @@ use super::lift_model::{
 };
 use super::lift_type::{
     array_type, function_pointer_input_type, generic_type, member_arg_conversion, never_type,
-    parametric_or_plain_type, primitive_type, resolved_path_is_unqualified_or_in_crates,
+    parametric_or_plain_type, plain_type, primitive_type, resolved_path_is_unqualified_or_in_crates,
     type_is_copy,
 };
 use super::lift_wrappers::known_lifted_resolved_type;
@@ -478,6 +478,23 @@ impl RustInterop {
             .and_then(|ty| self.type_from_json(crate_name, ty))
         {
             first_param.param_type = receiver_ty;
+        }
+
+        Some(imported)
+    }
+
+    pub(super) fn trait_function_decl(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        signature: &Value,
+        receiver: &TypeIdent,
+    ) -> Option<ImportedFunctionDecl> {
+        let mut imported = self.function_decl(crate_name, name, signature)?;
+        if let Some(first_param) = imported.decl.signature.parameters.params.first_mut() {
+            if first_param.identifier.is_self() {
+                first_param.param_type = plain_type(receiver.clone());
+            }
         }
 
         Some(imported)

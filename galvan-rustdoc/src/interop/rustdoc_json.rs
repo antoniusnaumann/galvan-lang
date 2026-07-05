@@ -34,7 +34,7 @@ pub(super) fn is_public(item: &Value) -> bool {
 pub(super) fn public_type_name(item: &Value) -> Option<&str> {
     let name = item.get("name").and_then(Value::as_str)?;
     let inner = item.get("inner")?;
-    ["struct", "enum", "type_alias", "union"]
+    ["struct", "enum", "type_alias", "union", "trait"]
         .iter()
         .any(|kind| inner.get(*kind).is_some())
         .then_some(name)
@@ -45,7 +45,7 @@ pub(super) fn type_generic_params(item: &Value) -> Vec<Ident> {
         return Vec::new();
     };
 
-    ["struct", "enum", "type_alias", "union"]
+    ["struct", "enum", "type_alias", "union", "trait"]
         .iter()
         .find_map(|kind| inner.get(*kind))
         .and_then(type_inner_generics)
@@ -287,6 +287,24 @@ pub(super) fn impl_constant_ids(index: &serde_json::Map<String, Value>) -> HashS
         .values()
         .filter_map(|item| item_inner(item, "impl"))
         .flat_map(|impl_item| item_ids(impl_item, "items"))
+        .filter(|id| index.get(*id).and_then(item_inner_constant).is_some())
+        .collect()
+}
+
+pub(super) fn trait_function_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
+    index
+        .values()
+        .filter_map(|item| item_inner(item, "trait"))
+        .flat_map(|trait_item| item_ids(trait_item, "items"))
+        .filter(|id| index.get(*id).and_then(item_inner_constant).is_none())
+        .collect()
+}
+
+pub(super) fn trait_constant_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
+    index
+        .values()
+        .filter_map(|item| item_inner(item, "trait"))
+        .flat_map(|trait_item| item_ids(trait_item, "items"))
         .filter(|id| index.get(*id).and_then(item_inner_constant).is_some())
         .collect()
 }
