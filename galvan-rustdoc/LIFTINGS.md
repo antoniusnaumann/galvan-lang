@@ -156,6 +156,12 @@ the lifted Galvan type and are recorded as dependency types. They are not
 treated as Galvan `ref` unless the inner type is one of the recognized shared
 state wrappers above.
 
+Atomic-backed `ref` accesses use `SeqCst` memory ordering, because a Galvan
+`ref` models shared mutable state and needs cross-thread happens-before
+ordering. Compound assignments without a dedicated atomic intrinsic (`*=`, `/=`,
+`%=`, `^=`) lower to an atomic `fetch_update` compare-and-swap loop rather than a
+load/modify/store pair, so the whole read-modify-write stays atomic.
+
 Known wrapper lifting is path-aware when rustdoc provides a path. Standard
 library wrappers are lifted from `std`, `core`, or `alloc` paths; `IndexMap` and
 `IndexSet` are lifted from the `indexmap` crate; `anyhow::Result<T>` and
