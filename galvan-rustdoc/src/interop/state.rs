@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::path::Path;
 
 use galvan_ast::{FnDecl, Ident, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl};
 use galvan_files::Source;
+use serde_json::Value;
 
 use crate::cache::RustdocCache;
 use crate::model::{RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl};
@@ -10,6 +12,18 @@ use crate::RustdocError;
 
 use super::function_id::RustFunctionId;
 use super::uses::imported_crates;
+
+/// rustdoc JSON format version this crate was written against.
+///
+/// rustdoc JSON is explicitly unstable and versioned. Every key we walk in
+/// [`super::rustdoc_json`] and [`super::rustdoc_path`] is only valid for this
+/// exact schema; a different nightly toolchain emits a different
+/// `format_version` in which our `.get("...")` lookups silently return `None`
+/// and items are dropped rather than lifted. Asserting the version up front
+/// turns a schema drift into a hard, actionable failure instead of silent data
+/// loss. Bump this constant (and audit the walked keys) when moving to a
+/// nightly that changes the format.
+pub(super) const RUSTDOC_FORMAT_VERSION: u64 = 58;
 
 /// Whether a `(receiver, name/id)` associated item is exposed by exactly one
 /// namespace (`One`) or by more than one (`Many`). Used by the unqualified
@@ -70,6 +84,7 @@ impl RustInterop {
                     .map_err(|error| RustdocError::ReadCache(path.clone(), error))?;
                 let json = serde_json::from_str(&json)
                     .map_err(|error| RustdocError::ParseCache(path.clone(), error))?;
+                check_format_version(&path, &json)?;
                 interop.add_crate(&crate_name, &json);
             }
         }
@@ -168,5 +183,57 @@ impl RustInterop {
             RustReturnConversion::None,
             Vec::new(),
         );
+    }
+}
+
+/// Reject a rustdoc JSON cache whose `format_version` does not match the schema
+/// this crate walks, so a nightly toolchain bump fails loudly instead of
+/// silently dropping every item it can no longer parse.
+fn check_format_version(path: &Path, json: &Value) -> Result<(), RustdocError> {
+    let Some(version) = json.get("format_version").and_then(Value::as_u64) else {
+        return Err(RustdocError::MissingFormatVersion(path.to_path_buf()));
+    };
+    if version != RUSTDOC_FORMAT_VERSION {
+        return Err(RustdocError::UnsupportedFormatVersion(
+            path.to_path_buf(),
+            version,
+            RUSTDOC_FORMAT_VERSION,
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod format_version_tests {
+    use super::*;
+    use serde_json::json;
+    use std::path::PathBuf;
+
+    fn path() -> PathBuf {
+        PathBuf::from("cache.json")
+    }
+
+    #[test]
+    fn accepts_matching_version() {
+        let json = json!({ "format_version": RUSTDOC_FORMAT_VERSION, "index": {} });
+        assert!(check_format_version(&path(), &json).is_ok());
+    }
+
+    #[test]
+    fn rejects_mismatched_version() {
+        let json = json!({ "format_version": RUSTDOC_FORMAT_VERSION + 1, "index": {} });
+        let error = check_format_version(&path(), &json).unwrap_err();
+        assert!(matches!(
+            error,
+            RustdocError::UnsupportedFormatVersion(_, actual, expected)
+                if actual == RUSTDOC_FORMAT_VERSION + 1 && expected == RUSTDOC_FORMAT_VERSION
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_version() {
+        let json = json!({ "index": {} });
+        let error = check_format_version(&path(), &json).unwrap_err();
+        assert!(matches!(error, RustdocError::MissingFormatVersion(_)));
     }
 }
