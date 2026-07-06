@@ -23,7 +23,11 @@ use super::uses::imported_crates;
 /// turns a schema drift into a hard, actionable failure instead of silent data
 /// loss. Bump this constant (and audit the walked keys) when moving to a
 /// nightly that changes the format.
-pub(super) const RUSTDOC_FORMAT_VERSION: u64 = 58;
+///
+/// Pinned to the `rustdoc-types` crate constant (via an exact `=0.58.0`
+/// dependency), so bumping that dependency is the single, deliberate action
+/// required to move to a new schema.
+pub(super) const RUSTDOC_FORMAT_VERSION: u64 = rustdoc_types::FORMAT_VERSION as u64;
 
 /// Whether a `(receiver, name/id)` associated item is exposed by exactly one
 /// namespace (`One`) or by more than one (`Many`). Used by the unqualified
@@ -80,12 +84,17 @@ impl RustInterop {
             let cache = RustdocCache::new(&crate_name);
             cache.update_if_needed();
             if let Some(path) = cache.json_path() {
-                let json = fs::read_to_string(&path)
+                let text = fs::read_to_string(&path)
                     .map_err(|error| RustdocError::ReadCache(path.clone(), error))?;
-                let json = serde_json::from_str(&json)
+                let json: Value = serde_json::from_str(&text)
                     .map_err(|error| RustdocError::ParseCache(path.clone(), error))?;
+                // Reject a drifted schema up front with an actionable error before
+                // attempting the typed deserialization (which would otherwise fail
+                // with an opaque serde message).
                 check_format_version(&path, &json)?;
-                interop.add_crate(&crate_name, &json);
+                let krate: rustdoc_types::Crate = serde_json::from_value(json)
+                    .map_err(|error| RustdocError::ParseCache(path.clone(), error))?;
+                interop.add_crate(&crate_name, &krate);
             }
         }
         interop.import_uses(uses);

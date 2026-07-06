@@ -1,4 +1,4 @@
-use serde_json::Value;
+use rustdoc_types::{Crate, Item, Path};
 
 use galvan_ast::{
     EmptyTypeDecl, FnDecl, Ident, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent, Visibility,
@@ -19,8 +19,14 @@ use super::state::Unambiguous;
 use super::RustInterop;
 
 impl RustInterop {
-    pub(super) fn push_resolved_type(&mut self, crate_name: &str, name: &str, resolved: &Value) {
-        let rust_path = resolved_type_rust_path(crate_name, name, resolved);
+    pub(super) fn push_resolved_type(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        name: &str,
+        resolved: &Path,
+    ) {
+        let rust_path = resolved_type_rust_path(krate, crate_name, name, resolved);
         self.push_empty_type(
             crate_name,
             name,
@@ -78,19 +84,14 @@ impl RustInterop {
         }
     }
 
-    pub(super) fn push_type_from_item(
-        &mut self,
-        crate_name: &str,
-        item: &Value,
-        index: &serde_json::Map<String, Value>,
-    ) {
+    pub(super) fn push_type_from_item(&mut self, krate: &Crate, crate_name: &str, item: &Item) {
         let Some(name) = public_type_name(item) else {
             return;
         };
 
-        let rust_path = rust_path(crate_name, name, item);
+        let rust_path = rust_path(krate, crate_name, name, item);
         let imported = self
-            .type_decl_from_item(crate_name, name, item, index)
+            .type_decl_from_item(krate, crate_name, name, item)
             .unwrap_or_else(|| {
                 ImportedTypeDecl::empty_with_generics(name, type_generic_params(item))
             });
@@ -123,11 +124,11 @@ impl RustInterop {
 
     pub(super) fn push_reexported_type_from_item(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         exported_name: &str,
         rust_path: Box<str>,
-        item: &Value,
-        index: &serde_json::Map<String, Value>,
+        item: &Item,
     ) {
         if let Some(existing) = self
             .types
@@ -139,7 +140,7 @@ impl RustInterop {
         }
 
         let imported = self
-            .type_decl_from_item(crate_name, exported_name, item, index)
+            .type_decl_from_item(krate, crate_name, exported_name, item)
             .unwrap_or_else(|| {
                 ImportedTypeDecl::empty_with_generics(exported_name, type_generic_params(item))
             });

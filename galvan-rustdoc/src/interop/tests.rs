@@ -1,8 +1,46 @@
 use super::*;
 
+use std::collections::HashMap;
+
 use galvan_ast::Span;
 use galvan_files::Source;
-use serde_json::{json, Value};
+use rustdoc_types::{
+    Abi, Constant, Crate, Enum, Function, FunctionHeader, FunctionPointer, FunctionSignature,
+    GenericArg, GenericArgs, GenericParamDef, GenericParamDefKind, Generics, Id, Impl, Item,
+    ItemEnum, ItemSummary, Module, Path, Struct, StructKind, Target, Trait, Type, TypeAlias, Union,
+    Use, Variant, VariantKind, Visibility,
+};
+
+// ---------------------------------------------------------------------------
+// Typed rustdoc-types builders
+//
+// Tests construct `rustdoc_types` values directly instead of walking untyped
+// JSON. `Id`s are derived deterministically from the string keys the tests use
+// so cross-references (`impl.items`, struct fields, `use` targets, …) stay
+// readable, and `Crate.paths` is populated from each item's module path so the
+// crate-aware resolution matches real rustdoc data.
+// ---------------------------------------------------------------------------
+
+fn fnv1a(value: &str) -> u32 {
+    let mut hash = 0x811c_9dc5u32;
+    for byte in value.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
+}
+
+/// Deterministic `Id` for a test's string key.
+fn id(key: &str) -> Id {
+    Id(fnv1a(key))
+}
+
+/// Deterministic `Id` for a referenced resolved path, namespaced away from item
+/// keys so referenced types fall back to their usage path rather than colliding
+/// with an item defined in the same crate.
+fn resolved_id(path: &str) -> Id {
+    Id(fnv1a(&format!("\u{1}resolved\u{1}{path}")))
+}
 
 fn ident(name: &str) -> Ident {
     Ident::new(name)
@@ -24,223 +62,553 @@ fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
     }
 }
 
-fn primitive(name: &str) -> Value {
-    json!({ "primitive": name })
+// --- types ---
+
+fn primitive(name: &str) -> Type {
+    Type::Primitive(name.to_string())
 }
 
-fn generic(name: &str) -> Value {
-    json!({ "generic": name })
+fn generic(name: &str) -> Type {
+    Type::Generic(name.to_string())
 }
 
-fn generic_param(name: &str) -> Value {
-    json!({
-        "name": name,
-        "kind": {
-            "type": {
-                "bounds": [],
-                "default": null,
-                "is_synthetic": false
-            }
+fn never() -> Type {
+    // rustdoc v58 encodes the never type `!` as a primitive.
+    Type::Primitive("!".to_string())
+}
+
+/// Canonical fully-qualified path for a bare wrapper name, so standard-library
+/// wrappers resolve to `std`/`core`/`alloc`; unknown names stay unqualified.
+fn canonical_path(name: &str) -> &str {
+    match name {
+        "Option" => "core::option::Option",
+        "Result" => "core::result::Result",
+        "String" => "alloc::string::String",
+        "Vec" => "alloc::vec::Vec",
+        "VecDeque" => "alloc::collections::vec_deque::VecDeque",
+        "LinkedList" => "alloc::collections::linked_list::LinkedList",
+        "HashMap" => "std::collections::hash::map::HashMap",
+        "HashSet" => "std::collections::hash::set::HashSet",
+        "BTreeMap" => "alloc::collections::btree::map::BTreeMap",
+        "BTreeSet" => "alloc::collections::btree::set::BTreeSet",
+        "Box" => "alloc::boxed::Box",
+        "Rc" => "alloc::rc::Rc",
+        "Arc" => "alloc::sync::Arc",
+        "Mutex" => "std::sync::mutex::Mutex",
+        "RwLock" => "std::sync::rwlock::RwLock",
+        "AtomicU64" => "core::sync::atomic::AtomicU64",
+        other => other,
+    }
+}
+
+fn path_of(path: &str, args: Vec<Type>) -> Path {
+    Path {
+        path: path.to_string(),
+        id: resolved_id(path),
+        args: Some(Box::new(GenericArgs::AngleBracketed {
+            args: args.into_iter().map(GenericArg::Type).collect(),
+            constraints: vec![],
+        })),
+    }
+}
+
+fn resolved(name: &str, args: Vec<Type>) -> Type {
+    Type::ResolvedPath(path_of(canonical_path(name), args))
+}
+
+fn resolved_with_path(_name: &str, path: &[&str], args: Vec<Type>) -> Type {
+    Type::ResolvedPath(path_of(&path.join("::"), args))
+}
+
+fn resolved_with_string_path(path: &str, args: Vec<Type>) -> Type {
+    Type::ResolvedPath(path_of(path, args))
+}
+
+fn slice(ty: Type) -> Type {
+    Type::Slice(Box::new(ty))
+}
+
+fn array(ty: Type) -> Type {
+    Type::Array {
+        type_: Box::new(ty),
+        len: "3".to_string(),
+    }
+}
+
+fn tuple_(elements: Vec<Type>) -> Type {
+    Type::Tuple(elements)
+}
+
+fn raw_pointer(ty: Type, mutable: bool) -> Type {
+    Type::RawPointer {
+        is_mutable: mutable,
+        type_: Box::new(ty),
+    }
+}
+
+fn qualified_path(name: &str, self_type: Type) -> Type {
+    Type::QualifiedPath {
+        name: name.to_string(),
+        args: None,
+        self_type: Box::new(self_type),
+        trait_: Some(path_of("demo::Visitor", vec![])),
+    }
+}
+
+fn dyn_trait() -> Type {
+    Type::DynTrait(rustdoc_types::DynTrait {
+        traits: vec![],
+        lifetime: None,
+    })
+}
+
+fn impl_trait() -> Type {
+    Type::ImplTrait(vec![])
+}
+
+fn function_pointer(inputs: Vec<Type>, output: Type) -> Type {
+    function_pointer_with(inputs, output, false, Abi::Rust)
+}
+
+fn unsafe_function_pointer(inputs: Vec<Type>, output: Type) -> Type {
+    function_pointer_with(inputs, output, true, Abi::Rust)
+}
+
+fn extern_function_pointer(abi: &str, inputs: Vec<Type>, output: Type) -> Type {
+    function_pointer_with(inputs, output, false, abi_(abi))
+}
+
+fn function_pointer_with(inputs: Vec<Type>, output: Type, is_unsafe: bool, abi: Abi) -> Type {
+    Type::FunctionPointer(Box::new(FunctionPointer {
+        sig: signature(
+            inputs.into_iter().map(|ty| ("_", ty)).collect(),
+            Some(output),
+        ),
+        generic_params: vec![],
+        header: header(is_unsafe, abi),
+    }))
+}
+
+fn mut_borrowed(ty: Type) -> Type {
+    Type::BorrowedRef {
+        lifetime: None,
+        is_mutable: true,
+        type_: Box::new(ty),
+    }
+}
+
+fn borrowed(ty: Type) -> Type {
+    Type::BorrowedRef {
+        lifetime: None,
+        is_mutable: false,
+        type_: Box::new(ty),
+    }
+}
+
+// --- generics ---
+
+fn generic_param(name: &str) -> GenericParamDef {
+    GenericParamDef {
+        name: name.to_string(),
+        kind: GenericParamDefKind::Type {
+            bounds: vec![],
+            default: None,
+            is_synthetic: false,
+        },
+    }
+}
+
+fn lifetime_param(name: &str) -> GenericParamDef {
+    GenericParamDef {
+        name: name.to_string(),
+        kind: GenericParamDefKind::Lifetime { outlives: vec![] },
+    }
+}
+
+fn type_generics(params: Vec<GenericParamDef>) -> Generics {
+    Generics {
+        params,
+        where_predicates: vec![],
+    }
+}
+
+fn no_generics() -> Generics {
+    type_generics(vec![])
+}
+
+// --- item inners ---
+
+fn abi_(name: &str) -> Abi {
+    match name {
+        "Rust" => Abi::Rust,
+        "C" => Abi::C { unwind: false },
+        other => Abi::Other(other.to_string()),
+    }
+}
+
+fn header(is_unsafe: bool, abi: Abi) -> FunctionHeader {
+    FunctionHeader {
+        is_const: false,
+        is_unsafe,
+        is_async: false,
+        abi,
+    }
+}
+
+fn signature(inputs: Vec<(&str, Type)>, output: Option<Type>) -> FunctionSignature {
+    FunctionSignature {
+        inputs: inputs
+            .into_iter()
+            .map(|(name, ty)| (name.to_string(), ty))
+            .collect(),
+        output,
+        is_c_variadic: false,
+    }
+}
+
+fn struct_plain(fields: &[&str]) -> ItemEnum {
+    struct_plain_generic(fields, no_generics())
+}
+
+fn struct_plain_generic(fields: &[&str], generics: Generics) -> ItemEnum {
+    ItemEnum::Struct(Struct {
+        kind: StructKind::Plain {
+            fields: ids(fields),
+            has_stripped_fields: false,
+        },
+        generics,
+        impls: vec![],
+    })
+}
+
+fn struct_tuple(fields: &[&str]) -> ItemEnum {
+    ItemEnum::Struct(Struct {
+        kind: StructKind::Tuple(some_ids(fields)),
+        generics: no_generics(),
+        impls: vec![],
+    })
+}
+
+fn struct_unit_generic(generics: Generics) -> ItemEnum {
+    ItemEnum::Struct(Struct {
+        kind: StructKind::Unit,
+        generics,
+        impls: vec![],
+    })
+}
+
+fn enum_(variants: &[&str]) -> ItemEnum {
+    ItemEnum::Enum(Enum {
+        generics: no_generics(),
+        has_stripped_variants: false,
+        variants: ids(variants),
+        impls: vec![],
+    })
+}
+
+fn union_generic(fields: &[&str], generics: Generics) -> ItemEnum {
+    ItemEnum::Union(Union {
+        generics,
+        has_stripped_fields: false,
+        fields: ids(fields),
+        impls: vec![],
+    })
+}
+
+fn trait_(items: &[&str]) -> ItemEnum {
+    ItemEnum::Trait(Trait {
+        is_auto: false,
+        is_unsafe: false,
+        is_dyn_compatible: true,
+        items: ids(items),
+        generics: no_generics(),
+        bounds: vec![],
+        implementations: vec![],
+    })
+}
+
+fn type_alias(ty: Type) -> ItemEnum {
+    type_alias_generic(ty, no_generics())
+}
+
+fn type_alias_generic(ty: Type, generics: Generics) -> ItemEnum {
+    ItemEnum::TypeAlias(TypeAlias {
+        type_: ty,
+        generics,
+    })
+}
+
+fn variant_plain() -> ItemEnum {
+    ItemEnum::Variant(Variant {
+        kind: VariantKind::Plain,
+        discriminant: None,
+    })
+}
+
+fn variant_tuple(fields: &[&str]) -> ItemEnum {
+    ItemEnum::Variant(Variant {
+        kind: VariantKind::Tuple(some_ids(fields)),
+        discriminant: None,
+    })
+}
+
+fn variant_struct(fields: &[&str]) -> ItemEnum {
+    ItemEnum::Variant(Variant {
+        kind: VariantKind::Struct {
+            fields: ids(fields),
+            has_stripped_fields: false,
+        },
+        discriminant: None,
+    })
+}
+
+fn impl_item(for_: Type, trait_: Option<Type>, items: &[&str]) -> ItemEnum {
+    ItemEnum::Impl(Impl {
+        is_unsafe: false,
+        generics: no_generics(),
+        provided_trait_methods: vec![],
+        trait_: trait_.map(expect_path),
+        for_,
+        items: ids(items),
+        is_negative: false,
+        is_synthetic: false,
+        blanket_impl: None,
+    })
+}
+
+fn function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> ItemEnum {
+    ItemEnum::Function(Function {
+        sig: signature(inputs, output),
+        generics: no_generics(),
+        header: header(false, Abi::Rust),
+        has_body: true,
+    })
+}
+
+fn unsafe_function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> ItemEnum {
+    ItemEnum::Function(Function {
+        sig: signature(inputs, output),
+        generics: no_generics(),
+        header: header(true, Abi::Rust),
+        has_body: true,
+    })
+}
+
+fn constant_inner(ty: Type) -> ItemEnum {
+    ItemEnum::Constant {
+        type_: ty,
+        const_: Constant {
+            expr: String::new(),
+            value: None,
+            is_literal: false,
+        },
+    }
+}
+
+fn assoc_const(ty: Type) -> ItemEnum {
+    ItemEnum::AssocConst {
+        type_: ty,
+        value: None,
+    }
+}
+
+fn use_inner(source: &str, name: &str, target: Option<&str>, is_glob: bool) -> ItemEnum {
+    ItemEnum::Use(Use {
+        source: source.to_string(),
+        name: name.to_string(),
+        id: target.map(id),
+        is_glob,
+    })
+}
+
+fn module_inner(items: &[&str]) -> ItemEnum {
+    ItemEnum::Module(Module {
+        is_crate: false,
+        items: ids(items),
+        is_stripped: false,
+    })
+}
+
+fn ids(keys: &[&str]) -> Vec<Id> {
+    keys.iter().map(|key| id(key)).collect()
+}
+
+fn some_ids(keys: &[&str]) -> Vec<Option<Id>> {
+    keys.iter().map(|key| Some(id(key))).collect()
+}
+
+fn expect_path(ty: Type) -> Path {
+    match ty {
+        Type::ResolvedPath(path) => path,
+        other => panic!("expected resolved path, got {other:?}"),
+    }
+}
+
+// --- items and crates ---
+
+struct TestItem {
+    name: Option<String>,
+    visibility: Visibility,
+    module_path: Option<Vec<String>>,
+    inner: ItemEnum,
+}
+
+fn public_item(name: &str, inner: ItemEnum) -> TestItem {
+    public_item_at_path(name, &["demo", name], inner)
+}
+
+fn public_item_at_path(name: &str, path: &[&str], inner: ItemEnum) -> TestItem {
+    TestItem {
+        name: Some(name.to_string()),
+        visibility: Visibility::Public,
+        module_path: Some(path.iter().map(|segment| segment.to_string()).collect()),
+        inner,
+    }
+}
+
+fn public_item_at_string_path(name: &str, path: &str, inner: ItemEnum) -> TestItem {
+    TestItem {
+        name: Some(name.to_string()),
+        visibility: Visibility::Public,
+        module_path: Some(path.split("::").map(|segment| segment.to_string()).collect()),
+        inner,
+    }
+}
+
+fn public_field(name: &str, ty: Type) -> TestItem {
+    TestItem {
+        name: Some(name.to_string()),
+        visibility: Visibility::Public,
+        module_path: None,
+        inner: ItemEnum::StructField(ty),
+    }
+}
+
+fn private_field(name: &str, ty: Type) -> TestItem {
+    TestItem {
+        name: Some(name.to_string()),
+        visibility: Visibility::Default,
+        module_path: None,
+        inner: ItemEnum::StructField(ty),
+    }
+}
+
+/// A public impl block (no name, no module path).
+fn public_impl(for_: Type, trait_: Option<Type>, items: &[&str]) -> TestItem {
+    TestItem {
+        name: None,
+        visibility: Visibility::Public,
+        module_path: None,
+        inner: impl_item(for_, trait_, items),
+    }
+}
+
+fn public_function(name: &str, inputs: Vec<(&str, Type)>, output: Type) -> TestItem {
+    public_item_at_path(name, &["demo"], function_item(inputs, Some(output)))
+}
+
+fn public_unsafe_function(name: &str, inputs: Vec<(&str, Type)>, output: Type) -> TestItem {
+    public_item_at_path(name, &["demo"], unsafe_function_item(inputs, Some(output)))
+}
+
+fn public_constant(name: &str, ty: Type) -> TestItem {
+    public_item_at_path(name, &["demo"], constant_inner(ty))
+}
+
+fn public_use(name: &str, target: &str) -> TestItem {
+    public_item_at_path(
+        name,
+        &["demo"],
+        use_inner(&format!("demo::{name}"), name, Some(target), false),
+    )
+}
+
+fn public_external_use(name: &str, source: &str) -> TestItem {
+    public_item_at_path(name, &["demo"], use_inner(source, name, None, false))
+}
+
+fn public_glob_use(name: &str, target: &str) -> TestItem {
+    public_item_at_path(
+        name,
+        &["demo"],
+        use_inner(&format!("demo::{name}::*"), name, Some(target), true),
+    )
+}
+
+fn public_module(name: &str, items: &[&str]) -> TestItem {
+    public_item_at_path(name, &["demo", name], module_inner(items))
+}
+
+fn crate_(entries: Vec<(&str, TestItem)>) -> Crate {
+    let mut index = HashMap::new();
+    let mut paths = HashMap::new();
+    for (key, item) in entries {
+        let item_id = id(key);
+        let TestItem {
+            name,
+            visibility,
+            module_path,
+            inner,
+        } = item;
+        if let Some(path) = module_path {
+            paths.insert(
+                item_id,
+                ItemSummary {
+                    crate_id: 0,
+                    path,
+                    kind: inner.item_kind(),
+                },
+            );
         }
-    })
+        index.insert(
+            item_id,
+            Item {
+                id: item_id,
+                crate_id: 0,
+                name,
+                span: None,
+                visibility,
+                docs: None,
+                links: HashMap::new(),
+                attrs: vec![],
+                deprecation: None,
+                stability: None,
+                inner,
+            },
+        );
+    }
+    Crate {
+        root: Id(0),
+        crate_version: None,
+        includes_private: false,
+        index,
+        paths,
+        external_crates: HashMap::new(),
+        target: Target {
+            triple: String::new(),
+            target_features: vec![],
+        },
+        format_version: rustdoc_types::FORMAT_VERSION,
+    }
 }
 
-fn lifetime_param(name: &str) -> Value {
-    json!({
-        "name": name,
-        "kind": {
-            "lifetime": {
-                "outlives": []
-            }
-        }
-    })
+fn empty_crate() -> Crate {
+    crate_(vec![])
 }
 
-fn type_generics(params: Vec<Value>) -> Value {
-    json!({
-        "params": params,
-        "where_predicates": []
-    })
+/// Lift a standalone type without any crate context (resolution falls back to
+/// the type's own usage path).
+fn lift_type(interop: &mut RustInterop, crate_name: &str, ty: &Type) -> Option<TypeElement> {
+    interop.type_from_json(&empty_crate(), crate_name, ty)
 }
 
-fn never() -> Value {
-    json!({ "never": null })
-}
-
-fn resolved(name: &str, args: Vec<Value>) -> Value {
-    json!({
-        "resolved_path": {
-            "name": name,
-            "args": {
-                "angle_bracketed": {
-                    "args": args
-                        .into_iter()
-                        .map(|arg| json!({ "type": arg }))
-                        .collect::<Vec<_>>()
-                }
-            }
-        }
-    })
-}
-
-fn resolved_with_path(name: &str, path: &[&str], args: Vec<Value>) -> Value {
-    json!({
-        "resolved_path": {
-            "name": name,
-            "path": path,
-            "args": {
-                "angle_bracketed": {
-                    "args": args
-                        .into_iter()
-                        .map(|arg| json!({ "type": arg }))
-                        .collect::<Vec<_>>()
-                }
-            }
-        }
-    })
-}
-
-fn resolved_with_string_path(path: &str, args: Vec<Value>) -> Value {
-    json!({
-        "resolved_path": {
-            "path": path,
-            "args": {
-                "angle_bracketed": {
-                    "args": args
-                        .into_iter()
-                        .map(|arg| json!({ "type": arg }))
-                        .collect::<Vec<_>>()
-                }
-            }
-        }
-    })
-}
-
-fn slice(ty: Value) -> Value {
-    json!({ "slice": ty })
-}
-
-fn array(ty: Value) -> Value {
-    json!({
-        "array": {
-            "type": ty,
-            "len": "3"
-        }
-    })
-}
-
-fn malformed_array() -> Value {
-    json!({
-        "array": {
-            "len": "3"
-        }
-    })
-}
-
-fn unknown_type_shape() -> Value {
-    json!({
-        "opaque_future_rustdoc_shape": {
-            "name": "Ticket"
-        }
-    })
-}
-
-fn raw_pointer(ty: Value, mutable: bool) -> Value {
-    json!({
-        "raw_pointer": {
-            "type": ty,
-            "mutable": mutable
-        }
-    })
-}
-
-fn qualified_path(name: &str, self_type: Value) -> Value {
-    json!({
-        "qualified_path": {
-            "name": name,
-            "args": null,
-            "self_type": self_type,
-            "trait": {
-                "path": "demo::Visitor",
-                "name": "Visitor",
-                "id": "trait",
-                "args": null
-            }
-        }
-    })
-}
-
-fn dyn_trait() -> Value {
-    json!({ "dyn_trait": [] })
-}
-
-fn impl_trait() -> Value {
-    json!({ "impl_trait": [] })
-}
-
-fn function_pointer(inputs: Vec<Value>, output: Value) -> Value {
-    json!({
-        "function_pointer": {
-            "sig": {
-                "inputs": inputs,
-                "output": output
-            }
-        }
-    })
-}
-
-fn unsafe_function_pointer(inputs: Vec<Value>, output: Value) -> Value {
-    json!({
-        "function_pointer": {
-            "sig": {
-                "inputs": inputs,
-                "output": output,
-                "header": {
-                    "is_unsafe": true
-                }
-            }
-        }
-    })
-}
-
-fn extern_function_pointer(abi: &str, inputs: Vec<Value>, output: Value) -> Value {
-    json!({
-        "function_pointer": {
-            "sig": {
-                "inputs": inputs,
-                "output": output,
-                "header": {
-                    "abi": abi
-                }
-            }
-        }
-    })
-}
-
-fn mut_borrowed(ty: Value) -> Value {
-    json!({
-        "borrowed_ref": {
-            "type": ty,
-            "mutable": true
-        }
-    })
-}
-
-fn rustdoc_mut_borrowed(ty: Value) -> Value {
-    json!({
-        "borrowed_ref": {
-            "type": ty,
-            "is_mutable": true
-        }
-    })
-}
-
-fn borrowed(ty: Value) -> Value {
-    json!({
-        "borrowed_ref": {
-            "type": ty
-        }
-    })
+fn lift_param(
+    interop: &mut RustInterop,
+    crate_name: &str,
+    name: &str,
+    ty: &Type,
+) -> Option<galvan_ast::Param> {
+    interop.param_from_json(&empty_crate(), crate_name, name, ty)
 }
 
 fn string_type() -> TypeElement {
@@ -249,168 +617,6 @@ fn string_type() -> TypeElement {
 
 fn u64_type() -> TypeElement {
     plain_type(TypeIdent::new("U64"))
-}
-
-fn public_item(name: &str, inner: Value) -> Value {
-    public_item_at_path(name, name, &["demo", name], inner)
-}
-
-fn public_item_at_path(id: &str, name: &str, path: &[&str], inner: Value) -> Value {
-    json!({
-        "id": id,
-        "name": name,
-        "visibility": "public",
-        "path": path,
-        "inner": inner
-    })
-}
-
-fn public_item_at_string_path(id: &str, name: &str, path: &str, inner: Value) -> Value {
-    json!({
-        "id": id,
-        "name": name,
-        "visibility": "public",
-        "path": path,
-        "inner": inner
-    })
-}
-
-fn public_field(name: &str, ty: Value) -> Value {
-    json!({
-        "id": name,
-        "name": name,
-        "visibility": "public",
-        "inner": {
-            "struct_field": ty
-        }
-    })
-}
-
-fn private_field(name: &str, ty: Value) -> Value {
-    json!({
-        "id": name,
-        "name": name,
-        "visibility": "private",
-        "inner": {
-            "struct_field": ty
-        }
-    })
-}
-
-fn public_function(name: &str, inputs: Vec<Value>, output: Value) -> Value {
-    json!({
-        "id": name,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo"],
-        "inner": {
-            "function": {
-                "sig": {
-                    "inputs": inputs,
-                    "output": output
-                }
-            }
-        }
-    })
-}
-
-fn public_unsafe_function(name: &str, inputs: Vec<Value>, output: Value) -> Value {
-    json!({
-        "id": name,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo"],
-        "inner": {
-            "function": {
-                "sig": {
-                    "inputs": inputs,
-                    "output": output
-                },
-                "header": {
-                    "is_unsafe": true
-                }
-            }
-        }
-    })
-}
-
-fn public_constant(name: &str, ty: Value) -> Value {
-    json!({
-        "id": name,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo"],
-        "inner": {
-            "constant": {
-                "type": ty
-            }
-        }
-    })
-}
-
-fn public_use(id: &str, name: &str, target_id: &str) -> Value {
-    json!({
-        "id": id,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo"],
-        "inner": {
-            "use": {
-                "source": format!("demo::{name}"),
-                "name": name,
-                "id": target_id,
-                "is_glob": false
-            }
-        }
-    })
-}
-
-fn public_external_use(id: &str, name: &str, source: &str) -> Value {
-    json!({
-        "id": id,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo"],
-        "inner": {
-            "use": {
-                "source": source,
-                "name": name,
-                "id": null,
-                "is_glob": false
-            }
-        }
-    })
-}
-
-fn public_glob_use(id: &str, name: &str, target_id: &str) -> Value {
-    json!({
-        "id": id,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo"],
-        "inner": {
-            "use": {
-                "source": format!("demo::{name}::*"),
-                "name": name,
-                "id": target_id,
-                "is_glob": true
-            }
-        }
-    })
-}
-
-fn public_module(name: &str, items: Vec<&str>) -> Value {
-    json!({
-        "id": name,
-        "name": name,
-        "visibility": "public",
-        "path": ["demo", name],
-        "inner": {
-            "module": {
-                "items": items
-            }
-        }
-    })
 }
 
 fn imported_type<'a>(interop: &'a RustInterop, name: &str) -> &'a TypeDecl {
@@ -422,6 +628,10 @@ fn imported_type<'a>(interop: &'a RustInterop, name: &str) -> &'a TypeDecl {
         .decl
         .item
 }
+
+// ---------------------------------------------------------------------------
+// Real-crate tests (exercise the on-disk serde_json rustdoc cache).
+// ---------------------------------------------------------------------------
 
 #[test]
 fn loading_a_crate_does_not_import_its_functions_unqualified() {
@@ -458,21 +668,16 @@ fn path_use_declarations_import_only_the_named_item() {
         .is_none());
 }
 
+// ---------------------------------------------------------------------------
+// Typed-builder tests.
+// ---------------------------------------------------------------------------
+
 #[test]
 fn use_declarations_import_types_unqualified() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            }))
-        }
-    });
+    let krate = crate_(vec![("0", public_item("Ticket", struct_plain(&[])))]);
     let uses = [use_decl(&["demo"])];
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
     interop.import_uses(&uses);
 
     let imported = interop.imported_types().collect::<Vec<_>>();
@@ -483,25 +688,13 @@ fn use_declarations_import_types_unqualified() {
 
 #[test]
 fn path_use_declarations_import_only_the_named_type() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": public_item("InternalNote", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            }))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_item("InternalNote", struct_plain(&[]))),
+    ]);
     let uses = [use_decl(&["demo", "Ticket"])];
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
     interop.import_uses(&uses);
 
     let imported = interop.imported_types().collect::<Vec<_>>();
@@ -514,18 +707,12 @@ fn rustdoc_crates_expose_only_their_lifted_items() {
     // A crate's imported surface is exactly what rustdoc lifting produced:
     // nothing is fabricated on top of it (e.g. a `to_string` fn or `Error`
     // type that the JSON did not declare).
-    let json = json!({
-        "index": {
-            "0": public_item_at_path("Value", "Value", &["serde_json", "Value"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            }))
-        }
-    });
+    let krate = crate_(vec![(
+        "Value",
+        public_item_at_path("Value", &["serde_json", "Value"], struct_plain(&[])),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("serde_json", &json);
+    interop.add_crate("serde_json", &krate);
 
     assert!(interop
         .types
@@ -539,14 +726,10 @@ fn rustdoc_crates_expose_only_their_lifted_items() {
 
 #[test]
 fn use_declarations_import_constants_unqualified() {
-    let json = json!({
-        "index": {
-            "0": public_constant("DEFAULT_LIMIT", primitive("u64"))
-        }
-    });
+    let krate = crate_(vec![("0", public_constant("DEFAULT_LIMIT", primitive("u64")))]);
     let uses = [use_decl(&["demo"])];
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
     interop.import_uses(&uses);
 
     let constant = interop
@@ -558,34 +741,26 @@ fn use_declarations_import_constants_unqualified() {
 
 #[test]
 fn use_declarations_suppress_ambiguous_unqualified_items() {
-    let http_json = json!({
-        "index": {
-            "0": public_item_at_path("0", "Ticket", &["http", "Ticket"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": public_function("parse", vec![], resolved("Ticket", vec![])),
-            "2": public_constant("DEFAULT_LIMIT", primitive("u64"))
-        }
-    });
-    let db_json = json!({
-        "index": {
-            "0": public_item_at_path("0", "Ticket", &["db", "Ticket"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": public_function("parse", vec![], resolved("Ticket", vec![])),
-            "2": public_constant("DEFAULT_LIMIT", primitive("u64"))
-        }
-    });
+    let http = crate_(vec![
+        (
+            "0",
+            public_item_at_path("Ticket", &["http", "Ticket"], struct_plain(&[])),
+        ),
+        ("1", public_function("parse", vec![], resolved("Ticket", vec![]))),
+        ("2", public_constant("DEFAULT_LIMIT", primitive("u64"))),
+    ]);
+    let db = crate_(vec![
+        (
+            "0",
+            public_item_at_path("Ticket", &["db", "Ticket"], struct_plain(&[])),
+        ),
+        ("1", public_function("parse", vec![], resolved("Ticket", vec![]))),
+        ("2", public_constant("DEFAULT_LIMIT", primitive("u64"))),
+    ]);
     let uses = [use_decl(&["http"]), use_decl(&["db"])];
     let mut interop = RustInterop::empty();
-    interop.add_crate("http", &http_json);
-    interop.add_crate("db", &db_json);
+    interop.add_crate("http", &http);
+    interop.add_crate("db", &db);
     interop.import_uses(&uses);
 
     let imported = interop
@@ -611,30 +786,18 @@ fn use_declarations_suppress_ambiguous_unqualified_items() {
 
 #[test]
 fn path_use_declarations_suppress_ambiguous_unqualified_items() {
-    let http_json = json!({
-        "index": {
-            "0": public_item_at_path("0", "Ticket", &["http", "Ticket"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            }))
-        }
-    });
-    let db_json = json!({
-        "index": {
-            "0": public_item_at_path("0", "Ticket", &["db", "Ticket"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            }))
-        }
-    });
+    let http = crate_(vec![(
+        "0",
+        public_item_at_path("Ticket", &["http", "Ticket"], struct_plain(&[])),
+    )]);
+    let db = crate_(vec![(
+        "0",
+        public_item_at_path("Ticket", &["db", "Ticket"], struct_plain(&[])),
+    )]);
     let uses = [use_decl(&["http", "Ticket"]), use_decl(&["db", "Ticket"])];
     let mut interop = RustInterop::empty();
-    interop.add_crate("http", &http_json);
-    interop.add_crate("db", &db_json);
+    interop.add_crate("http", &http);
+    interop.add_crate("db", &db);
     interop.import_uses(&uses);
 
     let imported = interop
@@ -642,44 +805,32 @@ fn path_use_declarations_suppress_ambiguous_unqualified_items() {
         .map(|ty| format!("{} {}", ty.name.as_str(), ty.rust_path.as_ref()))
         .collect::<Vec<_>>();
     assert!(imported.is_empty(), "{imported:?}");
-    assert!(interop
-        .type_by_qualified_path(&["http", "Ticket"])
-        .is_some());
+    assert!(interop.type_by_qualified_path(&["http", "Ticket"]).is_some());
     assert!(interop.type_by_qualified_path(&["db", "Ticket"]).is_some());
 }
 
 #[test]
 fn rustdoc_preserves_same_named_types_from_different_modules() {
-    let json = json!({
-        "index": {
-            "0": public_item_at_path("http_error", "Error", &["demo", "http", "Error"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": public_item_at_path("db_error", "Error", &["demo", "db", "Error"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "2": public_item_at_string_path("auth_error", "Error", "crate::auth::Error", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "3": public_item_at_string_path("internal_error", "Error", "$crate::internal::Error", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            }))
-        }
-    });
+    let krate = crate_(vec![
+        (
+            "http_error",
+            public_item_at_path("Error", &["demo", "http", "Error"], struct_plain(&[])),
+        ),
+        (
+            "db_error",
+            public_item_at_path("Error", &["demo", "db", "Error"], struct_plain(&[])),
+        ),
+        (
+            "auth_error",
+            public_item_at_string_path("Error", "crate::auth::Error", struct_plain(&[])),
+        ),
+        (
+            "internal_error",
+            public_item_at_string_path("Error", "$crate::internal::Error", struct_plain(&[])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let mut error_paths = interop
         .types
@@ -727,12 +878,12 @@ fn rustdoc_preserves_same_named_types_from_different_modules() {
 #[test]
 fn rustdoc_preserves_generic_resolved_paths() {
     let mut interop = RustInterop::empty();
-    let ty = interop
-        .type_from_json(
-            "axum",
-            &resolved("Json", vec![resolved("Vec", vec![primitive("u64")])]),
-        )
-        .unwrap();
+    let ty = lift_type(
+        &mut interop,
+        "axum",
+        &resolved("Json", vec![resolved("Vec", vec![primitive("u64")])]),
+    )
+    .unwrap();
 
     let TypeElement::Parametric(parametric) = ty else {
         panic!("expected Json<T>, got {ty:?}");
@@ -750,24 +901,19 @@ fn rustdoc_preserves_generic_resolved_paths() {
 #[test]
 fn rustdoc_preserves_generic_arity_for_referenced_type_placeholders() {
     let mut interop = RustInterop::empty();
-    interop.type_from_json(
+    lift_type(
+        &mut interop,
         "demo",
-        &resolved_with_path(
-            "Pair",
-            &["demo", "Pair"],
-            vec![generic("Item"), primitive("u64")],
-        ),
+        &resolved_with_path("Pair", &["demo", "Pair"], vec![generic("Item"), primitive("u64")]),
     );
 
     let TypeDecl::Empty(pair) = imported_type(&interop, "Pair") else {
         panic!("expected referenced Pair type to be recorded");
     };
-    assert_eq!(
-        pair.generic_params,
-        vec![Ident::new("Item"), Ident::new("U")]
-    );
+    assert_eq!(pair.generic_params, vec![Ident::new("Item"), Ident::new("U")]);
 
-    interop.type_from_json(
+    lift_type(
+        &mut interop,
         "demo",
         &resolved_with_path(
             "Pair",
@@ -788,44 +934,34 @@ fn rustdoc_preserves_generic_arity_for_referenced_type_placeholders() {
 #[test]
 fn rustdoc_lifts_resolved_string_as_builtin_string() {
     let mut interop = RustInterop::empty();
-    let ty = interop
-        .type_from_json(
-            "std",
-            &resolved_with_path("String", &["alloc", "string", "String"], vec![]),
-        )
-        .unwrap();
+    let ty = lift_type(
+        &mut interop,
+        "std",
+        &resolved_with_path("String", &["alloc", "string", "String"], vec![]),
+    )
+    .unwrap();
 
     assert_eq!(ty, string_type());
     assert!(interop.types.iter().all(|ty| ty.name.as_str() != "String"));
 
-    let path_only = interop
-        .type_from_json(
-            "std",
-            &json!({
-                "resolved_path": {
-                    "path": "alloc::string::String",
-                    "id": 175,
-                    "args": null
-                }
-            }),
-        )
-        .unwrap();
+    let path_only = lift_type(
+        &mut interop,
+        "std",
+        &resolved_with_string_path("alloc::string::String", vec![]),
+    )
+    .unwrap();
     assert_eq!(path_only, string_type());
 }
 
 #[test]
 fn rustdoc_preserves_qualified_paths_for_referenced_types() {
     let mut interop = RustInterop::empty();
-    let ty = interop
-        .type_from_json(
-            "axum",
-            &resolved_with_path(
-                "Json",
-                &["axum", "response", "Json"],
-                vec![primitive("str")],
-            ),
-        )
-        .unwrap();
+    let ty = lift_type(
+        &mut interop,
+        "axum",
+        &resolved_with_path("Json", &["axum", "response", "Json"], vec![primitive("str")]),
+    )
+    .unwrap();
 
     let TypeElement::Parametric(parametric) = ty else {
         panic!("expected Json<T>, got {ty:?}");
@@ -839,12 +975,12 @@ fn rustdoc_preserves_qualified_paths_for_referenced_types() {
         Some("::axum::response::Json")
     );
 
-    let string_path_ty = interop
-        .type_from_json(
-            "axum",
-            &resolved_with_string_path("axum::extract::State", vec![primitive("str")]),
-        )
-        .unwrap();
+    let string_path_ty = lift_type(
+        &mut interop,
+        "axum",
+        &resolved_with_string_path("axum::extract::State", vec![primitive("str")]),
+    )
+    .unwrap();
     let TypeElement::Parametric(parametric) = string_path_ty else {
         panic!("expected State<T>, got {string_path_ty:?}");
     };
@@ -856,12 +992,12 @@ fn rustdoc_preserves_qualified_paths_for_referenced_types() {
         Some("::axum::extract::State")
     );
 
-    let crate_path_ty = interop
-        .type_from_json(
-            "axum",
-            &resolved_with_string_path("crate::routing::Router", vec![]),
-        )
-        .unwrap();
+    let crate_path_ty = lift_type(
+        &mut interop,
+        "axum",
+        &resolved_with_string_path("crate::routing::Router", vec![]),
+    )
+    .unwrap();
     assert_eq!(crate_path_ty, plain_type(TypeIdent::new("Router")));
     assert_eq!(
         interop
@@ -874,11 +1010,13 @@ fn rustdoc_preserves_qualified_paths_for_referenced_types() {
 #[test]
 fn rustdoc_preserves_same_named_referenced_types_from_different_modules() {
     let mut interop = RustInterop::empty();
-    interop.type_from_json(
+    lift_type(
+        &mut interop,
         "demo",
         &resolved_with_path("Error", &["demo", "http", "Error"], vec![]),
     );
-    interop.type_from_json(
+    lift_type(
+        &mut interop,
         "demo",
         &resolved_with_path("Error", &["demo", "db", "Error"], vec![]),
     );
@@ -890,83 +1028,72 @@ fn rustdoc_preserves_same_named_referenced_types_from_different_modules() {
         .map(|ty| ty.rust_path.as_ref())
         .collect::<Vec<_>>();
     error_paths.sort();
-    assert_eq!(
-        error_paths,
-        vec!["::demo::db::Error", "::demo::http::Error"]
-    );
+    assert_eq!(error_paths, vec!["::demo::db::Error", "::demo::http::Error"]);
 }
 
 #[test]
 fn rustdoc_lifts_common_collections_and_results() {
     let mut interop = RustInterop::empty();
 
-    let optional = interop
-        .type_from_json(
-            "std",
-            &resolved_with_path(
-                "Option",
-                &["core", "option", "Option"],
-                vec![primitive("u64")],
-            ),
-        )
-        .unwrap();
+    let optional = lift_type(
+        &mut interop,
+        "std",
+        &resolved_with_path("Option", &["core", "option", "Option"], vec![primitive("u64")]),
+    )
+    .unwrap();
     let TypeElement::Optional(optional) = optional else {
         panic!("expected optional, got {optional:?}");
     };
     assert_eq!(optional.inner, u64_type());
 
-    let map = interop
-        .type_from_json(
-            "std",
-            &resolved("HashMap", vec![primitive("str"), primitive("u64")]),
-        )
-        .unwrap();
+    let map = lift_type(
+        &mut interop,
+        "std",
+        &resolved("HashMap", vec![primitive("str"), primitive("u64")]),
+    )
+    .unwrap();
     let TypeElement::Dictionary(map) = map else {
         panic!("expected dictionary, got {map:?}");
     };
     assert_eq!(map.key, string_type());
     assert_eq!(map.value, u64_type());
 
-    let ordered_map = interop
-        .type_from_json(
-            "std",
-            &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
-        )
-        .unwrap();
+    let ordered_map = lift_type(
+        &mut interop,
+        "std",
+        &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
+    )
+    .unwrap();
     let TypeElement::OrderedDictionary(ordered_map) = ordered_map else {
         panic!("expected ordered dictionary, got {ordered_map:?}");
     };
     assert_eq!(ordered_map.key, string_type());
     assert_eq!(ordered_map.value, u64_type());
 
-    let set = interop
-        .type_from_json("std", &resolved("BTreeSet", vec![primitive("str")]))
-        .unwrap();
+    let set = lift_type(&mut interop, "std", &resolved("BTreeSet", vec![primitive("str")])).unwrap();
     let TypeElement::Set(set) = set else {
         panic!("expected set, got {set:?}");
     };
     assert_eq!(set.elements, string_type());
 
-    let deque = interop
-        .type_from_json("std", &resolved("VecDeque", vec![primitive("u64")]))
-        .unwrap();
+    let deque = lift_type(&mut interop, "std", &resolved("VecDeque", vec![primitive("u64")])).unwrap();
     let TypeElement::Array(deque) = deque else {
         panic!("expected array, got {deque:?}");
     };
     assert_eq!(deque.elements, u64_type());
 
-    let result = interop
-        .type_from_json(
-            "serde_json",
-            &resolved(
-                "Result",
-                vec![
-                    resolved("Vec", vec![primitive("u8")]),
-                    resolved("Error", vec![]),
-                ],
-            ),
-        )
-        .unwrap();
+    let result = lift_type(
+        &mut interop,
+        "serde_json",
+        &resolved(
+            "Result",
+            vec![
+                resolved("Vec", vec![primitive("u8")]),
+                resolved("Error", vec![]),
+            ],
+        ),
+    )
+    .unwrap();
     let TypeElement::Result(result) = result else {
         panic!("expected result, got {result:?}");
     };
@@ -978,16 +1105,12 @@ fn rustdoc_lifts_common_collections_and_results() {
 fn rustdoc_preserves_dependency_types_named_like_known_wrappers() {
     let mut interop = RustInterop::empty();
 
-    let optional = interop
-        .type_from_json(
-            "demo",
-            &resolved_with_path(
-                "Option",
-                &["demo", "schema", "Option"],
-                vec![primitive("u64")],
-            ),
-        )
-        .unwrap();
+    let optional = lift_type(
+        &mut interop,
+        "demo",
+        &resolved_with_path("Option", &["demo", "schema", "Option"], vec![primitive("u64")]),
+    )
+    .unwrap();
     let TypeElement::Parametric(optional) = optional else {
         panic!("expected nominal Option<T>, got {optional:?}");
     };
@@ -1000,31 +1123,31 @@ fn rustdoc_preserves_dependency_types_named_like_known_wrappers() {
         Some("::demo::schema::Option")
     );
 
-    let list = interop
-        .type_from_json(
-            "demo",
-            &resolved_with_path("Vec", &["demo", "schema", "Vec"], vec![primitive("str")]),
-        )
-        .unwrap();
+    let list = lift_type(
+        &mut interop,
+        "demo",
+        &resolved_with_path("Vec", &["demo", "schema", "Vec"], vec![primitive("str")]),
+    )
+    .unwrap();
     let TypeElement::Parametric(list) = list else {
         panic!("expected nominal Vec<T>, got {list:?}");
     };
     assert_eq!(list.base_type, TypeIdent::new("Vec"));
     assert_eq!(list.type_args, vec![string_type()]);
 
-    let result = interop
-        .type_from_json(
-            "demo",
-            &resolved_with_path(
-                "Result",
-                &["demo", "schema", "Result"],
-                vec![
-                    primitive("u64"),
-                    resolved_with_path("Error", &["demo", "schema", "Error"], vec![]),
-                ],
-            ),
-        )
-        .unwrap();
+    let result = lift_type(
+        &mut interop,
+        "demo",
+        &resolved_with_path(
+            "Result",
+            &["demo", "schema", "Result"],
+            vec![
+                primitive("u64"),
+                resolved_with_path("Error", &["demo", "schema", "Error"], vec![]),
+            ],
+        ),
+    )
+    .unwrap();
     let TypeElement::Parametric(result) = result else {
         panic!("expected nominal Result<T, E>, got {result:?}");
     };
@@ -1034,20 +1157,20 @@ fn rustdoc_preserves_dependency_types_named_like_known_wrappers() {
         vec![u64_type(), plain_type(TypeIdent::new("Error"))]
     );
 
-    let shared = interop
-        .type_from_json(
-            "demo",
-            &resolved_with_path(
-                "Arc",
-                &["demo", "sync", "Arc"],
-                vec![resolved_with_path(
-                    "Mutex",
-                    &["demo", "sync", "Mutex"],
-                    vec![primitive("u64")],
-                )],
-            ),
-        )
-        .unwrap();
+    let shared = lift_type(
+        &mut interop,
+        "demo",
+        &resolved_with_path(
+            "Arc",
+            &["demo", "sync", "Arc"],
+            vec![resolved_with_path(
+                "Mutex",
+                &["demo", "sync", "Mutex"],
+                vec![primitive("u64")],
+            )],
+        ),
+    )
+    .unwrap();
     let TypeElement::Parametric(shared) = shared else {
         panic!("expected nominal Arc<T>, got {shared:?}");
     };
@@ -1064,15 +1187,11 @@ fn rustdoc_lifts_flexible_result_types() {
     let mut interop = RustInterop::empty();
 
     for ty in [
-        resolved_with_path(
-            "FlexResult",
-            &["galvan", "std", "FlexResult"],
-            vec![primitive("u64")],
-        ),
+        resolved_with_path("FlexResult", &["galvan", "std", "FlexResult"], vec![primitive("u64")]),
         resolved_with_path("Result", &["anyhow", "Result"], vec![primitive("u64")]),
         resolved_with_string_path("anyhow::Result", vec![primitive("u64")]),
     ] {
-        let result = interop.type_from_json("demo", &ty).unwrap();
+        let result = lift_type(&mut interop, "demo", &ty).unwrap();
         let TypeElement::Result(result) = result else {
             panic!("expected flexible result, got {result:?}");
         };
@@ -1080,9 +1199,8 @@ fn rustdoc_lifts_flexible_result_types() {
         assert_eq!(result.error, None);
     }
 
-    let unresolved_result = interop
-        .type_from_json("demo", &resolved("Result", vec![primitive("u64")]))
-        .unwrap();
+    let unresolved_result =
+        lift_type(&mut interop, "demo", &resolved("Result", vec![primitive("u64")])).unwrap();
     let TypeElement::Result(unresolved_result) = unresolved_result else {
         panic!("expected result, got {unresolved_result:?}");
     };
@@ -1096,17 +1214,13 @@ fn rustdoc_lifts_flexible_result_types() {
 fn rustdoc_lifts_slice_and_array_types() {
     let mut interop = RustInterop::empty();
 
-    let slice = interop
-        .type_from_json("std", &slice(primitive("u64")))
-        .unwrap();
+    let slice = lift_type(&mut interop, "std", &slice(primitive("u64"))).unwrap();
     let TypeElement::Array(slice) = slice else {
         panic!("expected slice to lift as array, got {slice:?}");
     };
     assert_eq!(slice.elements, u64_type());
 
-    let array = interop
-        .type_from_json("std", &array(primitive("str")))
-        .unwrap();
+    let array = lift_type(&mut interop, "std", &array(primitive("str"))).unwrap();
     let TypeElement::Array(array) = array else {
         panic!("expected fixed array to lift as array, got {array:?}");
     };
@@ -1117,111 +1231,73 @@ fn rustdoc_lifts_slice_and_array_types() {
 fn rustdoc_does_not_lift_raw_pointer_types() {
     let mut interop = RustInterop::empty();
 
-    assert!(interop
-        .type_from_json("std", &raw_pointer(primitive("u8"), false))
-        .is_none());
+    assert!(lift_type(&mut interop, "std", &raw_pointer(primitive("u8"), false)).is_none());
 }
 
 #[test]
 fn rustdoc_does_not_lift_unsafe_function_pointer_types() {
     let mut interop = RustInterop::empty();
 
-    assert!(interop
-        .type_from_json(
-            "std",
-            &unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
-        )
-        .is_none());
+    assert!(lift_type(
+        &mut interop,
+        "std",
+        &unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
+    )
+    .is_none());
 }
 
 #[test]
 fn rustdoc_does_not_lift_non_rust_abi_function_pointer_types() {
     let mut interop = RustInterop::empty();
 
-    assert!(interop
-        .type_from_json(
-            "std",
-            &extern_function_pointer("C", vec![primitive("u64")], primitive("bool"))
-        )
-        .is_none());
+    assert!(lift_type(
+        &mut interop,
+        "std",
+        &extern_function_pointer("C", vec![primitive("u64")], primitive("bool"))
+    )
+    .is_none());
 }
 
 #[test]
 fn rustdoc_does_not_lift_unrepresentable_type_shapes() {
     let mut interop = RustInterop::empty();
 
-    assert!(interop
-        .type_from_json("demo", &qualified_path("Output", generic("T")))
-        .is_none());
-    assert!(interop.type_from_json("demo", &dyn_trait()).is_none());
-    assert!(interop.type_from_json("demo", &impl_trait()).is_none());
+    assert!(lift_type(&mut interop, "demo", &qualified_path("Output", generic("T"))).is_none());
+    assert!(lift_type(&mut interop, "demo", &dyn_trait()).is_none());
+    assert!(lift_type(&mut interop, "demo", &impl_trait()).is_none());
 }
 
 #[test]
 fn rustdoc_does_not_lift_partial_type_shapes() {
     let mut interop = RustInterop::empty();
 
-    assert!(interop
-        .type_from_json("demo", &resolved("Vec", vec![malformed_array()]))
-        .is_none());
-    assert!(interop
-        .type_from_json("std", &resolved("Option", vec![]))
-        .is_none());
-    assert!(interop
-        .type_from_json("std", &resolved("Vec", vec![]))
-        .is_none());
-    assert!(interop
-        .type_from_json("std", &resolved("HashMap", vec![primitive("str")]))
-        .is_none());
-    assert!(interop
-        .type_from_json("std", &resolved("Result", vec![]))
-        .is_none());
-    assert!(interop
-        .type_from_json(
-            "demo",
-            &resolved_with_path("Result", &["anyhow", "Result"], vec![])
-        )
-        .is_none());
-    assert!(interop
-        .type_from_json(
-            "demo",
-            &resolved_with_path("FlexResult", &["galvan", "std", "FlexResult"], vec![])
-        )
-        .is_none());
-    assert!(interop
-        .type_from_json("demo", &unknown_type_shape())
-        .is_none());
-    assert!(interop
-        .type_from_json(
-            "demo",
-            &json!({
-                "tuple": [
-                    primitive("u64"),
-                    malformed_array()
-                ]
-            }),
-        )
-        .is_none());
-    assert!(interop
-        .type_from_json(
-            "demo",
-            &function_pointer(vec![json!(["items", malformed_array()])], primitive("bool")),
-        )
-        .is_none());
+    assert!(lift_type(&mut interop, "std", &resolved("Option", vec![])).is_none());
+    assert!(lift_type(&mut interop, "std", &resolved("Vec", vec![])).is_none());
+    assert!(lift_type(&mut interop, "std", &resolved("HashMap", vec![primitive("str")])).is_none());
+    assert!(lift_type(&mut interop, "std", &resolved("Result", vec![])).is_none());
+    assert!(lift_type(
+        &mut interop,
+        "demo",
+        &resolved_with_path("Result", &["anyhow", "Result"], vec![])
+    )
+    .is_none());
+    assert!(lift_type(
+        &mut interop,
+        "demo",
+        &resolved_with_path("FlexResult", &["galvan", "std", "FlexResult"], vec![])
+    )
+    .is_none());
 }
 
 #[test]
 fn rustdoc_lifts_function_pointer_types() {
     let mut interop = RustInterop::empty();
-    let ty = interop
-        .type_from_json(
-            "std",
-            &function_pointer(
-                vec![json!(["ticket_id", primitive("u64")]), primitive("str")],
-                primitive("bool"),
-            ),
-        )
-        .unwrap();
+    let ty = lift_type(
+        &mut interop,
+        "std",
+        &function_pointer(vec![primitive("u64"), primitive("str")], primitive("bool")),
+    )
+    .unwrap();
 
     let TypeElement::Closure(closure) = ty else {
         panic!("expected function pointer to lift as closure, got {ty:?}");
@@ -1229,12 +1305,12 @@ fn rustdoc_lifts_function_pointer_types() {
     assert_eq!(closure.parameters, vec![u64_type(), string_type()]);
     assert_eq!(closure.return_ty, TypeElement::bool());
 
-    let rust_abi = interop
-        .type_from_json(
-            "std",
-            &extern_function_pointer("Rust", vec![primitive("u64")], primitive("bool")),
-        )
-        .unwrap();
+    let rust_abi = lift_type(
+        &mut interop,
+        "std",
+        &extern_function_pointer("Rust", vec![primitive("u64")], primitive("bool")),
+    )
+    .unwrap();
     assert!(matches!(rust_abi, TypeElement::Closure(_)));
 }
 
@@ -1242,11 +1318,10 @@ fn rustdoc_lifts_function_pointer_types() {
 fn rustdoc_lifts_never_types() {
     let mut interop = RustInterop::empty();
 
-    let ty = interop.type_from_json("std", &never()).unwrap();
+    let ty = lift_type(&mut interop, "std", &never()).unwrap();
     assert!(matches!(ty, TypeElement::Never(_)));
 
-    let primitive_ty = interop
-        .type_from_json("std", &primitive("!"))
+    let primitive_ty = lift_type(&mut interop, "std", &primitive("!"))
         .expect("expected primitive never type to lift");
     assert!(matches!(primitive_ty, TypeElement::Never(_)));
 }
@@ -1259,11 +1334,7 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
             resolved_with_path(
                 "Arc",
                 &["alloc", "sync", "Arc"],
-                vec![resolved_with_path(
-                    "Mutex",
-                    &["std", "sync", "Mutex"],
-                    vec![generic("T")],
-                )],
+                vec![resolved_with_path("Mutex", &["std", "sync", "Mutex"], vec![generic("T")])],
             ),
             "Mutex",
         ),
@@ -1276,9 +1347,7 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
             "RwLock",
         ),
     ] {
-        let param = interop
-            .param_from_json("std", &json!(["tickets", wrapper]))
-            .unwrap();
+        let param = lift_param(&mut interop, "std", "tickets", &wrapper).unwrap();
 
         assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
         assert_eq!(param.param_type, generic_type("T"));
@@ -1297,28 +1366,26 @@ fn rustdoc_skips_bare_standard_lock_wrappers() {
         resolved("Mutex", vec![generic("T")]),
         resolved("RwLock", vec![generic("T")]),
     ] {
-        assert!(interop.type_from_json("std", &wrapper).is_none());
-        assert!(interop
-            .param_from_json("std", &json!(["tickets", wrapper]))
-            .is_none());
+        assert!(lift_type(&mut interop, "std", &wrapper).is_none());
+        assert!(lift_param(&mut interop, "std", "tickets", &wrapper).is_none());
     }
 }
 
 #[test]
 fn rustdoc_preserves_non_shared_arc_types_nominally() {
     let mut interop = RustInterop::empty();
-    let ty = interop
-        .type_from_json("std", &resolved("Arc", vec![resolved("Ticket", vec![])]))
-        .unwrap();
+    let ty = lift_type(
+        &mut interop,
+        "std",
+        &resolved("Arc", vec![resolved("Ticket", vec![])]),
+    )
+    .unwrap();
 
     let TypeElement::Parametric(parametric) = ty else {
         panic!("expected Arc<Ticket>, got {ty:?}");
     };
     assert_eq!(parametric.base_type, TypeIdent::new("Arc"));
-    assert_eq!(
-        parametric.type_args,
-        vec![plain_type(TypeIdent::new("Ticket"))]
-    );
+    assert_eq!(parametric.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
     assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Arc"));
     assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Ticket"));
 }
@@ -1326,9 +1393,7 @@ fn rustdoc_preserves_non_shared_arc_types_nominally() {
 #[test]
 fn rustdoc_keeps_single_owner_atomics_nominal() {
     let mut interop = RustInterop::empty();
-    let atomic = interop
-        .param_from_json("std", &json!(["next_id", resolved("AtomicU64", vec![])]))
-        .unwrap();
+    let atomic = lift_param(&mut interop, "std", "next_id", &resolved("AtomicU64", vec![])).unwrap();
     assert_eq!(atomic.decl_modifier, Some(galvan_ast::DeclModifier::Move));
     assert_eq!(atomic.param_type, plain_type(TypeIdent::new("AtomicU64")));
 }
@@ -1336,15 +1401,13 @@ fn rustdoc_keeps_single_owner_atomics_nominal() {
 #[test]
 fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
     let mut interop = RustInterop::empty();
-    let param = interop
-        .param_from_json(
-            "std",
-            &json!([
-                "next_id",
-                resolved("Arc", vec![resolved("AtomicU64", vec![])])
-            ]),
-        )
-        .unwrap();
+    let param = lift_param(
+        &mut interop,
+        "std",
+        "next_id",
+        &resolved("Arc", vec![resolved("AtomicU64", vec![])]),
+    )
+    .unwrap();
 
     assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
     assert_eq!(param.param_type, u64_type());
@@ -1357,34 +1420,32 @@ fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
 #[test]
 fn rustdoc_lifts_mutable_borrowed_parameters_to_mut() {
     let mut interop = RustInterop::empty();
-    for borrowed in [
-        mut_borrowed(resolved("Ticket", vec![])),
-        rustdoc_mut_borrowed(resolved("Ticket", vec![])),
-    ] {
-        let param = interop
-            .param_from_json("demo", &json!(["ticket", borrowed]))
-            .unwrap();
+    let param = lift_param(
+        &mut interop,
+        "demo",
+        "ticket",
+        &mut_borrowed(resolved("Ticket", vec![])),
+    )
+    .unwrap();
 
-        assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Mut));
-        assert_eq!(param.param_type, plain_type(TypeIdent::new("Ticket")));
-    }
+    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Mut));
+    assert_eq!(param.param_type, plain_type(TypeIdent::new("Ticket")));
 }
 
 #[test]
 fn rustdoc_keeps_owned_copy_parameters_unmodified() {
     let mut interop = RustInterop::empty();
-    let integer = interop
-        .param_from_json("std", &json!(["limit", primitive("u64")]))
-        .unwrap();
+    let integer = lift_param(&mut interop, "std", "limit", &primitive("u64")).unwrap();
     assert_eq!(integer.decl_modifier, None);
     assert_eq!(integer.param_type, u64_type());
 
-    let tuple = interop
-        .param_from_json(
-            "std",
-            &json!(["range", { "tuple": [primitive("u64"), primitive("bool")] }]),
-        )
-        .unwrap();
+    let tuple = lift_param(
+        &mut interop,
+        "std",
+        "range",
+        &tuple_(vec![primitive("u64"), primitive("bool")]),
+    )
+    .unwrap();
     assert_eq!(tuple.decl_modifier, None);
     assert!(matches!(tuple.param_type, TypeElement::Tuple(_)));
 }
@@ -1392,40 +1453,32 @@ fn rustdoc_keeps_owned_copy_parameters_unmodified() {
 #[test]
 fn rustdoc_marks_owned_non_copy_parameters_as_move() {
     let mut interop = RustInterop::empty();
-    let string = interop
-        .param_from_json("std", &json!(["title", primitive("str")]))
-        .unwrap();
+    let string = lift_param(&mut interop, "std", "title", &primitive("str")).unwrap();
     assert_eq!(string.decl_modifier, Some(galvan_ast::DeclModifier::Move));
     assert_eq!(string.param_type, string_type());
 
-    let generic = interop
-        .param_from_json("demo", &json!(["value", generic("T")]))
-        .unwrap();
+    let generic = lift_param(&mut interop, "demo", "value", &generic("T")).unwrap();
     assert_eq!(generic.decl_modifier, Some(galvan_ast::DeclModifier::Move));
     assert_eq!(generic.param_type, generic_type("T"));
 }
 
 #[test]
 fn rustdoc_preserves_shared_borrow_parameter_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "takes_ref",
-                vec![json!(["value", borrowed(slice(primitive("u64")))])],
-                primitive("bool")
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "takes_ref",
+            vec![("value", borrowed(slice(primitive("u64"))))],
+            primitive("bool"),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("takes_ref"), &[])
         .expect("expected imported function");
-    assert_eq!(
-        function.arg_conversions,
-        vec![RustArgConversion::SharedBorrow]
-    );
+    assert_eq!(function.arg_conversions, vec![RustArgConversion::SharedBorrow]);
     assert_eq!(
         function.decl.item.signature.parameters.params[0].param_type,
         TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
@@ -1437,13 +1490,12 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
 
 #[test]
 fn rustdoc_does_not_import_unsafe_functions() {
-    let json = json!({
-        "index": {
-            "0": public_unsafe_function("from_raw_parts", vec![], primitive("u64"))
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_unsafe_function("from_raw_parts", vec![], primitive("u64")),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("from_raw_parts"), &[])
@@ -1452,17 +1504,16 @@ fn rustdoc_does_not_import_unsafe_functions() {
 
 #[test]
 fn rustdoc_does_not_import_functions_with_raw_pointer_signatures() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "read_address",
-                vec![json!(["bytes", raw_pointer(primitive("u8"), false)])],
-                primitive("u64")
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "read_address",
+            vec![("bytes", raw_pointer(primitive("u8"), false))],
+            primitive("u64"),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("read_address"), &[])
@@ -1471,20 +1522,19 @@ fn rustdoc_does_not_import_functions_with_raw_pointer_signatures() {
 
 #[test]
 fn rustdoc_does_not_import_functions_with_unsafe_function_pointer_signatures() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "visit",
-                vec![json!([
-                    "callback",
-                    unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
-                ])],
-                primitive("bool")
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "visit",
+            vec![(
+                "callback",
+                unsafe_function_pointer(vec![primitive("u64")], primitive("bool")),
+            )],
+            primitive("bool"),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("visit"), &[])
@@ -1493,62 +1543,55 @@ fn rustdoc_does_not_import_functions_with_unsafe_function_pointer_signatures() {
 
 #[test]
 fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
-    let json = json!({
-        "index": {
-            "0": public_function(
+    let krate = crate_(vec![
+        (
+            "0",
+            public_function(
                 "visit",
-                vec![json!(["visitor", dyn_trait()])],
-                qualified_path("Output", generic("V"))
+                vec![("visitor", dyn_trait())],
+                qualified_path("Output", generic("V")),
             ),
-            "1": public_function(
-                "make_display",
-                vec![],
-                impl_trait()
-            ),
-            "2": public_function(
-                "count_items",
-                vec![
-                    json!(["scope", primitive("str")]),
-                    json!(["items", malformed_array()])
-                ],
-                primitive("u64")
-            ),
-            "3": public_function(
-                "unknown_input",
-                vec![json!(["ticket", unknown_type_shape()])],
-                primitive("bool")
-            ),
-            "4": public_function(
-                "unknown_output",
-                vec![],
-                unknown_type_shape()
-            ),
-            "5": public_constant(
-                "DEFAULT_OUTPUT",
-                qualified_path("Output", generic("V"))
-            ),
-            "6": public_constant(
-                "UNKNOWN_OUTPUT",
-                unknown_type_shape()
-            ),
-            "7": public_function(
+        ),
+        ("1", public_function("make_display", vec![], impl_trait())),
+        (
+            "5",
+            public_constant("DEFAULT_OUTPUT", qualified_path("Output", generic("V"))),
+        ),
+        (
+            "7",
+            public_function(
                 "bare_lock_input",
-                vec![json!(["tickets", resolved("Mutex", vec![resolved("Ticket", vec![])])])],
-                primitive("bool")
+                vec![(
+                    "tickets",
+                    resolved("Mutex", vec![resolved("Ticket", vec![])]),
+                )],
+                primitive("bool"),
             ),
-            "8": public_function(
+        ),
+        (
+            "8",
+            public_function(
                 "nested_bare_lock_input",
-                vec![json!(["tickets", resolved("Option", vec![resolved("RwLock", vec![resolved("Ticket", vec![])])])])],
-                primitive("bool")
+                vec![(
+                    "tickets",
+                    resolved(
+                        "Option",
+                        vec![resolved("RwLock", vec![resolved("Ticket", vec![])])],
+                    ),
+                )],
+                primitive("bool"),
             ),
-            "9": public_constant(
+        ),
+        (
+            "9",
+            public_constant(
                 "LOCKED_TICKETS",
-                resolved("Mutex", vec![resolved("Ticket", vec![])])
-            )
-        }
-    });
+                resolved("Mutex", vec![resolved("Ticket", vec![])]),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("visit"), &[])
@@ -1557,19 +1600,7 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
         .function(Some("demo"), None, &ident("make_display"), &[])
         .is_none());
     assert!(interop
-        .function(Some("demo"), None, &ident("count_items"), &[])
-        .is_none());
-    assert!(interop
-        .function(Some("demo"), None, &ident("unknown_input"), &[])
-        .is_none());
-    assert!(interop
-        .function(Some("demo"), None, &ident("unknown_output"), &[])
-        .is_none());
-    assert!(interop
         .constant(Some("demo"), &ident("DEFAULT_OUTPUT"))
-        .is_none());
-    assert!(interop
-        .constant(Some("demo"), &ident("UNKNOWN_OUTPUT"))
         .is_none());
     assert!(interop
         .function(Some("demo"), None, &ident("bare_lock_input"), &[])
@@ -1584,17 +1615,25 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
 
 #[test]
 fn rustdoc_imports_functions_with_shared_arc_lock_signatures() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "replace_tickets",
-                vec![json!(["tickets", resolved("Arc", vec![resolved("Mutex", vec![resolved("Ticket", vec![])])])])],
-                resolved("Arc", vec![resolved("RwLock", vec![resolved("Ticket", vec![])])])
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "replace_tickets",
+            vec![(
+                "tickets",
+                resolved(
+                    "Arc",
+                    vec![resolved("Mutex", vec![resolved("Ticket", vec![])])],
+                ),
+            )],
+            resolved(
+                "Arc",
+                vec![resolved("RwLock", vec![resolved("Ticket", vec![])])],
+            ),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("replace_tickets"), &[])
@@ -1615,30 +1654,26 @@ fn rustdoc_imports_functions_with_shared_arc_lock_signatures() {
 
 #[test]
 fn rustdoc_imports_function_pointer_parameters() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "filter_tickets",
-                vec![json!([
-                    "predicate",
-                    function_pointer(vec![primitive("u64")], primitive("bool"))
-                ])],
-                primitive("u64")
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "filter_tickets",
+            vec![(
+                "predicate",
+                function_pointer(vec![primitive("u64")], primitive("bool")),
+            )],
+            primitive("u64"),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("filter_tickets"), &[])
         .expect("expected imported function");
     let parameter = &function.decl.item.signature.parameters.params[0];
     let TypeElement::Closure(closure) = &parameter.param_type else {
-        panic!(
-            "expected closure parameter type, got {:?}",
-            parameter.param_type
-        );
+        panic!("expected closure parameter type, got {:?}", parameter.param_type);
     };
     assert_eq!(closure.parameters, vec![u64_type()]);
     assert_eq!(closure.return_ty, TypeElement::bool());
@@ -1646,19 +1681,12 @@ fn rustdoc_imports_function_pointer_parameters() {
 
 #[test]
 fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("Buffer", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("ptr", raw_pointer(primitive("u8"), false))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Buffer", struct_plain(&["1"]))),
+        ("1", public_field("ptr", raw_pointer(primitive("u8"), false))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(buffer) = imported_type(&interop, "Buffer") else {
         panic!("expected Buffer to import as an opaque type");
@@ -1668,22 +1696,18 @@ fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
 
 #[test]
 fn rustdoc_keeps_types_with_unsafe_function_pointer_fields_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("CallbackRegistry", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field(
+    let krate = crate_(vec![
+        ("0", public_item("CallbackRegistry", struct_plain(&["1"]))),
+        (
+            "1",
+            public_field(
                 "callback",
-                unsafe_function_pointer(vec![primitive("u64")], primitive("bool"))
-            )
-        }
-    });
+                unsafe_function_pointer(vec![primitive("u64")], primitive("bool")),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(registry) = imported_type(&interop, "CallbackRegistry") else {
         panic!("expected CallbackRegistry to import as an opaque type");
@@ -1693,19 +1717,15 @@ fn rustdoc_keeps_types_with_unsafe_function_pointer_fields_opaque() {
 
 #[test]
 fn rustdoc_keeps_types_with_unliftable_fields_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("VisitResult", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("output", qualified_path("Output", generic("V")))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("VisitResult", struct_plain(&["1"]))),
+        (
+            "1",
+            public_field("output", qualified_path("Output", generic("V"))),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(visit_result) = imported_type(&interop, "VisitResult") else {
         panic!("expected VisitResult to import as an opaque type");
@@ -1715,19 +1735,18 @@ fn rustdoc_keeps_types_with_unliftable_fields_opaque() {
 
 #[test]
 fn rustdoc_imports_unions_as_opaque_types() {
-    let json = json!({
-        "index": {
-            "0": public_item("Bits", json!({
-                "union": {
-                    "fields": ["1"],
-                    "generics": type_generics(vec![generic_param("T")])
-                }
-            })),
-            "1": public_field("value", generic("T"))
-        }
-    });
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item(
+                "Bits",
+                union_generic(&["1"], type_generics(vec![generic_param("T")])),
+            ),
+        ),
+        ("1", public_field("value", generic("T"))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(bits) = imported_type(&interop, "Bits") else {
         panic!("expected Bits union to import as an opaque type");
@@ -1738,41 +1757,17 @@ fn rustdoc_imports_unions_as_opaque_types() {
 
 #[test]
 fn rustdoc_keeps_types_with_incomplete_field_metadata_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("PartialTicket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1", "missing"]
-                }
-            })),
-            "1": public_field("title", primitive("str")),
-            "2": public_item("PartialTuple", json!({
-                "struct": {
-                    "kind": "tuple",
-                    "fields": ["3", "missing"]
-                }
-            })),
-            "3": public_field("0", primitive("u64")),
-            "4": public_item("PartialEvent", json!({
-                "enum": {
-                    "variants": ["5"]
-                }
-            })),
-            "5": public_item("Renamed", json!({
-                "variant": {
-                    "kind": {
-                        "tuple": {
-                            "fields": ["6", "missing"]
-                        }
-                    }
-                }
-            })),
-            "6": public_field("0", primitive("str"))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("PartialTicket", struct_plain(&["1", "missing"]))),
+        ("1", public_field("title", primitive("str"))),
+        ("2", public_item("PartialTuple", struct_tuple(&["3", "missing"]))),
+        ("3", public_field("0", primitive("u64"))),
+        ("4", public_item("PartialEvent", enum_(&["5"]))),
+        ("5", public_item("Renamed", variant_tuple(&["6", "missing"]))),
+        ("6", public_field("0", primitive("str"))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     for name in ["PartialTicket", "PartialTuple", "PartialEvent"] {
         let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
@@ -1784,42 +1779,18 @@ fn rustdoc_keeps_types_with_incomplete_field_metadata_opaque() {
 
 #[test]
 fn rustdoc_keeps_types_with_non_public_fields_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1", "2"]
-                }
-            })),
-            "1": public_field("title", primitive("str")),
-            "2": private_field("secret", primitive("str")),
-            "3": public_item("UserId", json!({
-                "struct": {
-                    "kind": "tuple",
-                    "fields": ["4"]
-                }
-            })),
-            "4": private_field("0", primitive("u64")),
-            "5": public_item("TicketEvent", json!({
-                "enum": {
-                    "variants": ["6"]
-                }
-            })),
-            "6": public_item("Moved", json!({
-                "variant": {
-                    "kind": {
-                        "struct": {
-                            "fields": ["7"]
-                        }
-                    }
-                }
-            })),
-            "7": private_field("queue", primitive("str"))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&["1", "2"]))),
+        ("1", public_field("title", primitive("str"))),
+        ("2", private_field("secret", primitive("str"))),
+        ("3", public_item("UserId", struct_tuple(&["4"]))),
+        ("4", private_field("0", primitive("u64"))),
+        ("5", public_item("TicketEvent", enum_(&["6"]))),
+        ("6", public_item("Moved", variant_struct(&["7"]))),
+        ("7", private_field("queue", primitive("str"))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     for name in ["Ticket", "UserId", "TicketEvent"] {
         let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
@@ -1831,21 +1802,15 @@ fn rustdoc_keeps_types_with_non_public_fields_opaque() {
 
 #[test]
 fn rustdoc_preserves_generic_params_on_opaque_types() {
-    let json = json!({
-        "index": {
-            "0": public_item("State", json!({
-                "struct": {
-                    "kind": "unit",
-                    "generics": type_generics(vec![
-                        lifetime_param("'a"),
-                        generic_param("T"),
-                    ])
-                }
-            }))
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_item(
+            "State",
+            struct_unit_generic(type_generics(vec![lifetime_param("'a"), generic_param("T")])),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(state) = imported_type(&interop, "State") else {
         panic!("expected opaque State type");
@@ -1855,20 +1820,18 @@ fn rustdoc_preserves_generic_params_on_opaque_types() {
 
 #[test]
 fn rustdoc_preserves_generic_params_on_structs() {
-    let json = json!({
-        "index": {
-            "0": public_item("Page", json!({
-                "struct": {
-                    "kind": "plain",
-                    "generics": type_generics(vec![generic_param("T")]),
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("items", resolved("Vec", vec![generic("T")]))
-        }
-    });
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item(
+                "Page",
+                struct_plain_generic(&["1"], type_generics(vec![generic_param("T")])),
+            ),
+        ),
+        ("1", public_field("items", resolved("Vec", vec![generic("T")]))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Struct(page) = imported_type(&interop, "Page") else {
         panic!("expected Page struct");
@@ -1885,13 +1848,9 @@ fn rustdoc_preserves_generic_params_on_structs() {
 
 #[test]
 fn rustdoc_imports_never_returning_functions() {
-    let json = json!({
-        "index": {
-            "0": public_function("abort_request", vec![], never())
-        }
-    });
+    let krate = crate_(vec![("0", public_function("abort_request", vec![], never()))]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("abort_request"), &[])
@@ -1904,22 +1863,26 @@ fn rustdoc_imports_never_returning_functions() {
 
 #[test]
 fn rustdoc_lifts_owned_wrapper_parameters_with_call_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_function(
+    let krate = crate_(vec![
+        (
+            "0",
+            public_function(
                 "takes_box",
-                vec![json!(["value", resolved("Box", vec![primitive("u64")])])],
-                primitive("bool")
+                vec![("value", resolved("Box", vec![primitive("u64")]))],
+                primitive("bool"),
             ),
-            "1": public_function(
+        ),
+        (
+            "1",
+            public_function(
                 "takes_rc",
-                vec![json!(["value", resolved("Rc", vec![resolved("Ticket", vec![])])])],
-                primitive("bool")
-            )
-        }
-    });
+                vec![("value", resolved("Rc", vec![resolved("Ticket", vec![])]))],
+                primitive("bool"),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let takes_box = interop
         .function(Some("demo"), None, &ident("takes_box"), &[])
@@ -1942,22 +1905,18 @@ fn rustdoc_lifts_owned_wrapper_parameters_with_call_conversions() {
 
 #[test]
 fn rustdoc_does_not_import_incomplete_owned_wrapper_parameters() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "takes_box",
-                vec![json!(["value", resolved("Box", vec![])])],
-                primitive("bool")
-            ),
-            "1": public_function(
-                "takes_rc",
-                vec![json!(["value", resolved("Rc", vec![])])],
-                primitive("bool")
-            )
-        }
-    });
+    let krate = crate_(vec![
+        (
+            "0",
+            public_function("takes_box", vec![("value", resolved("Box", vec![]))], primitive("bool")),
+        ),
+        (
+            "1",
+            public_function("takes_rc", vec![("value", resolved("Rc", vec![]))], primitive("bool")),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("takes_box"), &[])
@@ -1969,22 +1928,12 @@ fn rustdoc_does_not_import_incomplete_owned_wrapper_parameters() {
 
 #[test]
 fn rustdoc_does_not_import_incomplete_owned_wrapper_returns() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "returns_box",
-                vec![],
-                resolved("Box", vec![])
-            ),
-            "1": public_function(
-                "returns_rc",
-                vec![],
-                resolved("Rc", vec![])
-            )
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_function("returns_box", vec![], resolved("Box", vec![]))),
+        ("1", public_function("returns_rc", vec![], resolved("Rc", vec![]))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("returns_box"), &[])
@@ -1996,39 +1945,41 @@ fn rustdoc_does_not_import_incomplete_owned_wrapper_returns() {
 
 #[test]
 fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_function(
+    let krate = crate_(vec![
+        (
+            "0",
+            public_function(
                 "takes_box",
-                vec![json!([
+                vec![(
                     "value",
-                    resolved_with_path("Box", &["demo", "smart", "Box"], vec![primitive("u64")])
-                ])],
-                primitive("bool")
+                    resolved_with_path("Box", &["demo", "smart", "Box"], vec![primitive("u64")]),
+                )],
+                primitive("bool"),
             ),
-            "1": public_function(
+        ),
+        (
+            "1",
+            public_function(
                 "returns_rc",
                 vec![],
-                resolved_with_path("Rc", &["demo", "smart", "Rc"], vec![primitive("str")])
+                resolved_with_path("Rc", &["demo", "smart", "Rc"], vec![primitive("str")]),
             ),
-            "2": public_item("Envelope", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["3"]
-                }
-            })),
-            "3": public_field(
+        ),
+        ("2", public_item("Envelope", struct_plain(&["3"]))),
+        (
+            "3",
+            public_field(
                 "ticket",
                 resolved_with_path(
                     "Box",
                     &["demo", "smart", "Box"],
-                    vec![resolved("Ticket", vec![])]
-                )
-            )
-        }
-    });
+                    vec![resolved("Ticket", vec![])],
+                ),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let takes_box = interop
         .function(Some("demo"), None, &ident("takes_box"), &[])
@@ -2068,10 +2019,7 @@ fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
         );
     };
     assert_eq!(field_type.base_type, TypeIdent::new("Box"));
-    assert_eq!(
-        field_type.type_args,
-        vec![plain_type(TypeIdent::new("Ticket"))]
-    );
+    assert_eq!(field_type.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
         RustReturnConversion::None
@@ -2084,17 +2032,16 @@ fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
 
 #[test]
 fn rustdoc_lifts_box_returns_with_return_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "boxed_ticket",
-                vec![],
-                resolved("Box", vec![resolved("Ticket", vec![])])
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "boxed_ticket",
+            vec![],
+            resolved("Box", vec![resolved("Ticket", vec![])]),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("boxed_ticket"), &[])
@@ -2108,25 +2055,21 @@ fn rustdoc_lifts_box_returns_with_return_conversions() {
 
 #[test]
 fn rustdoc_lifts_rc_returns_with_clone_return_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_function(
-                "shared_ticket",
-                vec![],
-                resolved("Rc", vec![resolved("Ticket", vec![])])
-            )
-        }
-    });
+    let krate = crate_(vec![(
+        "0",
+        public_function(
+            "shared_ticket",
+            vec![],
+            resolved("Rc", vec![resolved("Ticket", vec![])]),
+        ),
+    )]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("shared_ticket"), &[])
         .expect("expected imported Rc return function");
-    assert_eq!(
-        function.return_conversion,
-        RustReturnConversion::RcCloneDeref
-    );
+    assert_eq!(function.return_conversion, RustReturnConversion::RcCloneDeref);
     assert_eq!(
         function.decl.item.signature.return_type,
         plain_type(TypeIdent::new("Ticket"))
@@ -2135,29 +2078,22 @@ fn rustdoc_lifts_rc_returns_with_clone_return_conversions() {
 
 #[test]
 fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_item("TicketEnvelope", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("ticket", resolved("Box", vec![resolved("Ticket", vec![])]))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("TicketEnvelope", struct_plain(&["1"]))),
+        (
+            "1",
+            public_field("ticket", resolved("Box", vec![resolved("Ticket", vec![])])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Struct(envelope) = imported_type(&interop, "TicketEnvelope") else {
         panic!("expected TicketEnvelope struct");
     };
     assert_eq!(envelope.members.len(), 1);
     assert_eq!(envelope.members[0].ident.as_str(), "ticket");
-    assert_eq!(
-        envelope.members[0].r#type,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    assert_eq!(envelope.members[0].r#type, plain_type(TypeIdent::new("Ticket")));
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("TicketEnvelope"), &ident("ticket")),
         RustReturnConversion::BoxDeref
@@ -2170,29 +2106,22 @@ fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
 
 #[test]
 fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
-    let json = json!({
-        "index": {
-            "0": public_item("TicketCache", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("latest", resolved("Rc", vec![resolved("Ticket", vec![])]))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("TicketCache", struct_plain(&["1"]))),
+        (
+            "1",
+            public_field("latest", resolved("Rc", vec![resolved("Ticket", vec![])])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Struct(cache) = imported_type(&interop, "TicketCache") else {
         panic!("expected TicketCache struct");
     };
     assert_eq!(cache.members.len(), 1);
     assert_eq!(cache.members[0].ident.as_str(), "latest");
-    assert_eq!(
-        cache.members[0].r#type,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    assert_eq!(cache.members[0].r#type, plain_type(TypeIdent::new("Ticket")));
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
         RustReturnConversion::RcCloneDeref
@@ -2205,70 +2134,60 @@ fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
 
 #[test]
 fn rustdoc_suppresses_conversions_for_ambiguous_type_names() {
-    let json = json!({
-        "index": {
-            "0": public_item_at_path("0", "Envelope", &["demo", "http", "Envelope"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("ticket", resolved("Box", vec![resolved("Ticket", vec![])])),
-            "2": public_item_at_path("2", "Envelope", &["demo", "db", "Envelope"], json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["3"]
-                }
-            })),
-            "3": public_field("ticket", resolved("Rc", vec![resolved("Ticket", vec![])])),
-            "4": public_item_at_path("4", "Pair", &["demo", "http", "Pair"], json!({
-                "struct": {
-                    "kind": "tuple",
-                    "fields": ["5"]
-                }
-            })),
-            "5": public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
-            "6": public_item_at_path("6", "Pair", &["demo", "db", "Pair"], json!({
-                "struct": {
-                    "kind": "tuple",
-                    "fields": ["7"]
-                }
-            })),
-            "7": public_field("0", resolved("Rc", vec![resolved("Ticket", vec![])])),
-            "8": public_item_at_path("8", "Event", &["demo", "http", "Event"], json!({
-                "enum": {
-                    "variants": ["9"]
-                }
-            })),
-            "9": public_item("Assigned", json!({
-                "variant": {
-                    "kind": {
-                        "tuple": {
-                            "fields": ["10"]
-                        }
-                    }
-                }
-            })),
-            "10": public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
-            "11": public_item_at_path("11", "Event", &["demo", "db", "Event"], json!({
-                "enum": {
-                    "variants": ["12"]
-                }
-            })),
-            "12": public_item("Assigned", json!({
-                "variant": {
-                    "kind": {
-                        "tuple": {
-                            "fields": ["13"]
-                        }
-                    }
-                }
-            })),
-            "13": public_field("0", resolved("Rc", vec![resolved("Ticket", vec![])]))
-        }
-    });
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item_at_path("Envelope", &["demo", "http", "Envelope"], struct_plain(&["1"])),
+        ),
+        (
+            "1",
+            public_field("ticket", resolved("Box", vec![resolved("Ticket", vec![])])),
+        ),
+        (
+            "2",
+            public_item_at_path("Envelope", &["demo", "db", "Envelope"], struct_plain(&["3"])),
+        ),
+        (
+            "3",
+            public_field("ticket", resolved("Rc", vec![resolved("Ticket", vec![])])),
+        ),
+        (
+            "4",
+            public_item_at_path("Pair", &["demo", "http", "Pair"], struct_tuple(&["5"])),
+        ),
+        (
+            "5",
+            public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
+        ),
+        (
+            "6",
+            public_item_at_path("Pair", &["demo", "db", "Pair"], struct_tuple(&["7"])),
+        ),
+        (
+            "7",
+            public_field("0", resolved("Rc", vec![resolved("Ticket", vec![])])),
+        ),
+        (
+            "8",
+            public_item_at_path("Event", &["demo", "http", "Event"], enum_(&["9"])),
+        ),
+        ("9", public_item("Assigned", variant_tuple(&["10"]))),
+        (
+            "10",
+            public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
+        ),
+        (
+            "11",
+            public_item_at_path("Event", &["demo", "db", "Event"], enum_(&["12"])),
+        ),
+        ("12", public_item("Assigned", variant_tuple(&["13"]))),
+        (
+            "13",
+            public_field("0", resolved("Rc", vec![resolved("Ticket", vec![])])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
@@ -2303,20 +2222,13 @@ fn rustdoc_suppresses_conversions_for_ambiguous_type_names() {
 
 #[test]
 fn rustdoc_keeps_types_with_incomplete_owned_wrapper_fields_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("TicketEnvelope", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1", "2"]
-                }
-            })),
-            "1": public_field("ticket", resolved("Box", vec![])),
-            "2": public_field("latest", resolved("Rc", vec![]))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("TicketEnvelope", struct_plain(&["1", "2"]))),
+        ("1", public_field("ticket", resolved("Box", vec![]))),
+        ("2", public_field("latest", resolved("Rc", vec![]))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(envelope) = imported_type(&interop, "TicketEnvelope") else {
         panic!("expected TicketEnvelope to import as an opaque type");
@@ -2326,28 +2238,27 @@ fn rustdoc_keeps_types_with_incomplete_owned_wrapper_fields_opaque() {
 
 #[test]
 fn rustdoc_imports_public_struct_fields() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1", "2", "3", "4"]
-                }
-            })),
-            "1": public_field("id", primitive("u64")),
-            "2": public_field("title", primitive("str")),
-            "3": public_field(
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&["1", "2", "3", "4"]))),
+        ("1", public_field("id", primitive("u64"))),
+        ("2", public_field("title", primitive("str"))),
+        (
+            "3",
+            public_field(
                 "state",
-                resolved("Arc", vec![resolved("RwLock", vec![resolved("TicketState", vec![])])])
+                resolved("Arc", vec![resolved("RwLock", vec![resolved("TicketState", vec![])])]),
             ),
-            "4": public_field(
+        ),
+        (
+            "4",
+            public_field(
                 "draft",
-                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketDraft", vec![])])])
-            )
-        }
-    });
+                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketDraft", vec![])])]),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Struct(ticket) = imported_type(&interop, "Ticket") else {
         panic!("expected Ticket struct");
@@ -2358,42 +2269,23 @@ fn rustdoc_imports_public_struct_fields() {
     assert_eq!(ticket.members[0].r#type, u64_type());
     assert_eq!(ticket.members[1].ident.as_str(), "title");
     assert_eq!(ticket.members[1].r#type, string_type());
-    assert_eq!(
-        ticket.members[2].decl_modifier,
-        Some(galvan_ast::DeclModifier::Ref)
-    );
-    assert_eq!(
-        ticket.members[2].r#type,
-        plain_type(TypeIdent::new("TicketState"))
-    );
-    assert_eq!(
-        ticket.members[3].decl_modifier,
-        Some(galvan_ast::DeclModifier::Ref)
-    );
-    assert_eq!(
-        ticket.members[3].r#type,
-        plain_type(TypeIdent::new("TicketDraft"))
-    );
+    assert_eq!(ticket.members[2].decl_modifier, Some(galvan_ast::DeclModifier::Ref));
+    assert_eq!(ticket.members[2].r#type, plain_type(TypeIdent::new("TicketState")));
+    assert_eq!(ticket.members[3].decl_modifier, Some(galvan_ast::DeclModifier::Ref));
+    assert_eq!(ticket.members[3].r#type, plain_type(TypeIdent::new("TicketDraft")));
 }
 
 #[test]
 fn rustdoc_keeps_types_with_bare_lock_fields_opaque() {
-    let json = json!({
-        "index": {
-            "0": public_item("TicketStore", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field(
-                "tickets",
-                resolved("Mutex", vec![resolved("Ticket", vec![])])
-            )
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("TicketStore", struct_plain(&["1"]))),
+        (
+            "1",
+            public_field("tickets", resolved("Mutex", vec![resolved("Ticket", vec![])])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(store) = imported_type(&interop, "TicketStore") else {
         panic!("expected TicketStore to import as an opaque type");
@@ -2403,19 +2295,12 @@ fn rustdoc_keeps_types_with_bare_lock_fields_opaque() {
 
 #[test]
 fn rustdoc_imports_tuple_struct_fields() {
-    let json = json!({
-        "index": {
-            "0": public_item("UserId", json!({
-                "struct": {
-                    "kind": "tuple",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("0", primitive("u64"))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("UserId", struct_tuple(&["1"]))),
+        ("1", public_field("0", primitive("u64"))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Tuple(user_id) = imported_type(&interop, "UserId") else {
         panic!("expected UserId tuple struct");
@@ -2427,32 +2312,28 @@ fn rustdoc_imports_tuple_struct_fields() {
 
 #[test]
 fn rustdoc_lifts_tuple_struct_wrapper_fields() {
-    let json = json!({
-        "index": {
-            "0": public_item("SharedTicket", json!({
-                "struct": {
-                    "kind": "tuple",
-                    "fields": ["1", "2"]
-                }
-            })),
-            "1": public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
-            "2": public_field(
+    let krate = crate_(vec![
+        ("0", public_item("SharedTicket", struct_tuple(&["1", "2"]))),
+        (
+            "1",
+            public_field("0", resolved("Box", vec![resolved("Ticket", vec![])])),
+        ),
+        (
+            "2",
+            public_field(
                 "1",
-                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketState", vec![])])])
-            )
-        }
-    });
+                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketState", vec![])])]),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Tuple(shared_ticket) = imported_type(&interop, "SharedTicket") else {
         panic!("expected SharedTicket tuple struct");
     };
     assert_eq!(shared_ticket.members.len(), 2);
-    assert_eq!(
-        shared_ticket.members[0].r#type,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    assert_eq!(shared_ticket.members[0].r#type, plain_type(TypeIdent::new("Ticket")));
     assert_eq!(
         shared_ticket.members[1].r#type,
         plain_type(TypeIdent::new("TicketState"))
@@ -2465,42 +2346,16 @@ fn rustdoc_lifts_tuple_struct_wrapper_fields() {
 
 #[test]
 fn rustdoc_imports_enum_variants() {
-    let json = json!({
-        "index": {
-            "0": public_item("TicketEvent", json!({
-                "enum": {
-                    "variants": ["1", "2", "4"]
-                }
-            })),
-            "1": public_item("Created", json!({
-                "variant": {
-                    "kind": "plain"
-                }
-            })),
-            "2": public_item("Renamed", json!({
-                "variant": {
-                    "kind": {
-                        "tuple": {
-                            "fields": ["3"]
-                        }
-                    }
-                }
-            })),
-            "3": public_field("0", primitive("str")),
-            "4": public_item("Closed", json!({
-                "variant": {
-                    "kind": {
-                        "struct": {
-                            "fields": ["5"]
-                        }
-                    }
-                }
-            })),
-            "5": public_field("reason", resolved("Option", vec![primitive("str")]))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("TicketEvent", enum_(&["1", "2", "4"]))),
+        ("1", public_item("Created", variant_plain())),
+        ("2", public_item("Renamed", variant_tuple(&["3"]))),
+        ("3", public_field("0", primitive("str"))),
+        ("4", public_item("Closed", variant_struct(&["5"]))),
+        ("5", public_field("reason", resolved("Option", vec![primitive("str")]))),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Enum(event) = imported_type(&interop, "TicketEvent") else {
         panic!("expected TicketEvent enum");
@@ -2522,57 +2377,35 @@ fn rustdoc_imports_enum_variants() {
 
 #[test]
 fn rustdoc_lifts_enum_variant_wrapper_fields() {
-    let json = json!({
-        "index": {
-            "0": public_item("TicketEvent", json!({
-                "enum": {
-                    "variants": ["1", "3"]
-                }
-            })),
-            "1": public_item("Assigned", json!({
-                "variant": {
-                    "kind": {
-                        "tuple": {
-                            "fields": ["2"]
-                        }
-                    }
-                }
-            })),
-            "2": public_field("0", resolved("Rc", vec![resolved("User", vec![])])),
-            "3": public_item("Moved", json!({
-                "variant": {
-                    "kind": {
-                        "struct": {
-                            "fields": ["4", "5"]
-                        }
-                    }
-                }
-            })),
-            "4": public_field("queue", resolved("Option", vec![primitive("str")])),
-            "5": public_field("owner", resolved("Box", vec![resolved("User", vec![])]))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("TicketEvent", enum_(&["1", "3"]))),
+        ("1", public_item("Assigned", variant_tuple(&["2"]))),
+        (
+            "2",
+            public_field("0", resolved("Rc", vec![resolved("User", vec![])])),
+        ),
+        ("3", public_item("Moved", variant_struct(&["4", "5"]))),
+        ("4", public_field("queue", resolved("Option", vec![primitive("str")]))),
+        (
+            "5",
+            public_field("owner", resolved("Box", vec![resolved("User", vec![])])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Enum(event) = imported_type(&interop, "TicketEvent") else {
         panic!("expected TicketEvent enum");
     };
     assert_eq!(event.members.len(), 2);
-    assert_eq!(
-        event.members[0].fields[0].r#type,
-        plain_type(TypeIdent::new("User"))
-    );
+    assert_eq!(event.members[0].fields[0].r#type, plain_type(TypeIdent::new("User")));
     assert_eq!(event.members[1].fields[0].name, Some(Ident::new("queue")));
     assert!(matches!(
         event.members[1].fields[0].r#type,
         TypeElement::Optional(_)
     ));
     assert_eq!(event.members[1].fields[1].name, Some(Ident::new("owner")));
-    assert_eq!(
-        event.members[1].fields[1].r#type,
-        plain_type(TypeIdent::new("User"))
-    );
+    assert_eq!(event.members[1].fields[1].r#type, plain_type(TypeIdent::new("User")));
     assert_eq!(
         interop.enum_variant_arg_conversion(
             &TypeIdent::new("TicketEvent"),
@@ -2613,36 +2446,33 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
 
 #[test]
 fn rustdoc_imports_type_aliases_with_lifted_targets() {
-    let json = json!({
-        "index": {
-            "0": public_item("UserId", json!({
-                "type_alias": primitive("u64")
-            })),
-            "1": public_item("Names", json!({
-                "type_alias": resolved("Vec", vec![primitive("str")])
-            })),
-            "2": public_item("ParseResult", json!({
-                "type_alias": {
-                    "type": resolved(
-                        "Result",
-                        vec![generic("T"), resolved("Error", vec![])]
-                    ),
-                    "generics": type_generics(vec![generic_param("T")])
-                }
-            })),
-            "3": public_item("FallibleTicket", json!({
-                "type_alias": {
-                    "type": resolved_with_path(
-                        "FlexResult",
-                        &["galvan", "std", "FlexResult"],
-                        vec![resolved("Ticket", vec![])]
-                    )
-                }
-            }))
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("UserId", type_alias(primitive("u64")))),
+        ("1", public_item("Names", type_alias(resolved("Vec", vec![primitive("str")])))),
+        (
+            "2",
+            public_item(
+                "ParseResult",
+                type_alias_generic(
+                    resolved("Result", vec![generic("T"), resolved("Error", vec![])]),
+                    type_generics(vec![generic_param("T")]),
+                ),
+            ),
+        ),
+        (
+            "3",
+            public_item(
+                "FallibleTicket",
+                type_alias(resolved_with_path(
+                    "FlexResult",
+                    &["galvan", "std", "FlexResult"],
+                    vec![resolved("Ticket", vec![])],
+                )),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Alias(user_id) = imported_type(&interop, "UserId") else {
         panic!("expected UserId alias");
@@ -2662,16 +2492,10 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
     };
     assert_eq!(parse_result.generic_params, vec![Ident::new("T")]);
     let TypeElement::Result(parse_result) = &parse_result.r#type else {
-        panic!(
-            "expected lifted Result alias, got {:?}",
-            parse_result.r#type
-        );
+        panic!("expected lifted Result alias, got {:?}", parse_result.r#type);
     };
     assert_eq!(parse_result.success, generic_type("T"));
-    assert_eq!(
-        parse_result.error,
-        Some(plain_type(TypeIdent::new("Error")))
-    );
+    assert_eq!(parse_result.error, Some(plain_type(TypeIdent::new("Error"))));
 
     let TypeDecl::Alias(fallible_ticket) = imported_type(&interop, "FallibleTicket") else {
         panic!("expected FallibleTicket alias");
@@ -2682,22 +2506,15 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
             fallible_ticket.r#type
         );
     };
-    assert_eq!(
-        fallible_ticket.success,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    assert_eq!(fallible_ticket.success, plain_type(TypeIdent::new("Ticket")));
     assert_eq!(fallible_ticket.error, None);
 }
 
 #[test]
 fn rustdoc_imports_top_level_constants() {
-    let json = json!({
-        "index": {
-            "0": public_constant("DEFAULT_LIMIT", primitive("u64"))
-        }
-    });
+    let krate = crate_(vec![("0", public_constant("DEFAULT_LIMIT", primitive("u64")))]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let constant = interop
         .constant(Some("demo"), &ident("DEFAULT_LIMIT"))
@@ -2709,49 +2526,20 @@ fn rustdoc_imports_top_level_constants() {
 
 #[test]
 fn rustdoc_imports_associated_constants() {
-    let json = json!({
-        "index": {
-            "0": public_item("StatusCode", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved("StatusCode", vec![]),
-                        "trait": null,
-                        "items": ["2"]
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "CREATED",
-                "visibility": "public",
-                "path": ["demo", "StatusCode"],
-                "inner": {
-                    "assoc_const": {
-                        "type": resolved("StatusCode", vec![])
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("StatusCode", struct_plain(&[]))),
+        ("1", public_impl(resolved("StatusCode", vec![]), None, &["2"])),
+        (
+            "2",
+            public_item_at_path("CREATED", &["demo", "StatusCode"], assoc_const(resolved("StatusCode", vec![]))),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop.constant(Some("demo"), &ident("CREATED")).is_none());
     let constant = interop
-        .associated_constant(
-            Some("demo"),
-            &TypeIdent::new("StatusCode"),
-            &ident("CREATED"),
-        )
+        .associated_constant(Some("demo"), &TypeIdent::new("StatusCode"), &ident("CREATED"))
         .expect("expected associated constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::StatusCode::CREATED");
     assert_eq!(constant.ty, plain_type(TypeIdent::new("StatusCode")));
@@ -2759,46 +2547,24 @@ fn rustdoc_imports_associated_constants() {
 
 #[test]
 fn rustdoc_imports_trait_impl_associated_constants() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": public_item("TicketKind", json!({
-                "trait": {
-                    "items": []
-                }
-            })),
-            "2": {
-                "id": "2",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved_with_string_path("crate::Ticket", vec![]),
-                        "trait": resolved_with_string_path("$crate::TicketKind", vec![]),
-                        "items": ["3"]
-                    }
-                }
-            },
-            "3": {
-                "id": "3",
-                "name": "KIND",
-                "visibility": "public",
-                "path": ["demo", "TicketKind"],
-                "inner": {
-                    "assoc_const": {
-                        "type": primitive("str")
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_item("TicketKind", trait_(&[]))),
+        (
+            "2",
+            public_impl(
+                resolved_with_string_path("crate::Ticket", vec![]),
+                Some(resolved_with_string_path("$crate::TicketKind", vec![])),
+                &["3"],
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path("KIND", &["demo", "TicketKind"], assoc_const(primitive("str"))),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop.constant(Some("demo"), &ident("KIND")).is_none());
     let constant = interop
@@ -2813,60 +2579,37 @@ fn rustdoc_imports_trait_impl_associated_constants() {
 
 #[test]
 fn rustdoc_imports_trait_methods_and_constants() {
-    let json = json!({
-        "index": {
-            "0": public_item("DisplayName", json!({
-                "trait": {
-                    "items": ["1", "2", "3"]
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": "display_name",
-                "visibility": "public",
-                "path": ["demo", "DisplayName"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [
-                                ["self", borrowed(resolved("Self", vec![]))]
-                            ],
-                            "output": primitive("str")
-                        }
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "clone_display",
-                "visibility": "public",
-                "path": ["demo", "DisplayName"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [
-                                ["self", borrowed(resolved("Self", vec![]))]
-                            ],
-                            "output": resolved("Self", vec![])
-                        }
-                    }
-                }
-            },
-            "3": {
-                "id": "3",
-                "name": "KIND",
-                "visibility": "public",
-                "path": ["demo", "DisplayName"],
-                "inner": {
-                    "assoc_const": {
-                        "type": primitive("str")
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("DisplayName", trait_(&["1", "2", "3"]))),
+        (
+            "1",
+            public_item_at_path(
+                "display_name",
+                &["demo", "DisplayName"],
+                function_item(
+                    vec![("self", borrowed(resolved("Self", vec![])))],
+                    Some(primitive("str")),
+                ),
+            ),
+        ),
+        (
+            "2",
+            public_item_at_path(
+                "clone_display",
+                &["demo", "DisplayName"],
+                function_item(
+                    vec![("self", borrowed(resolved("Self", vec![])))],
+                    Some(resolved("Self", vec![])),
+                ),
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path("KIND", &["demo", "DisplayName"], assoc_const(primitive("str"))),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let TypeDecl::Empty(display_name) = imported_type(&interop, "DisplayName") else {
         panic!("expected DisplayName trait to import as an opaque type");
@@ -2885,19 +2628,10 @@ fn rustdoc_imports_trait_methods_and_constants() {
             &[],
         )
         .expect("expected imported DisplayName.display_name trait method");
-    assert_eq!(
-        function.rust_path.as_ref(),
-        "::demo::DisplayName::display_name"
-    );
+    assert_eq!(function.rust_path.as_ref(), "::demo::DisplayName::display_name");
     let receiver = function.decl.item.signature.receiver().unwrap();
-    assert_eq!(
-        receiver.param_type,
-        plain_type(TypeIdent::new("DisplayName"))
-    );
-    assert_eq!(
-        function.arg_conversions,
-        vec![RustArgConversion::SharedBorrow]
-    );
+    assert_eq!(receiver.param_type, plain_type(TypeIdent::new("DisplayName")));
+    assert_eq!(function.arg_conversions, vec![RustArgConversion::SharedBorrow]);
     assert_eq!(function.decl.item.signature.return_type, string_type());
 
     let clone_function = interop
@@ -2922,103 +2656,33 @@ fn rustdoc_imports_trait_methods_and_constants() {
 
 #[test]
 fn rustdoc_suppresses_ambiguous_unqualified_associated_items() {
-    let http_json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved("Ticket", vec![]),
-                        "trait": null,
-                        "items": ["2", "3"]
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "new",
-                "visibility": "public",
-                "path": ["http", "Ticket"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [],
-                            "output": resolved("Ticket", vec![])
-                        }
-                    }
-                }
-            },
-            "3": {
-                "id": "3",
-                "name": "DEFAULT",
-                "visibility": "public",
-                "path": ["http", "Ticket"],
-                "inner": {
-                    "assoc_const": {
-                        "type": resolved("Ticket", vec![])
-                    }
-                }
-            }
-        }
-    });
-    let db_json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved("Ticket", vec![]),
-                        "trait": null,
-                        "items": ["2", "3"]
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "new",
-                "visibility": "public",
-                "path": ["db", "Ticket"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [],
-                            "output": resolved("Ticket", vec![])
-                        }
-                    }
-                }
-            },
-            "3": {
-                "id": "3",
-                "name": "DEFAULT",
-                "visibility": "public",
-                "path": ["db", "Ticket"],
-                "inner": {
-                    "assoc_const": {
-                        "type": resolved("Ticket", vec![])
-                    }
-                }
-            }
-        }
-    });
+    let http = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_impl(resolved("Ticket", vec![]), None, &["2", "3"])),
+        (
+            "2",
+            public_item_at_path("new", &["http", "Ticket"], function_item(vec![], Some(resolved("Ticket", vec![])))),
+        ),
+        (
+            "3",
+            public_item_at_path("DEFAULT", &["http", "Ticket"], assoc_const(resolved("Ticket", vec![]))),
+        ),
+    ]);
+    let db = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_impl(resolved("Ticket", vec![]), None, &["2", "3"])),
+        (
+            "2",
+            public_item_at_path("new", &["db", "Ticket"], function_item(vec![], Some(resolved("Ticket", vec![])))),
+        ),
+        (
+            "3",
+            public_item_at_path("DEFAULT", &["db", "Ticket"], assoc_const(resolved("Ticket", vec![]))),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("http", &http_json);
-    interop.add_crate("db", &db_json);
+    interop.add_crate("http", &http);
+    interop.add_crate("db", &db);
 
     assert!(interop
         .associated_function(None, &TypeIdent::new("Ticket"), &ident("new"), &[])
@@ -3042,20 +2706,13 @@ fn rustdoc_suppresses_ambiguous_unqualified_associated_items() {
 
 #[test]
 fn rustdoc_imports_reexported_type_aliases() {
-    let json = json!({
-        "index": {
-            "0": public_item("OriginalTicket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["1"]
-                }
-            })),
-            "1": public_field("title", primitive("str")),
-            "2": public_use("2", "Ticket", "0")
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("OriginalTicket", struct_plain(&["1"]))),
+        ("1", public_field("title", primitive("str"))),
+        ("2", public_use("Ticket", "0")),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let imported = interop
         .types
@@ -3072,14 +2729,12 @@ fn rustdoc_imports_reexported_type_aliases() {
 
 #[test]
 fn rustdoc_imports_external_reexported_types_without_index_targets() {
-    let json = json!({
-        "index": {
-            "0": public_external_use("0", "StatusCode", "http::StatusCode"),
-            "1": public_external_use("1", "DEFAULT_LIMIT", "http::DEFAULT_LIMIT")
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_external_use("StatusCode", "http::StatusCode")),
+        ("1", public_external_use("DEFAULT_LIMIT", "http::DEFAULT_LIMIT")),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let imported = interop
         .types
@@ -3091,51 +2746,41 @@ fn rustdoc_imports_external_reexported_types_without_index_targets() {
         panic!("expected external re-export to import as empty type");
     };
     assert_eq!(status_code.ident, TypeIdent::new("StatusCode"));
-    assert!(interop
-        .types
-        .iter()
-        .all(|ty| ty.name.as_str() != "DEFAULT_LIMIT"));
+    assert!(interop.types.iter().all(|ty| ty.name.as_str() != "DEFAULT_LIMIT"));
 }
 
 #[test]
 fn rustdoc_imports_reexported_functions() {
-    let json = json!({
-        "index": {
-            "0": public_function("nickname", vec![], primitive("str")),
-            "1": public_use("1", "display_name", "0")
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_function("nickname", vec![], primitive("str"))),
+        ("1", public_use("display_name", "0")),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(Some("demo"), None, &ident("display_name"), &[])
         .expect("expected re-exported function");
     assert_eq!(function.rust_path.as_ref(), "::demo::display_name");
-    assert_eq!(
-        function.decl.item.signature.identifier,
-        ident("display_name")
-    );
+    assert_eq!(function.decl.item.signature.identifier, ident("display_name"));
     assert_eq!(function.decl.item.signature.return_type, string_type());
 }
 
 #[test]
 fn rustdoc_imports_reexported_constants() {
-    let json = json!({
-        "index": {
-            "0": public_constant("DEFAULT_LIMIT", primitive("u64")),
-            "1": public_use("1", "LIMIT", "0"),
-            "2": public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false)),
-            "3": public_use("3", "BUFFER", "2"),
-            "4": public_constant(
-                "LOCKED_TICKETS",
-                resolved("Mutex", vec![resolved("Ticket", vec![])])
-            ),
-            "5": public_use("5", "TICKETS", "4")
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_constant("DEFAULT_LIMIT", primitive("u64"))),
+        ("1", public_use("LIMIT", "0")),
+        ("2", public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false))),
+        ("3", public_use("BUFFER", "2")),
+        (
+            "4",
+            public_constant("LOCKED_TICKETS", resolved("Mutex", vec![resolved("Ticket", vec![])])),
+        ),
+        ("5", public_use("TICKETS", "4")),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let constant = interop
         .constant(Some("demo"), &ident("LIMIT"))
@@ -3148,28 +2793,21 @@ fn rustdoc_imports_reexported_constants() {
 
 #[test]
 fn rustdoc_imports_glob_reexported_items() {
-    let json = json!({
-        "index": {
-            "0": public_module("internal", vec!["1", "2", "4", "6", "7"]),
-            "1": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": ["3"]
-                }
-            })),
-            "2": public_function("display_name", vec![], primitive("str")),
-            "3": public_field("title", primitive("str")),
-            "4": public_constant("LIMIT", primitive("u64")),
-            "5": public_glob_use("5", "internal", "0"),
-            "6": public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false)),
-            "7": public_constant(
-                "LOCKED_TICKETS",
-                resolved("RwLock", vec![resolved("Ticket", vec![])])
-            )
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_module("internal", &["1", "2", "4", "6", "7"])),
+        ("1", public_item("Ticket", struct_plain(&["3"]))),
+        ("2", public_function("display_name", vec![], primitive("str"))),
+        ("3", public_field("title", primitive("str"))),
+        ("4", public_constant("LIMIT", primitive("u64"))),
+        ("5", public_glob_use("internal", "0")),
+        ("6", public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false))),
+        (
+            "7",
+            public_constant("LOCKED_TICKETS", resolved("RwLock", vec![resolved("Ticket", vec![])])),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let imported = interop
         .types
@@ -3188,68 +2826,38 @@ fn rustdoc_imports_glob_reexported_items() {
         .expect("expected glob re-exported constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
     assert_eq!(constant.ty, u64_type());
-    assert!(interop
-        .constant(Some("demo"), &ident("RAW_BUFFER"))
-        .is_none());
-    assert!(interop
-        .constant(Some("demo"), &ident("LOCKED_TICKETS"))
-        .is_none());
+    assert!(interop.constant(Some("demo"), &ident("RAW_BUFFER")).is_none());
+    assert!(interop.constant(Some("demo"), &ident("LOCKED_TICKETS")).is_none());
 }
 
 #[test]
 fn rustdoc_imports_inherent_impl_methods_with_receivers() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved("Ticket", vec![]),
-                        "trait": null,
-                        "items": ["2"]
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "rename",
-                "visibility": "public",
-                "path": ["demo", "Ticket"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [
-                                ["self", mut_borrowed(resolved("Ticket", vec![]))],
-                                ["title", primitive("str")]
-                            ],
-                            "output": null
-                        }
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_impl(resolved("Ticket", vec![]), None, &["2"])),
+        (
+            "2",
+            public_item_at_path(
+                "rename",
+                &["demo", "Ticket"],
+                function_item(
+                    vec![
+                        ("self", mut_borrowed(resolved("Ticket", vec![]))),
+                        ("title", primitive("str")),
+                    ],
+                    None,
+                ),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("rename"), &[])
         .is_none());
     let function = interop
-        .function(
-            Some("demo"),
-            Some(&TypeIdent::new("Ticket")),
-            &ident("rename"),
-            &[],
-        )
+        .function(Some("demo"), Some(&TypeIdent::new("Ticket")), &ident("rename"), &[])
         .expect("expected imported Ticket.rename method");
     assert_eq!(function.rust_path.as_ref(), "::demo::Ticket::rename");
     let receiver = function.decl.item.signature.receiver().unwrap();
@@ -3259,47 +2867,26 @@ fn rustdoc_imports_inherent_impl_methods_with_receivers() {
 
 #[test]
 fn rustdoc_imports_inherent_associated_functions() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved("Ticket", vec![]),
-                        "trait": null,
-                        "items": ["2"]
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "new",
-                "visibility": "public",
-                "path": ["demo", "Ticket"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [
-                                ["title", primitive("str")],
-                                ["parent", resolved("Option", vec![resolved("Self", vec![])])]
-                            ],
-                            "output": resolved("Self", vec![])
-                        }
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_impl(resolved("Ticket", vec![]), None, &["2"])),
+        (
+            "2",
+            public_item_at_path(
+                "new",
+                &["demo", "Ticket"],
+                function_item(
+                    vec![
+                        ("title", primitive("str")),
+                        ("parent", resolved("Option", vec![resolved("Self", vec![])])),
+                    ],
+                    Some(resolved("Self", vec![])),
+                ),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("new"), &[])
@@ -3326,49 +2913,22 @@ fn rustdoc_imports_inherent_associated_functions() {
 
 #[test]
 fn rustdoc_does_not_import_impl_items_with_unliftable_receivers() {
-    let json = json!({
-        "index": {
-            "0": {
-                "id": "0",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": raw_pointer(primitive("u8"), false),
-                        "trait": null,
-                        "items": ["1", "2"]
-                    }
-                }
-            },
-            "1": {
-                "id": "1",
-                "name": "from_address",
-                "visibility": "public",
-                "path": ["demo", "PointerExt"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [],
-                            "output": primitive("bool")
-                        }
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "KIND",
-                "visibility": "public",
-                "path": ["demo", "PointerExt"],
-                "inner": {
-                    "assoc_const": {
-                        "type": primitive("str")
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        (
+            "0",
+            public_impl(raw_pointer(primitive("u8"), false), None, &["1", "2"]),
+        ),
+        (
+            "1",
+            public_item_at_path("from_address", &["demo", "PointerExt"], function_item(vec![], Some(primitive("bool")))),
+        ),
+        (
+            "2",
+            public_item_at_path("KIND", &["demo", "PointerExt"], assoc_const(primitive("str"))),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
         .function(Some("demo"), None, &ident("from_address"), &[])
@@ -3378,112 +2938,56 @@ fn rustdoc_does_not_import_impl_items_with_unliftable_receivers() {
 
 #[test]
 fn rustdoc_does_not_import_unsafe_associated_functions() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": {
-                "id": "1",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved("Ticket", vec![]),
-                        "trait": null,
-                        "items": ["2"]
-                    }
-                }
-            },
-            "2": {
-                "id": "2",
-                "name": "from_raw",
-                "visibility": "public",
-                "path": ["demo", "Ticket"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [
-                                ["address", primitive("usize")]
-                            ],
-                            "output": resolved("Ticket", vec![])
-                        },
-                        "header": {
-                            "is_unsafe": true
-                        }
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_impl(resolved("Ticket", vec![]), None, &["2"])),
+        (
+            "2",
+            public_item_at_path(
+                "from_raw",
+                &["demo", "Ticket"],
+                unsafe_function_item(
+                    vec![("address", primitive("usize"))],
+                    Some(resolved("Ticket", vec![])),
+                ),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     assert!(interop
-        .associated_function(
-            Some("demo"),
-            &TypeIdent::new("Ticket"),
-            &ident("from_raw"),
-            &[]
-        )
+        .associated_function(Some("demo"), &TypeIdent::new("Ticket"), &ident("from_raw"), &[])
         .is_none());
 }
 
 #[test]
 fn rustdoc_imports_trait_impl_methods() {
-    let json = json!({
-        "index": {
-            "0": public_item("Ticket", json!({
-                "struct": {
-                    "kind": "plain",
-                    "fields": []
-                }
-            })),
-            "1": public_item("DisplayName", json!({
-                "trait": {
-                    "items": []
-                }
-            })),
-            "2": {
-                "id": "2",
-                "name": null,
-                "visibility": "public",
-                "inner": {
-                    "impl": {
-                        "for": resolved_with_string_path("crate::Ticket", vec![]),
-                        "trait": resolved_with_string_path("$crate::DisplayName", vec![]),
-                        "items": ["3"]
-                    }
-                }
-            },
-            "3": {
-                "id": "3",
-                "name": "display_name",
-                "visibility": "public",
-                "path": ["demo", "DisplayName"],
-                "inner": {
-                    "function": {
-                        "sig": {
-                            "inputs": [
-                                ["self", {
-                                    "borrowed_ref": {
-                                        "type": resolved_with_string_path("crate::Ticket", vec![]),
-                                        "mutable": false
-                                    }
-                                }]
-                            ],
-                            "output": primitive("str")
-                        }
-                    }
-                }
-            }
-        }
-    });
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_item("DisplayName", trait_(&[]))),
+        (
+            "2",
+            public_impl(
+                resolved_with_string_path("crate::Ticket", vec![]),
+                Some(resolved_with_string_path("$crate::DisplayName", vec![])),
+                &["3"],
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path(
+                "display_name",
+                &["demo", "DisplayName"],
+                function_item(
+                    vec![("self", borrowed(resolved_with_string_path("crate::Ticket", vec![])))],
+                    Some(primitive("str")),
+                ),
+            ),
+        ),
+    ]);
     let mut interop = RustInterop::empty();
-    interop.add_crate("demo", &json);
+    interop.add_crate("demo", &krate);
 
     let function = interop
         .function(

@@ -49,6 +49,12 @@ impl RustInterop {
         ambiguous_functions: &mut HashSet<RustFunctionId>,
         ambiguous_constants: &mut HashSet<Ident>,
     ) {
+        // Collapse duplicates within this namespace before the cross-namespace
+        // ambiguity check: an item that is both defined and `pub use`-re-exported
+        // (e.g. `serde_json::ser::to_string` plus a crate-root re-export) appears
+        // several times in the registry under different `rust_path`s, but it is
+        // one logical item and must not read as ambiguous against itself.
+        let mut types: HashMap<TypeIdent, usize> = HashMap::new();
         for (idx, ty) in self.types.iter().enumerate() {
             if ty.namespace.as_ref() != namespace {
                 continue;
@@ -56,13 +62,13 @@ impl RustInterop {
             if name.is_some_and(|name| ty.name.as_str() != name) {
                 continue;
             }
-            insert_unambiguous(
-                &mut self.by_imported_type,
-                ambiguous_types,
-                ty.name.clone(),
-                idx,
-            );
+            types.insert(ty.name.clone(), idx);
         }
+        for (key, idx) in types {
+            insert_unambiguous(&mut self.by_imported_type, ambiguous_types, key, idx);
+        }
+
+        let mut functions: HashMap<RustFunctionId, usize> = HashMap::new();
         for (idx, function) in self.functions.iter().enumerate() {
             if function.namespace.as_ref() != namespace {
                 continue;
@@ -84,13 +90,13 @@ impl RustInterop {
                     _ => None,
                 });
             let id = RustFunctionId::new(receiver, signature.identifier.as_str(), &labels);
-            insert_unambiguous(
-                &mut self.by_imported_function,
-                ambiguous_functions,
-                id,
-                idx,
-            );
+            functions.insert(id, idx);
         }
+        for (key, idx) in functions {
+            insert_unambiguous(&mut self.by_imported_function, ambiguous_functions, key, idx);
+        }
+
+        let mut constants: HashMap<Ident, usize> = HashMap::new();
         for (idx, constant) in self.constants.iter().enumerate() {
             if constant.namespace.as_ref() != namespace || constant.associated_receiver.is_some() {
                 continue;
@@ -98,12 +104,10 @@ impl RustInterop {
             if name.is_some_and(|name| constant.name.as_str() != name) {
                 continue;
             }
-            insert_unambiguous(
-                &mut self.by_imported_constant,
-                ambiguous_constants,
-                constant.name.clone(),
-                idx,
-            );
+            constants.insert(constant.name.clone(), idx);
+        }
+        for (key, idx) in constants {
+            insert_unambiguous(&mut self.by_imported_constant, ambiguous_constants, key, idx);
         }
     }
 }

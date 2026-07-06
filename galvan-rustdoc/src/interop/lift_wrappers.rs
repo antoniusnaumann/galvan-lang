@@ -1,4 +1,4 @@
-use serde_json::Value;
+use rustdoc_types::{Crate, Path, Type};
 
 use galvan_ast::{
     ArrayTypeItem, DictionaryTypeItem, OptionalTypeItem, OrderedDictionaryTypeItem,
@@ -6,22 +6,23 @@ use galvan_ast::{
 };
 
 use super::lift_model::LiftedType;
-use super::lift_type::{
-    atomic_type, plain_type, resolved_path_is_unqualified_or_in_crates,
-    resolved_path_is_unqualified_or_matches_any, resolved_path_matches, result_type, string_type,
-};
+use super::lift_type::{atomic_type, plain_type, result_type, string_type};
 use super::rustdoc_json::resolved_type_args;
-use super::rustdoc_path::resolved_type_name;
+use super::rustdoc_path::{
+    resolved_path_is_unqualified_or_in_crates, resolved_path_is_unqualified_or_matches_any,
+    resolved_path_matches, resolved_type_name,
+};
 use super::RustInterop;
 
 impl RustInterop {
     pub(super) fn lift_known_resolved_type(
         &mut self,
+        krate: &Crate,
         name: &str,
-        resolved: &Value,
+        resolved: &Path,
         args: &[LiftedType],
     ) -> Option<LiftedType> {
-        match classify_wrapper(name, resolved)? {
+        match classify_wrapper(krate, name, resolved)? {
             WrapperShape::String => Some(LiftedType::new(string_type())),
             WrapperShape::Option => Some(LiftedType::new(TypeElement::Optional(Box::new(
                 OptionalTypeItem {
@@ -70,17 +71,18 @@ impl RustInterop {
 
     pub(super) fn lift_arc_type_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        resolved: &Value,
+        resolved: &Path,
     ) -> Option<LiftedType> {
         let inner = resolved_type_args(resolved).into_iter().next()?;
-        if let Some(shared) = self.lift_arc_shared_inner(crate_name, inner) {
+        if let Some(shared) = self.lift_arc_shared_inner(krate, crate_name, inner) {
             return Some(shared);
         }
 
-        let inner = self.lift_type_from_json(crate_name, inner)?;
+        let inner = self.lift_type_from_json(krate, crate_name, inner)?;
         let name = resolved_type_name(resolved)?;
-        self.push_resolved_type(crate_name, name.as_ref(), resolved);
+        self.push_resolved_type(krate, crate_name, name.as_ref(), resolved);
         Some(LiftedType::new(TypeElement::Parametric(
             ParametricTypeItem {
                 base_type: TypeIdent::new(name.as_ref()),
@@ -90,14 +92,21 @@ impl RustInterop {
         )))
     }
 
-    fn lift_arc_shared_inner(&mut self, crate_name: &str, inner: &Value) -> Option<LiftedType> {
-        let resolved = inner.get("resolved_path")?;
+    fn lift_arc_shared_inner(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        inner: &Type,
+    ) -> Option<LiftedType> {
+        let Type::ResolvedPath(resolved) = inner else {
+            return None;
+        };
         let name = resolved_type_name(resolved)?;
-        if !resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]) {
+        if !resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]) {
             return None;
         }
         if matches!(name.as_ref(), "Mutex" | "RwLock") {
-            return self.lift_lock_type_from_json(crate_name, resolved);
+            return self.lift_lock_type_from_json(krate, crate_name, resolved);
         }
 
         atomic_type(name.as_ref())
@@ -106,11 +115,12 @@ impl RustInterop {
 
     pub(super) fn lift_lock_type_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        resolved: &Value,
+        resolved: &Path,
     ) -> Option<LiftedType> {
         let arg = resolved_type_args(resolved).into_iter().next()?;
-        let inner = self.lift_type_from_json(crate_name, arg)?;
+        let inner = self.lift_type_from_json(krate, crate_name, arg)?;
         Some(LiftedType::with_modifier(
             inner.ty,
             galvan_ast::DeclModifier::Ref,
@@ -118,8 +128,8 @@ impl RustInterop {
     }
 }
 
-pub(super) fn known_lifted_resolved_type(name: &str, resolved: &Value) -> bool {
-    classify_wrapper(name, resolved).is_some()
+pub(super) fn known_lifted_resolved_type(krate: &Crate, name: &str, resolved: &Path) -> bool {
+    classify_wrapper(krate, name, resolved).is_some()
 }
 
 /// The shape a known wrapper type lifts to. This is the single source of truth for
@@ -141,18 +151,21 @@ enum WrapperShape {
     Lock,
 }
 
-fn classify_wrapper(name: &str, resolved: &Value) -> Option<WrapperShape> {
+fn classify_wrapper(krate: &Crate, name: &str, resolved: &Path) -> Option<WrapperShape> {
     let standard_wrapper =
-        resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
-    let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(resolved, &["indexmap"]);
-    let flex_result =
-        resolved_path_is_unqualified_or_matches_any(resolved, &[&["galvan", "std", "FlexResult"]]);
+        resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]);
+    let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(krate, resolved, &["indexmap"]);
+    let flex_result = resolved_path_is_unqualified_or_matches_any(
+        krate,
+        resolved,
+        &[&["galvan", "std", "FlexResult"]],
+    );
 
     match name {
         "String" if standard_wrapper => Some(WrapperShape::String),
         "Option" if standard_wrapper => Some(WrapperShape::Option),
         "FlexResult" if flex_result => Some(WrapperShape::ResultSingle),
-        "Result" if resolved_path_matches(resolved, &["anyhow", "Result"]) => {
+        "Result" if resolved_path_matches(krate, resolved, &["anyhow", "Result"]) => {
             Some(WrapperShape::ResultSingle)
         }
         "Result" if standard_wrapper => Some(WrapperShape::ResultDouble),

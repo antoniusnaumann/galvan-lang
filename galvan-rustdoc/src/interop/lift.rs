@@ -1,4 +1,7 @@
-use serde_json::Value;
+use rustdoc_types::{
+    Crate, Enum, FunctionPointer, FunctionSignature, Impl, Item, ItemEnum, Struct, StructKind,
+    Type, TypeAlias, VariantKind,
+};
 
 use galvan_ast::{
     AliasTypeDecl, ClosureTypeItem, EnumTypeDecl, EnumTypeMember, EnumVariantField, FnSignature,
@@ -16,84 +19,72 @@ use super::lift_model::{
     LiftedReturn, LiftedStructMember, LiftedTupleMember, LiftedType,
 };
 use super::lift_type::{
-    array_type, function_pointer_input_type, generic_type, member_arg_conversion, never_type,
-    parametric_or_plain_type, plain_type, primitive_type,
-    resolved_path_is_unqualified_or_in_crates, type_is_copy,
+    array_type, generic_type, member_arg_conversion, parametric_or_plain_type, plain_type,
+    primitive_type, type_is_copy,
 };
 use super::lift_wrappers::known_lifted_resolved_type;
 use super::rustdoc_json::{
-    borrowed_ref_is_mutable, inner, inner_string, is_public, item_ids, item_inner,
-    resolved_type_args, resolved_type_args_strict, type_alias_type, type_contains_unliftable_type,
-    type_decl_contains_unliftable_type, type_generic_params, type_inner_generic_params,
-    type_is_owned,
+    generic_type_params, is_public, resolved_type_args, struct_field_type,
+    type_contains_unliftable_type, type_decl_contains_unliftable_type, type_is_owned,
 };
-use super::rustdoc_path::resolved_type_name;
+use super::rustdoc_path::{resolved_path_is_unqualified_or_in_crates, resolved_type_name};
 use super::RustInterop;
 
 impl RustInterop {
     pub(super) fn type_decl_from_item(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        item: &Value,
-        index: &serde_json::Map<String, Value>,
+        item: &Item,
     ) -> Option<ImportedTypeDecl> {
-        if type_decl_contains_unliftable_type(item, index) {
+        if type_decl_contains_unliftable_type(krate, item) {
             return None;
         }
 
-        let inner = item.get("inner")?;
-        if let Some(struct_item) = inner.get("struct") {
-            return self.struct_decl_from_json(crate_name, name, struct_item, index);
+        match &item.inner {
+            ItemEnum::Struct(struct_) => self.struct_decl_from_json(krate, crate_name, name, struct_),
+            ItemEnum::Enum(enum_) => self.enum_decl_from_json(krate, crate_name, name, enum_),
+            ItemEnum::TypeAlias(alias) => self
+                .alias_decl_from_json(krate, crate_name, name, alias)
+                .map(ImportedTypeDecl::new),
+            // Unions carry no liftable shape.
+            _ => None,
         }
-        if let Some(enum_item) = inner.get("enum") {
-            return self.enum_decl_from_json(crate_name, name, enum_item, index);
-        }
-        if let Some(alias_item) = inner.get("type_alias") {
-            return self
-                .alias_decl_from_json(crate_name, name, alias_item, type_generic_params(item))
-                .map(ImportedTypeDecl::new);
-        }
-        if inner.get("union").is_some() {
-            return None;
-        }
-
-        None
     }
 
     fn alias_decl_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        alias_item: &Value,
-        generic_params: Vec<Ident>,
+        alias: &TypeAlias,
     ) -> Option<TypeDecl> {
         Some(TypeDecl::Alias(AliasTypeDecl {
             visibility: Visibility::public(),
             ident: TypeIdent::new(name),
-            generic_params,
-            r#type: self.type_from_json(crate_name, type_alias_type(alias_item)?)?,
+            generic_params: generic_type_params(&alias.generics),
+            r#type: self.type_from_json(krate, crate_name, &alias.type_)?,
             span: Span::default(),
         }))
     }
 
     fn struct_decl_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        struct_item: &Value,
-        index: &serde_json::Map<String, Value>,
+        struct_: &Struct,
     ) -> Option<ImportedTypeDecl> {
-        let field_ids = item_ids(struct_item, "fields");
-        let kind = struct_item.get("kind").and_then(Value::as_str);
-        if kind == Some("tuple") {
+        let generic_params = generic_type_params(&struct_.generics);
+        if let StructKind::Tuple(field_ids) = &struct_.kind {
             let mut lifted_members = Vec::new();
-            for id in field_ids {
-                let field = index.get(id)?;
+            for id in field_ids.iter().flatten() {
+                let field = krate.index.get(id)?;
                 if !is_public(field) {
                     return None;
                 }
-                lifted_members.push(self.tuple_member_from_json(crate_name, field)?);
+                lifted_members.push(self.tuple_member_from_json(krate, crate_name, field)?);
             }
             let constructor_arg_conversions = lifted_members
                 .iter()
@@ -107,7 +98,7 @@ impl RustInterop {
                 decl: TypeDecl::Tuple(TupleTypeDecl {
                     visibility: Visibility::public(),
                     ident: TypeIdent::new(name),
-                    generic_params: type_inner_generic_params(struct_item),
+                    generic_params,
                     members,
                     span: Span::default(),
                 }),
@@ -117,13 +108,17 @@ impl RustInterop {
             });
         }
 
+        let field_ids = match &struct_.kind {
+            StructKind::Plain { fields, .. } => fields.as_slice(),
+            _ => &[],
+        };
         let mut lifted_members = Vec::new();
         for id in field_ids {
-            let field = index.get(id)?;
+            let field = krate.index.get(id)?;
             if !is_public(field) {
                 return None;
             }
-            lifted_members.push(self.struct_member_from_json(crate_name, field)?);
+            lifted_members.push(self.struct_member_from_json(krate, crate_name, field)?);
         }
         let mut members = Vec::new();
         let mut field_conversions = Vec::new();
@@ -138,7 +133,7 @@ impl RustInterop {
             members.push(member.member);
         }
 
-        if members.is_empty() && kind != Some("plain") {
+        if members.is_empty() && !matches!(struct_.kind, StructKind::Plain { .. }) {
             return None;
         }
 
@@ -146,7 +141,7 @@ impl RustInterop {
             decl: TypeDecl::Struct(StructTypeDecl {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
-                generic_params: type_inner_generic_params(struct_item),
+                generic_params,
                 members,
                 span: Span::default(),
             }),
@@ -158,12 +153,13 @@ impl RustInterop {
 
     fn struct_member_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        field: &Value,
+        field: &Item,
     ) -> Option<LiftedStructMember> {
-        let name = field.get("name").and_then(Value::as_str)?;
-        let field_type = item_inner(field, "struct_field")?;
-        let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
+        let name = field.name.as_deref()?;
+        let field_type = struct_field_type(field)?;
+        let lifted = self.lift_return_type_from_json(krate, crate_name, field_type)?;
 
         Some(LiftedStructMember {
             member: StructTypeMember {
@@ -180,11 +176,12 @@ impl RustInterop {
 
     fn tuple_member_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        field: &Value,
+        field: &Item,
     ) -> Option<LiftedTupleMember> {
-        let field_type = item_inner(field, "struct_field")?;
-        let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
+        let field_type = struct_field_type(field)?;
+        let lifted = self.lift_return_type_from_json(krate, crate_name, field_type)?;
         Some(LiftedTupleMember {
             member: TupleTypeMember {
                 r#type: lifted.ty,
@@ -196,15 +193,15 @@ impl RustInterop {
 
     fn enum_decl_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        enum_item: &Value,
-        index: &serde_json::Map<String, Value>,
+        enum_: &Enum,
     ) -> Option<ImportedTypeDecl> {
         let mut lifted_members = Vec::new();
-        for id in item_ids(enum_item, "variants") {
-            let variant = index.get(id)?;
-            lifted_members.push(self.enum_member_from_json(crate_name, variant, index)?);
+        for id in &enum_.variants {
+            let variant = krate.index.get(id)?;
+            lifted_members.push(self.enum_member_from_json(krate, crate_name, variant)?);
         }
         let mut members = Vec::new();
         let mut enum_variant_conversions = Vec::new();
@@ -226,7 +223,7 @@ impl RustInterop {
             decl: TypeDecl::Enum(EnumTypeDecl {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
-                generic_params: type_inner_generic_params(enum_item),
+                generic_params: generic_type_params(&enum_.generics),
                 members,
                 span: Span::default(),
             }),
@@ -238,17 +235,15 @@ impl RustInterop {
 
     fn enum_member_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        variant: &Value,
-        index: &serde_json::Map<String, Value>,
+        variant: &Item,
     ) -> Option<LiftedEnumMember> {
-        let name = variant.get("name").and_then(Value::as_str)?;
-        let variant = item_inner(variant, "variant")?;
-        let lifted_fields = match variant.get("kind") {
-            Some(Value::String(kind)) if kind == "plain" => Vec::new(),
-            Some(kind) => self.enum_variant_fields_from_kind(crate_name, kind, index)?,
-            None => Vec::new(),
+        let name = variant.name.as_deref()?;
+        let ItemEnum::Variant(variant) = &variant.inner else {
+            return None;
         };
+        let lifted_fields = self.enum_variant_fields_from_kind(krate, crate_name, &variant.kind)?;
         let mut fields = Vec::new();
         let mut arg_conversions = Vec::new();
         for field in lifted_fields {
@@ -272,46 +267,47 @@ impl RustInterop {
 
     fn enum_variant_fields_from_kind(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        kind: &Value,
-        index: &serde_json::Map<String, Value>,
+        kind: &VariantKind,
     ) -> Option<Vec<LiftedEnumVariantField>> {
-        if let Some(tuple) = inner(kind, "tuple") {
-            let mut fields = Vec::new();
-            for id in item_ids(tuple, "fields") {
-                let field = index.get(id)?;
-                if !is_public(field) {
-                    return None;
+        match kind {
+            VariantKind::Plain => Some(Vec::new()),
+            VariantKind::Tuple(field_ids) => {
+                let mut fields = Vec::new();
+                for id in field_ids.iter().flatten() {
+                    let field = krate.index.get(id)?;
+                    if !is_public(field) {
+                        return None;
+                    }
+                    fields.push(self.enum_variant_field_from_json(krate, crate_name, None, field)?);
                 }
-                fields.push(self.enum_variant_field_from_json(crate_name, None, field)?);
+                Some(fields)
             }
-            return Some(fields);
-        }
-
-        if let Some(struct_variant) = inner(kind, "struct") {
-            let mut fields = Vec::new();
-            for id in item_ids(struct_variant, "fields") {
-                let field = index.get(id)?;
-                if !is_public(field) {
-                    return None;
+            VariantKind::Struct { fields: field_ids, .. } => {
+                let mut fields = Vec::new();
+                for id in field_ids {
+                    let field = krate.index.get(id)?;
+                    if !is_public(field) {
+                        return None;
+                    }
+                    let name = field.name.as_deref().map(Ident::new);
+                    fields.push(self.enum_variant_field_from_json(krate, crate_name, name, field)?);
                 }
-                let name = field.get("name").and_then(Value::as_str).map(Ident::new);
-                fields.push(self.enum_variant_field_from_json(crate_name, name, field)?);
+                Some(fields)
             }
-            return Some(fields);
         }
-
-        Some(Vec::new())
     }
 
     fn enum_variant_field_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: Option<Ident>,
-        field: &Value,
+        field: &Item,
     ) -> Option<LiftedEnumVariantField> {
-        let field_type = item_inner(field, "struct_field")?;
-        let lifted = self.lift_return_type_from_json(crate_name, field_type)?;
+        let field_type = struct_field_type(field)?;
+        let lifted = self.lift_return_type_from_json(krate, crate_name, field_type)?;
         Some(LiftedEnumVariantField {
             field: EnumVariantField {
                 name,
@@ -325,18 +321,14 @@ impl RustInterop {
 
     pub(super) fn function_decl(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        signature: &Value,
+        signature: &FunctionSignature,
     ) -> Option<ImportedFunctionDecl> {
         let mut lifted_params = Vec::new();
-        for param in signature
-            .get("inputs")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            lifted_params.push(self.lift_param_from_json(crate_name, param)?);
+        for (param_name, param_type) in &signature.inputs {
+            lifted_params.push(self.lift_param_from_json(krate, crate_name, param_name, param_type)?);
         }
         let params = lifted_params
             .iter()
@@ -347,13 +339,12 @@ impl RustInterop {
             .map(|param| param.arg_conversion)
             .collect::<Vec<_>>();
 
-        let (return_type, return_conversion) =
-            if let Some(output) = signature.get("output").filter(|output| !output.is_null()) {
-                let lifted = self.lift_return_type_from_json(crate_name, output)?;
-                (lifted.ty, lifted.return_conversion)
-            } else {
-                (TypeElement::void(), RustReturnConversion::None)
-            };
+        let (return_type, return_conversion) = if let Some(output) = &signature.output {
+            let lifted = self.lift_return_type_from_json(krate, crate_name, output)?;
+            (lifted.ty, lifted.return_conversion)
+        } else {
+            (TypeElement::void(), RustReturnConversion::None)
+        };
 
         let decl = FnSignature {
             visibility: Visibility::public(),
@@ -376,19 +367,28 @@ impl RustInterop {
     }
 
     #[cfg(test)]
-    pub(super) fn param_from_json(&mut self, crate_name: &str, param: &Value) -> Option<Param> {
-        self.lift_param_from_json(crate_name, param)
+    pub(super) fn param_from_json(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        name: &str,
+        ty: &Type,
+    ) -> Option<Param> {
+        self.lift_param_from_json(krate, crate_name, name, ty)
             .map(|param| param.param)
     }
 
-    fn lift_param_from_json(&mut self, crate_name: &str, param: &Value) -> Option<LiftedParam> {
-        let pair = param.as_array()?;
-        let name = pair.first().and_then(Value::as_str).unwrap_or("_");
-        let ty = pair.get(1)?;
-        let lifted = if param_type_requires_wrapper_conversion(ty) {
-            self.lift_param_wrapper_type_from_json(crate_name, ty)?
+    fn lift_param_from_json(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        name: &str,
+        ty: &Type,
+    ) -> Option<LiftedParam> {
+        let lifted = if param_type_requires_wrapper_conversion(krate, ty) {
+            self.lift_param_wrapper_type_from_json(krate, crate_name, ty)?
         } else {
-            self.lift_type_from_json(crate_name, ty)?
+            self.lift_type_from_json(krate, crate_name, ty)?
         };
         let decl_modifier = lifted.decl_modifier.or_else(|| {
             if type_is_owned(ty) && !type_is_copy(&lifted.ty) {
@@ -413,12 +413,15 @@ impl RustInterop {
 
     fn lift_param_wrapper_type_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        ty: &Value,
+        ty: &Type,
     ) -> Option<LiftedType> {
-        let resolved = inner(ty, "resolved_path")?;
+        let Type::ResolvedPath(resolved) = ty else {
+            return None;
+        };
         let name = resolved_type_name(resolved)?;
-        if !resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]) {
+        if !resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]) {
             return None;
         }
         let conversion = match name.as_ref() {
@@ -427,16 +430,21 @@ impl RustInterop {
             _ => return None,
         };
         let arg = resolved_type_args(resolved).into_iter().next()?;
-        let mut lifted = self.lift_type_from_json(crate_name, arg)?;
+        let mut lifted = self.lift_type_from_json(krate, crate_name, arg)?;
         lifted.arg_conversion = conversion;
         Some(lifted)
     }
 
-    fn lift_return_type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<LiftedReturn> {
-        if let Some(resolved) = inner(ty, "resolved_path") {
+    fn lift_return_type_from_json(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        ty: &Type,
+    ) -> Option<LiftedReturn> {
+        if let Type::ResolvedPath(resolved) = ty {
             let name = resolved_type_name(resolved)?;
             let standard_wrapper =
-                resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
+                resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]);
             let return_conversion = match name.as_ref() {
                 "Box" if standard_wrapper => RustReturnConversion::BoxDeref,
                 "Rc" if standard_wrapper => RustReturnConversion::RcCloneDeref,
@@ -444,7 +452,7 @@ impl RustInterop {
             };
             if return_conversion != RustReturnConversion::None {
                 let arg = resolved_type_args(resolved).into_iter().next()?;
-                let lifted = self.lift_type_from_json(crate_name, arg)?;
+                let lifted = self.lift_type_from_json(krate, crate_name, arg)?;
                 return Some(LiftedReturn {
                     ty: lifted.ty,
                     decl_modifier: lifted.decl_modifier,
@@ -453,7 +461,7 @@ impl RustInterop {
             }
         }
 
-        self.lift_type_from_json(crate_name, ty)
+        self.lift_type_from_json(krate, crate_name, ty)
             .map(|lifted| LiftedReturn {
                 ty: lifted.ty,
                 decl_modifier: lifted.decl_modifier,
@@ -463,16 +471,14 @@ impl RustInterop {
 
     pub(super) fn impl_function_decl(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        signature: &Value,
-        impl_inner: &Value,
+        signature: &FunctionSignature,
+        impl_: &Impl,
     ) -> Option<ImportedFunctionDecl> {
-        let mut imported = self.function_decl(crate_name, name, signature)?;
-        if let Some(receiver_ty) = impl_inner
-            .get("for")
-            .and_then(|ty| self.type_from_json(crate_name, ty))
-        {
+        let mut imported = self.function_decl(krate, crate_name, name, signature)?;
+        if let Some(receiver_ty) = self.type_from_json(krate, crate_name, &impl_.for_) {
             substitute_self_in_function_decl(&mut imported.decl, &receiver_ty);
         }
 
@@ -481,124 +487,112 @@ impl RustInterop {
 
     pub(super) fn trait_function_decl(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         name: &str,
-        signature: &Value,
+        signature: &FunctionSignature,
         receiver: &TypeIdent,
     ) -> Option<ImportedFunctionDecl> {
-        let mut imported = self.function_decl(crate_name, name, signature)?;
+        let mut imported = self.function_decl(krate, crate_name, name, signature)?;
         substitute_self_in_function_decl(&mut imported.decl, &plain_type(receiver.clone()));
 
         Some(imported)
     }
 
-    pub(super) fn type_from_json(&mut self, crate_name: &str, ty: &Value) -> Option<TypeElement> {
-        self.lift_type_from_json(crate_name, ty)
+    pub(super) fn type_from_json(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        ty: &Type,
+    ) -> Option<TypeElement> {
+        self.lift_type_from_json(krate, crate_name, ty)
             .map(|lifted| lifted.ty)
     }
 
     pub(super) fn lift_type_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        ty: &Value,
+        ty: &Type,
     ) -> Option<LiftedType> {
-        if type_contains_unliftable_type(ty) {
+        if type_contains_unliftable_type(krate, ty) {
             return None;
         }
-        if inner(ty, "never").is_some() {
-            return Some(LiftedType::new(never_type()));
-        }
-        if let Some(primitive) = inner_string(ty, "primitive") {
-            return Some(LiftedType::new(primitive_type(primitive)));
-        }
-        if let Some(generic) = inner_string(ty, "generic") {
-            return Some(LiftedType::new(generic_type(generic)));
-        }
-        if let Some(borrowed) = inner(ty, "borrowed_ref") {
-            let mut lifted = borrowed
-                .get("type")
-                .and_then(|inner| self.lift_type_from_json(crate_name, inner))?;
-            if borrowed_ref_is_mutable(borrowed) {
-                lifted.decl_modifier = Some(galvan_ast::DeclModifier::Mut);
-            } else {
-                lifted.arg_conversion = RustArgConversion::SharedBorrow;
+        match ty {
+            Type::Primitive(primitive) => Some(LiftedType::new(primitive_type(primitive))),
+            Type::Generic(generic) => Some(LiftedType::new(generic_type(generic))),
+            Type::BorrowedRef {
+                is_mutable, type_, ..
+            } => {
+                let mut lifted = self.lift_type_from_json(krate, crate_name, type_)?;
+                if *is_mutable {
+                    lifted.decl_modifier = Some(galvan_ast::DeclModifier::Mut);
+                } else {
+                    lifted.arg_conversion = RustArgConversion::SharedBorrow;
+                }
+                Some(lifted)
             }
-            return Some(lifted);
-        }
-        if let Some(slice) = inner(ty, "slice") {
-            return self.lift_type_from_json(crate_name, slice).map(array_type);
-        }
-        if let Some(array) = inner(ty, "array") {
-            let element = array.get("type").or_else(|| array.get("element"))?;
-            return self
-                .lift_type_from_json(crate_name, element)
-                .map(array_type);
-        }
-        if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function"))
-        {
-            return self
-                .function_pointer_type_from_json(crate_name, function)
-                .map(LiftedType::new);
-        }
-        if let Some(resolved) = inner(ty, "resolved_path") {
-            let name = resolved_type_name(resolved)?;
-            let standard_wrapper =
-                resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"]);
-            if name.as_ref() == "Arc" && standard_wrapper {
-                return self.lift_arc_type_from_json(crate_name, resolved);
-            }
+            Type::Slice(element) => self
+                .lift_type_from_json(krate, crate_name, element)
+                .map(array_type),
+            Type::Array { type_, .. } => self
+                .lift_type_from_json(krate, crate_name, type_)
+                .map(array_type),
+            Type::FunctionPointer(function) => self
+                .function_pointer_type_from_json(krate, crate_name, function)
+                .map(LiftedType::new),
+            Type::ResolvedPath(resolved) => {
+                let name = resolved_type_name(resolved)?;
+                let standard_wrapper = resolved_path_is_unqualified_or_in_crates(
+                    krate,
+                    resolved,
+                    &["std", "core", "alloc"],
+                );
+                if name.as_ref() == "Arc" && standard_wrapper {
+                    return self.lift_arc_type_from_json(krate, crate_name, resolved);
+                }
 
-            let args = self.lift_resolved_type_args_from_json(crate_name, resolved)?;
+                let args = self.lift_resolved_type_args_from_json(krate, crate_name, resolved)?;
 
-            if let Some(lifted) =
-                self.lift_known_resolved_type(name.as_ref(), resolved, args.as_slice())
-            {
-                return Some(lifted);
-            }
-            if known_lifted_resolved_type(name.as_ref(), resolved) {
-                return None;
-            }
+                if let Some(lifted) =
+                    self.lift_known_resolved_type(krate, name.as_ref(), resolved, args.as_slice())
+                {
+                    return Some(lifted);
+                }
+                if known_lifted_resolved_type(krate, name.as_ref(), resolved) {
+                    return None;
+                }
 
-            self.push_resolved_type(crate_name, name.as_ref(), resolved);
-            return Some(LiftedType::new(parametric_or_plain_type(
-                name.as_ref(),
-                args,
-            )));
-        }
-        if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
-            return Some(LiftedType::new(TypeElement::Tuple(Box::new(
+                self.push_resolved_type(krate, crate_name, name.as_ref(), resolved);
+                Some(LiftedType::new(parametric_or_plain_type(name.as_ref(), args)))
+            }
+            Type::Tuple(elements) => Some(LiftedType::new(TypeElement::Tuple(Box::new(
                 galvan_ast::TupleTypeItem {
-                    elements: self.lift_tuple_elements_from_json(crate_name, tuple)?,
+                    elements: self.lift_tuple_elements_from_json(krate, crate_name, elements)?,
                     span: Span::default(),
                 },
-            ))));
+            )))),
+            // RawPointer/QualifiedPath/DynTrait/ImplTrait/Infer/Pat are rejected by the
+            // unliftable gate above; nothing liftable remains.
+            _ => None,
         }
-
-        None
     }
 
     fn function_pointer_type_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        function: &Value,
+        function: &FunctionPointer,
     ) -> Option<TypeElement> {
-        let signature = function.get("sig").unwrap_or(function);
         let mut parameters = Vec::new();
-        for input in signature
-            .get("inputs")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .map(function_pointer_input_type)
-        {
-            parameters.push(self.type_from_json(crate_name, input)?);
+        for (_, input) in &function.sig.inputs {
+            parameters.push(self.type_from_json(krate, crate_name, input)?);
         }
-        let return_ty =
-            if let Some(output) = signature.get("output").filter(|output| !output.is_null()) {
-                self.type_from_json(crate_name, output)?
-            } else {
-                TypeElement::void()
-            };
+        let return_ty = if let Some(output) = &function.sig.output {
+            self.type_from_json(krate, crate_name, output)?
+        } else {
+            TypeElement::void()
+        };
 
         Some(TypeElement::Closure(Box::new(ClosureTypeItem {
             parameters,
@@ -609,36 +603,38 @@ impl RustInterop {
 
     fn lift_resolved_type_args_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        resolved: &Value,
+        resolved: &rustdoc_types::Path,
     ) -> Option<Vec<LiftedType>> {
-        resolved_type_args_strict(resolved)?
+        resolved_type_args(resolved)
             .into_iter()
-            .map(|arg| self.lift_type_from_json(crate_name, arg))
+            .map(|arg| self.lift_type_from_json(krate, crate_name, arg))
             .collect()
     }
 
     fn lift_tuple_elements_from_json(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        tuple: &[Value],
+        tuple: &[Type],
     ) -> Option<Vec<TypeElement>> {
         tuple
             .iter()
-            .map(|ty| self.type_from_json(crate_name, ty))
+            .map(|ty| self.type_from_json(krate, crate_name, ty))
             .collect()
     }
 }
 
-fn param_type_requires_wrapper_conversion(ty: &Value) -> bool {
-    let Some(resolved) = inner(ty, "resolved_path") else {
+fn param_type_requires_wrapper_conversion(krate: &Crate, ty: &Type) -> bool {
+    let Type::ResolvedPath(resolved) = ty else {
         return false;
     };
     let Some(name) = resolved_type_name(resolved) else {
         return false;
     };
     matches!(name.as_ref(), "Box" | "Rc")
-        && resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"])
+        && resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"])
 }
 
 fn substitute_self_in_function_decl(decl: &mut galvan_ast::FnDecl, receiver_ty: &TypeElement) {

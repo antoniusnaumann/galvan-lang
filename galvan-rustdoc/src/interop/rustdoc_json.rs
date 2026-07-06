@@ -1,324 +1,240 @@
 use std::collections::HashSet;
 
-use serde_json::Value;
+use rustdoc_types::{
+    Abi, Crate, Function, FunctionHeader, FunctionSignature, GenericArg, GenericArgs,
+    GenericParamDefKind, Generics, Id, Item, ItemEnum, Path, StructKind, Type, VariantKind,
+    Visibility,
+};
 
 use galvan_ast::{Ident, TypeElement, TypeIdent};
 
-use super::lift_type::resolved_path_is_unqualified_or_in_crates;
-use super::rustdoc_path::resolved_type_name;
+use super::rustdoc_path::{resolved_path_is_unqualified_or_in_crates, resolved_type_name};
 
-pub(super) fn inner<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
-    match value {
-        Value::Object(object) => object.get(key),
+pub(super) fn is_public(item: &Item) -> bool {
+    matches!(item.visibility, Visibility::Public)
+}
+
+pub(super) fn public_type_name(item: &Item) -> Option<&str> {
+    matches!(
+        item.inner,
+        ItemEnum::Struct(_)
+            | ItemEnum::Enum(_)
+            | ItemEnum::Union(_)
+            | ItemEnum::TypeAlias(_)
+            | ItemEnum::Trait(_)
+    )
+    .then(|| item.name.as_deref())
+    .flatten()
+}
+
+pub(super) fn type_generic_params(item: &Item) -> Vec<Ident> {
+    item_generics(item)
+        .map(generic_type_params)
+        .unwrap_or_default()
+}
+
+fn item_generics(item: &Item) -> Option<&Generics> {
+    match &item.inner {
+        ItemEnum::Struct(struct_) => Some(&struct_.generics),
+        ItemEnum::Enum(enum_) => Some(&enum_.generics),
+        ItemEnum::Union(union_) => Some(&union_.generics),
+        ItemEnum::TypeAlias(alias) => Some(&alias.generics),
+        ItemEnum::Trait(trait_) => Some(&trait_.generics),
         _ => None,
     }
 }
 
-pub(super) fn inner_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
-    inner(value, key).and_then(Value::as_str)
-}
-
-pub(super) fn item_inner<'a>(item: &'a Value, key: &str) -> Option<&'a Value> {
-    item.get("inner").and_then(|inner| inner.get(key))
-}
-
-pub(super) fn is_public(item: &Value) -> bool {
-    item.get("visibility")
-        .is_some_and(|visibility| match visibility {
-            Value::String(value) => value == "public",
-            Value::Object(object) => object.contains_key("public"),
-            _ => false,
-        })
-}
-
-pub(super) fn public_type_name(item: &Value) -> Option<&str> {
-    let name = item.get("name").and_then(Value::as_str)?;
-    let inner = item.get("inner")?;
-    ["struct", "enum", "type_alias", "union", "trait"]
-        .iter()
-        .any(|kind| inner.get(*kind).is_some())
-        .then_some(name)
-}
-
-pub(super) fn type_generic_params(item: &Value) -> Vec<Ident> {
-    let Some(inner) = item.get("inner") else {
-        return Vec::new();
-    };
-
-    ["struct", "enum", "type_alias", "union", "trait"]
-        .iter()
-        .find_map(|kind| inner.get(*kind))
-        .and_then(type_inner_generics)
-        .or_else(|| item.get("generics"))
-        .map(generic_type_params)
-        .unwrap_or_default()
-}
-
-pub(super) fn type_inner_generic_params(inner: &Value) -> Vec<Ident> {
-    type_inner_generics(inner)
-        .map(generic_type_params)
-        .unwrap_or_default()
-}
-
-fn type_inner_generics(inner: &Value) -> Option<&Value> {
-    inner
-        .get("generics")
-        .or_else(|| inner.as_object().and_then(|object| object.get("generics")))
-}
-
-fn generic_type_params(generics: &Value) -> Vec<Ident> {
+pub(super) fn generic_type_params(generics: &Generics) -> Vec<Ident> {
     generics
-        .get("params")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|param| {
-            param
-                .get("kind")
-                .and_then(|kind| kind.get("type"))
-                .is_some()
-        })
-        .filter_map(|param| param.get("name").and_then(Value::as_str))
-        .map(Ident::new)
+        .params
+        .iter()
+        .filter(|param| matches!(param.kind, GenericParamDefKind::Type { .. }))
+        .map(|param| Ident::new(&param.name))
         .collect()
 }
 
-pub(super) fn function_is_unsafe(function: &Value) -> bool {
-    function_header_is_unsafe(function)
-        || function
-            .get("header")
-            .is_some_and(function_header_is_unsafe)
-        || function
-            .get("sig")
-            .and_then(|signature| signature.get("header"))
-            .is_some_and(function_header_is_unsafe)
+pub(super) fn function_is_unsafe(function: &Function) -> bool {
+    function.header.is_unsafe
 }
 
-pub(super) fn signature_contains_unliftable_type(signature: &Value) -> bool {
+pub(super) fn signature_contains_unliftable_type(krate: &Crate, signature: &FunctionSignature) -> bool {
     signature
-        .get("inputs")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .map(signature_input_type)
-        .any(type_contains_unliftable_type)
+        .inputs
+        .iter()
+        .any(|(_, ty)| type_contains_unliftable_type(krate, ty))
         || signature
-            .get("output")
-            .filter(|output| !output.is_null())
-            .is_some_and(type_contains_unliftable_type)
+            .output
+            .as_ref()
+            .is_some_and(|ty| type_contains_unliftable_type(krate, ty))
 }
 
-pub(super) fn type_decl_contains_unliftable_type(
-    item: &Value,
-    index: &serde_json::Map<String, Value>,
-) -> bool {
-    let Some(inner) = item.get("inner") else {
-        return false;
-    };
-
-    if let Some(alias) = inner.get("type_alias") {
-        return type_alias_type(alias).is_some_and(type_contains_unliftable_type);
-    }
-
-    if let Some(struct_item) = inner.get("struct") {
-        return item_ids(struct_item, "fields")
+pub(super) fn type_decl_contains_unliftable_type(krate: &Crate, item: &Item) -> bool {
+    match &item.inner {
+        ItemEnum::TypeAlias(alias) => type_contains_unliftable_type(krate, &alias.type_),
+        ItemEnum::Struct(struct_) => struct_field_ids(&struct_.kind)
             .into_iter()
-            .filter_map(|id| index.get(id))
-            .filter_map(|field| item_inner(field, "struct_field"))
-            .any(type_contains_unliftable_type);
-    }
-
-    if let Some(enum_item) = inner.get("enum") {
-        return item_ids(enum_item, "variants")
-            .into_iter()
-            .filter_map(|id| index.get(id))
-            .any(|variant| variant_contains_unliftable_type(variant, index));
-    }
-
-    false
-}
-
-pub(super) fn type_alias_type(alias: &Value) -> Option<&Value> {
-    alias.get("type").or(Some(alias))
-}
-
-pub(super) fn type_contains_unliftable_type(ty: &Value) -> bool {
-    type_contains_unliftable_type_inner(ty, false)
-}
-
-fn type_contains_unliftable_type_inner(ty: &Value, allow_standard_lock: bool) -> bool {
-    if inner(ty, "raw_pointer").is_some()
-        || inner(ty, "qualified_path").is_some()
-        || inner(ty, "dyn_trait").is_some()
-        || inner(ty, "impl_trait").is_some()
-    {
-        return true;
-    }
-    if let Some(borrowed) = inner(ty, "borrowed_ref") {
-        return borrowed
-            .get("type")
-            .is_some_and(|ty| type_contains_unliftable_type_inner(ty, false));
-    }
-    if let Some(slice) = inner(ty, "slice") {
-        return type_contains_unliftable_type_inner(slice, false);
-    }
-    if let Some(array) = inner(ty, "array") {
-        return array
-            .get("type")
-            .or_else(|| array.get("element"))
-            .is_some_and(|ty| type_contains_unliftable_type_inner(ty, false));
-    }
-    if let Some(function) = inner(ty, "function_pointer").or_else(|| inner(ty, "bare_function")) {
-        if function_pointer_has_unliftable_header(function) {
-            return true;
-        }
-        let signature = function.get("sig").unwrap_or(function);
-        return signature_contains_unliftable_type(signature);
-    }
-    if let Some(resolved) = inner(ty, "resolved_path") {
-        if resolved_type_is_standard_lock(resolved) && !allow_standard_lock {
-            return true;
-        }
-        let allow_nested_standard_lock = resolved_type_is_standard_arc(resolved);
-        return resolved_type_args(resolved)
-            .into_iter()
-            .any(|ty| type_contains_unliftable_type_inner(ty, allow_nested_standard_lock));
-    }
-    if let Some(tuple) = inner(ty, "tuple").and_then(Value::as_array) {
-        return tuple
+            .filter_map(|id| krate.index.get(&id))
+            .filter_map(struct_field_type)
+            .any(|ty| type_contains_unliftable_type(krate, ty)),
+        ItemEnum::Enum(enum_) => enum_
+            .variants
             .iter()
-            .any(|ty| type_contains_unliftable_type_inner(ty, false));
+            .filter_map(|id| krate.index.get(id))
+            .any(|variant| variant_contains_unliftable_type(krate, variant)),
+        _ => false,
     }
-
-    false
 }
 
-fn resolved_type_is_standard_arc(resolved: &Value) -> bool {
-    resolved_type_has_standard_name(resolved, "Arc")
+pub(super) fn type_contains_unliftable_type(krate: &Crate, ty: &Type) -> bool {
+    type_contains_unliftable_type_inner(krate, ty, false)
 }
 
-fn resolved_type_is_standard_lock(resolved: &Value) -> bool {
-    resolved_type_has_standard_name(resolved, "Mutex")
-        || resolved_type_has_standard_name(resolved, "RwLock")
+fn type_contains_unliftable_type_inner(krate: &Crate, ty: &Type, allow_standard_lock: bool) -> bool {
+    match ty {
+        Type::RawPointer { .. }
+        | Type::QualifiedPath { .. }
+        | Type::DynTrait(_)
+        | Type::ImplTrait(_) => true,
+        Type::BorrowedRef { type_, .. } => type_contains_unliftable_type_inner(krate, type_, false),
+        Type::Slice(element) => type_contains_unliftable_type_inner(krate, element, false),
+        Type::Array { type_, .. } => type_contains_unliftable_type_inner(krate, type_, false),
+        Type::FunctionPointer(function) => {
+            function_header_is_unliftable(&function.header)
+                || signature_contains_unliftable_type(krate, &function.sig)
+        }
+        Type::ResolvedPath(path) => {
+            if resolved_type_is_standard_lock(krate, path) && !allow_standard_lock {
+                return true;
+            }
+            let allow_nested_standard_lock = resolved_type_is_standard_arc(krate, path);
+            resolved_type_args(path)
+                .into_iter()
+                .any(|ty| type_contains_unliftable_type_inner(krate, ty, allow_nested_standard_lock))
+        }
+        Type::Tuple(types) => types
+            .iter()
+            .any(|ty| type_contains_unliftable_type_inner(krate, ty, false)),
+        Type::Primitive(_) | Type::Generic(_) | Type::Infer | Type::Pat { .. } => false,
+    }
 }
 
-fn resolved_type_has_standard_name(resolved: &Value, expected_name: &str) -> bool {
-    resolved_type_name(resolved).is_some_and(|name| name.as_ref() == expected_name)
-        && resolved_path_is_unqualified_or_in_crates(resolved, &["std", "core", "alloc"])
+fn resolved_type_is_standard_arc(krate: &Crate, path: &Path) -> bool {
+    resolved_type_has_standard_name(krate, path, "Arc")
 }
 
-fn function_header_is_unsafe(header: &Value) -> bool {
-    header.get("is_unsafe").and_then(Value::as_bool) == Some(true)
-        || header.get("unsafe").and_then(Value::as_bool) == Some(true)
-        || header.get("unsafety").and_then(Value::as_str) == Some("unsafe")
+fn resolved_type_is_standard_lock(krate: &Crate, path: &Path) -> bool {
+    resolved_type_has_standard_name(krate, path, "Mutex")
+        || resolved_type_has_standard_name(krate, path, "RwLock")
 }
 
-fn function_pointer_has_unliftable_header(function: &Value) -> bool {
-    function_header_is_unliftable(function)
-        || function
-            .get("header")
-            .is_some_and(function_header_is_unliftable)
-        || function
-            .get("sig")
-            .and_then(|signature| signature.get("header"))
-            .is_some_and(function_header_is_unliftable)
+fn resolved_type_has_standard_name(krate: &Crate, path: &Path, expected_name: &str) -> bool {
+    resolved_type_name(path).is_some_and(|name| name.as_ref() == expected_name)
+        && resolved_path_is_unqualified_or_in_crates(krate, path, &["std", "core", "alloc"])
 }
 
-fn function_header_is_unliftable(header: &Value) -> bool {
-    function_header_is_unsafe(header) || function_header_has_non_rust_abi(header)
+fn function_header_is_unliftable(header: &FunctionHeader) -> bool {
+    header.is_unsafe || !matches!(header.abi, Abi::Rust)
 }
 
-fn function_header_has_non_rust_abi(header: &Value) -> bool {
-    header
-        .get("abi")
-        .or_else(|| header.get("extern_abi"))
-        .and_then(Value::as_str)
-        .is_some_and(|abi| !matches!(abi, "Rust" | "rust"))
+fn struct_field_ids(kind: &StructKind) -> Vec<Id> {
+    match kind {
+        StructKind::Unit => Vec::new(),
+        StructKind::Tuple(fields) => fields.iter().flatten().copied().collect(),
+        StructKind::Plain { fields, .. } => fields.clone(),
+    }
 }
 
-fn signature_input_type(input: &Value) -> &Value {
-    input
-        .as_array()
-        .and_then(|pair| pair.get(1))
-        .unwrap_or(input)
+fn variant_field_ids(kind: &VariantKind) -> Vec<Id> {
+    match kind {
+        VariantKind::Plain => Vec::new(),
+        VariantKind::Tuple(fields) => fields.iter().flatten().copied().collect(),
+        VariantKind::Struct { fields, .. } => fields.clone(),
+    }
 }
 
-fn variant_contains_unliftable_type(
-    variant: &Value,
-    index: &serde_json::Map<String, Value>,
-) -> bool {
-    let Some(variant) = item_inner(variant, "variant") else {
+pub(super) fn struct_field_type(item: &Item) -> Option<&Type> {
+    match &item.inner {
+        ItemEnum::StructField(ty) => Some(ty),
+        _ => None,
+    }
+}
+
+fn variant_contains_unliftable_type(krate: &Crate, variant: &Item) -> bool {
+    let ItemEnum::Variant(variant) = &variant.inner else {
         return false;
     };
-    let Some(kind) = variant.get("kind") else {
-        return false;
-    };
-
-    let fields = inner(kind, "tuple").or_else(|| inner(kind, "struct"));
-    fields
-        .map(|fields| item_ids(fields, "fields"))
+    variant_field_ids(&variant.kind)
         .into_iter()
+        .filter_map(|id| krate.index.get(&id))
+        .filter_map(struct_field_type)
+        .any(|ty| type_contains_unliftable_type(krate, ty))
+}
+
+/// IDs of the associated functions (not constants) that live inside impl blocks.
+pub(super) fn impl_function_ids(krate: &Crate) -> HashSet<Id> {
+    associated_ids(krate, impl_items, false)
+}
+
+/// IDs of the associated constants that live inside impl blocks.
+pub(super) fn impl_constant_ids(krate: &Crate) -> HashSet<Id> {
+    associated_ids(krate, impl_items, true)
+}
+
+/// IDs of the associated functions (not constants) declared inside traits.
+pub(super) fn trait_function_ids(krate: &Crate) -> HashSet<Id> {
+    associated_ids(krate, trait_items, false)
+}
+
+/// IDs of the associated constants declared inside traits.
+pub(super) fn trait_constant_ids(krate: &Crate) -> HashSet<Id> {
+    associated_ids(krate, trait_items, true)
+}
+
+fn associated_ids<'a, I>(
+    krate: &'a Crate,
+    collect_items: impl Fn(&'a Item) -> Option<I>,
+    constants: bool,
+) -> HashSet<Id>
+where
+    I: IntoIterator<Item = &'a Id>,
+{
+    krate
+        .index
+        .values()
+        .filter_map(collect_items)
         .flatten()
-        .filter_map(|id| index.get(id))
-        .filter_map(|field| item_inner(field, "struct_field"))
-        .any(type_contains_unliftable_type)
-}
-
-pub(super) fn item_ids<'a>(item: &'a Value, key: &str) -> Vec<&'a str> {
-    item.get(key)
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
+        .copied()
+        .filter(|id| krate.index.get(id).is_some_and(is_constant) == constants)
         .collect()
 }
 
-pub(super) fn impl_function_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
-    index
-        .values()
-        .filter_map(|item| item_inner(item, "impl"))
-        .flat_map(|impl_item| item_ids(impl_item, "items"))
-        .filter(|id| index.get(*id).and_then(item_inner_constant).is_none())
-        .collect()
+fn impl_items(item: &Item) -> Option<&Vec<Id>> {
+    match &item.inner {
+        ItemEnum::Impl(impl_) => Some(&impl_.items),
+        _ => None,
+    }
 }
 
-pub(super) fn impl_constant_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
-    index
-        .values()
-        .filter_map(|item| item_inner(item, "impl"))
-        .flat_map(|impl_item| item_ids(impl_item, "items"))
-        .filter(|id| index.get(*id).and_then(item_inner_constant).is_some())
-        .collect()
+fn trait_items(item: &Item) -> Option<&Vec<Id>> {
+    match &item.inner {
+        ItemEnum::Trait(trait_) => Some(&trait_.items),
+        _ => None,
+    }
 }
 
-pub(super) fn trait_function_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
-    index
-        .values()
-        .filter_map(|item| item_inner(item, "trait"))
-        .flat_map(|trait_item| item_ids(trait_item, "items"))
-        .filter(|id| index.get(*id).and_then(item_inner_constant).is_none())
-        .collect()
+fn is_constant(item: &Item) -> bool {
+    matches!(
+        item.inner,
+        ItemEnum::Constant { .. } | ItemEnum::AssocConst { .. }
+    )
 }
 
-pub(super) fn trait_constant_ids(index: &serde_json::Map<String, Value>) -> HashSet<&str> {
-    index
-        .values()
-        .filter_map(|item| item_inner(item, "trait"))
-        .flat_map(|trait_item| item_ids(trait_item, "items"))
-        .filter(|id| index.get(*id).and_then(item_inner_constant).is_some())
-        .collect()
-}
-
-fn item_inner_constant(item: &Value) -> Option<&Value> {
-    item_inner(item, "constant").or_else(|| item_inner(item, "assoc_const"))
-}
-
-pub(super) fn constant_inner(item: &Value) -> Option<&Value> {
-    item_inner_constant(item)
-}
-
-pub(super) fn constant_type(constant: &Value) -> Option<&Value> {
-    constant.get("type").or_else(|| constant.get("ty"))
+/// The declared type of a constant or associated constant item.
+pub(super) fn constant_type(item: &Item) -> Option<&Type> {
+    match &item.inner {
+        ItemEnum::Constant { type_, .. } | ItemEnum::AssocConst { type_, .. } => Some(type_),
+        _ => None,
+    }
 }
 
 pub(super) fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {
@@ -330,57 +246,38 @@ pub(super) fn receiver_type_ident(ty: &TypeElement) -> Option<TypeIdent> {
     }
 }
 
-pub(super) fn return_is_borrowed(signature: &Value) -> bool {
-    signature
-        .get("output")
-        .is_some_and(|output| inner(output, "borrowed_ref").is_some())
+pub(super) fn return_is_borrowed(signature: &FunctionSignature) -> bool {
+    matches!(signature.output, Some(Type::BorrowedRef { .. }))
 }
 
-pub(super) fn type_is_owned(ty: &Value) -> bool {
-    inner(ty, "borrowed_ref").is_none()
+pub(super) fn type_is_owned(ty: &Type) -> bool {
+    !matches!(ty, Type::BorrowedRef { .. })
 }
 
-pub(super) fn borrowed_ref_is_mutable(borrowed: &Value) -> bool {
-    borrowed.get("mutable").and_then(Value::as_bool) == Some(true)
-        || borrowed.get("is_mutable").and_then(Value::as_bool) == Some(true)
-        || borrowed.get("mutability").and_then(Value::as_str) == Some("mut")
-}
-
-pub(super) fn resolved_type_args(resolved: &Value) -> Vec<&Value> {
-    resolved_type_args_strict(resolved).unwrap_or_default()
-}
-
-pub(super) fn resolved_type_args_strict(resolved: &Value) -> Option<Vec<&Value>> {
-    let Some(args) = resolved
-        .get("args")
-        .and_then(|args| inner(args, "angle_bracketed"))
-        .and_then(|args| args.get("args"))
-        .and_then(Value::as_array)
-    else {
-        return Some(Vec::new());
+pub(super) fn resolved_type_args(path: &Path) -> Vec<&Type> {
+    let Some(args) = &path.args else {
+        return Vec::new();
     };
-
-    let mut types = Vec::new();
-    for arg in args {
-        if let Some(ty) = inner(arg, "type") {
-            types.push(ty);
-            continue;
-        }
-        if arg.get("lifetime").is_some() || arg.get("const").is_some() || arg.get("infer").is_some()
-        {
-            continue;
-        }
-        return None;
+    match args.as_ref() {
+        GenericArgs::AngleBracketed { args, .. } => args
+            .iter()
+            .filter_map(|arg| match arg {
+                GenericArg::Type(ty) => Some(ty),
+                // Lifetime/Const/Infer args carry no liftable type: skip them.
+                _ => None,
+            })
+            .collect(),
+        GenericArgs::Parenthesized { .. } | GenericArgs::ReturnTypeNotation => Vec::new(),
     }
-    Some(types)
 }
 
-pub(super) fn resolved_type_generic_params(resolved: &Value) -> Vec<Ident> {
+pub(super) fn resolved_type_generic_params(path: &Path) -> Vec<Ident> {
     let mut params = Vec::new();
-    for (index, arg) in resolved_type_args(resolved).into_iter().enumerate() {
-        let candidate = inner_string(arg, "generic")
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| synthetic_generic_name(index));
+    for (index, arg) in resolved_type_args(path).into_iter().enumerate() {
+        let candidate = match arg {
+            Type::Generic(name) => name.clone(),
+            _ => synthetic_generic_name(index),
+        };
         let name = if generic_param_exists(&params, &candidate) {
             unique_synthetic_generic_name(index, &params)
         } else {
