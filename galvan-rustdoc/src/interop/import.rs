@@ -201,11 +201,23 @@ impl RustInterop {
                 use_.name.as_str()
             };
             let Some(target_id) = use_.id else {
+                // A primitive re-export (`pub use i32 as …`): rustdoc records no
+                // target id, so the `use` source is the item's absolute path.
                 self.import_external_reexported_type(crate_name, exported_name, use_);
                 continue;
             };
             let Some(target) = krate.index.get(&target_id) else {
-                self.import_external_reexported_type(crate_name, exported_name, use_);
+                // An intra-crate re-export of an item rustdoc did not include in
+                // the index (e.g. a foreign type aliased through a private module,
+                // such as serde_json's `pub use self::imp::Result`). Register it as
+                // an opaque type under this re-export's own public path — not the
+                // module-relative `use` source (`self::…`/`crate::…`), which is not
+                // a valid absolute path — so it dedupes against any richer decl
+                // already imported at that path.
+                if looks_like_type_name(exported_name) {
+                    let rust_path = callable_rust_path(krate, crate_name, exported_name, item);
+                    self.push_external_reexported_type(crate_name, exported_name, rust_path);
+                }
                 continue;
             };
             let rust_path = callable_rust_path(krate, crate_name, exported_name, item);

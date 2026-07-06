@@ -563,6 +563,16 @@ impl RustInterop {
                     return None;
                 }
 
+                // A reference to a local type alias whose target is a known galvan
+                // wrapper (e.g. `serde_json::Result<T> = Result<T, Error>`) is
+                // inlined: aliases are transparent, and downstream fallible /
+                // optional / collection handling needs the wrapper form. rustdoc
+                // may or may not expand such aliases in signatures depending on the
+                // toolchain, so we normalize here. Nominal aliases keep their name.
+                if let Some(lifted) = self.lift_wrapper_alias(krate, crate_name, resolved, &args) {
+                    return Some(lifted);
+                }
+
                 self.push_resolved_type(krate, crate_name, name.as_ref(), resolved);
                 Some(LiftedType::new(parametric_or_plain_type(name.as_ref(), args)))
             }
@@ -613,6 +623,35 @@ impl RustInterop {
             .collect()
     }
 
+    /// If `resolved` refers to a local type alias whose target lifts to a known
+    /// galvan wrapper, inline that wrapper with the alias's type parameters
+    /// substituted by the reference's arguments. Returns `None` for non-aliases
+    /// and for aliases whose target is nominal (those keep their own name).
+    fn lift_wrapper_alias(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        resolved: &rustdoc_types::Path,
+        args: &[LiftedType],
+    ) -> Option<LiftedType> {
+        let ItemEnum::TypeAlias(alias) = &krate.index.get(&resolved.id)?.inner else {
+            return None;
+        };
+        let mut lifted = self.lift_type_from_json(krate, crate_name, &alias.type_)?;
+        if !type_element_is_wrapper(&lifted.ty) {
+            return None;
+        }
+
+        let substitutions: std::collections::HashMap<String, TypeElement> =
+            generic_type_params(&alias.generics)
+                .iter()
+                .zip(args)
+                .map(|(param, arg)| (param.as_str().to_string(), arg.ty.clone()))
+                .collect();
+        substitute_generic_params(&mut lifted.ty, &substitutions);
+        Some(lifted)
+    }
+
     fn lift_tuple_elements_from_json(
         &mut self,
         krate: &Crate,
@@ -623,6 +662,77 @@ impl RustInterop {
             .iter()
             .map(|ty| self.type_from_json(krate, crate_name, ty))
             .collect()
+    }
+}
+
+/// Whether a lifted type is one of galvan's built-in wrapper forms (as opposed
+/// to a nominal type), i.e. one worth inlining a transparent alias down to.
+fn type_element_is_wrapper(ty: &TypeElement) -> bool {
+    matches!(
+        ty,
+        TypeElement::Result(_)
+            | TypeElement::Optional(_)
+            | TypeElement::Array(_)
+            | TypeElement::Set(_)
+            | TypeElement::Dictionary(_)
+            | TypeElement::OrderedDictionary(_)
+    )
+}
+
+/// Replace generic placeholders (`Plain`/`Generic` whose ident is a key) with
+/// their concrete substitution, recursing through compound types. Mirrors
+/// [`substitute_self_type`] but keyed by an arbitrary name map.
+fn substitute_generic_params(
+    ty: &mut TypeElement,
+    substitutions: &std::collections::HashMap<String, TypeElement>,
+) {
+    match ty {
+        TypeElement::Plain(plain) => {
+            if let Some(replacement) = substitutions.get(plain.ident.as_str()) {
+                *ty = replacement.clone();
+            }
+        }
+        TypeElement::Generic(generic) => {
+            if let Some(replacement) = substitutions.get(generic.ident.as_str()) {
+                *ty = replacement.clone();
+            }
+        }
+        TypeElement::Array(array) => substitute_generic_params(&mut array.elements, substitutions),
+        TypeElement::Dictionary(dictionary) => {
+            substitute_generic_params(&mut dictionary.key, substitutions);
+            substitute_generic_params(&mut dictionary.value, substitutions);
+        }
+        TypeElement::OrderedDictionary(dictionary) => {
+            substitute_generic_params(&mut dictionary.key, substitutions);
+            substitute_generic_params(&mut dictionary.value, substitutions);
+        }
+        TypeElement::Set(set) => substitute_generic_params(&mut set.elements, substitutions),
+        TypeElement::Tuple(tuple) => {
+            for element in &mut tuple.elements {
+                substitute_generic_params(element, substitutions);
+            }
+        }
+        TypeElement::Optional(optional) => {
+            substitute_generic_params(&mut optional.inner, substitutions)
+        }
+        TypeElement::Result(result) => {
+            substitute_generic_params(&mut result.success, substitutions);
+            if let Some(error) = &mut result.error {
+                substitute_generic_params(error, substitutions);
+            }
+        }
+        TypeElement::Parametric(parametric) => {
+            for arg in &mut parametric.type_args {
+                substitute_generic_params(arg, substitutions);
+            }
+        }
+        TypeElement::Closure(closure) => {
+            for param in &mut closure.parameters {
+                substitute_generic_params(param, substitutions);
+            }
+            substitute_generic_params(&mut closure.return_ty, substitutions);
+        }
+        TypeElement::Void(_) | TypeElement::Infer(_) | TypeElement::Never(_) => {}
     }
 }
 

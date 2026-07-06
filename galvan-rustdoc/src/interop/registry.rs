@@ -130,20 +130,32 @@ impl RustInterop {
         rust_path: Box<str>,
         item: &Item,
     ) {
-        if let Some(existing) = self
-            .types
-            .iter_mut()
-            .find(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
-        {
-            existing.name = TypeIdent::new(exported_name);
-            return;
-        }
-
         let imported = self
             .type_decl_from_item(krate, crate_name, exported_name, item)
             .unwrap_or_else(|| {
                 ImportedTypeDecl::empty_with_generics(exported_name, type_generic_params(item))
             });
+
+        if let Some(existing) = self
+            .types
+            .iter_mut()
+            .find(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
+        {
+            // Upgrade a placeholder opaque decl (e.g. an out-of-index re-export
+            // registered at the same public path) to this richer lifted decl;
+            // otherwise just adopt the re-export name.
+            if matches!(existing.decl.item, TypeDecl::Empty(_))
+                && !matches!(imported.decl, TypeDecl::Empty(_))
+            {
+                existing.field_conversions = imported.field_conversions;
+                existing.constructor_arg_conversions = imported.constructor_arg_conversions;
+                existing.enum_variant_conversions = imported.enum_variant_conversions;
+                existing.decl.item = imported.decl;
+            }
+            existing.name = TypeIdent::new(exported_name);
+            return;
+        }
+
         self.types.push(RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(exported_name),

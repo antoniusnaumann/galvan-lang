@@ -15,18 +15,17 @@ use super::uses::imported_crates;
 
 /// rustdoc JSON format version this crate was written against.
 ///
-/// rustdoc JSON is explicitly unstable and versioned. Every key we walk in
-/// [`super::rustdoc_json`] and [`super::rustdoc_path`] is only valid for this
-/// exact schema; a different nightly toolchain emits a different
-/// `format_version` in which our `.get("...")` lookups silently return `None`
-/// and items are dropped rather than lifted. Asserting the version up front
-/// turns a schema drift into a hard, actionable failure instead of silent data
-/// loss. Bump this constant (and audit the walked keys) when moving to a
-/// nightly that changes the format.
+/// rustdoc JSON is explicitly unstable and versioned: every schema this crate
+/// deserializes into (the `rustdoc_types` structs) is valid only for this exact
+/// `format_version`. A toolchain that emits a different version produces JSON
+/// that either fails to deserialize or drops items, so we assert the version up
+/// front and fail loudly instead of silently mis-parsing.
 ///
-/// Pinned to the `rustdoc-types` crate constant (via an exact `=0.58.0`
-/// dependency), so bumping that dependency is the single, deliberate action
-/// required to move to a new schema.
+/// This is one half of a coordinated pin: the `rustdoc-types` dependency
+/// (`=0.60.0`, whose `FORMAT_VERSION` is `60`) must stay in lockstep with the
+/// nightly toolchain the cache is generated with (see
+/// [`crate::cache`] / `GALVAN_RUSTDOC_TOOLCHAIN`). Bumping to a new schema means
+/// bumping *both*: the `rustdoc-types` version here and the pinned nightly date.
 pub(super) const RUSTDOC_FORMAT_VERSION: u64 = rustdoc_types::FORMAT_VERSION as u64;
 
 /// Whether a `(receiver, name/id)` associated item is exposed by exactly one

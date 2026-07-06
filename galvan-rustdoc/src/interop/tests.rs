@@ -124,6 +124,20 @@ fn resolved_with_string_path(path: &str, args: Vec<Type>) -> Type {
     Type::ResolvedPath(path_of(path, args))
 }
 
+/// A resolved reference whose `id` targets a specific in-crate item key, so
+/// `Crate.index`/`paths` lookups resolve to it (unlike [`resolved`], which
+/// namespaces its id away).
+fn resolved_to(key: &str, name: &str, args: Vec<Type>) -> Type {
+    Type::ResolvedPath(Path {
+        path: name.to_string(),
+        id: id(key),
+        args: Some(Box::new(GenericArgs::AngleBracketed {
+            args: args.into_iter().map(GenericArg::Type).collect(),
+            constraints: vec![],
+        })),
+    })
+}
+
 fn slice(ty: Type) -> Type {
     Type::Slice(Box::new(ty))
 }
@@ -382,6 +396,7 @@ fn function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> ItemEnum {
         generics: no_generics(),
         header: header(false, Abi::Rust),
         has_body: true,
+        default_unstable: None,
     })
 }
 
@@ -391,6 +406,7 @@ fn unsafe_function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> Item
         generics: no_generics(),
         header: header(true, Abi::Rust),
         has_body: true,
+        default_unstable: None,
     })
 }
 
@@ -409,6 +425,7 @@ fn assoc_const(ty: Type) -> ItemEnum {
     ItemEnum::AssocConst {
         type_: ty,
         value: None,
+        default_unstable: None,
     }
 }
 
@@ -573,6 +590,7 @@ fn crate_(entries: Vec<(&str, TestItem)>) -> Crate {
                 attrs: vec![],
                 deprecation: None,
                 stability: None,
+                const_stability: None,
                 inner,
             },
         );
@@ -1180,6 +1198,45 @@ fn rustdoc_preserves_dependency_types_named_like_known_wrappers() {
     };
     assert_eq!(lock.base_type, TypeIdent::new("Mutex"));
     assert_eq!(lock.type_args, vec![u64_type()]);
+}
+
+#[test]
+fn rustdoc_inlines_wrapper_type_aliases_at_references() {
+    // A reference to a local `type Result<T> = core::result::Result<T, Error>`
+    // is inlined to a galvan Result (aliases are transparent), rather than kept
+    // as a nominal `Result<String>` — so downstream fallible handling works
+    // regardless of whether rustdoc expands the alias in the signature.
+    let krate = crate_(vec![
+        (
+            "alias",
+            public_item_at_path(
+                "Result",
+                &["demo", "error", "Result"],
+                type_alias_generic(
+                    resolved("Result", vec![generic("T"), resolved("Error", vec![])]),
+                    type_generics(vec![generic_param("T")]),
+                ),
+            ),
+        ),
+        (
+            "f",
+            public_function("make", vec![], resolved_to("alias", "Result", vec![primitive("str")])),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    let function = interop
+        .function(Some("demo"), None, &ident("make"), &[])
+        .expect("expected imported function");
+    let TypeElement::Result(result) = &function.decl.item.signature.return_type else {
+        panic!(
+            "expected inlined galvan Result, got {:?}",
+            function.decl.item.signature.return_type
+        );
+    };
+    assert_eq!(result.success, string_type());
+    assert_eq!(result.error, Some(plain_type(TypeIdent::new("Error"))));
 }
 
 #[test]

@@ -12,8 +12,8 @@ pub enum RustdocError {
     ReadCache(PathBuf, std::io::Error),
     #[error("failed to parse rustdoc JSON cache {0}: {1}")]
     ParseCache(PathBuf, serde_json::Error),
-    #[error("rustdoc JSON cache {0} is missing a format_version field; regenerate it with a nightly toolchain (rustup update nightly)")]
+    #[error("rustdoc JSON cache {0} is missing a format_version field; delete it and let galvan regenerate it with the pinned nightly toolchain")]
     MissingFormatVersion(PathBuf),
-    #[error("rustdoc JSON cache {0} has format_version {1}, but this build of galvan only understands format_version {2}; regenerate the cache with a matching nightly toolchain (rustup update nightly) or upgrade galvan")]
+    #[error("rustdoc JSON cache {0} has format_version {1}, but this build of galvan only understands format_version {2}; delete the cache so galvan regenerates it with the pinned nightly toolchain (override via GALVAN_RUSTDOC_TOOLCHAIN), or upgrade galvan")]
     UnsupportedFormatVersion(PathBuf, u64, u64),
 }
