@@ -313,6 +313,18 @@ impl RustInterop {
                     .insert((crate_name.to_string(), id.clone()), idx);
             }
         } else {
+            if let Some(associated_receiver) = associated_receiver {
+                insert_unambiguous_associated(
+                    &mut self.by_associated_function,
+                    (associated_receiver.clone(), id.clone()),
+                    crate_name,
+                    idx,
+                );
+                self.by_namespace_associated_function.insert(
+                    (crate_name.to_string(), associated_receiver, id.clone()),
+                    idx,
+                );
+            }
             self.by_namespace_function
                 .insert((crate_name.to_string(), id.clone()), idx);
         }

@@ -1298,6 +1298,368 @@ fn generic_rust_associated_constructors_instantiate_receiver_generics() {
 }
 
 #[test]
+fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Router",
+        "::external::Router",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Router"),
+            generic_params: vec![Ident::new("S")],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Router"),
+        "new",
+        "::external::Router::new",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("new"),
+            parameters: ParamList {
+                params: vec![],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Parametric(ParametricTypeItem {
+                base_type: TypeIdent::new("Router"),
+                type_args: vec![TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("S"),
+                    span: Span::default(),
+                })],
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Router"),
+        "with_state",
+        "::external::Router::with_state",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("with_state"),
+            parameters: ParamList {
+                params: vec![
+                    Param {
+                        decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                        short_name: None,
+                        identifier: Ident::new("self"),
+                        param_type: TypeElement::Parametric(ParametricTypeItem {
+                            base_type: TypeIdent::new("Router"),
+                            type_args: vec![TypeElement::Generic(GenericTypeItem {
+                                ident: Ident::new("S"),
+                                span: Span::default(),
+                            })],
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    },
+                    Param {
+                        decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                        short_name: None,
+                        identifier: Ident::new("state"),
+                        param_type: TypeElement::Generic(GenericTypeItem {
+                            ident: Ident::new("T"),
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    },
+                ],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Parametric(ParametricTypeItem {
+                base_type: TypeIdent::new("Router"),
+                type_args: vec![TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("T"),
+                    span: Span::default(),
+                })],
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Router"])]);
+
+    let new_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("Router")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("new"),
+                    arguments: vec![],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let with_state_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: new_expr,
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("with_state"),
+                    arguments: vec![galvan_ast::FunctionCallArg {
+                        label: None,
+                        modifier: None,
+                        expression: Expression {
+                            kind: ExpressionKind::Ident(Ident::new("state")),
+                            span: Span::default(),
+                        },
+                    }],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let build_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("build"),
+                parameters: ParamList {
+                    params: vec![Param {
+                        decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                        short_name: None,
+                        identifier: Ident::new("state"),
+                        param_type: TypeElement::Plain(BasicTypeItem {
+                            ident: TypeIdent::new("ApiState"),
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    }],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::void(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Declaration {
+                    decl_modifier: galvan_ast::DeclModifier::Let,
+                    identifier: Ident::new("router"),
+                    type_annotation: None,
+                    assignment_modifier: None,
+                    assignment: Some(with_state_expr),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let api_state_type = ToplevelItem {
+        item: TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("ApiState"),
+            generic_params: Vec::new(),
+            span: Span::default(),
+        }),
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Router"])],
+            types: vec![api_state_type],
+            functions: vec![build_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let build = function(&module, "build");
+    let HirStatement::Declaration(declaration) = &build.body.statements[0] else {
+        panic!("expected declaration");
+    };
+    let TypeElement::Parametric(router) = &declaration.ty else {
+        panic!("expected parametric Router type, got {:?}", declaration.ty);
+    };
+    assert_eq!(router.base_type, TypeIdent::new("Router"));
+    assert_eq!(
+        router.type_args,
+        vec![TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("ApiState"),
+            span: Span::default(),
+        })]
+    );
+}
+
+#[test]
+fn generic_rust_instance_methods_return_threaded_inner_type() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "State",
+        "::external::State",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("State"),
+            generic_params: vec![Ident::new("T")],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("State"),
+        "into_inner",
+        "::external::State::into_inner",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("into_inner"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                    short_name: None,
+                    identifier: Ident::new("self"),
+                    param_type: TypeElement::Parametric(ParametricTypeItem {
+                        base_type: TypeIdent::new("State"),
+                        type_args: vec![TypeElement::Generic(GenericTypeItem {
+                            ident: Ident::new("T"),
+                            span: Span::default(),
+                        })],
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Generic(GenericTypeItem {
+                ident: Ident::new("T"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "State"])]);
+
+    let extract_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("state")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("into_inner"),
+                    arguments: vec![],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let read_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("read"),
+                parameters: ParamList {
+                    params: vec![Param {
+                        decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                        short_name: None,
+                        identifier: Ident::new("state"),
+                        param_type: TypeElement::Parametric(ParametricTypeItem {
+                            base_type: TypeIdent::new("State"),
+                            type_args: vec![TypeElement::Plain(BasicTypeItem {
+                                ident: TypeIdent::new("ApiState"),
+                                span: Span::default(),
+                            })],
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    }],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::void(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Declaration {
+                    decl_modifier: galvan_ast::DeclModifier::Let,
+                    identifier: Ident::new("inner"),
+                    type_annotation: None,
+                    assignment_modifier: None,
+                    assignment: Some(extract_expr),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let api_state_type = ToplevelItem {
+        item: TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("ApiState"),
+            generic_params: Vec::new(),
+            span: Span::default(),
+        }),
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "State"])],
+            types: vec![api_state_type],
+            functions: vec![read_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let read = function(&module, "read");
+    let HirStatement::Declaration(declaration) = &read.body.statements[0] else {
+        panic!("expected declaration");
+    };
+    assert_eq!(
+        declaration.ty,
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new("ApiState"),
+            span: Span::default(),
+        })
+    );
+}
+
+#[test]
 fn imported_rust_types_are_available_to_typecheck_after_use() {
     let mut rust_interop = RustInterop::empty();
     rust_interop.add_type_decl(

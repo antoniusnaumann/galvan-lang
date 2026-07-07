@@ -295,6 +295,28 @@ impl Checker<'_> {
             let receiver_ident = receiver
                 .as_ref()
                 .and_then(|(receiver, _)| receiver_type_ident(&receiver.ty));
+            if let Some(function) = receiver_ident.as_ref().and_then(|receiver| {
+                namespace.segments.first().and_then(|segment| {
+                    self.rust_interop.associated_method_function(
+                        Some(segment.as_str()),
+                        receiver,
+                        ident,
+                        &labels_ref,
+                    )
+                })
+            }) {
+                return self.lower_rust_call(
+                    function,
+                    receiver,
+                    Some(namespace.clone()),
+                    ident,
+                    labels,
+                    arguments,
+                    expected,
+                    receiver_ident.as_ref(),
+                    span,
+                );
+            }
             if let Some(function) = namespace.segments.first().and_then(|segment| {
                 self.rust_interop.function(
                     Some(segment.as_str()),
@@ -391,6 +413,22 @@ impl Checker<'_> {
         {
             return self.lower_rust_call(
                 function, receiver, None, ident, labels, arguments, expected, None, span,
+            );
+        }
+        if let Some(function) = receiver_ident.as_ref().and_then(|receiver| {
+            self.rust_interop
+                .associated_method_function(None, receiver, ident, &labels_ref)
+        }) {
+            return self.lower_rust_call(
+                function,
+                receiver,
+                None,
+                ident,
+                labels,
+                arguments,
+                expected,
+                receiver_ident.as_ref(),
+                span,
             );
         }
 
@@ -517,14 +555,14 @@ impl Checker<'_> {
         span: Span,
     ) -> HirExpression {
         let mut signature = function.decl.item.signature.clone();
-        let generic_substitutions = self.rust_call_generic_substitutions(
+        let mut generic_substitutions = self.rust_call_generic_substitutions(
             &signature,
             receiver.as_ref(),
             associated_receiver,
             expected,
         );
         substitute_signature_generics(&mut signature, &generic_substitutions);
-        let args = self.lower_call_args(&signature.parameters.params, arguments);
+        let args = self.lower_rust_call_args(&mut signature, arguments, &mut generic_substitutions);
         let receiver_conversion = if signature.receiver().is_some() {
             function
                 .arg_conversions
@@ -621,6 +659,64 @@ impl Checker<'_> {
         }
 
         substitutions
+    }
+
+    fn lower_rust_call_args(
+        &mut self,
+        signature: &mut FnSignature,
+        arguments: &[FunctionCallArg],
+        substitutions: &mut HashMap<String, TypeElement>,
+    ) -> Vec<HirExpression> {
+        let params = signature
+            .parameters
+            .params
+            .iter()
+            .skip_while(|param| param.identifier.is_self())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if params.len() != arguments.len() {
+            self.errors.error(TranspilerError::InvalidSyntax {
+                message: format!(
+                    "function expected {} arguments but found {}",
+                    params.len(),
+                    arguments.len()
+                ),
+            });
+        }
+
+        let lowered = params
+            .iter()
+            .zip(arguments)
+            .map(|(param, argument)| {
+                self.validate_argument_label(param, argument);
+                let (lowered, expression_modifier) = self.lower_call_value(&argument.expression);
+                collect_rust_call_generic_bindings(&param.param_type, &lowered.ty, substitutions);
+                let modifier = self.merge_argument_modifiers(
+                    argument.modifier,
+                    expression_modifier,
+                    argument.expression.span,
+                );
+                (lowered, modifier, argument.expression.span)
+            })
+            .collect::<Vec<_>>();
+
+        substitute_signature_generics(signature, substitutions);
+        let params = signature
+            .parameters
+            .params
+            .iter()
+            .skip_while(|param| param.identifier.is_self())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        lowered
+            .into_iter()
+            .zip(&params)
+            .map(|((lowered, modifier, span), param)| {
+                self.lower_known_argument(lowered, modifier, param, span)
+            })
+            .collect()
     }
 
     fn lower_known_receiver(

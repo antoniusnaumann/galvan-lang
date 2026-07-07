@@ -48,6 +48,24 @@ impl RustInterop {
         self.unambiguous_associated_function(receiver, &id)
     }
 
+    pub fn associated_method_function(
+        &self,
+        namespace: Option<&str>,
+        receiver: &TypeIdent,
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&RustFunctionDecl> {
+        let id = RustFunctionId::new(Some(receiver), name.as_str(), labels);
+        if let Some(namespace) = namespace {
+            return self
+                .by_namespace_associated_function
+                .get(&(namespace.to_string(), receiver.clone(), id))
+                .and_then(|idx| self.functions.get(*idx));
+        }
+
+        self.unambiguous_associated_function(receiver, &id)
+    }
+
     pub fn imported_types(&self) -> impl Iterator<Item = &RustTypeDecl> {
         self.by_imported_type
             .values()
