@@ -71,6 +71,8 @@ commands remain subcommands.
     scanner stub (tree-sitter-galvan/src/scanner.c)
   - Investigate the generic-container type mismatch warning emitted while
     building `galvan-test`
+  - Normalize existing Rust formatting drift so `cargo fmt --all --check`
+    can be used as a clean verification step without unrelated diffs
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
