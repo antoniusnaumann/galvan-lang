@@ -648,7 +648,7 @@ impl RustInterop {
                 .zip(args)
                 .map(|(param, arg)| (param.as_str().to_string(), arg.ty.clone()))
                 .collect();
-        substitute_generic_params(&mut lifted.ty, &substitutions);
+        lifted.ty.substitute_generics(&substitutions);
         Some(lifted)
     }
 
@@ -679,63 +679,6 @@ fn type_element_is_wrapper(ty: &TypeElement) -> bool {
     )
 }
 
-/// Replace generic placeholders (`Plain`/`Generic` whose ident is a key) with
-/// their concrete substitution, recursing through compound types. Mirrors
-/// [`substitute_self_type`] but keyed by an arbitrary name map.
-fn substitute_generic_params(
-    ty: &mut TypeElement,
-    substitutions: &std::collections::HashMap<String, TypeElement>,
-) {
-    match ty {
-        TypeElement::Plain(plain) => {
-            if let Some(replacement) = substitutions.get(plain.ident.as_str()) {
-                *ty = replacement.clone();
-            }
-        }
-        TypeElement::Generic(generic) => {
-            if let Some(replacement) = substitutions.get(generic.ident.as_str()) {
-                *ty = replacement.clone();
-            }
-        }
-        TypeElement::Array(array) => substitute_generic_params(&mut array.elements, substitutions),
-        TypeElement::Dictionary(dictionary) => {
-            substitute_generic_params(&mut dictionary.key, substitutions);
-            substitute_generic_params(&mut dictionary.value, substitutions);
-        }
-        TypeElement::OrderedDictionary(dictionary) => {
-            substitute_generic_params(&mut dictionary.key, substitutions);
-            substitute_generic_params(&mut dictionary.value, substitutions);
-        }
-        TypeElement::Set(set) => substitute_generic_params(&mut set.elements, substitutions),
-        TypeElement::Tuple(tuple) => {
-            for element in &mut tuple.elements {
-                substitute_generic_params(element, substitutions);
-            }
-        }
-        TypeElement::Optional(optional) => {
-            substitute_generic_params(&mut optional.inner, substitutions)
-        }
-        TypeElement::Result(result) => {
-            substitute_generic_params(&mut result.success, substitutions);
-            if let Some(error) = &mut result.error {
-                substitute_generic_params(error, substitutions);
-            }
-        }
-        TypeElement::Parametric(parametric) => {
-            for arg in &mut parametric.type_args {
-                substitute_generic_params(arg, substitutions);
-            }
-        }
-        TypeElement::Closure(closure) => {
-            for param in &mut closure.parameters {
-                substitute_generic_params(param, substitutions);
-            }
-            substitute_generic_params(&mut closure.return_ty, substitutions);
-        }
-        TypeElement::Void(_) | TypeElement::Infer(_) | TypeElement::Never(_) => {}
-    }
-}
-
 fn param_type_requires_wrapper_conversion(krate: &Crate, ty: &Type) -> bool {
     let Type::ResolvedPath(resolved) = ty else {
         return false;
@@ -748,60 +691,12 @@ fn param_type_requires_wrapper_conversion(krate: &Crate, ty: &Type) -> bool {
 }
 
 fn substitute_self_in_function_decl(decl: &mut galvan_ast::FnDecl, receiver_ty: &TypeElement) {
+    let substitutions =
+        std::collections::HashMap::from([("Self".to_string(), receiver_ty.clone())]);
     for param in &mut decl.signature.parameters.params {
-        substitute_self_type(&mut param.param_type, receiver_ty);
+        param.param_type.substitute_generics(&substitutions);
     }
-    substitute_self_type(&mut decl.signature.return_type, receiver_ty);
-}
-
-fn substitute_self_type(ty: &mut TypeElement, receiver_ty: &TypeElement) {
-    match ty {
-        TypeElement::Plain(plain) if plain.ident.as_str() == "Self" => {
-            *ty = receiver_ty.clone();
-        }
-        TypeElement::Generic(generic) if generic.ident.as_str() == "Self" => {
-            *ty = receiver_ty.clone();
-        }
-        TypeElement::Array(array) => substitute_self_type(&mut array.elements, receiver_ty),
-        TypeElement::Dictionary(dictionary) => {
-            substitute_self_type(&mut dictionary.key, receiver_ty);
-            substitute_self_type(&mut dictionary.value, receiver_ty);
-        }
-        TypeElement::OrderedDictionary(dictionary) => {
-            substitute_self_type(&mut dictionary.key, receiver_ty);
-            substitute_self_type(&mut dictionary.value, receiver_ty);
-        }
-        TypeElement::Set(set) => substitute_self_type(&mut set.elements, receiver_ty),
-        TypeElement::Tuple(tuple) => {
-            for element in &mut tuple.elements {
-                substitute_self_type(element, receiver_ty);
-            }
-        }
-        TypeElement::Optional(optional) => substitute_self_type(&mut optional.inner, receiver_ty),
-        TypeElement::Result(result) => {
-            substitute_self_type(&mut result.success, receiver_ty);
-            if let Some(error) = &mut result.error {
-                substitute_self_type(error, receiver_ty);
-            }
-        }
-        TypeElement::Parametric(parametric) if parametric.base_type.as_str() == "Self" => {
-            *ty = receiver_ty.clone();
-        }
-        TypeElement::Parametric(parametric) => {
-            for arg in &mut parametric.type_args {
-                substitute_self_type(arg, receiver_ty);
-            }
-        }
-        TypeElement::Closure(closure) => {
-            for param in &mut closure.parameters {
-                substitute_self_type(param, receiver_ty);
-            }
-            substitute_self_type(&mut closure.return_ty, receiver_ty);
-        }
-        TypeElement::Plain(_)
-        | TypeElement::Generic(_)
-        | TypeElement::Void(_)
-        | TypeElement::Infer(_)
-        | TypeElement::Never(_) => {}
-    }
+    decl.signature
+        .return_type
+        .substitute_generics(&substitutions);
 }

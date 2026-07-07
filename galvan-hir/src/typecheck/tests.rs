@@ -1660,6 +1660,158 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
 }
 
 #[test]
+fn conflicting_rust_generic_bindings_are_reported_directly() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "State",
+        "::external::State",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("State"),
+            generic_params: vec![Ident::new("T")],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("State"),
+        "replace",
+        "::external::State::replace",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("replace"),
+            parameters: ParamList {
+                params: vec![
+                    Param {
+                        decl_modifier: None,
+                        short_name: None,
+                        identifier: Ident::new("self"),
+                        param_type: TypeElement::Parametric(ParametricTypeItem {
+                            base_type: TypeIdent::new("State"),
+                            type_args: vec![TypeElement::Generic(GenericTypeItem {
+                                ident: Ident::new("T"),
+                                span: Span::default(),
+                            })],
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    },
+                    Param {
+                        decl_modifier: None,
+                        short_name: None,
+                        identifier: Ident::new("value"),
+                        param_type: TypeElement::Generic(GenericTypeItem {
+                            ident: Ident::new("T"),
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    },
+                ],
+                span: Span::default(),
+            },
+            return_type: TypeElement::void(),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "State"])]);
+
+    let replace_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("state")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("replace"),
+                    arguments: vec![galvan_ast::FunctionCallArg {
+                        label: None,
+                        modifier: None,
+                        expression: Expression {
+                            kind: ExpressionKind::Ident(Ident::new("count")),
+                            span: Span::default(),
+                        },
+                    }],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let update_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("update"),
+                parameters: ParamList {
+                    params: vec![
+                        Param {
+                            decl_modifier: None,
+                            short_name: None,
+                            identifier: Ident::new("state"),
+                            param_type: TypeElement::Parametric(ParametricTypeItem {
+                                base_type: TypeIdent::new("State"),
+                                type_args: vec![TypeElement::Plain(BasicTypeItem {
+                                    ident: TypeIdent::new("String"),
+                                    span: Span::default(),
+                                })],
+                                span: Span::default(),
+                            }),
+                            span: Span::default(),
+                        },
+                        Param {
+                            decl_modifier: None,
+                            short_name: None,
+                            identifier: Ident::new("count"),
+                            param_type: TypeElement::Plain(BasicTypeItem {
+                                ident: TypeIdent::new("U64"),
+                                span: Span::default(),
+                            }),
+                            span: Span::default(),
+                        },
+                    ],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::void(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![replace_expr.into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (_, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "State"])],
+            types: Vec::new(),
+            functions: vec![update_fn],
+            tests: Vec::new(),
+            main: None,
+            cmds: Vec::new(),
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| diagnostic
+            .message
+            .contains("conflicting type inference for Rust generic 'T'")),
+        "expected direct Rust generic conflict diagnostic, got: {errors}"
+    );
+}
+
+#[test]
 fn imported_rust_types_are_available_to_typecheck_after_use() {
     let mut rust_interop = RustInterop::empty();
     rust_interop.add_type_decl(
