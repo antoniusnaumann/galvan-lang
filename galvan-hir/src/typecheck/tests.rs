@@ -1181,6 +1181,123 @@ fn rust_associated_functions_are_typechecked_as_type_member_calls() {
 }
 
 #[test]
+fn generic_rust_associated_constructors_instantiate_receiver_generics() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Router",
+        "::external::Router",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Router"),
+            generic_params: vec![Ident::new("S")],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "external",
+        TypeIdent::new("Router"),
+        "new",
+        "::external::Router::new",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("new"),
+            parameters: ParamList {
+                params: vec![],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Parametric(ParametricTypeItem {
+                base_type: TypeIdent::new("Router"),
+                type_args: vec![TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("S"),
+                    span: Span::default(),
+                })],
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Router"])]);
+
+    let constructor_expr = Expression {
+        kind: ExpressionKind::Infix(Box::new(InfixExpression::Member(InfixOperation {
+            lhs: Expression {
+                kind: ExpressionKind::Ident(Ident::new("Router")),
+                span: Span::default(),
+            },
+            operator: MemberOperator::Dot,
+            rhs: Expression {
+                kind: ExpressionKind::FunctionCall(galvan_ast::FunctionCall {
+                    namespace: None,
+                    identifier: Ident::new("new"),
+                    arguments: vec![],
+                }),
+                span: Span::default(),
+            },
+        }))),
+        span: Span::default(),
+    };
+    let build_fn = ToplevelItem {
+        item: FnDecl {
+            signature: FnSignature {
+                visibility: Visibility::public(),
+                identifier: Ident::new("build"),
+                parameters: ParamList {
+                    params: vec![],
+                    span: Span::default(),
+                },
+                return_type: TypeElement::void(),
+                where_clause: None,
+                span: Span::default(),
+            },
+            body: Body {
+                statements: vec![Declaration {
+                    decl_modifier: galvan_ast::DeclModifier::Let,
+                    identifier: Ident::new("router"),
+                    type_annotation: None,
+                    assignment_modifier: None,
+                    assignment: Some(constructor_expr),
+                    span: Span::default(),
+                }
+                .into()],
+                span: Span::default(),
+            },
+            span: Span::default(),
+        },
+        source: Source::Builtin,
+    };
+    let (module, errors) = typecheck_with_interop(
+        SegmentedAsts {
+            uses: vec![use_decl(&["external", "Router"])],
+            types: vec![],
+            functions: vec![build_fn],
+            tests: vec![],
+            main: None,
+            cmds: vec![],
+        },
+        &rust_interop,
+    )
+    .expect("test AST should typecheck");
+    assert!(
+        !errors.has_errors(),
+        "expected no type errors, got: {errors}"
+    );
+    let build = function(&module, "build");
+    let HirStatement::Declaration(declaration) = &build.body.statements[0] else {
+        panic!("expected declaration");
+    };
+    let TypeElement::Parametric(router) = &declaration.ty else {
+        panic!("expected parametric Router type, got {:?}", declaration.ty);
+    };
+    assert_eq!(router.base_type, TypeIdent::new("Router"));
+    assert_eq!(router.type_args.len(), 1);
+    assert!(router.type_args[0].is_infer());
+}
+
+#[test]
 fn imported_rust_types_are_available_to_typecheck_after_use() {
     let mut rust_interop = RustInterop::empty();
     rust_interop.add_type_decl(
