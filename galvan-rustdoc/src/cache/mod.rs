@@ -48,6 +48,9 @@ impl RustdocCache {
             }
             Err(error) => {
                 self.write_stderr(error.to_string());
+                if self.json_path().is_some() {
+                    return Ok(());
+                }
                 return Err(error);
             }
         };
@@ -122,5 +125,64 @@ impl RustdocCache {
     fn clear_diagnostics(&self) {
         let _ = fs::remove_file(self.root.join(format!("{}.stderr", self.crate_name)));
         let _ = fs::remove_file(self.root.join(format!("{}.stdout", self.crate_name)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_cache_requires_json_and_matching_fingerprint() {
+        let cache = test_cache("current");
+        fs::create_dir_all(&cache.root).unwrap();
+
+        assert!(!cache.is_current("abc"));
+
+        fs::write(cache.cache_path(), "{}").unwrap();
+        assert!(!cache.is_current("abc"));
+
+        fs::write(cache.fingerprint_path(), "def").unwrap();
+        assert!(!cache.is_current("abc"));
+
+        fs::write(cache.fingerprint_path(), "abc").unwrap();
+        assert!(cache.is_current("abc"));
+
+        let _ = fs::remove_dir_all(cache.root);
+    }
+
+    #[test]
+    fn dependency_not_found_is_returned_and_written_to_stderr() {
+        let cache = test_cache("missing-dependency");
+        let error = cache
+            .update_if_needed()
+            .expect_err("missing dependency should be reported");
+
+        assert!(matches!(error, RustdocError::DependencyNotFound(_)));
+        let stderr = fs::read_to_string(cache.root.join("definitely_missing_galvan_dep.stderr"))
+            .expect("stderr diagnostic");
+        assert!(stderr.contains("definitely_missing_galvan_dep"));
+
+        let _ = fs::remove_dir_all(cache.root);
+    }
+
+    fn test_cache(name: &str) -> RustdocCache {
+        RustdocCache {
+            crate_name: "definitely_missing_galvan_dep".into(),
+            root: unique_temp_dir(name),
+        }
+    }
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        path.push(format!(
+            "galvan-rustdoc-cache-{name}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
     }
 }

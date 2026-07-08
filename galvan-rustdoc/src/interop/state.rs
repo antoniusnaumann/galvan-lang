@@ -83,7 +83,9 @@ impl RustInterop {
             let cache = RustdocCache::new(&crate_name);
             match cache.update_if_needed() {
                 Ok(()) => {}
-                Err(RustdocError::DependencyNotFound(_)) => continue,
+                Err(RustdocError::DependencyNotFound(_) | RustdocError::RustdocSpawn(_)) => {
+                    continue;
+                }
                 Err(error) => return Err(error),
             }
             if let Some(path) = cache.json_path() {

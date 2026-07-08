@@ -124,8 +124,8 @@ fn dependency_fingerprint(
         }
         if let Some(source_dir) = manifest_path.parent() {
             parts.push(format!("source_dir={}", source_dir.display()));
-            if let Some(mtime) = path_mtime(source_dir) {
-                parts.push(format!("source_dir_mtime={mtime}"));
+            if let Some(mtime) = source_tree_max_mtime(source_dir) {
+                parts.push(format!("source_tree_mtime={mtime}"));
             }
         }
     }
@@ -177,6 +177,42 @@ fn path_mtime(path: &Path) -> Option<String> {
         duration.as_secs(),
         duration.subsec_nanos()
     ))
+}
+
+fn source_tree_max_mtime(root: &Path) -> Option<String> {
+    let max = max_file_modified(root)?;
+    let duration = max.duration_since(UNIX_EPOCH).ok()?;
+    Some(format!(
+        "{}.{:09}",
+        duration.as_secs(),
+        duration.subsec_nanos()
+    ))
+}
+
+fn max_file_modified(path: &Path) -> Option<std::time::SystemTime> {
+    let metadata = fs::metadata(path).ok()?;
+    if metadata.is_file() {
+        return metadata.modified().ok();
+    }
+    if !metadata.is_dir() {
+        return None;
+    }
+
+    let mut max: Option<std::time::SystemTime> = None;
+    for entry in fs::read_dir(path).ok()? {
+        let entry = entry.ok()?;
+        let file_name = entry.file_name();
+        if file_name == ".git" || file_name == "target" {
+            continue;
+        }
+        if let Some(modified) = max_file_modified(&entry.path()) {
+            max = Some(match max {
+                Some(max) => max.max(modified),
+                None => modified,
+            });
+        }
+    }
+    max
 }
 
 /// Returns the name of the package's library target, if it has one.
@@ -291,6 +327,22 @@ checksum = "abc"
     }
 
     #[test]
+    fn source_tree_mtime_tracks_nested_file_edits() {
+        let root = unique_temp_dir("source-tree-mtime");
+        let src = root.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("lib.rs"), "pub fn first() {}").unwrap();
+        let first = source_tree_max_mtime(&root).expect("source mtime");
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        fs::write(src.join("lib.rs"), "pub fn second() {}").unwrap();
+        let second = source_tree_max_mtime(&root).expect("updated source mtime");
+
+        assert_ne!(first, second);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn ignores_non_library_targets_when_choosing_lib_name() {
         let metadata = json!({
             "packages": [{
@@ -346,5 +398,18 @@ checksum = "abc"
         });
 
         assert!(resolve_dependency(&metadata, "some_crate").is_none());
+    }
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        path.push(format!(
+            "galvan-rustdoc-{name}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
     }
 }
