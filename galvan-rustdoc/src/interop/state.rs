@@ -81,7 +81,11 @@ impl RustInterop {
 
         for crate_name in crate_names {
             let cache = RustdocCache::new(&crate_name);
-            cache.update_if_needed();
+            match cache.update_if_needed() {
+                Ok(()) => {}
+                Err(RustdocError::DependencyNotFound(_)) => continue,
+                Err(error) => return Err(error),
+            }
             if let Some(path) = cache.json_path() {
                 let text = fs::read_to_string(&path)
                     .map_err(|error| RustdocError::ReadCache(path.clone(), error))?;
