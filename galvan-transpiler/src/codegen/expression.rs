@@ -1336,6 +1336,90 @@ mod tests {
     }
 
     #[test]
+    fn imported_generic_types_render_with_qualified_path_and_type_args() {
+        use galvan_ast::{
+            BasicTypeItem, GenericTypeItem, ParametricTypeItem, StructTypeDecl, ToplevelItem,
+            TupleTypeDecl, TupleTypeMember, TypeDecl, Visibility,
+        };
+        use galvan_files::Source;
+        use galvan_hir::mapping::RustType;
+
+        // An external tuple struct `Json<T>` imported from axum: registered in the
+        // lookup and mapped to its fully-qualified Rust path. The `HealthResponse`
+        // type argument is a local struct, so it renders unqualified.
+        let json_decl = ToplevelItem {
+            item: TypeDecl::Tuple(TupleTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new("Json"),
+                generic_params: vec![Ident::new("T")],
+                members: vec![TupleTypeMember {
+                    r#type: TypeElement::Generic(GenericTypeItem {
+                        ident: Ident::new("T"),
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            }),
+            source: Source::Builtin,
+        };
+        let health_decl = ToplevelItem {
+            item: TypeDecl::Struct(StructTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new("HealthResponse"),
+                generic_params: Vec::new(),
+                members: Vec::new(),
+                span: Span::default(),
+            }),
+            source: Source::Builtin,
+        };
+
+        let mut mapping = Mapping::default();
+        mapping.types.insert(
+            TypeIdent::new("Json"),
+            RustType::new("::axum::Json", "::axum::Json", "::axum::Json", false),
+        );
+        let mut ctx = Context::new(mapping);
+        ctx.lookup.types.insert(TypeIdent::new("Json"), &json_decl);
+        ctx.lookup
+            .types
+            .insert(TypeIdent::new("HealthResponse"), &health_decl);
+        let mut errors = ErrorCollector::new();
+
+        let plain = TypeElement::Parametric(ParametricTypeItem {
+            base_type: TypeIdent::new("Json"),
+            type_args: vec![TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("HealthResponse"),
+                span: Span::default(),
+            })],
+            span: Span::default(),
+        });
+        assert_eq!(
+            plain.transpile(&ctx, &mut errors),
+            "::axum::Json<HealthResponse>"
+        );
+
+        // A Galvan list type argument lowers to `Vec`, still under the qualified path.
+        let nested = TypeElement::Parametric(ParametricTypeItem {
+            base_type: TypeIdent::new("Json"),
+            type_args: vec![TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+                elements: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("HealthResponse"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }))],
+            span: Span::default(),
+        });
+        assert_eq!(
+            nested.transpile(&ctx, &mut errors),
+            "::axum::Json<::std::vec::Vec<HealthResponse>>"
+        );
+
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
     fn rust_associated_function_paths_render_as_rust_paths() {
         let call = HirFunctionCall {
             namespace: None,

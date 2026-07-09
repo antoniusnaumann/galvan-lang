@@ -1,9 +1,9 @@
 use galvan_ast::{
     ArrayTypeItem, BasicTypeItem, Body, Declaration, EmptyTypeDecl, Expression, ExpressionKind,
     FnDecl, FnSignature, GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator,
-    Ownership, Param, ParamList, ParametricTypeItem, SegmentedAsts, Span, StringLiteral,
-    ToplevelItem, TupleTypeDecl, TupleTypeItem, TupleTypeMember, TypeDecl, TypeElement, TypeIdent,
-    UseDecl, UsePath, Visibility,
+    Ownership, Param, ParamList, ParametricTypeItem, SegmentedAsts, Span, ToplevelItem,
+    TupleTypeDecl, TupleTypeItem, TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl,
+    UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -1826,66 +1826,11 @@ fn imported_rust_tuple_struct_constructors_are_typechecked_as_tuple_constructors
     );
     rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
 
-    let constructor_expr = Expression {
-        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
-            identifier: TypeIdent::new("Json"),
-            arguments: vec![galvan_ast::ConstructorCallArg {
-                ident: Ident::new("value"),
-                modifier: None,
-                expression: Expression {
-                    kind: ExpressionKind::Literal(
-                        StringLiteral {
-                            value: "ok".to_string(),
-                            interpolations: vec![],
-                            span: Span::default(),
-                        }
-                        .into(),
-                    ),
-                    span: Span::default(),
-                },
-            }],
-        }),
-        span: Span::default(),
-    };
-    let call_fn = ToplevelItem {
-        item: FnDecl {
-            signature: FnSignature {
-                visibility: Visibility::public(),
-                identifier: Ident::new("response"),
-                parameters: ParamList {
-                    params: vec![],
-                    span: Span::default(),
-                },
-                return_type: TypeElement::Plain(BasicTypeItem {
-                    ident: TypeIdent::new("Json"),
-                    span: Span::default(),
-                }),
-                where_clause: None,
-                span: Span::default(),
-            },
-            body: Body {
-                statements: vec![constructor_expr.into()],
-                span: Span::default(),
-            },
-            span: Span::default(),
-        },
-        source: Source::Builtin,
-    };
-    let (module, errors) = typecheck_with_interop(
-        SegmentedAsts {
-            uses: vec![use_decl(&["external", "Json"])],
-            types: vec![],
-            functions: vec![call_fn],
-            tests: vec![],
-            main: None,
-            cmds: vec![],
-        },
+    let module = lower_with_interop(
+        "fn response() -> Json {
+             Json(\"ok\")
+         }",
         &rust_interop,
-    )
-    .expect("test AST should typecheck");
-    assert!(
-        !errors.has_errors(),
-        "expected no type errors, got: {errors}"
     );
     let tail = trailing(function(&module, "response"));
 
@@ -1926,75 +1871,22 @@ fn imported_rust_tuple_struct_constructors_preserve_expected_parametric_type() {
     );
     rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
 
-    let constructor_expr = Expression {
-        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
-            identifier: TypeIdent::new("Json"),
-            arguments: vec![galvan_ast::ConstructorCallArg {
-                ident: Ident::new("value"),
-                modifier: None,
-                expression: Expression {
-                    kind: ExpressionKind::Literal(
-                        StringLiteral {
-                            value: "ok".to_string(),
-                            interpolations: vec![],
-                            span: Span::default(),
-                        }
-                        .into(),
-                    ),
-                    span: Span::default(),
-                },
-            }],
-        }),
-        span: Span::default(),
-    };
-    let return_type = TypeElement::Parametric(ParametricTypeItem {
-        base_type: TypeIdent::new("Json"),
-        type_args: vec![TypeElement::Plain(BasicTypeItem {
-            ident: TypeIdent::new("String"),
-            span: Span::default(),
-        })],
-        span: Span::default(),
-    });
-    let call_fn = ToplevelItem {
-        item: FnDecl {
-            signature: FnSignature {
-                visibility: Visibility::public(),
-                identifier: Ident::new("response"),
-                parameters: ParamList {
-                    params: vec![],
-                    span: Span::default(),
-                },
-                return_type: return_type.clone(),
-                where_clause: None,
-                span: Span::default(),
-            },
-            body: Body {
-                statements: vec![constructor_expr.into()],
-                span: Span::default(),
-            },
-            span: Span::default(),
-        },
-        source: Source::Builtin,
-    };
-    let (module, errors) = typecheck_with_interop(
-        SegmentedAsts {
-            uses: vec![use_decl(&["external", "Json"])],
-            types: vec![],
-            functions: vec![call_fn],
-            tests: vec![],
-            main: None,
-            cmds: vec![],
-        },
+    let module = lower_with_interop(
+        "fn response() -> Json<String> {
+             Json(\"ok\")
+         }",
         &rust_interop,
-    )
-    .expect("test AST should typecheck");
-    assert!(
-        !errors.has_errors(),
-        "expected no type errors, got: {errors}"
     );
     let tail = trailing(function(&module, "response"));
 
-    assert_eq!(tail.ty, return_type);
+    let TypeElement::Parametric(parametric) = &tail.ty else {
+        panic!("expected parametric Json type, got {:?}", tail.ty);
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Json"));
+    let [TypeElement::Plain(arg)] = parametric.type_args.as_slice() else {
+        panic!("expected Json<String>, got {:?}", parametric.type_args);
+    };
+    assert_eq!(arg.ident, TypeIdent::new("String"));
 }
 
 #[test]
@@ -2020,71 +1912,11 @@ fn imported_rust_tuple_struct_constructors_infer_parametric_type_from_arguments(
     );
     rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
 
-    let constructor_expr = Expression {
-        kind: ExpressionKind::ConstructorCall(galvan_ast::ConstructorCall {
-            identifier: TypeIdent::new("Json"),
-            arguments: vec![galvan_ast::ConstructorCallArg {
-                ident: Ident::new("value"),
-                modifier: None,
-                expression: Expression {
-                    kind: ExpressionKind::Literal(
-                        StringLiteral {
-                            value: "ok".to_string(),
-                            interpolations: vec![],
-                            span: Span::default(),
-                        }
-                        .into(),
-                    ),
-                    span: Span::default(),
-                },
-            }],
-        }),
-        span: Span::default(),
-    };
-    let check_fn = ToplevelItem {
-        item: FnDecl {
-            signature: FnSignature {
-                visibility: Visibility::public(),
-                identifier: Ident::new("check"),
-                parameters: ParamList {
-                    params: vec![],
-                    span: Span::default(),
-                },
-                return_type: TypeElement::void(),
-                where_clause: None,
-                span: Span::default(),
-            },
-            body: Body {
-                statements: vec![Declaration {
-                    decl_modifier: galvan_ast::DeclModifier::Let,
-                    identifier: Ident::new("response"),
-                    type_annotation: None,
-                    assignment_modifier: None,
-                    assignment: Some(constructor_expr),
-                    span: Span::default(),
-                }
-                .into()],
-                span: Span::default(),
-            },
-            span: Span::default(),
-        },
-        source: Source::Builtin,
-    };
-    let (module, errors) = typecheck_with_interop(
-        SegmentedAsts {
-            uses: vec![use_decl(&["external", "Json"])],
-            types: vec![],
-            functions: vec![check_fn],
-            tests: vec![],
-            main: None,
-            cmds: vec![],
-        },
+    let module = lower_with_interop(
+        "fn check() {
+             let response = Json(\"ok\")
+         }",
         &rust_interop,
-    )
-    .expect("test AST should typecheck");
-    assert!(
-        !errors.has_errors(),
-        "expected no type errors, got: {errors}"
     );
     let check = function(&module, "check");
     let HirStatement::Declaration(declaration) = &check.body.statements[0] else {
@@ -2105,6 +1937,75 @@ fn imported_rust_tuple_struct_constructors_infer_parametric_type_from_arguments(
         );
     };
     assert_eq!(arg.ident.as_str(), "String");
+}
+
+#[test]
+fn generic_external_return_types_wrap_local_struct_constructors() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "external",
+        "Json",
+        "::external::Json",
+        TypeDecl::Tuple(TupleTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Json"),
+            generic_params: vec![Ident::new("T")],
+            members: vec![TupleTypeMember {
+                r#type: TypeElement::Generic(GenericTypeItem {
+                    ident: Ident::new("T"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.import_uses(&[use_decl(&["external", "Json"])]);
+
+    // Mirrors the axum north-star: an external generic type in return position
+    // wrapping a locally declared struct built with named-field arguments.
+    let module = lower_with_interop(
+        "type HealthResponse {
+             service: String,
+             status: String,
+         }
+         fn health() -> Json<HealthResponse> {
+             Json(HealthResponse(service: \"galvan\", status: \"ok\"))
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "health"));
+
+    let TypeElement::Parametric(parametric) = &tail.ty else {
+        panic!("expected parametric Json type, got {:?}", tail.ty);
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Json"));
+    let [TypeElement::Plain(arg)] = parametric.type_args.as_slice() else {
+        panic!(
+            "expected Json<HealthResponse>, got {:?}",
+            parametric.type_args
+        );
+    };
+    assert_eq!(arg.ident, TypeIdent::new("HealthResponse"));
+}
+
+#[test]
+fn positional_arguments_on_named_structs_are_rejected() {
+    let (_module, errors) = lower_with_diagnostics(
+        "type Ticket { title: String }
+         fn make() -> Ticket { Ticket(\"hello\") }",
+    );
+    let messages = errors
+        .errors()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("Ticket") && message.contains("named")),
+        "expected a named-field diagnostic, got: {messages:?}"
+    );
 }
 
 #[test]

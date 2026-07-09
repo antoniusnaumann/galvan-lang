@@ -4,13 +4,13 @@ use std::collections::HashMap;
 
 use galvan_ast::{
     AssociatedConstant, AssociatedFunctionCall, BasicTypeItem, Closure, ClosureParameter,
-    ClosureTypeItem, CollectionLiteral, ComparisonOperator, ConstructorCall, DeclModifier,
-    DictLiteralElement, ElseExpression, EnumConstructor, Expression, ExpressionKind, FnSignature,
-    FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation, Literal, MatchArm,
-    MatchBindingPattern, MatchExpression, MatchNamedPatternArg, MatchPattern, MatchPatternArg,
-    MemberOperator, NeverTypeItem, OptionalTypeItem, Ownership, Param, ParametricTypeItem,
-    PostfixExpression, ResultTypeItem, Span, TupleTypeItem, TypeDecl, TypeElement, TypeIdent,
-    UsePath,
+    ClosureTypeItem, CollectionLiteral, ComparisonOperator, ConstructorCall, ConstructorCallArg,
+    DeclModifier, DictLiteralElement, ElseExpression, EnumConstructor, Expression, ExpressionKind,
+    FnSignature, FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation, Literal,
+    MatchArm, MatchBindingPattern, MatchExpression, MatchNamedPatternArg, MatchPattern,
+    MatchPatternArg, MemberOperator, NeverTypeItem, OptionalTypeItem, Ownership, Param,
+    ParametricTypeItem, PostfixExpression, ResultTypeItem, Span, TupleTypeItem, TypeDecl,
+    TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -3033,13 +3033,14 @@ impl Checker<'_> {
 
         let args = match type_decl.map(|decl| &decl.item) {
             Some(TypeDecl::Struct(decl)) => {
+                self.reject_positional_struct_arguments(constructor, span);
                 let mut args = Vec::with_capacity(decl.members.len());
                 for member in &decl.members {
                     let is_ref_field = matches!(member.decl_modifier, Some(DeclModifier::Ref));
                     let provided = constructor
                         .arguments
                         .iter()
-                        .find(|argument| argument.ident == member.ident);
+                        .find(|argument| argument.field_name.as_ref() == Some(&member.ident));
                     let value = match provided {
                         Some(argument) => {
                             let mut value = self.lower_modified_value(
@@ -3114,7 +3115,7 @@ impl Checker<'_> {
                             &mut inferred_type_args,
                         );
                         HirConstructorArg {
-                            field: argument.ident.clone(),
+                            field: tuple_field_name(argument, idx),
                             value,
                             store_as_ref: false,
                             rust_arg_conversion: rust_arg_conversions
@@ -3129,7 +3130,8 @@ impl Checker<'_> {
             _ => constructor
                 .arguments
                 .iter()
-                .map(|argument| {
+                .enumerate()
+                .map(|(idx, argument)| {
                     let value = self.lower_modified_value(
                         &argument.expression,
                         argument.modifier,
@@ -3138,7 +3140,7 @@ impl Checker<'_> {
                     );
                     let value = self.ensure_owned(value);
                     HirConstructorArg {
-                        field: argument.ident.clone(),
+                        field: tuple_field_name(argument, idx),
                         value,
                         store_as_ref: false,
                         rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
@@ -3157,6 +3159,27 @@ impl Checker<'_> {
             Ownership::UniqueOwned,
             span,
         )
+    }
+
+    /// Named structs must be constructed with `field: value` arguments. Anonymous
+    /// (positional) arguments are only valid for tuple structs, so reject them here
+    /// with a targeted diagnostic instead of letting them surface as missing fields.
+    fn reject_positional_struct_arguments(&mut self, constructor: &ConstructorCall, span: Span) {
+        if constructor
+            .arguments
+            .iter()
+            .any(|argument| argument.field_name.is_none())
+        {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: format!(
+                        "constructor for struct `{}` requires named `field: value` arguments",
+                        constructor.identifier
+                    ),
+                },
+                Some(span.into()),
+            );
+        }
     }
 
     fn lower_enum_constructor(
@@ -3404,6 +3427,16 @@ fn substitute_signature_generics(
         param.param_type.substitute_generics(substitutions);
     }
     signature.return_type.substitute_generics(substitutions);
+}
+
+/// The field identifier stored for a tuple-struct constructor argument. Tuple
+/// fields are positional, so an anonymous argument is keyed by its index; a name
+/// is only present when the caller redundantly labelled the argument.
+fn tuple_field_name(argument: &ConstructorCallArg, index: usize) -> Ident {
+    argument
+        .field_name
+        .clone()
+        .unwrap_or_else(|| Ident::new(&index.to_string()))
 }
 
 fn constructor_result_type(

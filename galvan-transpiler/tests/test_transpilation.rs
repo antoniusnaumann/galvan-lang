@@ -363,3 +363,11 @@ fn rejects_invalid_main_function_signatures() {
     assert!(transpile(vec![Source::from_string("main {}")]).is_err());
     assert!(transpile(vec![Source::from_string("fn main() {} cmd main() {}")]).is_err());
 }
+
+#[test]
+fn transpiles_positional_tuple_struct_construction() {
+    let output = transpile_source("type Wrapper(Int)\nfn make() -> Wrapper { Wrapper(5) }");
+
+    assert!(output.contains("struct Wrapper(i64)"));
+    assert!(output.contains("Wrapper(5)"));
+}
