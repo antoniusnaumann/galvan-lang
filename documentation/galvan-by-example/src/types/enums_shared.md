@@ -30,7 +30,3 @@ let theme = Theme::Dark(
     foreground: Color(r: 255, g: 255, b: 255),
 )
 ```
-
-In Rust this pattern requires either duplicating the field in every variant or
-wrapping an inner enum in a struct — Galvan's design generates that
-boilerplate instead of making you write it.
