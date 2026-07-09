@@ -21,10 +21,6 @@ fn main() {
 }
 ```
 
-- `maybe_dog?.name` has type `String?`.
-- Safe calls work for methods too: `maybe_score?.double()`.
-- Safe calls also skip past the error of a result, yielding an optional.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -60,3 +56,7 @@ pub(crate) fn __main__() {
 optional remains usable afterwards.
 
 </details>
+
+- `maybe_dog?.name` has type `String?`.
+- Safe calls work for methods too: `maybe_score?.double()`.
+- Safe calls also skip past the error of a result, yielding an optional.

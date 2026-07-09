@@ -19,11 +19,6 @@ fn main() {
 }
 ```
 
-- Both call spellings are equivalent; postfix `.mut` reads better in chains.
-- Only `mut` (or `ref`) bindings can be passed to `mut` parameters.
-- Forgetting the call-site annotation is an error — a call that mutates
-  its arguments is always visible as such.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -47,3 +42,8 @@ immutable references in user code — the default value mode covers reading, so
 `&mut` is the only reference type that surfaces from this feature.
 
 </details>
+
+- Both call spellings are equivalent; postfix `.mut` reads better in chains.
+- Only `mut` (or `ref`) bindings can be passed to `mut` parameters.
+- Forgetting the call-site annotation is an error — a call that mutates
+  its arguments is always visible as such.

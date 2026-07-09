@@ -18,6 +18,22 @@ fn main() {
 }
 ```
 
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+pub(crate) fn __main__() {
+    let price: _ = 20;
+    let mut count: _ = 1;
+    count += 1;
+    let label: String = format!("total");
+    let label: String = format!("{}: {}", label, price * count);
+    println!("{}", &label);
+}
+```
+
+</details>
+
 Assigning a variable to another variable **copies** the value. There is no
 move semantics at the surface level — the original stays usable and the copy
 is independent:
@@ -36,17 +52,6 @@ fn main() {
 
 <details>
 <summary>Generated Rust</summary>
-
-```rust
-pub(crate) fn __main__() {
-    let price: _ = 20;
-    let mut count: _ = 1;
-    count += 1;
-    let label: String = format!("total");
-    let label: String = format!("{}: {}", label, price * count);
-    println!("{}", &label);
-}
-```
 
 ```rust
 pub(crate) fn __main__() {

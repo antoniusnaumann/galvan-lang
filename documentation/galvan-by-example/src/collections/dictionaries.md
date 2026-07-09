@@ -21,9 +21,6 @@ fn main() {
 }
 ```
 
-Iteration order of a dictionary is unspecified — reach for an
-[ordered dictionary](ordered_dictionaries.md) when order matters.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -44,3 +41,6 @@ Index assignment becomes `insert`; reads use Rust's indexing (which panics on
 a missing key, matching Galvan's semantics for `[]`).
 
 </details>
+
+Iteration order of a dictionary is unspecified — reach for an
+[ordered dictionary](ordered_dictionaries.md) when order matters.

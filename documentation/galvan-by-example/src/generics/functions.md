@@ -19,11 +19,6 @@ fn main() {
 }
 ```
 
-- `where t: ToString` — one bound; `where a, b: ToString` — the same bound
-  for two parameters.
-- A generic `self` parameter turns the function into a method on *every*
-  conforming type: `15.repr()`, `"fragile".repr()`.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -73,3 +68,8 @@ A generic free function is a generic Rust function; a generic *method* becomes
 a blanket-implemented extension trait.
 
 </details>
+
+- `where t: ToString` — one bound; `where a, b: ToString` — the same bound
+  for two parameters.
+- A generic `self` parameter turns the function into a method on *every*
+  conforming type: `15.repr()`, `"fragile".repr()`.

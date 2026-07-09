@@ -17,10 +17,6 @@ fn main() {
 }
 ```
 
-- `++=` inserts an element; inserting an existing value is a no-op.
-- Two sets merge with `++` (union) — see
-  [Collection Operators](operators.md).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -37,3 +33,7 @@ pub(crate) fn __main__() {
 `in` lowers to `.contains(..)` with the borrow inserted automatically.
 
 </details>
+
+- `++=` inserts an element; inserting an existing value is a no-op.
+- Two sets merge with `++` (union) — see
+  [Collection Operators](operators.md).

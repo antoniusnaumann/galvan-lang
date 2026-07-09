@@ -15,18 +15,6 @@ fn main() {
 }
 ```
 
-Two boundaries keep the syntax unambiguous:
-
-- Calls with **no** arguments always need parentheses — `report()` — since a
-  bare name is a variable reference.
-- Paren-free calls cannot nest inside other call arguments.
-
-> [!WARNING]
-> The design also allows paren-free calls on the right-hand side of an
-> assignment (`let result = add 2, 3`), but that position does not parse
-> yet — today the syntax works in statement position and for
-> [trailing closures](../closures/trailing.md) in member chains.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -50,3 +38,15 @@ Purely syntactic sugar — the generated call is identical to the
 parenthesized form.
 
 </details>
+
+Two boundaries keep the syntax unambiguous:
+
+- Calls with **no** arguments always need parentheses — `report()` — since a
+  bare name is a variable reference.
+- Paren-free calls cannot nest inside other call arguments.
+
+> [!WARNING]
+> The design also allows paren-free calls on the right-hand side of an
+> assignment (`let result = add 2, 3`), but that position does not parse
+> yet — today the syntax works in statement position and for
+> [trailing closures](../closures/trailing.md) in member chains.

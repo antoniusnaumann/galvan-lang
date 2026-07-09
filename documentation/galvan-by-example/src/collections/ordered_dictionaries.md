@@ -20,12 +20,6 @@ fn main() {
 }
 ```
 
-> [!WARNING]
-> **Backing type mismatch.** Ordered dictionaries are designed to preserve
-> *insertion* order backed by `IndexMap`, but the transpiler currently emits
-> `BTreeMap`, which sorts by *key* instead. The API works; the iteration
-> order differs from the design until this is fixed.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -42,3 +36,9 @@ pub(crate) fn __main__() {
 ```
 
 </details>
+
+> [!WARNING]
+> **Backing type mismatch.** Ordered dictionaries are designed to preserve
+> *insertion* order backed by `IndexMap`, but the transpiler currently emits
+> `BTreeMap`, which sorts by *key* instead. The API works; the iteration
+> order differs from the design until this is fixed.

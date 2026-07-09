@@ -18,11 +18,6 @@ fn main() {
 }
 ```
 
-By-value does **not** mean a deep copy at runtime. The transpiler passes a
-borrow whenever the callee only reads the value, and clones only where
-ownership is genuinely needed (for example when storing the argument in a
-struct).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -44,3 +39,8 @@ borrow underneath. This is the central trick of Galvan's ownership model —
 copy-on-write-style defaults with zero annotations.
 
 </details>
+
+By-value does **not** mean a deep copy at runtime. The transpiler passes a
+borrow whenever the callee only reads the value, and clones only where
+ownership is genuinely needed (for example when storing the argument in a
+struct).

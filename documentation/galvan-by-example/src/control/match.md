@@ -26,11 +26,6 @@ fn main() {
 }
 ```
 
-- Variant names appear without the type prefix inside `match`.
-- Named fields can be bound (`r: red`), ignored (`g: _`), and listed in any
-  order.
-- `_` is the catch-all pattern.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -73,3 +68,8 @@ Patterns expand to fully qualified Rust patterns; the scrutinee is cloned so
 that matching never consumes the matched value.
 
 </details>
+
+- Variant names appear without the type prefix inside `match`.
+- Named fields can be bound (`r: red`), ignored (`g: _`), and listed in any
+  order.
+- `_` is the catch-all pattern.

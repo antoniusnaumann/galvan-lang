@@ -19,15 +19,6 @@ fn main() {
 }
 ```
 
-- On arrays, `++` concatenates arrays and appends single elements.
-- On sets, `++` is union; `++=` with a single element inserts it.
-- On strings, `++` concatenates strings and single characters.
-- `in` (also spelled `∈`) works on arrays, sets, and dictionaries (keys).
-
-> [!WARNING]
-> **Not implemented yet:** removal `--`, repetition `**`, and slicing `[:]`
-> are designed as the counterparts of `++` but do not transpile yet.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -63,3 +54,12 @@ element, `union` for sets, and `format!` for strings — the typechecker picks
 the right one.
 
 </details>
+
+- On arrays, `++` concatenates arrays and appends single elements.
+- On sets, `++` is union; `++=` with a single element inserts it.
+- On strings, `++` concatenates strings and single characters.
+- `in` (also spelled `∈`) works on arrays, sets, and dictionaries (keys).
+
+> [!WARNING]
+> **Not implemented yet:** removal `--`, repetition `**`, and slicing `[:]`
+> are designed as the counterparts of `++` but do not transpile yet.

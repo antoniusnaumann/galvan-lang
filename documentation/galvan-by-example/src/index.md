@@ -18,7 +18,8 @@ curve — but every page also stands on its own if you are looking something up.
 
 ## How to read this book
 
-Most examples end with a collapsible **Generated Rust** section:
+Each example is followed directly by a collapsible **Generated Rust**
+section:
 
 <details>
 <summary>Generated Rust</summary>

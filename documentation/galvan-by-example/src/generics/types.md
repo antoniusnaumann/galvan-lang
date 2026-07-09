@@ -20,9 +20,6 @@ fn main() {
 }
 ```
 
-No `<t>` is needed on the declaration — using `t` in a field *is* the
-declaration. Construction infers the parameter from the argument.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -50,3 +47,6 @@ Galvan's value-semantics contract: every generic value must be clonable to an
 owned form.
 
 </details>
+
+No `<t>` is needed on the declaration — using `t` in a field *is* the
+declaration. Construction infers the parameter from the argument.

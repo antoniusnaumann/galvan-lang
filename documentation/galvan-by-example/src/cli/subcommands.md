@@ -34,9 +34,6 @@ $ my-app greet -n Grace -s Hopper
 Hello Grace Hopper!
 ```
 
-Required flags come from required parameters (`String`), optional flags from
-optional ones (`String?`).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -75,3 +72,6 @@ Each `cmd` contributes a variant to the generated `Commands` enum and an args
 struct with `clap` attributes assembled from the declaration.
 
 </details>
+
+Required flags come from required parameters (`String`), optional flags from
+optional ones (`String?`).

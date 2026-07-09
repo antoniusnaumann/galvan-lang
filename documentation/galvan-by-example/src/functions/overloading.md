@@ -24,20 +24,6 @@ fn main() {
 }
 ```
 
-- `plus increment: U8` declares a parameter named `increment` that callers
-  address as `plus:`.
-- The `~` marker means "the label is the parameter name itself" —
-  `~ fallback` is short for `fallback fallback`.
-- The first (unlabeled) parameter never takes a label, which keeps simple
-  calls simple.
-
-The same mechanism works for methods:
-
-```galvan
-fn adjusted(self: Score) -> U8 { self.value }
-fn adjusted(self: Score, by amount: U8) -> U8 { self.value + amount }
-```
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -62,3 +48,17 @@ forbid double underscores precisely so these generated names can never clash
 with user code.
 
 </details>
+
+- `plus increment: U8` declares a parameter named `increment` that callers
+  address as `plus:`.
+- The `~` marker means "the label is the parameter name itself" —
+  `~ fallback` is short for `fallback fallback`.
+- The first (unlabeled) parameter never takes a label, which keeps simple
+  calls simple.
+
+The same mechanism works for methods:
+
+```galvan
+fn adjusted(self: Score) -> U8 { self.value }
+fn adjusted(self: Score, by amount: U8) -> U8 { self.value + amount }
+```

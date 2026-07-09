@@ -32,12 +32,6 @@ fn main() {
 }
 ```
 
-- The `else` branch is optional when `try` is used as a statement.
-- On results, `else |error|` binds the error value; with implicit `it`, the
-  main block's `it` is the success value and the `else` block's `it` is the
-  error.
-- `try` borrows — the optional or result stays usable after the expression.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -76,3 +70,9 @@ small `r#try` helper from the `galvan` runtime crate, which runs the closure
 only when a value is present.
 
 </details>
+
+- The `else` branch is optional when `try` is used as a statement.
+- On results, `else |error|` binds the error value; with implicit `it`, the
+  main block's `it` is the success value and the `else` block's `it` is the
+  error.
+- `try` borrows — the optional or result stays usable after the expression.

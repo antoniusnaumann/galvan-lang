@@ -27,8 +27,6 @@ fn main() {
 }
 ```
 
-`±` can also be written `+-`.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -54,3 +52,5 @@ All four forms lower to Rust's two range types; `±` and `..+` are computed
 bounds, not new runtime types.
 
 </details>
+
+`±` can also be written `+-`.

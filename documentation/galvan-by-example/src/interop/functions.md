@@ -14,11 +14,6 @@ fn main() {
 }
 ```
 
-Because `serde_json::to_string` returns a Rust `Result`, it arrives in Galvan
-as a [result type](../errors/results.md) — all the error-handling operators
-(`else`, `try`, postfix `!`) apply to foreign functions exactly as to local
-ones.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -39,3 +34,8 @@ The call goes straight to the crate — Galvan inserts the borrow (`&scores`)
 that the Rust signature asks for.
 
 </details>
+
+Because `serde_json::to_string` returns a Rust `Result`, it arrives in Galvan
+as a [result type](../errors/results.md) — all the error-handling operators
+(`else`, `try`, postfix `!`) apply to foreign functions exactly as to local
+ones.

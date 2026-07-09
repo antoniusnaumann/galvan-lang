@@ -20,20 +20,6 @@ fn main() {
 }
 ```
 
-- Write through: `alias = "Bye"` would change `message` too.
-- Rebind: `alias = ref farewell` leaves `message` untouched.
-
-Identity of `ref` handles is compared with `===` / `!==` (pointer equality),
-while `==` compares the referenced values:
-
-```galvan
-let same_target = alias === message
-```
-
-> [!WARNING]
-> `===` parses and lowers to `Arc::ptr_eq`, but the generated call currently
-> passes owned handles where Rust expects borrows and does not compile yet.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -55,3 +41,17 @@ Non-primitive `ref` values are `Arc<Mutex<T>>`; writes lock, rebinds clone the
 value into the shared representation.
 
 </details>
+
+- Write through: `alias = "Bye"` would change `message` too.
+- Rebind: `alias = ref farewell` leaves `message` untouched.
+
+Identity of `ref` handles is compared with `===` / `!==` (pointer equality),
+while `==` compares the referenced values:
+
+```galvan
+let same_target = alias === message
+```
+
+> [!WARNING]
+> `===` parses and lowers to `Arc::ptr_eq`, but the generated call currently
+> passes owned handles where Rust expects borrows and does not compile yet.

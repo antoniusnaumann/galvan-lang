@@ -22,11 +22,6 @@ fn main() {
 }
 ```
 
-- `none` is the absent value.
-- `count else { 0 }` unwraps with a fallback — see
-  [Fallbacks with else](else.md).
-- A `for` loop over an optional runs its body only when a value is present.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -54,3 +49,8 @@ Auto-wrapping inserts the `Some(..)` calls; `Option`'s `IntoIterator` gives
 the zero-or-one-iteration loop for free.
 
 </details>
+
+- `none` is the absent value.
+- `count else { 0 }` unwraps with a fallback — see
+  [Fallbacks with else](else.md).
+- A `for` loop over an optional runs its body only when a value is present.

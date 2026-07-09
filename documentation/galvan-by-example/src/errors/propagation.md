@@ -29,12 +29,6 @@ fn main() {
 }
 ```
 
-> [!NOTE]
-> Why `!` and not `?`? In Galvan, `?` always means "continue safely without
-> the value" (as in [safe calls](safe_calls.md)), while `!` marks the points
-> where a function can bail out. Scanning a function for `!` shows every
-> early exit.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -68,3 +62,9 @@ pub(crate) fn __main__() {
 Postfix `!` is exactly Rust's `?`.
 
 </details>
+
+> [!NOTE]
+> Why `!` and not `?`? In Galvan, `?` always means "continue safely without
+> the value" (as in [safe calls](safe_calls.md)), while `!` marks the points
+> where a function can bail out. Scanning a function for `!` shows every
+> early exit.

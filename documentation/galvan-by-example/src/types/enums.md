@@ -19,11 +19,6 @@ fn main() {
 }
 ```
 
-- Variants are constructed and referenced with `Type::Variant`.
-- Named-field variants use the same named-argument syntax as struct
-  construction.
-- Enums are inspected with [`match`](../control/match.md).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -51,3 +46,8 @@ Galvan enums are Rust enums, one to one — bare variants, tuple variants, and
 struct variants.
 
 </details>
+
+- Variants are constructed and referenced with `Type::Variant`.
+- Named-field variants use the same named-argument syntax as struct
+  construction.
+- Enums are inspected with [`match`](../control/match.md).

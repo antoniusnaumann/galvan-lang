@@ -14,16 +14,6 @@ fn main() {
 }
 ```
 
-```galvan
-use serde_json::to_string
-```
-
-- Namespace-qualified access (`serde_json::to_string(..)`) always works,
-  with or without `use`.
-- If two imported crates export the same name, the unqualified import is
-  suppressed and the qualified syntax remains — ambiguity is never resolved
-  silently in favor of one crate.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -44,3 +34,13 @@ Galvan resolves the import at transpile time and emits the fully qualified
 path either way.
 
 </details>
+
+```galvan
+use serde_json::to_string
+```
+
+- Namespace-qualified access (`serde_json::to_string(..)`) always works,
+  with or without `use`.
+- If two imported crates export the same name, the unqualified import is
+  suppressed and the qualified syntax remains — ambiguity is never resolved
+  silently in favor of one crate.

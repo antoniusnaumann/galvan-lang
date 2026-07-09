@@ -24,19 +24,6 @@ fn main() {
 }
 ```
 
-- The error type follows the `!`: `Float!String`, `Int!IoError`, …
-- Omitting it (`Float!`) selects the *flexible* error type, and a bare `-> !`
-  is shorthand for `Void!` — a fallible function with no success payload.
-- `throw` accepts any value of the error type.
-
-> [!WARNING]
-> **Partially implemented.** Typed errors (`T!E`) are solid. Flexible-error
-> results (`T!`, backed by `anyhow`) declare and propagate fine — including
-> from [Rust crates](../interop/liftings.md) — but `throw`ing a value into
-> one currently generates Rust that misses the `anyhow` conversion and does
-> not compile. Bare `-> !` functions additionally miss their implicit `Ok`
-> for the success path.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -65,3 +52,16 @@ pub(crate) fn __main__() {
 `Ok(..)` automatically.
 
 </details>
+
+- The error type follows the `!`: `Float!String`, `Int!IoError`, …
+- Omitting it (`Float!`) selects the *flexible* error type, and a bare `-> !`
+  is shorthand for `Void!` — a fallible function with no success payload.
+- `throw` accepts any value of the error type.
+
+> [!WARNING]
+> **Partially implemented.** Typed errors (`T!E`) are solid. Flexible-error
+> results (`T!`, backed by `anyhow`) declare and propagate fine — including
+> from [Rust crates](../interop/liftings.md) — but `throw`ing a value into
+> one currently generates Rust that misses the `anyhow` conversion and does
+> not compile. Bare `-> !` functions additionally miss their implicit `Ok`
+> for the success path.

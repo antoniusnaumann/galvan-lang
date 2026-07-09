@@ -13,19 +13,6 @@ type Distance = Double
 type Marker
 ```
 
-Aliases are also the idiomatic way to name collection shapes:
-
-```galvan
-pub type Inventory = {String: Int}
-pub type Waypoints = [Point]
-```
-
-> [!WARNING]
-> **Partially implemented.** Tuple types and their fields *declare*
-> correctly, but constructing them positionally (`Meters(1.87)`) does not
-> typecheck yet, and tuple member access (`.0`) is still missing. Named tuple
-> fields (`type Person(name: String, age: Int)`) do not parse yet either.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -49,3 +36,27 @@ pub(crate) struct Marker;
 ```
 
 </details>
+
+Aliases are also the idiomatic way to name collection shapes:
+
+```galvan
+pub type Inventory = {String: Int}
+pub type Waypoints = [Point]
+```
+
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+pub type Inventory = ::std::collections::HashMap<String, i64>;
+
+pub type Waypoints = ::std::vec::Vec<Point>;
+```
+
+</details>
+
+> [!WARNING]
+> **Partially implemented.** Tuple types and their fields *declare*
+> correctly, but constructing them positionally (`Meters(1.87)`) does not
+> typecheck yet, and tuple member access (`.0`) is still missing. Named tuple
+> fields (`type Person(name: String, age: Int)`) do not parse yet either.

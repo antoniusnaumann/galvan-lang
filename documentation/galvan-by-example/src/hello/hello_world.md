@@ -10,6 +10,20 @@ fn main() {
 }
 ```
 
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+pub(crate) fn __main__() {
+    print!("{}", &format!("Hello World!"));
+}
+```
+
+The generated `__main__` is called from a `fn main` that `galvan::main!()`
+expands to in `src/main.rs`.
+
+</details>
+
 `main` can optionally receive the process argument vector. The first element
 is the executable name, just like `std::env::args()` in Rust:
 
@@ -21,19 +35,8 @@ fn main(args: [String]) {
 }
 ```
 
-`[String]` is Galvan's array type — collections get their own
-[chapter](../collections/index.md) later.
-
 <details>
 <summary>Generated Rust</summary>
-
-```rust
-pub(crate) fn __main__() {
-    print!("{}", &format!("Hello World!"));
-}
-```
-
-With arguments:
 
 ```rust
 pub(crate) fn __main__() {
@@ -46,7 +49,7 @@ pub(crate) fn __main__() {
 }
 ```
 
-The generated `__main__` is called from a `fn main` that `galvan::main!()`
-expands to in `src/main.rs`.
-
 </details>
+
+`[String]` is Galvan's array type — collections get their own
+[chapter](../collections/index.md) later.

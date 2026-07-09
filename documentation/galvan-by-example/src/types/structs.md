@@ -19,11 +19,6 @@ fn main() {
 }
 ```
 
-- Fields are separated by newlines or commas.
-- `pub type` exports the type; the fields themselves stay crate-internal.
-- Field access and assignment use `.`; assigning a field requires the binding
-  to be `mut` (or `ref` — see [Ownership](../ownership/index.md)).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -48,3 +43,8 @@ Construction is a plain struct literal. `Clone`, `Debug`, and `PartialEq` are
 derived automatically — see [Auto Traits](auto_traits.md).
 
 </details>
+
+- Fields are separated by newlines or commas.
+- `pub type` exports the type; the fields themselves stay crate-internal.
+- Field access and assignment use `.`; assigning a field requires the binding
+  to be `mut` (or `ref` — see [Ownership](../ownership/index.md)).

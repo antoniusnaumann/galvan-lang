@@ -18,12 +18,6 @@ fn main() {
 }
 ```
 
-- `++` builds a new string; `++=` appends in place and requires a `mut`
-  binding.
-- Character escapes cover the usual suspects: `'\n'`, `'\t'`, `'\\'`, `'\''`.
-- String escapes and interpolation are covered in
-  [String Interpolation](../hello/interpolation.md).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -47,3 +41,9 @@ pub(crate) fn __main__() {
 `push` when the right-hand side is a `Char`.
 
 </details>
+
+- `++` builds a new string; `++=` appends in place and requires a `mut`
+  binding.
+- Character escapes cover the usual suspects: `'\n'`, `'\t'`, `'\\'`, `'\''`.
+- String escapes and interpolation are covered in
+  [String Interpolation](../hello/interpolation.md).

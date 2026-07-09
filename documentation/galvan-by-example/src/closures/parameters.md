@@ -19,10 +19,6 @@ fn main() {
 }
 ```
 
-- `|Float| Float` — one parameter; `|A, B| C` — two; `||` — none.
-- Combined with [generics](../generics/functions.md), this builds polymorphic
-  helpers like `fn map(self: [t], f: |t| u) -> [u]`.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -55,3 +51,7 @@ Closure parameters lower to `&impl Fn(..)` arguments — static dispatch, no
 boxing.
 
 </details>
+
+- `|Float| Float` — one parameter; `|A, B| C` — two; `||` — none.
+- Combined with [generics](../generics/functions.md), this builds polymorphic
+  helpers like `fn map(self: [t], f: |t| u) -> [u]`.

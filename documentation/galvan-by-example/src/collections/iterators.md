@@ -23,11 +23,6 @@ fn main() {
 }
 ```
 
-- `.map |x| { ... }` is a [trailing closure](../closures/trailing.md) —
-  argument parentheses are optional when the last argument is a closure.
-- Any iterator expression can be the subject of a `for` loop; `zip` pairs
-  unpack into multiple loop bindings.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -51,3 +46,8 @@ The chain maps one-to-one onto Rust iterator adapters. `.vec()` comes from a
 small extension trait in the `galvan` runtime crate.
 
 </details>
+
+- `.map |x| { ... }` is a [trailing closure](../closures/trailing.md) —
+  argument parentheses are optional when the last argument is a closure.
+- Any iterator expression can be the subject of a `for` loop; `zip` pairs
+  unpack into multiple loop bindings.

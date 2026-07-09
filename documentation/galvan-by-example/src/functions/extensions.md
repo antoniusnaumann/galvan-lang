@@ -23,10 +23,6 @@ fn main() {
 }
 ```
 
-Within the declaring crate, extension methods are available everywhere.
-Other crates reach them through namespace-qualified calls or a `use` import —
-see [Methods and Associated Items](../interop/methods.md).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -62,3 +58,7 @@ Extending a foreign type generates an extension trait plus an `impl` for the
 target type — the standard Rust pattern, written for you.
 
 </details>
+
+Within the declaring crate, extension methods are available everywhere.
+Other crates reach them through namespace-qualified calls or a `use` import —
+see [Methods and Associated Items](../interop/methods.md).

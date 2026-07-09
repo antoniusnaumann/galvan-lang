@@ -22,10 +22,6 @@ fn main() {
 }
 ```
 
-- Parameters are typed `name: Type`; the return type follows `->`.
-- A function without `->` returns nothing (Rust's `()`).
-- `pub fn` exports a function from the crate; plain `fn` is crate-local.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -48,3 +44,7 @@ pub(crate) fn __main__() {
 ```
 
 </details>
+
+- Parameters are typed `name: Type`; the return type follows `->`.
+- A function without `->` returns nothing (Rust's `()`).
+- `pub fn` exports a function from the crate; plain `fn` is crate-local.

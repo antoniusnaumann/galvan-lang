@@ -19,11 +19,6 @@ fn main() {
 }
 ```
 
-- `dog.bark()` and `bark(dog)` are the same call — method syntax is sugar,
-  not a separate dispatch mechanism.
-- Mutating receivers (`mut self`) and reference receivers (`ref self`) are
-  covered in [Receivers](../ownership/receivers.md).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -56,3 +51,8 @@ value (see [Pass by Value](../ownership/by_value.md)), the receiver is
 borrowed rather than consumed.
 
 </details>
+
+- `dog.bark()` and `bark(dog)` are the same call — method syntax is sugar,
+  not a separate dispatch mechanism.
+- Mutating receivers (`mut self`) and reference receivers (`ref self`) are
+  covered in [Receivers](../ownership/receivers.md).

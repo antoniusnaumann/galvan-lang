@@ -25,12 +25,6 @@ fn main() {
 }
 ```
 
-- A plain `self: Dog` receiver reads the value — calls need no annotation.
-- `mut self` mutates the receiver: call with `dog.mut.method(...)`,
-  `(mut dog).method(...)`, or the free-function form `method(mut dog, ...)`.
-- `ref self` takes the receiver as a shared reference — the method can even
-  replace the referenced value itself.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -77,3 +71,9 @@ pub(crate) fn __main__() {
 from inside the method is possible.
 
 </details>
+
+- A plain `self: Dog` receiver reads the value — calls need no annotation.
+- `mut self` mutates the receiver: call with `dog.mut.method(...)`,
+  `(mut dog).method(...)`, or the free-function form `method(mut dog, ...)`.
+- `ref self` takes the receiver as a shared reference — the method can even
+  replace the referenced value itself.

@@ -19,9 +19,10 @@ mdbook build           # writes static HTML to book/
 ## Conventions for contributors
 
 - Every page introduces one feature with a small, self-contained example.
-- Examples that transpile end with a collapsible `<details>` block titled
-  **Generated Rust** containing the *actual* transpiler output for the
-  example, lightly trimmed: the `galvan_module` wrapper, lint attributes, and
+- Every transpiling example is followed **directly** by a collapsible
+  `<details>` block titled **Generated Rust** — placed immediately after the
+  code block it documents, never collected at the end of the page — containing
+  the *actual* transpiler output for the example, lightly trimmed: the `galvan_module` wrapper, lint attributes, and
   `mod`/`pub use` plumbing are removed, and the result is formatted with
   `rustfmt`. Do not hand-write or "improve" these snippets — regenerate them
   by running the example through `galvan_transpiler::transpile` when the

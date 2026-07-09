@@ -20,11 +20,6 @@ fn main() {
 }
 ```
 
-- `ref` values read and write with normal syntax — no explicit locking.
-- A `ref` variable can also be passed to a `mut` parameter
-  (`bump(counter.mut)`) or by value; only sharing requires `ref` at the call
-  site.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -57,3 +52,8 @@ compare-and-swap loop so the whole read-modify-write stays atomic.
 > arithmetic are solid and covered by the test suite.
 
 </details>
+
+- `ref` values read and write with normal syntax — no explicit locking.
+- A `ref` variable can also be passed to a `mut` parameter
+  (`bump(counter.mut)`) or by value; only sharing requires `ref` at the call
+  site.

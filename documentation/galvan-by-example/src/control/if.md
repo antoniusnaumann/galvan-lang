@@ -22,11 +22,6 @@ fn main() {
 }
 ```
 
-- `discount` has type `Int?` — `10` if the condition holds, `none` otherwise.
-  Optionals get a full [chapter](../errors/optionals.md).
-- Comparing an optional against a plain value auto-wraps the plain side, so
-  `discount == 10` just works.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -54,3 +49,8 @@ The else-less `if` expression is completed with `Some(..)` / `None`, and the
 comparison operand is wrapped in `Some` to match.
 
 </details>
+
+- `discount` has type `Int?` — `10` if the condition holds, `none` otherwise.
+  Optionals get a full [chapter](../errors/optionals.md).
+- Comparing an optional against a plain value auto-wraps the plain side, so
+  `discount == 10` just works.

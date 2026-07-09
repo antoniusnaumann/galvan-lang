@@ -16,20 +16,6 @@ fn main() {
 }
 ```
 
-The full mapping to Rust types:
-
-| Galvan | Rust | Galvan | Rust |
-| --- | --- | --- | --- |
-| `Int` | `i64` | `UInt` | `u64` |
-| `I8` … `I128` | `i8` … `i128` | `U8` … `U128` | `u8` … `u128` |
-| `ISize` | `isize` | `USize` | `usize` |
-| `Float` | `f32` | `Double` | `f64` |
-| `Bool` | `bool` | `Char` | `char` |
-| `String` | `String` | | |
-
-`Int` and `UInt` are the defaults for everyday code; the sized variants exist
-for interop and for data layouts that need them.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -47,3 +33,17 @@ pub(crate) fn __main__() {
 ```
 
 </details>
+
+The full mapping to Rust types:
+
+| Galvan | Rust | Galvan | Rust |
+| --- | --- | --- | --- |
+| `Int` | `i64` | `UInt` | `u64` |
+| `I8` … `I128` | `i8` … `i128` | `U8` … `U128` | `u8` … `u128` |
+| `ISize` | `isize` | `USize` | `usize` |
+| `Float` | `f32` | `Double` | `f64` |
+| `Bool` | `bool` | `Char` | `char` |
+| `String` | `String` | | |
+
+`Int` and `UInt` are the defaults for everyday code; the sized variants exist
+for interop and for data layouts that need them.

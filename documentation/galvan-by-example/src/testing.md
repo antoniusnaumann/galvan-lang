@@ -15,13 +15,6 @@ test "Addition works correctly" {
 }
 ```
 
-`assert` checks a condition and fails the test with a helpful message
-otherwise. Asserting an equality gets the specialized lowering with both
-values in the failure output.
-
-Run tests with plain `cargo test` — they are ordinary Rust tests after
-transpilation.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -50,3 +43,10 @@ Descriptions are slugified into function names; `assert x == y` becomes
 `assert_eq!`, other conditions become `assert!`.
 
 </details>
+
+`assert` checks a condition and fails the test with a helpful message
+otherwise. Asserting an equality gets the specialized lowering with both
+values in the failure output.
+
+Run tests with plain `cargo test` — they are ordinary Rust tests after
+transpilation.

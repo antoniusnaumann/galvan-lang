@@ -17,11 +17,6 @@ fn main() {
 }
 ```
 
-- `++=` appends an element (or another array — see
-  [Collection Operators](operators.md)).
-- Indexing reads with `[i]`; index assignment requires a `mut` binding.
-- Rust's `Vec` methods (`len`, `push`, `contains`, …) are available directly.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -37,3 +32,8 @@ pub(crate) fn __main__() {
 ```
 
 </details>
+
+- `++=` appends an element (or another array — see
+  [Collection Operators](operators.md)).
+- Indexing reads with `[i]`; index assignment requires a `mut` binding.
+- Rust's `Vec` methods (`len`, `push`, `contains`, …) are available directly.

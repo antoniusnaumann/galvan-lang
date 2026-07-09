@@ -23,16 +23,6 @@ fn main() {
 }
 ```
 
-- `for subject |binding| { ... }` — explicit binding.
-- `for subject { ... }` — implicit `it`.
-- Multiple bindings unpack pairs: `for pantry |item, count| { ... }` on a
-  dictionary, or `for a.iter().zip(b) |x, y| { ... }`.
-- Looping over an optional or a result runs the body zero or one time — see
-  [Optionals](../errors/optionals.md).
-
-> [!NOTE]
-> Iterating tuples is still incomplete.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -60,3 +50,13 @@ The loop borrows the collection (`&queue_positions`), so the same array can be
 iterated repeatedly — value semantics again.
 
 </details>
+
+- `for subject |binding| { ... }` — explicit binding.
+- `for subject { ... }` — implicit `it`.
+- Multiple bindings unpack pairs: `for pantry |item, count| { ... }` on a
+  dictionary, or `for a.iter().zip(b) |x, y| { ... }`.
+- Looping over an optional or a result runs the body zero or one time — see
+  [Optionals](../errors/optionals.md).
+
+> [!NOTE]
+> Iterating tuples is still incomplete.

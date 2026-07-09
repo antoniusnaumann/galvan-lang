@@ -18,11 +18,6 @@ fn main() {
 }
 ```
 
-> [!NOTE]
-> When every field can be defaulted, the type is constructible with `Type()` —
-> and Galvan can emit a Rust `Default` implementation for it, so the type
-> satisfies Rust APIs that expect `Default`.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -51,3 +46,8 @@ Defaults are filled in at each construction site, so partial construction has
 no runtime cost.
 
 </details>
+
+> [!NOTE]
+> When every field can be defaulted, the type is constructible with `Type()` —
+> and Galvan can emit a Rust `Default` implementation for it, so the type
+> satisfies Rust APIs that expect `Default`.

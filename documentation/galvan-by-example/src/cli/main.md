@@ -29,9 +29,6 @@ $ my-app --name Ada
 Hello Ada!
 ```
 
-A project uses either `fn main` *or* `cmd main` — the `cmd` form takes over
-the entry point and dispatches through the generated parser.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -76,3 +73,6 @@ The `Commands::Greet` arm belongs to the subcommand declared on the
 project from one place.
 
 </details>
+
+A project uses either `fn main` *or* `cmd main` — the `cmd` form takes over
+the entry point and dispatches through the generated parser.

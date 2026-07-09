@@ -11,16 +11,6 @@ fn main() {
 }
 ```
 
-Parameter types can usually be inferred from the context in which the closure
-is used — the annotations above are only needed because nothing else pins the
-types down.
-
-> [!WARNING]
-> Binding a closure to a variable currently generates an `impl Fn(..)` type
-> annotation in `let` position, which stable Rust rejects. Closures passed
-> directly as arguments — by far the common case, shown on the next pages —
-> work fine.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -36,3 +26,13 @@ problem today (`impl Trait` is not allowed in variable bindings on stable
 Rust).
 
 </details>
+
+Parameter types can usually be inferred from the context in which the closure
+is used — the annotations above are only needed because nothing else pins the
+types down.
+
+> [!WARNING]
+> Binding a closure to a variable currently generates an `impl Fn(..)` type
+> annotation in `let` position, which stable Rust rejects. Closures passed
+> directly as arguments — by far the common case, shown on the next pages —
+> work fine.

@@ -26,10 +26,6 @@ fn main() {
 }
 ```
 
-The person's `dog` and the local `dog` are the same animal: mutating one is
-visible through the other. Without `ref`, the field would have received an
-independent copy.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -71,3 +67,7 @@ pub(crate) fn __main__() {
 > `dog` variable are covered by tests.
 
 </details>
+
+The person's `dog` and the local `dog` are the same animal: mutating one is
+visible through the other. Without `ref`, the field would have received an
+independent copy.

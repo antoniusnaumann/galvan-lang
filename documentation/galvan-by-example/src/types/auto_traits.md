@@ -16,6 +16,22 @@ type SessionToken {
 }
 ```
 
+<details>
+<summary>Generated Rust (today)</summary>
+
+```rust
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SessionToken {
+    pub(crate) value: String,
+}
+```
+
+Once auto traits land, this derive list will expand and contract based on
+field capabilities and opt-outs — e.g. `serde::Serialize` only when every
+field is serializable, and no `Clone` for the example above.
+
+</details>
+
 Explicit `@derive(...)` documents intended conformance, and libraries can
 declare their own auto traits:
 
@@ -35,19 +51,3 @@ An explicit trait implementation always overrides the derived one.
 > annotations, opt-outs such as `@derive(!Clone)`, and user-declared
 > `auto trait`s do not parse yet. What is implemented today is the fixed
 > `Clone, Debug, PartialEq` derive on every declared type.
-
-<details>
-<summary>Generated Rust (today)</summary>
-
-```rust
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct SessionToken {
-    pub(crate) value: String,
-}
-```
-
-Once auto traits land, this derive list will expand and contract based on
-field capabilities and opt-outs — e.g. `serde::Serialize` only when every
-field is serializable, and no `Clone` for the example above.
-
-</details>

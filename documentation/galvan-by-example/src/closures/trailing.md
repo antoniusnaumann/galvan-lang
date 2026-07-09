@@ -18,15 +18,6 @@ fn main() {
 }
 ```
 
-- `.map |q| { ... }` is `.map(|q| { ... })`.
-- `.fold 2 |acc, q| { ... }` is `.fold(2, |acc, q| { ... })`.
-- Works with user-defined functions too, including
-  [generic helpers](../generics/functions.md).
-
-> [!WARNING]
-> **Not implemented yet:** numbered closure parameters (`#0`, `#1`) as an
-> alternative to named ones are planned but do not exist yet.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -46,3 +37,12 @@ Trailing-closure syntax is purely syntactic — the generated calls are the
 ordinary parenthesized forms.
 
 </details>
+
+- `.map |q| { ... }` is `.map(|q| { ... })`.
+- `.fold 2 |acc, q| { ... }` is `.fold(2, |acc, q| { ... })`.
+- Works with user-defined functions too, including
+  [generic helpers](../generics/functions.md).
+
+> [!WARNING]
+> **Not implemented yet:** numbered closure parameters (`#0`, `#1`) as an
+> alternative to named ones are planned but do not exist yet.

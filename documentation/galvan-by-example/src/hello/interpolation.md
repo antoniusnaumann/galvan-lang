@@ -15,11 +15,6 @@ fn main() {
 }
 ```
 
-- `{` and `}` are ordinary characters in Galvan strings; no doubling is
-  required.
-- `\"` escapes a quote, `\u{...}` writes a Unicode scalar value.
-- Interpolation also reaches into fields: `"Hi, \(dog.name)!"`.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -39,3 +34,8 @@ Rust's formatter. The `let x: _ = 3` annotation leaves the concrete integer
 type to Rust's inference.
 
 </details>
+
+- `{` and `}` are ordinary characters in Galvan strings; no doubling is
+  required.
+- `\"` escapes a quote, `\u{...}` writes a Unicode scalar value.
+- Interpolation also reaches into fields: `"Hi, \(dog.name)!"`.

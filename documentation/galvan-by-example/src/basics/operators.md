@@ -26,23 +26,6 @@ fn main() {
 }
 ```
 
-- **Arithmetic**: `+`, `-`, `*`, `/`, `%`, and `^` for exponentiation.
-- **Logical**: `and`/`&&`, `or`/`||`, `xor`.
-- **Bitwise**: `|`, `&`, `~` (xor), `<<`, `>>`.
-- **Comparison**: `==`, `!=`/`≠`, `<`, `<=`/`≤`, `>`, `>=`/`≥`. The Unicode
-  spellings are interchangeable with their ASCII forms.
-- **Identity**: `===`/`≡` and `!==`/`≢` compare *pointer identity* of heap
-  references (see [Reference Variables](../ownership/ref_variables.md)).
-- **Collections**: `++` (concatenation), `in`/`∈` (membership), `[]`
-  (indexing) — covered in [Collection Operators](../collections/operators.md).
-- **Ranges**: `..<`, `..=`, `..+`, `±` — covered in
-  [Ranges](../control/ranges.md).
-
-> [!WARNING]
-> **Not implemented yet:** unary logical `not`, collection removal `--`,
-> repetition `**`, slicing `[:]`, and user-defined custom operators are part
-> of the operator design but do not transpile yet.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -72,3 +55,20 @@ intent stay visually distinct in source code. Comparisons lower to the
 without explicit dereferencing.
 
 </details>
+
+- **Arithmetic**: `+`, `-`, `*`, `/`, `%`, and `^` for exponentiation.
+- **Logical**: `and`/`&&`, `or`/`||`, `xor`.
+- **Bitwise**: `|`, `&`, `~` (xor), `<<`, `>>`.
+- **Comparison**: `==`, `!=`/`≠`, `<`, `<=`/`≤`, `>`, `>=`/`≥`. The Unicode
+  spellings are interchangeable with their ASCII forms.
+- **Identity**: `===`/`≡` and `!==`/`≢` compare *pointer identity* of heap
+  references (see [Reference Variables](../ownership/ref_variables.md)).
+- **Collections**: `++` (concatenation), `in`/`∈` (membership), `[]`
+  (indexing) — covered in [Collection Operators](../collections/operators.md).
+- **Ranges**: `..<`, `..=`, `..+`, `±` — covered in
+  [Ranges](../control/ranges.md).
+
+> [!WARNING]
+> **Not implemented yet:** unary logical `not`, collection removal `--`,
+> repetition `**`, slicing `[:]`, and user-defined custom operators are part
+> of the operator design but do not transpile yet.

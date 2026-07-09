@@ -22,12 +22,6 @@ fn main() {
 }
 ```
 
-- On an optional, `else` covers the `none` case.
-- On a result, `else` covers the error case — with `|error|` the error value
-  is available inside the block.
-- `let amount = discount else { return -1 }` mixes unwrapping with early
-  return.
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -58,3 +52,9 @@ pub(crate) fn __main__() {
 `unwrap_or_else`, but with early-exit control flow available in the fallback.
 
 </details>
+
+- On an optional, `else` covers the `none` case.
+- On a result, `else` covers the error case — with `|error|` the error value
+  is available inside the block.
+- `let amount = discount else { return -1 }` mixes unwrapping with early
+  return.

@@ -22,9 +22,6 @@ fn main() {
 }
 ```
 
-A `for` expression whose result is expected to be optional auto-wraps, like
-any other value (see [Optionals](../errors/optionals.md)).
-
 <details>
 <summary>Generated Rust</summary>
 
@@ -57,3 +54,6 @@ The loop becomes a block expression pushing into a hidden `Vec` — `continue`
 naturally skips the push.
 
 </details>
+
+A `for` expression whose result is expected to be optional auto-wraps, like
+any other value (see [Optionals](../errors/optionals.md)).
