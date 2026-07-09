@@ -20,9 +20,9 @@ fn main() {
     let bits_xor = 5 ~ 3
     let shifted = 1 << 4
 
-    let close = 1 <= 2
-    let far = 3 ≥ 4
-    let different = 5 ≠ 6
+    let close = 1 ≤ 2 // or 1 <= 2 
+    let far   = 3 ≥ 4 // or 3 >= 4
+    let uneq  = 5 ≠ 6 // or 5 != 6
 }
 ```
 
