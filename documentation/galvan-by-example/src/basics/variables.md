@@ -34,9 +34,7 @@ pub(crate) fn __main__() {
 
 </details>
 
-Assigning a variable to another variable **copies** the value. There is no
-move semantics at the surface level — the original stays usable and the copy
-is independent:
+Assigning a variable to another variable **copies** the value, which means modifying the copied value does not affect the original:
 
 ```galvan
 fn main() {
