@@ -1,7 +1,6 @@
 # Optionals and Results
 
-Galvan encodes absence and failure in the type system, with one-character
-syntax:
+Galvan encodes absence and failure in the type system and provides syntactic sugar for Optionals and Results:
 
 | Type | Meaning | Rust lowering |
 | --- | --- | --- |
@@ -13,6 +12,3 @@ The operators around them follow one rule of thumb: **`?` reads, `!`
 propagates.** The safe-call operator `?.` continues only on success, while
 postfix `!` unwraps or returns the error early. `else` provides fallbacks,
 and `try` branches on success and failure.
-
-Galvan has no `null` and no exceptions — this chapter is the error handling
-story, entire.
