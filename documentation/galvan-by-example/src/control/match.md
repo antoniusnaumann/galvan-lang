@@ -1,8 +1,7 @@
 # match
 
 `match` inspects a value, destructures enum variants, and returns the value of
-the taken branch. Branches are written `pattern { body }` — no arrows, no
-commas:
+the taken branch. Branches are written `pattern { body }`:
 
 ```galvan
 pub type Color {
