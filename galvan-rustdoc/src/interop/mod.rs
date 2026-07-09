@@ -11,7 +11,7 @@ mod rustdoc_path;
 mod state;
 mod uses;
 
-pub use state::RustInterop;
+pub use state::{check_format_version, RustInterop};
 
 #[cfg(test)]
 use self::lift_type::{generic_type, plain_type};

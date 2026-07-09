@@ -5,4 +5,4 @@ pub use conversions::{
     RustArgConversion, RustEnumVariantArgConversion, RustEnumVariantConversion,
     RustFieldConversion, RustReturnConversion,
 };
-pub use declarations::{RustConstantDecl, RustFunctionDecl, RustTypeDecl};
+pub use declarations::{RustConstantDecl, RustFunctionDecl, RustTypeDecl, RustdocCrateLiftSummary};

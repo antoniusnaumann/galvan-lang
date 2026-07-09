@@ -95,8 +95,8 @@ commands remain subcommands.
   - Consider an explicit rustup auto-install command for the pinned toolchain,
     gated behind user intent rather than mutating the environment during
     detection.
-  - Evaluate auto-detecting compatible installed nightly toolchains once the
-    rustdoc-types/schema pinning story can verify compatibility.
+  - Evaluate auto-detecting compatible installed nightly toolchains now that
+    the golden rustdoc fixture guards schema compatibility.
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve external-target function and constant re-exports from rustdoc JSON;
@@ -157,5 +157,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-08*
+*Last updated: 2026-07-09*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

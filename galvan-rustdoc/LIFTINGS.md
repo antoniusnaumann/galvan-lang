@@ -21,6 +21,16 @@ Galvan typechecker as dependency declarations:
   trait-impl associated constants
 - rustdoc re-exports for local type, function, constant, and glob targets
 
+Schema-shape assumptions must be anchored in
+`tests/fixtures/interop_fixture` and its committed
+`interop_fixture.golden.json`, not only in the hand-built `tests.rs` cases. The
+golden fixture is pinned to rustdoc JSON `format_version` 60 and is checked with
+`check_format_version`, so it acts as a canary for `rustdoc-types` drift.
+Regenerate it with `tests/fixtures/regenerate.sh` only when bumping both halves
+of the pin together: `RUSTDOC_FORMAT_VERSION` in `src/interop/state.rs` and the
+nightly date documented as `DEFAULT_RUSTDOC_TOOLCHAIN` in
+`src/cache/rustdoc.rs`.
+
 External type re-exports without target metadata are imported as empty types
 when their name looks like a type. External function and constant re-exports
 without target metadata are not imported yet.

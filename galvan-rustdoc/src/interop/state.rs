@@ -1,13 +1,16 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::Path;
+use std::{env, fs};
+
+use serde_json::Value;
 
 use galvan_ast::{FnDecl, Ident, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl};
 use galvan_files::Source;
-use serde_json::Value;
 
 use crate::cache::RustdocCache;
-use crate::model::{RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl};
+use crate::model::{
+    RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl, RustdocCrateLiftSummary,
+};
 use crate::RustdocError;
 
 use super::function_id::RustFunctionId;
@@ -28,6 +31,7 @@ use super::uses::imported_crates;
 /// Bumping to a new schema means bumping *both*: the `rustdoc-types` version
 /// here and the pinned nightly date.
 pub(super) const RUSTDOC_FORMAT_VERSION: u64 = rustdoc_types::FORMAT_VERSION as u64;
+const RUSTDOC_REQUIRE_LIFT_ENV: &str = "GALVAN_RUSTDOC_REQUIRE_LIFT";
 
 /// Whether a `(receiver, name/id)` associated item is exposed by exactly one
 /// namespace (`One`) or by more than one (`Many`). Used by the unqualified
@@ -58,6 +62,7 @@ pub struct RustInterop {
     pub(super) by_imported_constant: HashMap<Ident, usize>,
     pub(super) by_namespace_associated_constant: HashMap<(String, TypeIdent, Ident), usize>,
     pub(super) by_associated_constant: HashMap<(TypeIdent, Ident), Unambiguous>,
+    pub(super) lift_summaries: HashMap<Box<str>, RustdocCrateLiftSummary>,
 }
 
 impl RustInterop {
@@ -79,7 +84,21 @@ impl RustInterop {
     pub fn from_crates_and_uses_with_warnings(
         crate_names: impl IntoIterator<Item = String>,
         uses: &[ToplevelItem<UseDecl>],
+        warn: impl FnMut(&RustdocError),
+    ) -> Result<Self, RustdocError> {
+        Self::from_crates_and_uses_with_options(
+            crate_names,
+            uses,
+            warn,
+            require_lift_from_env(env::var(RUSTDOC_REQUIRE_LIFT_ENV).ok().as_deref()),
+        )
+    }
+
+    fn from_crates_and_uses_with_options(
+        crate_names: impl IntoIterator<Item = String>,
+        uses: &[ToplevelItem<UseDecl>],
         mut warn: impl FnMut(&RustdocError),
+        require_lift: bool,
     ) -> Result<Self, RustdocError> {
         let mut interop = RustInterop::default();
         let imported_crates = imported_crates(uses);
@@ -94,6 +113,9 @@ impl RustInterop {
             match cache.update_if_needed() {
                 Ok(()) => {}
                 Err(error) if is_soft_cache_error(&error) => {
+                    if require_lift {
+                        return Err(error);
+                    }
                     warn_soft_cache_error_once(&error, &mut warned, &mut warn);
                     continue;
                 }
@@ -110,7 +132,12 @@ impl RustInterop {
                 check_format_version(&path, &json)?;
                 let krate: rustdoc_types::Crate = serde_json::from_value(json)
                     .map_err(|error| RustdocError::ParseCache(path.clone(), error))?;
-                interop.add_crate(&crate_name, &krate);
+                let summary = interop.add_crate(&crate_name, &krate);
+                if require_lift && summary.total_items() == 0 {
+                    return Err(RustdocError::RequiredLiftEmpty(summary.crate_name));
+                }
+            } else if require_lift {
+                return Err(RustdocError::RequiredLiftEmpty(crate_name.into()));
             }
         }
         interop.import_uses(uses);
@@ -209,6 +236,14 @@ impl RustInterop {
             Vec::new(),
         );
     }
+
+    pub fn lift_summary(&self, crate_name: &str) -> Option<&RustdocCrateLiftSummary> {
+        self.lift_summaries.get(crate_name)
+    }
+
+    pub fn lift_summaries(&self) -> impl Iterator<Item = &RustdocCrateLiftSummary> {
+        self.lift_summaries.values()
+    }
 }
 
 fn is_soft_cache_error(error: &RustdocError) -> bool {
@@ -241,10 +276,18 @@ fn warn_soft_cache_error_once(
     }
 }
 
+fn require_lift_from_env(value: Option<&str>) -> bool {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+
+    value != "0" && !value.eq_ignore_ascii_case("false")
+}
+
 /// Reject a rustdoc JSON cache whose `format_version` does not match the schema
 /// this crate walks, so a nightly toolchain bump fails loudly instead of
 /// silently dropping every item it can no longer parse.
-fn check_format_version(path: &Path, json: &Value) -> Result<(), RustdocError> {
+pub fn check_format_version(path: &Path, json: &Value) -> Result<(), RustdocError> {
     let Some(version) = json.get("format_version").and_then(Value::as_u64) else {
         return Err(RustdocError::MissingFormatVersion(path.to_path_buf()));
     };
@@ -308,5 +351,28 @@ mod format_version_tests {
 
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("rustup was not found"));
+    }
+
+    #[test]
+    fn require_lift_env_treats_only_empty_zero_and_false_as_disabled() {
+        assert!(!require_lift_from_env(None));
+        assert!(!require_lift_from_env(Some("")));
+        assert!(!require_lift_from_env(Some("0")));
+        assert!(!require_lift_from_env(Some("false")));
+        assert!(require_lift_from_env(Some("1")));
+        assert!(require_lift_from_env(Some("true")));
+    }
+
+    #[test]
+    fn require_lift_promotes_soft_cache_errors() {
+        let error = RustInterop::from_crates_and_uses_with_options(
+            ["definitely_missing_galvan_dep".to_string()],
+            &[],
+            |_| {},
+            true,
+        )
+        .expect_err("required lift should reject missing dependency");
+
+        assert!(matches!(error, RustdocError::DependencyNotFound(_)));
     }
 }

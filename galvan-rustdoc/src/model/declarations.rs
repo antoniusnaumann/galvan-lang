@@ -33,3 +33,17 @@ pub struct RustConstantDecl {
     pub rust_path: Box<str>,
     pub ty: TypeElement,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RustdocCrateLiftSummary {
+    pub crate_name: Box<str>,
+    pub types: usize,
+    pub functions: usize,
+    pub constants: usize,
+}
+
+impl RustdocCrateLiftSummary {
+    pub fn total_items(&self) -> usize {
+        self.types + self.functions + self.constants
+    }
+}

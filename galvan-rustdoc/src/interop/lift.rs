@@ -43,7 +43,9 @@ impl RustInterop {
         }
 
         match &item.inner {
-            ItemEnum::Struct(struct_) => self.struct_decl_from_json(krate, crate_name, name, struct_),
+            ItemEnum::Struct(struct_) => {
+                self.struct_decl_from_json(krate, crate_name, name, struct_)
+            }
             ItemEnum::Enum(enum_) => self.enum_decl_from_json(krate, crate_name, name, enum_),
             ItemEnum::TypeAlias(alias) => self
                 .alias_decl_from_json(krate, crate_name, name, alias)
@@ -237,13 +239,14 @@ impl RustInterop {
         &mut self,
         krate: &Crate,
         crate_name: &str,
-        variant: &Item,
+        variant_item: &Item,
     ) -> Option<LiftedEnumMember> {
-        let name = variant.name.as_deref()?;
-        let ItemEnum::Variant(variant) = &variant.inner else {
+        let name = variant_item.name.as_deref()?;
+        let ItemEnum::Variant(variant) = &variant_item.inner else {
             return None;
         };
-        let lifted_fields = self.enum_variant_fields_from_kind(krate, crate_name, &variant.kind)?;
+        let lifted_fields =
+            self.enum_variant_fields_from_kind(krate, crate_name, variant_item, &variant.kind)?;
         let mut fields = Vec::new();
         let mut arg_conversions = Vec::new();
         for field in lifted_fields {
@@ -269,6 +272,7 @@ impl RustInterop {
         &mut self,
         krate: &Crate,
         crate_name: &str,
+        variant: &Item,
         kind: &VariantKind,
     ) -> Option<Vec<LiftedEnumVariantField>> {
         match kind {
@@ -277,18 +281,20 @@ impl RustInterop {
                 let mut fields = Vec::new();
                 for id in field_ids.iter().flatten() {
                     let field = krate.index.get(id)?;
-                    if !is_public(field) {
+                    if !enum_variant_field_is_public(variant, field) {
                         return None;
                     }
                     fields.push(self.enum_variant_field_from_json(krate, crate_name, None, field)?);
                 }
                 Some(fields)
             }
-            VariantKind::Struct { fields: field_ids, .. } => {
+            VariantKind::Struct {
+                fields: field_ids, ..
+            } => {
                 let mut fields = Vec::new();
                 for id in field_ids {
                     let field = krate.index.get(id)?;
-                    if !is_public(field) {
+                    if !enum_variant_field_is_public(variant, field) {
                         return None;
                     }
                     let name = field.name.as_deref().map(Ident::new);
@@ -328,7 +334,8 @@ impl RustInterop {
     ) -> Option<ImportedFunctionDecl> {
         let mut lifted_params = Vec::new();
         for (param_name, param_type) in &signature.inputs {
-            lifted_params.push(self.lift_param_from_json(krate, crate_name, param_name, param_type)?);
+            lifted_params
+                .push(self.lift_param_from_json(krate, crate_name, param_name, param_type)?);
         }
         let params = lifted_params
             .iter()
@@ -443,8 +450,11 @@ impl RustInterop {
     ) -> Option<LiftedReturn> {
         if let Type::ResolvedPath(resolved) = ty {
             let name = resolved_type_name(resolved)?;
-            let standard_wrapper =
-                resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]);
+            let standard_wrapper = resolved_path_is_unqualified_or_in_crates(
+                krate,
+                resolved,
+                &["std", "core", "alloc"],
+            );
             let return_conversion = match name.as_ref() {
                 "Box" if standard_wrapper => RustReturnConversion::BoxDeref,
                 "Rc" if standard_wrapper => RustReturnConversion::RcCloneDeref,
@@ -574,7 +584,10 @@ impl RustInterop {
                 }
 
                 self.push_resolved_type(krate, crate_name, name.as_ref(), resolved);
-                Some(LiftedType::new(parametric_or_plain_type(name.as_ref(), args)))
+                Some(LiftedType::new(parametric_or_plain_type(
+                    name.as_ref(),
+                    args,
+                )))
             }
             Type::Tuple(elements) => Some(LiftedType::new(TypeElement::Tuple(Box::new(
                 galvan_ast::TupleTypeItem {
@@ -688,6 +701,19 @@ fn param_type_requires_wrapper_conversion(krate: &Crate, ty: &Type) -> bool {
     };
     matches!(name.as_ref(), "Box" | "Rc")
         && resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"])
+}
+
+fn enum_variant_field_is_public(variant: &Item, field: &Item) -> bool {
+    // Real rustdoc records public enum variants and their fields as Default.
+    // A Public variant with a Default field is only used by typed edge tests.
+    is_public(field)
+        || matches!(
+            (&variant.visibility, &field.visibility),
+            (
+                rustdoc_types::Visibility::Default,
+                rustdoc_types::Visibility::Default
+            )
+        )
 }
 
 fn substitute_self_in_function_decl(decl: &mut galvan_ast::FnDecl, receiver_ty: &TypeElement) {

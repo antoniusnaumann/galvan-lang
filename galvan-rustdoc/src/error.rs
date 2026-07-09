@@ -34,4 +34,6 @@ pub enum RustdocError {
     MissingFormatVersion(PathBuf),
     #[error("rustdoc JSON cache {0} has format_version {1}, but this build of galvan only understands format_version {2}; delete the cache so galvan regenerates it with the pinned nightly toolchain (override the rustup toolchain with GALVAN_RUSTDOC_TOOLCHAIN, or bypass rustup with GALVAN_RUSTDOC_COMMAND), or upgrade galvan")]
     UnsupportedFormatVersion(PathBuf, u64, u64),
+    #[error("rustdoc JSON for crate `{0}` did not lift any usable items while GALVAN_RUSTDOC_REQUIRE_LIFT is set")]
+    RequiredLiftEmpty(Box<str>),
 }

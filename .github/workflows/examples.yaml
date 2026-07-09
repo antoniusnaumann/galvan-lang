@@ -18,10 +18,16 @@ jobs:
           - ./example-projects/cli-app
           - ./example-projects/hello-world
           - ./example-projects/serde-json
+    env:
+      GALVAN_RUSTDOC_TOOLCHAIN: nightly-2026-07-02
+      GALVAN_RUSTDOC_REQUIRE_LIFT: ${{ matrix.path == './example-projects/serde-json' && '1' || '' }}
     steps:
       - uses: actions/checkout@v3
         with: 
           submodules: 'true'
+      - name: Install pinned rustdoc toolchain
+        if: matrix.path == './example-projects/serde-json'
+        run: rustup toolchain install nightly-2026-07-02 --profile minimal
       - name: Check
         run: cargo check --verbose
         working-directory: ${{ matrix.path }}

@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
-use galvan_ast::TypeIdent;
 use rustdoc_types::{Crate, Id, Impl, Item, ItemEnum, Use};
+
+use galvan_ast::TypeIdent;
+
+use crate::model::RustdocCrateLiftSummary;
 
 use super::rustdoc_json::{
     constant_type, function_is_unsafe, impl_constant_ids, impl_function_ids, is_public,
@@ -12,7 +15,9 @@ use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_func
 use super::RustInterop;
 
 impl RustInterop {
-    pub fn add_crate(&mut self, crate_name: &str, krate: &Crate) {
+    pub fn add_crate(&mut self, crate_name: &str, krate: &Crate) -> RustdocCrateLiftSummary {
+        let before = LiftCounts::from(&*self);
+
         // rustdoc's `index` is an unordered `HashMap`; walk it in a stable id
         // order so lifting (and any duplicate rust_path resolution) is
         // deterministic across runs and snapshot tests.
@@ -66,6 +71,16 @@ impl RustInterop {
         self.import_impl_functions(krate, crate_name);
         self.import_trait_items(krate, crate_name);
         self.import_public_reexports(krate, crate_name);
+
+        let summary = RustdocCrateLiftSummary {
+            crate_name: crate_name.into(),
+            types: self.types.len().saturating_sub(before.types),
+            functions: self.functions.len().saturating_sub(before.functions),
+            constants: self.constants.len().saturating_sub(before.constants),
+        };
+        self.lift_summaries
+            .insert(summary.crate_name.clone(), summary.clone());
+        summary
     }
 
     fn import_impl_functions(&mut self, krate: &Crate, crate_name: &str) {
@@ -177,7 +192,9 @@ impl RustInterop {
 
                 if constant_type(item).is_some() {
                     let rust_path = callable_rust_path(krate, crate_name, item_name, item);
-                    self.import_trait_constant(krate, crate_name, item_name, rust_path, item, &receiver);
+                    self.import_trait_constant(
+                        krate, crate_name, item_name, rust_path, item, &receiver,
+                    );
                 }
             }
         }
@@ -234,7 +251,13 @@ impl RustInterop {
         target: &Item,
     ) {
         if public_type_name(target).is_some() {
-            self.push_reexported_type_from_item(krate, crate_name, exported_name, rust_path, target);
+            self.push_reexported_type_from_item(
+                krate,
+                crate_name,
+                exported_name,
+                rust_path,
+                target,
+            );
             return;
         }
 
@@ -245,7 +268,8 @@ impl RustInterop {
             if signature_contains_unliftable_type(krate, &function.sig) {
                 return;
             }
-            let Some(imported) = self.function_decl(krate, crate_name, exported_name, &function.sig)
+            let Some(imported) =
+                self.function_decl(krate, crate_name, exported_name, &function.sig)
             else {
                 return;
             };
@@ -267,7 +291,12 @@ impl RustInterop {
         }
     }
 
-    fn import_external_reexported_type(&mut self, crate_name: &str, exported_name: &str, use_: &Use) {
+    fn import_external_reexported_type(
+        &mut self,
+        crate_name: &str,
+        exported_name: &str,
+        use_: &Use,
+    ) {
         if !looks_like_type_name(exported_name) {
             return;
         }
@@ -283,7 +312,8 @@ impl RustInterop {
         let Some(target_id) = use_.id else {
             return;
         };
-        let Some(ItemEnum::Module(module)) = krate.index.get(&target_id).map(|target| &target.inner)
+        let Some(ItemEnum::Module(module)) =
+            krate.index.get(&target_id).map(|target| &target.inner)
         else {
             return;
         };
@@ -419,6 +449,22 @@ impl RustInterop {
     ) -> Option<TypeIdent> {
         self.type_from_json(krate, crate_name, &impl_.for_)
             .and_then(|ty| receiver_type_ident(&ty))
+    }
+}
+
+struct LiftCounts {
+    types: usize,
+    functions: usize,
+    constants: usize,
+}
+
+impl From<&RustInterop> for LiftCounts {
+    fn from(interop: &RustInterop) -> Self {
+        Self {
+            types: interop.types.len(),
+            functions: interop.functions.len(),
+            constants: interop.constants.len(),
+        }
     }
 }
 
