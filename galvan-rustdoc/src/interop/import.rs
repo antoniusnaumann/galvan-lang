@@ -14,6 +14,15 @@ use super::rustdoc_json::{
 use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_function_rust_path};
 use super::RustInterop;
 
+struct ReexportedImplImport<'a> {
+    krate: &'a Crate,
+    crate_name: &'a str,
+    impl_: &'a Impl,
+    original_receiver: &'a TypeIdent,
+    exported_receiver: &'a TypeIdent,
+    receiver_rust_path: &'a str,
+}
+
 impl RustInterop {
     pub fn add_crate(&mut self, crate_name: &str, krate: &Crate) -> RustdocCrateLiftSummary {
         let before = LiftCounts::from(&*self);
@@ -382,36 +391,22 @@ impl RustInterop {
                 continue;
             }
 
-            self.import_reexported_impl_constants(
+            let import = ReexportedImplImport {
                 krate,
                 crate_name,
                 impl_,
                 original_receiver,
                 exported_receiver,
-                receiver_rust_path.as_ref(),
-            );
-            self.import_reexported_impl_functions(
-                krate,
-                crate_name,
-                impl_,
-                original_receiver,
-                exported_receiver,
-                receiver_rust_path.as_ref(),
-            );
+                receiver_rust_path: receiver_rust_path.as_ref(),
+            };
+            self.import_reexported_impl_constants(&import);
+            self.import_reexported_impl_functions(&import);
         }
     }
 
-    fn import_reexported_impl_constants(
-        &mut self,
-        krate: &Crate,
-        crate_name: &str,
-        impl_: &Impl,
-        original_receiver: &TypeIdent,
-        exported_receiver: &TypeIdent,
-        receiver_rust_path: &str,
-    ) {
-        for id in &impl_.items {
-            let Some(item) = krate.index.get(id) else {
+    fn import_reexported_impl_constants(&mut self, import: &ReexportedImplImport<'_>) {
+        for id in &import.impl_.items {
+            let Some(item) = import.krate.index.get(id) else {
                 continue;
             };
             if !is_public(item) {
@@ -423,34 +418,27 @@ impl RustInterop {
             let Some(constant_ty) = constant_type(item) else {
                 continue;
             };
-            if type_contains_unliftable_type(krate, constant_ty) {
+            if type_contains_unliftable_type(import.krate, constant_ty) {
                 continue;
             }
-            let Some(mut ty) = self.type_from_json(krate, crate_name, constant_ty) else {
+            let Some(mut ty) = self.type_from_json(import.krate, import.crate_name, constant_ty)
+            else {
                 continue;
             };
-            rename_type_references(&mut ty, original_receiver, exported_receiver);
+            rename_type_references(&mut ty, import.original_receiver, import.exported_receiver);
             self.push_constant(
-                crate_name,
-                Some(exported_receiver.clone()),
+                import.crate_name,
+                Some(import.exported_receiver.clone()),
                 name,
-                format!("{receiver_rust_path}::{name}").into_boxed_str(),
+                format!("{}::{name}", import.receiver_rust_path).into_boxed_str(),
                 ty,
             );
         }
     }
 
-    fn import_reexported_impl_functions(
-        &mut self,
-        krate: &Crate,
-        crate_name: &str,
-        impl_: &Impl,
-        original_receiver: &TypeIdent,
-        exported_receiver: &TypeIdent,
-        receiver_rust_path: &str,
-    ) {
-        for id in &impl_.items {
-            let Some(item) = krate.index.get(id) else {
+    fn import_reexported_impl_functions(&mut self, import: &ReexportedImplImport<'_>) {
+        for id in &import.impl_.items {
+            let Some(item) = import.krate.index.get(id) else {
                 continue;
             };
             if !is_public(item) {
@@ -465,28 +453,32 @@ impl RustInterop {
             if function_is_unsafe(function) {
                 continue;
             }
-            if signature_contains_unliftable_type(krate, &function.sig) {
+            if signature_contains_unliftable_type(import.krate, &function.sig) {
                 continue;
             }
 
-            let Some(mut imported) =
-                self.impl_function_decl(krate, crate_name, name, &function.sig, impl_)
-            else {
+            let Some(mut imported) = self.impl_function_decl(
+                import.krate,
+                import.crate_name,
+                name,
+                &function.sig,
+                import.impl_,
+            ) else {
                 continue;
             };
             rename_function_type_references(
                 &mut imported.decl.signature,
-                original_receiver,
-                exported_receiver,
+                import.original_receiver,
+                import.exported_receiver,
             );
             let borrowed_return = return_is_borrowed(&function.sig);
             self.push_function_with_associated_receiver(
-                crate_name,
+                import.crate_name,
                 name,
-                format!("{receiver_rust_path}::{name}").into_boxed_str(),
+                format!("{}::{name}", import.receiver_rust_path).into_boxed_str(),
                 imported.decl,
                 borrowed_return,
-                Some(exported_receiver.clone()),
+                Some(import.exported_receiver.clone()),
                 imported.return_conversion,
                 imported.arg_conversions,
             );

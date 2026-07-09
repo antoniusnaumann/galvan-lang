@@ -858,6 +858,10 @@ impl Transpile for HirCollection {
 
         match self {
             HirCollection::Array(items) => format!("vec![{}]", elements(items, ctx, errors)),
+            HirCollection::Tuple(items) if items.len() == 1 => {
+                format!("({},)", elements(items, ctx, errors))
+            }
+            HirCollection::Tuple(items) => format!("({})", elements(items, ctx, errors)),
             HirCollection::Set(items) => format!(
                 "::std::collections::HashSet::from([{}])",
                 elements(items, ctx, errors)
@@ -1350,6 +1354,71 @@ mod tests {
         assert_eq!(
             call.transpile(&ctx, &mut errors),
             "::external::Router::new()"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_associated_function_tuple_arguments_render_as_tuple_arguments() {
+        let octets = HirExpression::new(
+            HirExpressionKind::Collection(HirCollection::Array(vec![
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("127".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("0".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("0".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("1".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+            ])),
+            TypeElement::infer(),
+            Ownership::UniqueOwned,
+            Span::default(),
+        );
+        let port = HirExpression::new(
+            HirExpressionKind::Literal(HirLiteral::Number("3000".to_string())),
+            TypeElement::infer(),
+            Ownership::UniqueOwned,
+            Span::default(),
+        );
+        let call = HirFunctionCall {
+            namespace: None,
+            rust: Some(HirRustCall {
+                rust_path: "::std::net::SocketAddr::from".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: Vec::new(),
+            }),
+            ident: Ident::new("from"),
+            labels: Vec::new(),
+            args: vec![HirExpression::new(
+                HirExpressionKind::Collection(HirCollection::Tuple(vec![octets, port])),
+                TypeElement::infer(),
+                Ownership::UniqueOwned,
+                Span::default(),
+            )],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::std::net::SocketAddr::from((vec![127, 0, 0, 1], 3000))"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }

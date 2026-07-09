@@ -1,9 +1,9 @@
 use galvan_ast::{
-    BasicTypeItem, Body, Declaration, EmptyTypeDecl, Expression, ExpressionKind, FnDecl,
-    FnSignature, GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator,
+    ArrayTypeItem, BasicTypeItem, Body, Declaration, EmptyTypeDecl, Expression, ExpressionKind,
+    FnDecl, FnSignature, GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator,
     Ownership, Param, ParamList, ParametricTypeItem, SegmentedAsts, Span, StringLiteral,
-    ToplevelItem, TupleTypeDecl, TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl,
-    UsePath, Visibility,
+    ToplevelItem, TupleTypeDecl, TupleTypeItem, TupleTypeMember, TypeDecl, TypeElement, TypeIdent,
+    UseDecl, UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -1164,6 +1164,106 @@ fn generic_rust_associated_constructors_instantiate_receiver_generics() {
     assert_eq!(router.base_type, TypeIdent::new("Router"));
     assert_eq!(router.type_args.len(), 1);
     assert!(router.type_args[0].is_infer());
+}
+
+#[test]
+fn rust_associated_constructor_lowers_tuple_argument_literals() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_type_decl(
+        "std",
+        "SocketAddr",
+        "::std::net::SocketAddr",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("SocketAddr"),
+            generic_params: vec![],
+            span: Span::default(),
+        }),
+    );
+    rust_interop.add_associated_function_decl(
+        "std",
+        TypeIdent::new("SocketAddr"),
+        "from",
+        "::std::net::SocketAddr::from",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("from"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: Some(galvan_ast::DeclModifier::Move),
+                    short_name: None,
+                    identifier: Ident::new("addr"),
+                    param_type: TypeElement::Tuple(Box::new(TupleTypeItem {
+                        elements: vec![
+                            TypeElement::Array(Box::new(ArrayTypeItem {
+                                elements: TypeElement::Plain(BasicTypeItem {
+                                    ident: TypeIdent::new("U8"),
+                                    span: Span::default(),
+                                }),
+                                span: Span::default(),
+                            })),
+                            TypeElement::Plain(BasicTypeItem {
+                                ident: TypeIdent::new("U16"),
+                                span: Span::default(),
+                            }),
+                        ],
+                        span: Span::default(),
+                    })),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("SocketAddr"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    rust_interop.import_uses(&[use_decl(&["std", "SocketAddr"])]);
+
+    let module = lower_with_interop(
+        "fn build() -> SocketAddr {
+             SocketAddr.from(([127, 0, 0, 1], 3000))
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "build"));
+
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected associated function call, got {:?}", tail.kind);
+    };
+    assert_eq!(
+        call.rust.as_ref().map(|rust| rust.rust_path.as_ref()),
+        Some("::std::net::SocketAddr::from")
+    );
+    let [tuple_arg] = call.args.as_slice() else {
+        panic!("expected one tuple argument, got {:?}", call.args);
+    };
+    let HirExpressionKind::Collection(HirCollection::Tuple(elements)) = &tuple_arg.kind else {
+        panic!("expected tuple argument, got {:?}", tuple_arg.kind);
+    };
+    let [octets, port] = elements.as_slice() else {
+        panic!(
+            "expected octets and port tuple elements, got {:?}",
+            elements
+        );
+    };
+    let HirExpressionKind::Collection(HirCollection::Array(octets)) = &octets.kind else {
+        panic!("expected octet array, got {:?}", octets.kind);
+    };
+    assert_eq!(octets.len(), 4);
+    let HirExpressionKind::Literal(HirLiteral::Number(port)) = &port.kind else {
+        panic!("expected port number literal, got {:?}", port.kind);
+    };
+    assert_eq!(port, "3000");
+    let TypeElement::Plain(ty) = &tail.ty else {
+        panic!("expected SocketAddr result, got {:?}", tail.ty);
+    };
+    assert_eq!(ty.ident, TypeIdent::new("SocketAddr"));
 }
 
 #[test]

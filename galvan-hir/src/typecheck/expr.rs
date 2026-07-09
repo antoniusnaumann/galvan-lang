@@ -9,7 +9,8 @@ use galvan_ast::{
     FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation, Literal, MatchArm,
     MatchBindingPattern, MatchExpression, MatchNamedPatternArg, MatchPattern, MatchPatternArg,
     MemberOperator, NeverTypeItem, OptionalTypeItem, Ownership, Param, ParametricTypeItem,
-    PostfixExpression, ResultTypeItem, Span, TypeDecl, TypeElement, TypeIdent, UsePath,
+    PostfixExpression, ResultTypeItem, Span, TupleTypeItem, TypeDecl, TypeElement, TypeIdent,
+    UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -2904,6 +2905,21 @@ impl Checker<'_> {
                     HirCollection::Array(elements),
                     TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
                         elements: elem_ty,
+                        span: Span::default(),
+                    })),
+                )
+            }
+            CollectionLiteral::TupleLiteral(tuple) => {
+                let elements: Vec<_> = tuple
+                    .elements
+                    .iter()
+                    .map(|element| self.lower_expression(element, &Expected::free()))
+                    .collect();
+                let element_tys = elements.iter().map(|element| element.ty.clone()).collect();
+                (
+                    HirCollection::Tuple(elements),
+                    TypeElement::Tuple(Box::new(TupleTypeItem {
+                        elements: element_tys,
                         span: Span::default(),
                     })),
                 )

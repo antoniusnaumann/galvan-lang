@@ -6,10 +6,17 @@ use super::Expression;
 
 #[type_union]
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
-pub type CollectionLiteral = ArrayLiteral + DictLiteral + SetLiteral + OrderedDictLiteral;
+pub type CollectionLiteral =
+    ArrayLiteral + TupleLiteral + DictLiteral + SetLiteral + OrderedDictLiteral;
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct ArrayLiteral {
+    pub elements: Vec<Expression>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct TupleLiteral {
     pub elements: Vec<Expression>,
     pub span: Span,
 }

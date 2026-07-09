@@ -516,6 +516,11 @@ fn collect_collection_namespaces(literal: &CollectionLiteral, namespaces: &mut H
                 collect_expression_namespaces(element, namespaces);
             }
         }
+        CollectionLiteral::TupleLiteral(tuple) => {
+            for element in &tuple.elements {
+                collect_expression_namespaces(element, namespaces);
+            }
+        }
         CollectionLiteral::SetLiteral(set) => {
             for element in &set.elements {
                 collect_expression_namespaces(element, namespaces);
