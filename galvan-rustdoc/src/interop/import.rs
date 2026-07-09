@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rustdoc_types::{Crate, Id, Impl, Item, ItemEnum, Use};
 
-use galvan_ast::TypeIdent;
+use galvan_ast::{FnSignature, TypeElement, TypeIdent};
 
 use crate::model::RustdocCrateLiftSummary;
 
@@ -250,13 +250,20 @@ impl RustInterop {
         rust_path: Box<str>,
         target: &Item,
     ) {
-        if public_type_name(target).is_some() {
+        if let Some(original_name) = public_type_name(target) {
             self.push_reexported_type_from_item(
                 krate,
                 crate_name,
                 exported_name,
-                rust_path,
+                rust_path.clone(),
                 target,
+            );
+            self.import_reexported_impl_items(
+                krate,
+                crate_name,
+                &TypeIdent::new(original_name),
+                &TypeIdent::new(exported_name),
+                rust_path,
             );
             return;
         }
@@ -351,6 +358,139 @@ impl RustInterop {
             return;
         };
         self.push_constant(crate_name, None, exported_name, rust_path, ty);
+    }
+
+    fn import_reexported_impl_items(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        original_receiver: &TypeIdent,
+        exported_receiver: &TypeIdent,
+        receiver_rust_path: Box<str>,
+    ) {
+        for (_, impl_item) in sorted_items(krate) {
+            let ItemEnum::Impl(impl_) = &impl_item.inner else {
+                continue;
+            };
+            if impl_.trait_.is_some() {
+                continue;
+            }
+            let Some(receiver) = self.impl_associated_receiver(krate, crate_name, impl_) else {
+                continue;
+            };
+            if &receiver != original_receiver {
+                continue;
+            }
+
+            self.import_reexported_impl_constants(
+                krate,
+                crate_name,
+                impl_,
+                original_receiver,
+                exported_receiver,
+                receiver_rust_path.as_ref(),
+            );
+            self.import_reexported_impl_functions(
+                krate,
+                crate_name,
+                impl_,
+                original_receiver,
+                exported_receiver,
+                receiver_rust_path.as_ref(),
+            );
+        }
+    }
+
+    fn import_reexported_impl_constants(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        impl_: &Impl,
+        original_receiver: &TypeIdent,
+        exported_receiver: &TypeIdent,
+        receiver_rust_path: &str,
+    ) {
+        for id in &impl_.items {
+            let Some(item) = krate.index.get(id) else {
+                continue;
+            };
+            if !is_public(item) {
+                continue;
+            }
+            let Some(name) = item.name.as_deref() else {
+                continue;
+            };
+            let Some(constant_ty) = constant_type(item) else {
+                continue;
+            };
+            if type_contains_unliftable_type(krate, constant_ty) {
+                continue;
+            }
+            let Some(mut ty) = self.type_from_json(krate, crate_name, constant_ty) else {
+                continue;
+            };
+            rename_type_references(&mut ty, original_receiver, exported_receiver);
+            self.push_constant(
+                crate_name,
+                Some(exported_receiver.clone()),
+                name,
+                format!("{receiver_rust_path}::{name}").into_boxed_str(),
+                ty,
+            );
+        }
+    }
+
+    fn import_reexported_impl_functions(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        impl_: &Impl,
+        original_receiver: &TypeIdent,
+        exported_receiver: &TypeIdent,
+        receiver_rust_path: &str,
+    ) {
+        for id in &impl_.items {
+            let Some(item) = krate.index.get(id) else {
+                continue;
+            };
+            if !is_public(item) {
+                continue;
+            }
+            let Some(name) = item.name.as_deref() else {
+                continue;
+            };
+            let ItemEnum::Function(function) = &item.inner else {
+                continue;
+            };
+            if function_is_unsafe(function) {
+                continue;
+            }
+            if signature_contains_unliftable_type(krate, &function.sig) {
+                continue;
+            }
+
+            let Some(mut imported) =
+                self.impl_function_decl(krate, crate_name, name, &function.sig, impl_)
+            else {
+                continue;
+            };
+            rename_function_type_references(
+                &mut imported.decl.signature,
+                original_receiver,
+                exported_receiver,
+            );
+            let borrowed_return = return_is_borrowed(&function.sig);
+            self.push_function_with_associated_receiver(
+                crate_name,
+                name,
+                format!("{receiver_rust_path}::{name}").into_boxed_str(),
+                imported.decl,
+                borrowed_return,
+                Some(exported_receiver.clone()),
+                imported.return_conversion,
+                imported.arg_conversions,
+            );
+        }
     }
 
     fn import_trait_constant(
@@ -486,4 +626,69 @@ fn absolute_rust_path(source: &str) -> Box<str> {
 
 fn looks_like_type_name(name: &str) -> bool {
     name.chars().next().is_some_and(char::is_uppercase) && name.chars().any(char::is_lowercase)
+}
+
+fn rename_function_type_references(
+    signature: &mut FnSignature,
+    original: &TypeIdent,
+    exported: &TypeIdent,
+) {
+    for param in &mut signature.parameters.params {
+        rename_type_references(&mut param.param_type, original, exported);
+    }
+    rename_type_references(&mut signature.return_type, original, exported);
+}
+
+fn rename_type_references(ty: &mut TypeElement, original: &TypeIdent, exported: &TypeIdent) {
+    match ty {
+        TypeElement::Plain(plain) => {
+            if &plain.ident == original {
+                plain.ident = exported.clone();
+            }
+        }
+        TypeElement::Parametric(parametric) => {
+            if &parametric.base_type == original {
+                parametric.base_type = exported.clone();
+            }
+            for arg in &mut parametric.type_args {
+                rename_type_references(arg, original, exported);
+            }
+        }
+        TypeElement::Array(array) => {
+            rename_type_references(&mut array.elements, original, exported)
+        }
+        TypeElement::Dictionary(dictionary) => {
+            rename_type_references(&mut dictionary.key, original, exported);
+            rename_type_references(&mut dictionary.value, original, exported);
+        }
+        TypeElement::OrderedDictionary(dictionary) => {
+            rename_type_references(&mut dictionary.key, original, exported);
+            rename_type_references(&mut dictionary.value, original, exported);
+        }
+        TypeElement::Set(set) => rename_type_references(&mut set.elements, original, exported),
+        TypeElement::Tuple(tuple) => {
+            for element in &mut tuple.elements {
+                rename_type_references(element, original, exported);
+            }
+        }
+        TypeElement::Optional(optional) => {
+            rename_type_references(&mut optional.inner, original, exported);
+        }
+        TypeElement::Result(result) => {
+            rename_type_references(&mut result.success, original, exported);
+            if let Some(error) = &mut result.error {
+                rename_type_references(error, original, exported);
+            }
+        }
+        TypeElement::Closure(closure) => {
+            for param in &mut closure.parameters {
+                rename_type_references(param, original, exported);
+            }
+            rename_type_references(&mut closure.return_ty, original, exported);
+        }
+        TypeElement::Generic(_)
+        | TypeElement::Infer(_)
+        | TypeElement::Never(_)
+        | TypeElement::Void(_) => {}
+    }
 }

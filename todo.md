@@ -84,8 +84,6 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
-  - Allow type identifiers in member-call receiver position so
-    `TypeName.associated_function()` parses as an expression
 
 ## Future Enhancements
 
@@ -101,8 +99,7 @@ commands remain subcommands.
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve external-target function and constant re-exports from rustdoc JSON;
     external type re-exports without target metadata are imported as empty types
-  - Support parser/grammar syntax for imported Rust constants with uppercase
-    names and qualified constant paths
+  - Support qualified external Rust constant paths
   - Support qualified external Rust type paths in Galvan type syntax; rustdoc
     metadata preserves module paths, but imported Rust types currently become
     unqualified only through `use`
@@ -117,8 +114,6 @@ commands remain subcommands.
     qualified Rust type path once Galvan has qualified type syntax, so same-named
     imported Rust types from different modules can carry distinct conversion
     metadata instead of suppressing ambiguous unqualified conversion lookups
-  - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
-    typechecker support for imported inherent associated functions
   - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,
     Rust list/map/set collections, `Result<T, E>`, `Arc<Mutex<T>>` /
     `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
@@ -143,8 +138,6 @@ commands remain subcommands.
 - Support full Axum-style API declarations in Galvan:
   - Add async functions and `.await`
   - Generate async `main` with the default Tokio runtime
-  - Resolve type-associated Rust methods and constants with Galvan member
-    syntax, such as `Router.new()` and `StatusCode.CREATED`
   - Support builtin auto traits, `@derive(...)`, `@derive(!Trait)` opt-outs,
     and user-declared `auto trait`s
   - Support shared-state interop from Galvan `ref` fields

@@ -1332,6 +1332,44 @@ mod tests {
     }
 
     #[test]
+    fn rust_associated_function_paths_render_as_rust_paths() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust: Some(HirRustCall {
+                rust_path: "::external::Router::new".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: Vec::new(),
+            }),
+            ident: Ident::new("new"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::external::Router::new()"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_associated_constants_render_as_rust_paths() {
+        let constant = HirExpressionKind::RustConstant(HirRustConstant {
+            rust_path: "::external::StatusCode::CREATED".into(),
+        });
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constant.transpile(&ctx, &mut errors),
+            "::external::StatusCode::CREATED"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
     fn rust_calls_apply_owned_wrapper_argument_conversions() {
         let args = vec![
             HirExpression::new(

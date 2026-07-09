@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 
 use galvan_ast::{
-    BasicTypeItem, Closure, ClosureParameter, ClosureTypeItem, CollectionLiteral,
-    ComparisonOperator, ConstructorCall, DeclModifier, DictLiteralElement, ElseExpression,
-    EnumConstructor, Expression, ExpressionKind, FnSignature, FunctionCall, FunctionCallArg, Ident,
-    InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
-    MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
-    OptionalTypeItem, Ownership, Param, ParametricTypeItem, PostfixExpression, ResultTypeItem,
-    Span, TypeDecl, TypeElement, TypeIdent, UsePath,
+    AssociatedConstant, AssociatedFunctionCall, BasicTypeItem, Closure, ClosureParameter,
+    ClosureTypeItem, CollectionLiteral, ComparisonOperator, ConstructorCall, DeclModifier,
+    DictLiteralElement, ElseExpression, EnumConstructor, Expression, ExpressionKind, FnSignature,
+    FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation, Literal, MatchArm,
+    MatchBindingPattern, MatchExpression, MatchNamedPatternArg, MatchPattern, MatchPatternArg,
+    MemberOperator, NeverTypeItem, OptionalTypeItem, Ownership, Param, ParametricTypeItem,
+    PostfixExpression, ResultTypeItem, Span, TypeDecl, TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -57,6 +57,12 @@ impl Checker<'_> {
             }
             ExpressionKind::Match(match_expression) => {
                 self.lower_match_expression(match_expression, expected, span)
+            }
+            ExpressionKind::AssociatedFunctionCall(call) => {
+                self.lower_associated_rust_call(call, expected, span)
+            }
+            ExpressionKind::AssociatedConstant(constant) => {
+                self.lower_associated_rust_constant(constant, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
@@ -2436,11 +2442,6 @@ impl Checker<'_> {
         match operation.operator {
             MemberOperator::Dot => match &operation.rhs.kind {
                 ExpressionKind::FunctionCall(call) => {
-                    if let Some(associated) =
-                        self.lower_associated_rust_call(&operation.lhs, call, expected, span)
-                    {
-                        return associated;
-                    }
                     let (receiver, modifier) = self.lower_call_value(&operation.lhs);
                     self.lower_call(
                         Some((receiver, modifier)),
@@ -2452,11 +2453,6 @@ impl Checker<'_> {
                     )
                 }
                 ExpressionKind::Ident(field) => {
-                    if let Some(constant) =
-                        self.lower_associated_rust_constant(&operation.lhs, field, span)
-                    {
-                        return constant;
-                    }
                     let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
                     let rust_return_conversion = receiver_type_ident(&receiver.ty)
@@ -2494,42 +2490,59 @@ impl Checker<'_> {
 
     fn lower_associated_rust_constant(
         &mut self,
-        lhs: &Expression,
-        constant_name: &Ident,
+        constant: &AssociatedConstant,
         span: Span,
-    ) -> Option<HirExpression> {
-        let ExpressionKind::Ident(type_name) = &lhs.kind else {
-            return None;
-        };
-        let receiver = TypeIdent::new(type_name.as_str());
-        self.lookup.resolve_type(&receiver)?;
-        let constant = self
-            .rust_interop
-            .associated_constant(None, &receiver, constant_name)?;
+    ) -> HirExpression {
+        if self.lookup.resolve_type(&constant.receiver).is_none() {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: constant.receiver.to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated constant receiver", span);
+        }
 
-        Some(HirExpression::new(
+        let Some(decl) =
+            self.rust_interop
+                .associated_constant(None, &constant.receiver, &constant.name)
+        else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownIdentifier {
+                    name: format!("{}.{}", constant.receiver, constant.name),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated constant", span);
+        };
+
+        HirExpression::new(
             HirExpressionKind::RustConstant(HirRustConstant {
-                rust_path: constant.rust_path.clone(),
+                rust_path: decl.rust_path.clone(),
             }),
-            constant.ty.clone(),
+            decl.ty.clone(),
             Ownership::UniqueOwned,
             span,
-        ))
+        )
     }
 
     fn lower_associated_rust_call(
         &mut self,
-        lhs: &Expression,
-        call: &FunctionCall,
+        associated: &AssociatedFunctionCall,
         expected: &Expected,
         span: Span,
-    ) -> Option<HirExpression> {
-        let ExpressionKind::Ident(type_name) = &lhs.kind else {
-            return None;
-        };
-        let receiver = TypeIdent::new(type_name.as_str());
-        self.lookup.resolve_type(&receiver)?;
+    ) -> HirExpression {
+        if self.lookup.resolve_type(&associated.receiver).is_none() {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: associated.receiver.to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated function receiver", span);
+        }
 
+        let call = &associated.call;
         let labels = argument_labels(&call.arguments);
         let labels_ref = label_refs(&labels);
         let namespace = call.namespace.as_ref().cloned();
@@ -2537,17 +2550,30 @@ impl Checker<'_> {
             namespace.segments.first().and_then(|segment| {
                 self.rust_interop.associated_function(
                     Some(segment.as_str()),
-                    &receiver,
+                    &associated.receiver,
                     &call.identifier,
                     &labels_ref,
                 )
             })
         } else {
-            self.rust_interop
-                .associated_function(None, &receiver, &call.identifier, &labels_ref)
-        }?;
+            self.rust_interop.associated_function(
+                None,
+                &associated.receiver,
+                &call.identifier,
+                &labels_ref,
+            )
+        };
+        let Some(function) = function else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownIdentifier {
+                    name: format!("{}.{}", associated.receiver, call.identifier),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated function", span);
+        };
 
-        Some(self.lower_rust_call(RustCall {
+        self.lower_rust_call(RustCall {
             function,
             receiver: None,
             namespace,
@@ -2555,9 +2581,9 @@ impl Checker<'_> {
             labels,
             arguments: &call.arguments,
             expected,
-            associated_receiver: Some(&receiver),
+            associated_receiver: Some(&associated.receiver),
             span,
-        }))
+        })
     }
 
     fn lower_access_base(&mut self, expression: &Expression) -> (HirExpression, bool) {

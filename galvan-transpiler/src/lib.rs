@@ -426,6 +426,9 @@ fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashS
         ExpressionKind::FunctionCall(call) => {
             collect_call_namespaces(call, namespaces);
         }
+        ExpressionKind::AssociatedFunctionCall(call) => {
+            collect_call_namespaces(&call.call, namespaces);
+        }
         ExpressionKind::ElseExpression(else_expression) => {
             collect_expression_namespaces(&else_expression.receiver, namespaces);
             collect_body_namespaces(&else_expression.block.body, namespaces);
@@ -468,7 +471,10 @@ fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashS
         ExpressionKind::Group(group) => {
             collect_expression_namespaces(&group.inner, namespaces);
         }
-        ExpressionKind::EnumAccess(_) | ExpressionKind::Literal(_) | ExpressionKind::Ident(_) => {}
+        ExpressionKind::AssociatedConstant(_)
+        | ExpressionKind::EnumAccess(_)
+        | ExpressionKind::Literal(_)
+        | ExpressionKind::Ident(_) => {}
     }
 }
 
