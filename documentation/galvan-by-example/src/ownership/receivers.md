@@ -69,11 +69,11 @@ pub(crate) fn __main__() {
 `mut self` is `&mut self`. A `ref self` receiver takes the shared handle
 (`Arc<Mutex<Self>>`) directly — which is why replacing the pointed-to value
 from inside the method is possible.
+// TODO: this does not hit it, mut args can also be replaced so that the callee sees it. The key here is that they can be long-living, i.e., stored in a struct that escapes which mut cannot.
 
 </details>
 
 - A plain `self: Dog` receiver reads the value — calls need no annotation.
 - `mut self` mutates the receiver: call with `dog.mut.method(...)`,
   `(mut dog).method(...)`, or the free-function form `method(mut dog, ...)`.
-- `ref self` takes the receiver as a shared reference — the method can even
-  replace the referenced value itself.
+- `ref self` takes the receiver as a shared reference, so the method is free to store a handle to it in a struct.
