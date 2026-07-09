@@ -18,6 +18,8 @@ pub type Theme(name: String) {
 }
 ```
 
+`// TODO: Generated Rust example should create a struct "Theme" with the common fields and a "__tag: __Theme" field which is the enum with the cases 
+
 The `name` field is shared by all variants; variant-specific fields are
 declared on each case. Construction supplies both:
 
