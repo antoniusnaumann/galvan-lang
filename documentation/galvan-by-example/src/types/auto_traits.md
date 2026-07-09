@@ -17,10 +17,10 @@ type SessionToken {
 ```
 
 <details>
-<summary>Generated Rust (today)</summary>
+<summary>Generated Rust</summary>
 
 ```rust
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct SessionToken {
     pub(crate) value: String,
 }
@@ -32,11 +32,11 @@ field is serializable, and no `Clone` for the example above.
 
 </details>
 
-Explicit `@derive(...)` documents intended conformance, and libraries can
+Non-auto traits are derived explicitly with `@derive(...)`, and libraries can
 declare their own auto traits:
 
 ```galvan
-@derive(Clone, Debug, serde::Serialize)
+@derive(Response)
 type HealthResponse {
     status: String
 }
