@@ -6,5 +6,4 @@ collect into an array. Blocks use braces, conditions need no parentheses.
 
 > [!WARNING]
 > A general `loop { ... }` construct is designed but **not fully implemented
-> yet** — use `for` with a range or collection in the meantime. `while` does
-> not exist; the design favors `for` plus early exits.
+> yet** — use `for` with a range or collection in the meantime.
