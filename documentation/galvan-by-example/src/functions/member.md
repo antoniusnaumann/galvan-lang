@@ -52,7 +52,6 @@ borrowed rather than consumed.
 
 </details>
 
-- `dog.bark()` and `bark(dog)` are the same call — method syntax is sugar,
-  not a separate dispatch mechanism.
+- `bark(dog)` resolves to `dog.bark()` if no matching function with the same signature exists.
 - Mutating receivers (`mut self`) and reference receivers (`ref self`) are
   covered in [Receivers](../ownership/receivers.md).
