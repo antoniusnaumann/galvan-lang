@@ -28,6 +28,8 @@ pub(crate) struct Book {
     pub(crate) content: String,
 }
 
+// TODO: this should also contain the implementation of the `Default` trait as all fields have default values
+
 pub(crate) fn __main__() {
     let blank: Book = Book {
         title: format!("Field Notes"),
