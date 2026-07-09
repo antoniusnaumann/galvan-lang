@@ -44,8 +44,7 @@ pub(crate) fn __main__() {
 }
 ```
 
-Defaults are filled in at each construction site, so partial construction has
-no runtime cost.
+Defaults are filled in at each construction site, so function calls as default fields run where the constructor is called.
 
 </details>
 
