@@ -95,7 +95,6 @@ impl RustdocCache {
                 })
             }
             Err(error) => {
-                let error = RustdocError::RustdocSpawn(error);
                 self.write_stderr(error.to_string());
                 Err(error)
             }

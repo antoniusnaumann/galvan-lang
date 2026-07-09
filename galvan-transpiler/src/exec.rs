@@ -11,6 +11,14 @@ pub fn transpile_dir(
     transpile(read_sources(path, filter)?)
 }
 
+pub(crate) fn transpile_dir_with_rustdoc_warnings(
+    path: impl AsRef<Path>,
+    filter: Vec<String>,
+    rustdoc_warning: impl FnMut(&crate::RustdocError),
+) -> Result<Vec<TranspileOutput>, TranspileError> {
+    crate::transpile_sources_with_rustdoc_warnings(read_sources(path, filter)?, rustdoc_warning)
+}
+
 /// This is for use in macros and should not be used directly
 pub mod __private {
     use super::*;
@@ -19,7 +27,9 @@ pub mod __private {
     use std::path::PathBuf;
 
     pub fn __setup_galvan() -> String {
-        let transpiled = match transpile_dir("src", vec![]) {
+        let transpiled = match transpile_dir_with_rustdoc_warnings("src", vec![], |warning| {
+            println!("cargo::warning={warning}");
+        }) {
             Ok(output) => output,
             Err(e) => return e.to_string(),
         };

@@ -71,6 +71,8 @@ commands remain subcommands.
     scanner stub (tree-sitter-galvan/src/scanner.c)
   - Investigate the generic-container type mismatch warning emitted while
     building `galvan-test`
+  - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
+    instead of printing Cargo messages from the public transpilation path
   - Normalize existing Rust formatting drift so `cargo fmt --all --check`
     can be used as a clean verification step without unrelated diffs
 
@@ -87,6 +89,14 @@ commands remain subcommands.
 
 ## Future Enhancements
 
+- Rustdoc toolchain configuration follow-ups:
+  - Add manifest-level rustdoc configuration if Galvan gains a project config
+    file.
+  - Consider an explicit rustup auto-install command for the pinned toolchain,
+    gated behind user intent rather than mutating the environment during
+    detection.
+  - Evaluate auto-detecting compatible installed nightly toolchains once the
+    rustdoc-types/schema pinning story can verify compatibility.
 - Extend Rust interop beyond rustdoc-backed free functions:
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve external-target function and constant re-exports from rustdoc JSON;

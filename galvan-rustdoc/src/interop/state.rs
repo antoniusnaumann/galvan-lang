@@ -24,8 +24,9 @@ use super::uses::imported_crates;
 /// This is one half of a coordinated pin: the `rustdoc-types` dependency
 /// (`=0.60.0`, whose `FORMAT_VERSION` is `60`) must stay in lockstep with the
 /// nightly toolchain the cache is generated with (see
-/// [`crate::cache`] / `GALVAN_RUSTDOC_TOOLCHAIN`). Bumping to a new schema means
-/// bumping *both*: the `rustdoc-types` version here and the pinned nightly date.
+/// [`crate::cache`] / `GALVAN_RUSTDOC_TOOLCHAIN` / `GALVAN_RUSTDOC_COMMAND`).
+/// Bumping to a new schema means bumping *both*: the `rustdoc-types` version
+/// here and the pinned nightly date.
 pub(super) const RUSTDOC_FORMAT_VERSION: u64 = rustdoc_types::FORMAT_VERSION as u64;
 
 /// Whether a `(receiver, name/id)` associated item is exposed by exactly one
@@ -72,18 +73,28 @@ impl RustInterop {
         crate_names: impl IntoIterator<Item = String>,
         uses: &[ToplevelItem<UseDecl>],
     ) -> Result<Self, RustdocError> {
+        Self::from_crates_and_uses_with_warnings(crate_names, uses, |_| {})
+    }
+
+    pub fn from_crates_and_uses_with_warnings(
+        crate_names: impl IntoIterator<Item = String>,
+        uses: &[ToplevelItem<UseDecl>],
+        mut warn: impl FnMut(&RustdocError),
+    ) -> Result<Self, RustdocError> {
         let mut interop = RustInterop::default();
         let imported_crates = imported_crates(uses);
         let crate_names = crate_names
             .into_iter()
             .chain(imported_crates.iter().cloned())
             .collect::<HashSet<_>>();
+        let mut warned = HashSet::new();
 
         for crate_name in crate_names {
             let cache = RustdocCache::new(&crate_name);
             match cache.update_if_needed() {
                 Ok(()) => {}
-                Err(RustdocError::DependencyNotFound(_) | RustdocError::RustdocSpawn(_)) => {
+                Err(error) if is_soft_cache_error(&error) => {
+                    warn_soft_cache_error_once(&error, &mut warned, &mut warn);
                     continue;
                 }
                 Err(error) => return Err(error),
@@ -200,6 +211,36 @@ impl RustInterop {
     }
 }
 
+fn is_soft_cache_error(error: &RustdocError) -> bool {
+    matches!(
+        error,
+        RustdocError::DependencyNotFound(_)
+            | RustdocError::ToolchainUnavailable
+            | RustdocError::ToolchainNotInstalled(_)
+            | RustdocError::RustdocSpawn(_)
+    )
+}
+
+fn warn_soft_cache_error_once(
+    error: &RustdocError,
+    warned: &mut HashSet<String>,
+    warn: &mut impl FnMut(&RustdocError),
+) {
+    if !matches!(
+        error,
+        RustdocError::ToolchainUnavailable
+            | RustdocError::ToolchainNotInstalled(_)
+            | RustdocError::RustdocSpawn(_)
+    ) {
+        return;
+    }
+
+    let message = error.to_string();
+    if warned.insert(message) {
+        warn(error);
+    }
+}
+
 /// Reject a rustdoc JSON cache whose `format_version` does not match the schema
 /// this crate walks, so a nightly toolchain bump fails loudly instead of
 /// silently dropping every item it can no longer parse.
@@ -249,5 +290,23 @@ mod format_version_tests {
         let json = json!({ "index": {} });
         let error = check_format_version(&path(), &json).unwrap_err();
         assert!(matches!(error, RustdocError::MissingFormatVersion(_)));
+    }
+
+    #[test]
+    fn soft_cache_warnings_are_callback_driven_and_deduplicated() {
+        let mut warned = HashSet::new();
+        let mut warnings = Vec::new();
+        let mut warn = |error: &RustdocError| warnings.push(error.to_string());
+
+        warn_soft_cache_error_once(&RustdocError::ToolchainUnavailable, &mut warned, &mut warn);
+        warn_soft_cache_error_once(&RustdocError::ToolchainUnavailable, &mut warned, &mut warn);
+        warn_soft_cache_error_once(
+            &RustdocError::DependencyNotFound("missing".into()),
+            &mut warned,
+            &mut warn,
+        );
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("rustup was not found"));
     }
 }

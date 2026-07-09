@@ -328,18 +328,31 @@ pub enum TranspileError {
 }
 
 fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile_sources_with_rustdoc_warnings(sources, |_| {})
+}
+
+pub(crate) fn transpile_sources_with_rustdoc_warnings(
+    sources: Vec<Source>,
+    rustdoc_warning: impl FnMut(&RustdocError),
+) -> Result<Vec<TranspileOutput>, TranspileError> {
     let asts = sources
         .into_iter()
         .map(|s| s.try_into_ast())
         .collect::<Result<Vec<_>, _>>()?;
 
-    transpile_asts(asts)
+    transpile_asts_with_rustdoc_warnings(asts, rustdoc_warning)
 }
 
-fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
+fn transpile_asts_with_rustdoc_warnings(
+    asts: Vec<Ast>,
+    rustdoc_warning: impl FnMut(&RustdocError),
+) -> Result<Vec<TranspileOutput>, TranspileError> {
     let segmented = asts.segmented()?;
-    let rust_interop =
-        RustInterop::from_crates_and_uses(qualified_namespaces(&segmented), &segmented.uses)?;
+    let rust_interop = RustInterop::from_crates_and_uses_with_warnings(
+        qualified_namespaces(&segmented),
+        &segmented.uses,
+        rustdoc_warning,
+    )?;
     let (module, mut errors) = typecheck_with_interop(segmented, &rust_interop)?;
 
     let mut builtins = builtins();
