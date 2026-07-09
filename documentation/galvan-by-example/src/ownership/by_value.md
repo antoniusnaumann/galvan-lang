@@ -1,8 +1,7 @@
 # Pass by Value
 
 Arguments are passed by value by default: the function gets its own copy, and
-the caller's variable is untouched — and still usable afterwards. There is no
-such thing as "use after move" in Galvan:
+the caller's variable is untouched.
 
 ```galvan
 fn shouted(name: String) -> String {
@@ -43,4 +42,4 @@ copy-on-write-style defaults with zero annotations.
 By-value does **not** mean a deep copy at runtime. The transpiler passes a
 borrow whenever the callee only reads the value, and clones only where
 ownership is genuinely needed (for example when storing the argument in a
-struct).
+struct or calling a Rust function that demands an owned parameter).
