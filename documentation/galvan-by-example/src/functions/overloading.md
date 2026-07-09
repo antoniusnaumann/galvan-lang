@@ -45,7 +45,7 @@ pub(crate) fn __main__() {
 Overloads become distinct Rust functions whose names are mangled from their
 labels (`pick`, `pick__plus`, `pick__plus__fallback`). Galvan identifiers
 forbid double underscores precisely so these generated names can never clash
-with user code.
+with user code. When lifting to Galvan, the N labels are assigned to the last N parameters.
 
 </details>
 
@@ -53,8 +53,7 @@ with user code.
   address as `plus:`.
 - The `~` marker means "the label is the parameter name itself" —
   `~ fallback` is short for `fallback fallback`.
-- The first (unlabeled) parameter never takes a label, which keeps simple
-  calls simple.
+- Labeled parameters in a function signature come after unlabeled parameters.
 
 The same mechanism works for methods:
 
