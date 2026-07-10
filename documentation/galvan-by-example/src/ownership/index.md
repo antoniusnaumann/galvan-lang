@@ -17,4 +17,4 @@ Two rules make the system predictable:
 
 There are no lifetimes, no `&`, and no move errors in Galvan source. The
 transpiler decides between borrowing and cloning; `ref` is the explicit escape
-hatch when you actually want shared mutable state.
+hatch to opt into shared reference semantics when you actually want shared mutable state.

@@ -1,7 +1,7 @@
 # Defining Functions
 
 Functions are declared with `fn`. The final expression of the body is the
-return value — no `return` keyword needed. `return` exists for early exits:
+return value. Explicit `return` can be used for early exits:
 
 ```galvan
 fn add(a: Int, b: Int) -> Int {

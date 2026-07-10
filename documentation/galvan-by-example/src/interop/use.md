@@ -14,6 +14,16 @@ fn main() {
 }
 ```
 
+Namespace-qualified access (`serde_json::to_string(..)`) always works, as long as the respective crate is listed as dependency in the `Cargo.toml`.
+
+```galvan
+fn main() {
+    let scores = [32, 48, 64]
+    let payload = serde_json::to_string(scores) else { "encoding failed" }
+    println "scores as json: \(payload)"
+}
+```
+
 <details>
 <summary>Generated Rust</summary>
 
@@ -35,12 +45,11 @@ path either way.
 
 </details>
 
+
 ```galvan
 use serde_json::to_string
 ```
 
-- Namespace-qualified access (`serde_json::to_string(..)`) always works,
-  with or without `use`.
-- If two imported crates export the same name, the unqualified import is
-  suppressed and the qualified syntax remains — ambiguity is never resolved
-  silently in favor of one crate.
+If two imported crates export the same name, the unqualified import is
+suppressed and the qualified syntax remains — ambiguity is never resolved
+silently in favor of one crate.

@@ -28,6 +28,8 @@ pub(crate) struct Book {
     pub(crate) content: String,
 }
 
+// TODO: this should also contain the implementation of the `Default` trait as all fields have default values
+
 pub(crate) fn __main__() {
     let blank: Book = Book {
         title: format!("Field Notes"),
@@ -42,8 +44,7 @@ pub(crate) fn __main__() {
 }
 ```
 
-Defaults are filled in at each construction site, so partial construction has
-no runtime cost.
+Defaults are filled in at each construction site, so function calls as default fields run where the constructor is called.
 
 </details>
 

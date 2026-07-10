@@ -41,7 +41,7 @@ The full mapping to Rust types:
 | `Int` | `i64` | `UInt` | `u64` |
 | `I8` … `I128` | `i8` … `i128` | `U8` … `U128` | `u8` … `u128` |
 | `ISize` | `isize` | `USize` | `usize` |
-| `Float` | `f32` | `Double` | `f64` |
+| `Float`, `F32` | `f32` | `Double`, `F64` | `f64` |
 | `Bool` | `bool` | `Char` | `char` |
 | `String` | `String` | | |
 

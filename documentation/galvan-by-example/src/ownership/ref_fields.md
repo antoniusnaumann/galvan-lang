@@ -69,5 +69,4 @@ pub(crate) fn __main__() {
 </details>
 
 The person's `dog` and the local `dog` are the same animal: mutating one is
-visible through the other. Without `ref`, the field would have received an
-independent copy.
+visible through the other. Ommitting the `ref` is a compiler error, similar to how forgetting a `mut` for mutable parameters fails.

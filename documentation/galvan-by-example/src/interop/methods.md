@@ -5,7 +5,7 @@ Methods on imported Rust types work with plain member syntax — `.len()`,
 Beyond that, Galvan defines how to reach *namespaced* methods and
 type-associated items:
 
-**Namespaced methods.** Extension methods from another crate are callable
+**Namespaced methods.** Extension methods from another crate, i.e., methods that are defined in a crate that does not define the type itself, are callable
 without an import by qualifying the crate:
 
 ```galvan
@@ -30,6 +30,8 @@ pub(crate) fn __main__() {
 
 A namespace-qualified method call becomes a block that imports the crate's
 extension traits locally — scoping the import to exactly one call.
+
+`// TODO: Galvan should specifically recognize traits of the form {TYPENAME}_Ext as extension traits, i.e., the form that Galvan extension methods lower to and specifically import those (and look at those for type checking) other trait implementations should not result in extension methods.`
 
 </details>
 

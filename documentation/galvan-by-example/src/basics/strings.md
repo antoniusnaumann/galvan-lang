@@ -1,7 +1,6 @@
 # Strings and Characters
 
-Strings are owned, growable UTF-8 text. Concatenation uses `++` — Galvan
-reserves `+` for numbers. Characters use single quotes and concatenate onto
+Strings are owned, growable UTF-8 text. Concatenation uses `++`, so `+` is only used for addition. Characters use single quotes and concatenate onto
 strings the same way:
 
 ```galvan
@@ -37,7 +36,7 @@ pub(crate) fn __main__() {
 }
 ```
 
-`++` on strings lowers to `format!` concatenation, `++=` to `push_str` — or
+`++` on strings lowers to `format!` concatenation, `++=` to `push_str`, or
 `push` when the right-hand side is a `Char`.
 
 </details>

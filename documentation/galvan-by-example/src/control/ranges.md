@@ -2,7 +2,7 @@
 
 Galvan makes the upper bound explicit: `..<` excludes it, `..=` includes it.
 Two more range operators cover common numeric patterns — `a ..+ n` starts at
-`a` and spans `n` values, and `m ± d` is the inclusive tolerance range around
+`a` and goes to `a + n` inclusively, and `m ± d` is the inclusive tolerance range around
 `m`:
 
 ```galvan
@@ -21,7 +21,11 @@ fn main() {
         sum += i
     }
 
-    for 7..+3 |i| {   // 7, 8, 9
+    for 7..+3 |i| {   // 7, 8, 9, 10
+        sum += i
+    }
+
+    for 7..-3 |i| {   // 7, 6, 5, 4
         sum += i
     }
 }
@@ -42,9 +46,10 @@ pub(crate) fn __main__() {
     for i in (16 - 2)..=(16 + 2) {
         sum += i;
     }
-    for i in 7..(7 + 3) {
+    for i in 7..=(7 + 3) {
         sum += i;
     }
+    // TODO
 }
 ```
 

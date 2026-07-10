@@ -18,10 +18,10 @@ trait items all come across. The type translation follows fixed rules:
 
 | Rust | Galvan |
 | --- | --- |
-| `[T]`, `[T; N]`, `Vec<T>`, `VecDeque<T>`, `LinkedList<T>` | `[T]` |
-| `HashSet<T>`, `BTreeSet<T>`, `IndexSet<T>` | `{T}` |
+| `[T]`, `[T; N]`, `Vec<T>` | `[T]` |
+| `HashSet<T>` | `{T}` |
 | `HashMap<K, V>` | `{K: V}` |
-| `BTreeMap<K, V>`, `IndexMap<K, V>` | `[K: V]` |
+| `IndexMap<K, V>` | `[K: V]` |
 
 **Algebraic types**
 

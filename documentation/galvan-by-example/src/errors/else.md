@@ -55,6 +55,6 @@ pub(crate) fn __main__() {
 
 - On an optional, `else` covers the `none` case.
 - On a result, `else` covers the error case — with `|error|` the error value
-  is available inside the block.
+  is available inside the block. Like the iterator variable in `for` loops, the error variable is bound to `it` if no name is specified.
 - `let amount = discount else { return -1 }` mixes unwrapping with early
   return.
