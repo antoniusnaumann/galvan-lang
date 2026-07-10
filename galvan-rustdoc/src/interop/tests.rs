@@ -743,11 +743,19 @@ fn serde_json_import_fixture() -> Crate {
     crate_(vec![
         (
             "to_string",
-            public_function("to_string", vec![], primitive("u64")),
+            public_item_at_path(
+                "to_string",
+                &["serde_json", "to_string"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
         ),
         (
             "from_str",
-            public_function("from_str", vec![], primitive("u64")),
+            public_item_at_path(
+                "from_str",
+                &["serde_json", "from_str"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
         ),
     ])
 }
@@ -790,6 +798,80 @@ fn path_use_declarations_import_only_the_named_item() {
     assert!(interop
         .function(None, None, &ident("from_str"), &[])
         .is_none());
+}
+
+#[test]
+fn nested_path_use_declarations_match_complete_rust_paths() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item_at_path("Ticket", &["demo", "http", "Ticket"], struct_plain(&[])),
+        ),
+        (
+            "1",
+            public_item_at_path("Ticket", &["demo", "db", "Ticket"], struct_plain(&[])),
+        ),
+        (
+            "2",
+            public_item_at_path(
+                "parse",
+                &["demo", "http", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path(
+                "parse",
+                &["demo", "db", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "4",
+            public_item_at_path(
+                "LIMIT",
+                &["demo", "http", "LIMIT"],
+                constant_inner(primitive("u64")),
+            ),
+        ),
+        (
+            "5",
+            public_item_at_path(
+                "LIMIT",
+                &["demo", "db", "LIMIT"],
+                constant_inner(primitive("u64")),
+            ),
+        ),
+    ]);
+    let uses = [
+        use_decl(&["demo", "http", "Ticket"]),
+        use_decl(&["demo", "http", "parse"]),
+        use_decl(&["demo", "http", "LIMIT"]),
+    ];
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+    interop.import_uses(&uses);
+
+    let imported = interop.imported_types().collect::<Vec<_>>();
+    assert_eq!(imported.len(), 1);
+    assert_eq!(imported[0].rust_path.as_ref(), "::demo::http::Ticket");
+    assert_eq!(
+        interop
+            .function(None, None, &ident("parse"), &[])
+            .expect("expected nested function")
+            .rust_path
+            .as_ref(),
+        "::demo::http::parse"
+    );
+    assert_eq!(
+        interop
+            .constant(None, &ident("LIMIT"))
+            .expect("expected nested constant")
+            .rust_path
+            .as_ref(),
+        "::demo::http::LIMIT"
+    );
 }
 
 // ---------------------------------------------------------------------------

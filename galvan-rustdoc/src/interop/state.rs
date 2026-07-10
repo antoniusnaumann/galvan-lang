@@ -78,7 +78,7 @@ impl RustInterop {
         crate_names: impl IntoIterator<Item = String>,
         uses: &[ToplevelItem<UseDecl>],
     ) -> Result<Self, RustdocError> {
-        Self::from_crates_and_uses_with_warnings(crate_names, uses, |_| {})
+        Self::from_crates_and_uses_with_options(crate_names, uses, |_| {}, true)
     }
 
     pub fn from_crates_and_uses_with_warnings(
@@ -372,6 +372,15 @@ mod format_version_tests {
             true,
         )
         .expect_err("required lift should reject missing dependency");
+
+        assert!(matches!(error, RustdocError::DependencyNotFound(_)));
+    }
+
+    #[test]
+    fn default_constructor_reports_rustdoc_failures() {
+        let error =
+            RustInterop::from_crates_and_uses(["definitely_missing_galvan_dep".to_string()], &[])
+                .expect_err("default construction should not discard rustdoc failures");
 
         assert!(matches!(error, RustdocError::DependencyNotFound(_)));
     }

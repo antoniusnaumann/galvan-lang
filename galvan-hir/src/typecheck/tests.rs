@@ -1,9 +1,9 @@
 use galvan_ast::{
     ArrayTypeItem, BasicTypeItem, Body, Declaration, EmptyTypeDecl, Expression, ExpressionKind,
     FnDecl, FnSignature, GenericTypeItem, Ident, InfixExpression, InfixOperation, MemberOperator,
-    Ownership, Param, ParamList, ParametricTypeItem, SegmentedAsts, Span, ToplevelItem,
-    TupleTypeDecl, TupleTypeItem, TupleTypeMember, TypeDecl, TypeElement, TypeIdent, UseDecl,
-    UsePath, Visibility,
+    Ownership, Param, ParamList, ParametricTypeItem, ResultTypeItem, SegmentedAsts, Span,
+    ToplevelItem, TupleTypeDecl, TupleTypeItem, TupleTypeMember, TypeDecl, TypeElement, TypeIdent,
+    UseDecl, UsePath, Visibility,
 };
 use galvan_files::Source;
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
@@ -59,6 +59,63 @@ fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
         },
         source: Source::Builtin,
     }
+}
+
+fn serde_json_interop(uses: &[ToplevelItem<UseDecl>]) -> RustInterop {
+    let mut interop = RustInterop::empty();
+    interop.add_type_decl(
+        "serde_json",
+        "Error",
+        "::serde_json::Error",
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new("Error"),
+            generic_params: Vec::new(),
+            span: Span::default(),
+        }),
+    );
+    interop.add_function_decl(
+        "serde_json",
+        "to_string",
+        "::serde_json::to_string",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("to_string"),
+            parameters: ParamList {
+                params: vec![Param {
+                    decl_modifier: None,
+                    short_name: None,
+                    identifier: Ident::new("value"),
+                    param_type: TypeElement::Array(Box::new(ArrayTypeItem {
+                        elements: TypeElement::Plain(BasicTypeItem {
+                            ident: TypeIdent::new("Int"),
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    })),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            },
+            return_type: TypeElement::Result(Box::new(ResultTypeItem {
+                success: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("String"),
+                    span: Span::default(),
+                }),
+                error: Some(TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("Error"),
+                    span: Span::default(),
+                })),
+                span: Span::default(),
+            })),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+    interop.import_uses(uses);
+    interop
 }
 
 fn function<'m>(module: &'m HirModule, name: &str) -> &'m HirFunction {
@@ -933,7 +990,7 @@ fn borrowed_rust_returns_are_cloned_in_hir() {
 
 #[test]
 fn qualified_rust_functions_are_typechecked_without_imports() {
-    let rust_interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
+    let rust_interop = serde_json_interop(&[]);
     let module = lower_with_interop(
         "fn call(scores: [Int]) -> String {
              serde_json::to_string(scores) else |error| {
@@ -954,7 +1011,7 @@ fn qualified_rust_functions_are_typechecked_without_imports() {
 #[test]
 fn imported_rust_functions_are_typechecked_unqualified() {
     let uses = [use_decl(&["serde_json", "to_string"])];
-    let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let rust_interop = serde_json_interop(&uses);
     let module = lower_with_interop(
         "use serde_json::to_string
          fn call(scores: [Int]) -> String {
@@ -976,7 +1033,7 @@ fn imported_rust_functions_are_typechecked_unqualified() {
 #[test]
 fn namespace_use_imports_rust_functions_unqualified() {
     let uses = [use_decl(&["serde_json"])];
-    let rust_interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let rust_interop = serde_json_interop(&uses);
     let module = lower_with_interop(
         "use serde_json
          fn call(scores: [Int]) -> String {
@@ -1223,7 +1280,7 @@ fn rust_associated_constructor_lowers_tuple_argument_literals() {
         .into(),
         false,
     );
-    rust_interop.import_uses(&[use_decl(&["std", "SocketAddr"])]);
+    rust_interop.import_uses(&[use_decl(&["std", "net", "SocketAddr"])]);
 
     let module = lower_with_interop(
         "fn build() -> SocketAddr {

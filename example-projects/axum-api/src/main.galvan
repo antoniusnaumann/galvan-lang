@@ -52,8 +52,6 @@ async fn main() {
         tickets: [],
     )
 
-    // TODO(rust-interop): Typecheck external generic builder APIs and
-    // associated type methods such as Router.new() and SocketAddr.from(...).
     let app = Router.new()
         .route("/health", get(health))
         .route("/tickets", get(list_tickets).post(create_ticket))
@@ -70,8 +68,7 @@ async fn main() {
     axum::serve(listener, app).await!
 }
 
-// TODO(async): Allow async handler functions and external generic return types
-// such as Json<HealthResponse>.
+// TODO(async): Allow async handler functions.
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse(
         service: "galvan-axum-api",
@@ -80,8 +77,6 @@ async fn health() -> Json<HealthResponse> {
 }
 
 async fn list_tickets(state: State<ApiState>) -> Json<[TicketResponse]> {
-    // TODO(rust-interop): Resolve extractor helper methods such as into_inner
-    // on dependency types without requiring Rust-side wrapper functions.
     let state = state.into_inner()
     Json(state.tickets)
 }
@@ -110,8 +105,6 @@ async fn create_ticket(
 
     state.tickets ++= response
 
-    // TODO(rust-interop): Resolve associated constants on external types with
-    // member syntax, such as StatusCode.CREATED.
     (StatusCode.CREATED, Json(response))
 }
 

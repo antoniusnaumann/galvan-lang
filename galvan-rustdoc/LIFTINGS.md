@@ -45,10 +45,11 @@ Inside imported impl and trait associated function signatures, Rust `Self`
 types are substituted with the associated receiver type before Galvan sees the
 signature.
 
-`use namespace` and `use namespace::item` expose dependency items for
-unqualified lookup only when the imported unqualified name is not ambiguous
-across the active `use` declarations. Ambiguous unqualified type, function, and
-constant imports are suppressed; qualified namespace lookup remains available.
+`use namespace`, `use namespace::item`, and deeper paths such as
+`use namespace::module::item` expose dependency items for unqualified lookup.
+Explicit item uses match the complete preserved Rust path. Imports are exposed
+only when the unqualified name is not ambiguous across active `use`
+declarations; qualified namespace lookup remains available.
 
 Dependency namespaces are resolved from the consuming package's Cargo resolve
 graph, so a renamed dependency uses its local Rust crate identifier and an exact
@@ -56,6 +57,13 @@ package ID selects the intended version. Rustdoc runs with the features Cargo
 resolved for that package node, including an explicitly resolved `default`
 feature. Package ID and the sorted feature set are part of the rustdoc cache
 fingerprint, so switching versions or features invalidates the cached API.
+
+The plain `RustInterop::from_*` and `galvan_transpiler::transpile` APIs report
+rustdoc setup failures as errors. Callers that deliberately allow compilation
+to continue without dependency metadata must use the warning-callback variants;
+the build-script integration uses that path to emit Cargo warnings. Setting
+`GALVAN_RUSTDOC_REQUIRE_LIFT` also makes the callback path require a non-empty
+lift, as used by the serde example in CI.
 
 ## Primitive Types
 
