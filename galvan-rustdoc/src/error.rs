@@ -7,6 +7,8 @@ use thiserror::Error;
 pub enum RustdocError {
     #[error("failed to run cargo metadata: {0}")]
     CargoMetadata(io::Error),
+    #[error("cargo metadata failed: {0}")]
+    CargoMetadataFailed(String),
     #[error("cargo metadata returned invalid JSON: {0}")]
     InvalidCargoMetadata(serde_json::Error),
     #[error("crate `{0}` was not found in cargo metadata")]

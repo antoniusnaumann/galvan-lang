@@ -61,7 +61,7 @@ impl RustdocCache {
         }
 
         let target_dir = self.root.join("target");
-        let output = run_rustdoc_json(&dependency.manifest_path, &target_dir);
+        let output = run_rustdoc_json(&dependency.manifest_path, &dependency.features, &target_dir);
 
         match output {
             Ok(output) if output.status.success() => {

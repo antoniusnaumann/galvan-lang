@@ -50,6 +50,13 @@ unqualified lookup only when the imported unqualified name is not ambiguous
 across the active `use` declarations. Ambiguous unqualified type, function, and
 constant imports are suppressed; qualified namespace lookup remains available.
 
+Dependency namespaces are resolved from the consuming package's Cargo resolve
+graph, so a renamed dependency uses its local Rust crate identifier and an exact
+package ID selects the intended version. Rustdoc runs with the features Cargo
+resolved for that package node, including an explicitly resolved `default`
+feature. Package ID and the sorted feature set are part of the rustdoc cache
+fingerprint, so switching versions or features invalidates the cached API.
+
 ## Primitive Types
 
 Rust primitive and builtin rustdoc type forms lift as follows:
