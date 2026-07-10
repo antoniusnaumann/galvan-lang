@@ -43,12 +43,10 @@ impl RustInterop {
                     span: Span::default(),
                 },
             )))),
-            WrapperShape::Set => {
-                Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
-                    elements: args.first()?.ty.clone(),
-                    span: Span::default(),
-                }))))
-            }
+            WrapperShape::Set => Some(LiftedType::new(TypeElement::Set(Box::new(SetTypeItem {
+                elements: args.first()?.ty.clone(),
+                span: Span::default(),
+            })))),
             WrapperShape::Dictionary => Some(LiftedType::new(TypeElement::Dictionary(Box::new(
                 DictionaryTypeItem {
                     key: args.first()?.ty.clone(),
@@ -154,7 +152,8 @@ enum WrapperShape {
 fn classify_wrapper(krate: &Crate, name: &str, resolved: &Path) -> Option<WrapperShape> {
     let standard_wrapper =
         resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]);
-    let indexmap_wrapper = resolved_path_is_unqualified_or_in_crates(krate, resolved, &["indexmap"]);
+    let indexmap_wrapper =
+        resolved_path_is_unqualified_or_in_crates(krate, resolved, &["indexmap"]);
     let flex_result = resolved_path_is_unqualified_or_matches_any(
         krate,
         resolved,

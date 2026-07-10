@@ -652,12 +652,26 @@ fn imported_type<'a>(interop: &'a RustInterop, name: &str) -> &'a TypeDecl {
 }
 
 // ---------------------------------------------------------------------------
-// Real-crate tests (exercise the on-disk serde_json rustdoc cache).
+// Import behavior tests.
 // ---------------------------------------------------------------------------
+
+fn serde_json_import_fixture() -> Crate {
+    crate_(vec![
+        (
+            "to_string",
+            public_function("to_string", vec![], primitive("u64")),
+        ),
+        (
+            "from_str",
+            public_function("from_str", vec![], primitive("u64")),
+        ),
+    ])
+}
 
 #[test]
 fn loading_a_crate_does_not_import_its_functions_unqualified() {
-    let interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &serde_json_import_fixture());
 
     assert!(interop
         .function(Some("serde_json"), None, &ident("to_string"), &[])
@@ -670,7 +684,9 @@ fn loading_a_crate_does_not_import_its_functions_unqualified() {
 #[test]
 fn use_declarations_import_functions_unqualified() {
     let uses = [use_decl(&["serde_json"])];
-    let interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &serde_json_import_fixture());
+    interop.import_uses(&uses);
 
     assert!(interop
         .function(None, None, &ident("to_string"), &[])
@@ -680,7 +696,9 @@ fn use_declarations_import_functions_unqualified() {
 #[test]
 fn path_use_declarations_import_only_the_named_item() {
     let uses = [use_decl(&["serde_json", "to_string"])];
-    let interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &serde_json_import_fixture());
+    interop.import_uses(&uses);
 
     assert!(interop
         .function(None, None, &ident("to_string"), &[])

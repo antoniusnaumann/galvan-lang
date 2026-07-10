@@ -57,7 +57,10 @@ pub(super) fn function_is_unsafe(function: &Function) -> bool {
     function.header.is_unsafe
 }
 
-pub(super) fn signature_contains_unliftable_type(krate: &Crate, signature: &FunctionSignature) -> bool {
+pub(super) fn signature_contains_unliftable_type(
+    krate: &Crate,
+    signature: &FunctionSignature,
+) -> bool {
     signature
         .inputs
         .iter()
@@ -89,7 +92,11 @@ pub(super) fn type_contains_unliftable_type(krate: &Crate, ty: &Type) -> bool {
     type_contains_unliftable_type_inner(krate, ty, false)
 }
 
-fn type_contains_unliftable_type_inner(krate: &Crate, ty: &Type, allow_standard_lock: bool) -> bool {
+fn type_contains_unliftable_type_inner(
+    krate: &Crate,
+    ty: &Type,
+    allow_standard_lock: bool,
+) -> bool {
     match ty {
         Type::RawPointer { .. }
         | Type::QualifiedPath { .. }
@@ -107,9 +114,9 @@ fn type_contains_unliftable_type_inner(krate: &Crate, ty: &Type, allow_standard_
                 return true;
             }
             let allow_nested_standard_lock = resolved_type_is_standard_arc(krate, path);
-            resolved_type_args(path)
-                .into_iter()
-                .any(|ty| type_contains_unliftable_type_inner(krate, ty, allow_nested_standard_lock))
+            resolved_type_args(path).into_iter().any(|ty| {
+                type_contains_unliftable_type_inner(krate, ty, allow_nested_standard_lock)
+            })
         }
         Type::Tuple(types) => types
             .iter()

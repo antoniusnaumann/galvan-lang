@@ -93,7 +93,12 @@ impl RustInterop {
             functions.insert(id, idx);
         }
         for (key, idx) in functions {
-            insert_unambiguous(&mut self.by_imported_function, ambiguous_functions, key, idx);
+            insert_unambiguous(
+                &mut self.by_imported_function,
+                ambiguous_functions,
+                key,
+                idx,
+            );
         }
 
         let mut constants: HashMap<Ident, usize> = HashMap::new();
@@ -107,7 +112,12 @@ impl RustInterop {
             constants.insert(constant.name.clone(), idx);
         }
         for (key, idx) in constants {
-            insert_unambiguous(&mut self.by_imported_constant, ambiguous_constants, key, idx);
+            insert_unambiguous(
+                &mut self.by_imported_constant,
+                ambiguous_constants,
+                key,
+                idx,
+            );
         }
     }
 }

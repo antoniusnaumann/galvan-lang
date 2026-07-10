@@ -73,8 +73,6 @@ commands remain subcommands.
     building `galvan-test`
   - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
     instead of printing Cargo messages from the public transpilation path
-  - Normalize existing Rust formatting drift so `cargo fmt --all --check`
-    can be used as a clean verification step without unrelated diffs
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
