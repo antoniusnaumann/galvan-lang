@@ -24,7 +24,7 @@ When a function or constant uses an unliftable type, it is skipped. When a
 struct or enum would expose one, the type is imported opaquely — it exists
 and can be passed around, but its fields are not accessible from Galvan.
 Ambiguous items (two crates exporting the same unqualified name, same-named
-types from different modules) are suppressed rather than silently picked.
+types from different modules) are can be resolved using the fully qualified path syntax or a fully qualified use that imports a specific item such as `use axum::http::StatusCode`, Galvan does not pick one over the other when importing a whole namespace with `use`.
 
 > [!NOTE]
 > The authoritative and most current description of these rules is
