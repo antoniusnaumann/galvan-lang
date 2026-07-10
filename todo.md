@@ -109,10 +109,11 @@ commands remain subcommands.
     qualified Rust type path once Galvan has qualified type syntax, so same-named
     imported Rust types from different modules can carry distinct conversion
     metadata instead of suppressing ambiguous unqualified conversion lookups
-  - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,
-    Rust list/map/set collections, `Result<T, E>`, `Arc<Mutex<T>>` /
-    `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
-    conversions) to cover additional smart pointers and standard wrappers
+  - Extend safe Rust wrapper lifting beyond the exact lowering-compatible cases
+    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `BTreeMap<K, V>`,
+    `Result<T, E>`, `Arc<Mutex<T>>`, `Box<T>`, and parameter-side `Rc<T>`)
+    where an explicit, trait-safe conversion can preserve the Rust API's
+    concrete type
   - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
     including `dyn Trait`, `impl Trait`, associated type projections, and
     generic associated types

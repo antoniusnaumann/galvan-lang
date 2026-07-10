@@ -13,6 +13,7 @@ use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
 use super::rustdoc_json::{
     public_type_name, receiver_type_ident, resolved_type_generic_params, type_generic_params,
+    type_has_unliftable_generics,
 };
 use super::rustdoc_path::{resolved_type_rust_path, rust_path};
 use super::state::Unambiguous;
@@ -85,6 +86,9 @@ impl RustInterop {
     }
 
     pub(super) fn push_type_from_item(&mut self, krate: &Crate, crate_name: &str, item: &Item) {
+        if type_has_unliftable_generics(item) {
+            return;
+        }
         let Some(name) = public_type_name(item) else {
             return;
         };
@@ -130,6 +134,9 @@ impl RustInterop {
         rust_path: Box<str>,
         item: &Item,
     ) {
+        if type_has_unliftable_generics(item) {
+            return;
+        }
         let imported = self
             .type_decl_from_item(krate, crate_name, exported_name, item)
             .unwrap_or_else(|| {

@@ -7,9 +7,9 @@ use galvan_ast::{FnSignature, TypeElement, TypeIdent};
 use crate::model::RustdocCrateLiftSummary;
 
 use super::rustdoc_json::{
-    constant_type, function_is_unsafe, impl_constant_ids, impl_function_ids, is_public,
-    public_type_name, receiver_type_ident, return_is_borrowed, signature_contains_unliftable_type,
-    trait_constant_ids, trait_function_ids, type_contains_unliftable_type,
+    constant_type, function_is_unliftable, impl_constant_ids, impl_function_ids, is_public,
+    public_type_name, receiver_type_ident, return_is_borrowed, trait_constant_ids,
+    trait_function_ids, type_contains_unliftable_type,
 };
 use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_function_rust_path};
 use super::RustInterop;
@@ -55,10 +55,7 @@ impl RustInterop {
             let ItemEnum::Function(function) = &item.inner else {
                 continue;
             };
-            if function_is_unsafe(function) {
-                continue;
-            }
-            if signature_contains_unliftable_type(krate, &function.sig) {
+            if function_is_unliftable(krate, function) {
                 continue;
             }
             let rust_path = callable_rust_path(krate, crate_name, name, item);
@@ -116,10 +113,7 @@ impl RustInterop {
                 let ItemEnum::Function(function) = &item.inner else {
                     continue;
                 };
-                if function_is_unsafe(function) {
-                    continue;
-                }
-                if signature_contains_unliftable_type(krate, &function.sig) {
+                if function_is_unliftable(krate, function) {
                     continue;
                 }
 
@@ -169,10 +163,7 @@ impl RustInterop {
                 };
 
                 if let ItemEnum::Function(function) = &item.inner {
-                    if function_is_unsafe(function) {
-                        continue;
-                    }
-                    if signature_contains_unliftable_type(krate, &function.sig) {
+                    if function_is_unliftable(krate, function) {
                         continue;
                     }
                     let Some(imported) = self.trait_function_decl(
@@ -278,10 +269,7 @@ impl RustInterop {
         }
 
         if let ItemEnum::Function(function) = &target.inner {
-            if function_is_unsafe(function) {
-                return;
-            }
-            if signature_contains_unliftable_type(krate, &function.sig) {
+            if function_is_unliftable(krate, function) {
                 return;
             }
             let Some(imported) =
@@ -450,10 +438,7 @@ impl RustInterop {
             let ItemEnum::Function(function) = &item.inner else {
                 continue;
             };
-            if function_is_unsafe(function) {
-                continue;
-            }
-            if signature_contains_unliftable_type(import.krate, &function.sig) {
+            if function_is_unliftable(import.krate, function) {
                 continue;
             }
 

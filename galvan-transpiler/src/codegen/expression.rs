@@ -530,7 +530,6 @@ fn transpile_rust_return(rendered: String, conversion: RustReturnConversion) -> 
     match conversion {
         RustReturnConversion::None => rendered,
         RustReturnConversion::BoxDeref => format!("*({rendered})"),
-        RustReturnConversion::RcCloneDeref => format!("(*({rendered})).clone()"),
     }
 }
 
@@ -1150,7 +1149,7 @@ mod tests {
             }),
             binding_conversions: vec![HirMatchBindingConversion {
                 ident: Ident::new("user"),
-                rust_return_conversion: RustReturnConversion::RcCloneDeref,
+                rust_return_conversion: RustReturnConversion::BoxDeref,
             }],
             body: HirBlock {
                 statements: vec![HirStatement::Expression(HirExpression::new(
@@ -1168,7 +1167,7 @@ mod tests {
 
         assert_eq!(
             arm.transpile(&ctx, &mut errors),
-            "TicketEvent::Assigned(user) => {\nlet user = (*(user)).clone();\n{\nuser\n}\n}"
+            "TicketEvent::Assigned(user) => {\nlet user = *(user);\n{\nuser\n}\n}"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
@@ -1455,12 +1454,12 @@ mod tests {
     }
 
     #[test]
-    fn rust_calls_apply_rc_return_conversions() {
+    fn rust_calls_without_return_conversions_remain_unchanged() {
         let call = HirFunctionCall {
             namespace: None,
             rust: Some(HirRustCall {
                 rust_path: "::demo::shared_ticket".into(),
-                return_conversion: RustReturnConversion::RcCloneDeref,
+                return_conversion: RustReturnConversion::None,
                 arg_conversions: Vec::new(),
             }),
             ident: Ident::new("shared_ticket"),
@@ -1470,10 +1469,7 @@ mod tests {
         let ctx = Context::new(Mapping::default());
         let mut errors = ErrorCollector::new();
 
-        assert_eq!(
-            call.transpile(&ctx, &mut errors),
-            "(*(::demo::shared_ticket())).clone()"
-        );
+        assert_eq!(call.transpile(&ctx, &mut errors), "::demo::shared_ticket()");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 

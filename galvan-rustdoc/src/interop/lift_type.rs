@@ -19,7 +19,6 @@ pub(super) fn member_arg_conversion(return_conversion: RustReturnConversion) -> 
     match return_conversion {
         RustReturnConversion::None => RustArgConversion::None,
         RustReturnConversion::BoxDeref => RustArgConversion::BoxNew,
-        RustReturnConversion::RcCloneDeref => RustArgConversion::RcNew,
     }
 }
 

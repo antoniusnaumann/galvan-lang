@@ -150,8 +150,6 @@ enum WrapperShape {
 fn classify_wrapper(krate: &Crate, name: &str, resolved: &Path) -> Option<WrapperShape> {
     let standard_wrapper =
         resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]);
-    let indexmap_wrapper =
-        resolved_path_is_unqualified_or_in_crates(krate, resolved, &["indexmap"]);
     let flex_result = resolved_path_is_unqualified_or_matches_any(
         krate,
         resolved,
@@ -166,12 +164,10 @@ fn classify_wrapper(krate: &Crate, name: &str, resolved: &Path) -> Option<Wrappe
             Some(WrapperShape::ResultSingle)
         }
         "Result" if standard_wrapper => Some(WrapperShape::ResultDouble),
-        "Vec" | "VecDeque" | "LinkedList" if standard_wrapper => Some(WrapperShape::Array),
-        "HashSet" | "BTreeSet" if standard_wrapper => Some(WrapperShape::Set),
-        "IndexSet" if indexmap_wrapper => Some(WrapperShape::Set),
+        "Vec" if standard_wrapper => Some(WrapperShape::Array),
+        "HashSet" if standard_wrapper => Some(WrapperShape::Set),
         "HashMap" if standard_wrapper => Some(WrapperShape::Dictionary),
         "BTreeMap" if standard_wrapper => Some(WrapperShape::OrderedDictionary),
-        "IndexMap" if indexmap_wrapper => Some(WrapperShape::OrderedDictionary),
         "Mutex" if standard_wrapper => Some(WrapperShape::Lock),
         _ => None,
     }
