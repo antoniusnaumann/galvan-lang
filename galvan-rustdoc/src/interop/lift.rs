@@ -80,6 +80,9 @@ impl RustInterop {
     ) -> Option<ImportedTypeDecl> {
         let generic_params = generic_type_params(&struct_.generics);
         if let StructKind::Tuple(field_ids) = &struct_.kind {
+            if field_ids.iter().any(Option::is_none) {
+                return None;
+            }
             let mut lifted_members = Vec::new();
             for id in field_ids.iter().flatten() {
                 let field = krate.index.get(id)?;
@@ -111,7 +114,14 @@ impl RustInterop {
         }
 
         let field_ids = match &struct_.kind {
-            StructKind::Plain { fields, .. } => fields.as_slice(),
+            StructKind::Plain {
+                fields,
+                has_stripped_fields: false,
+            } => fields.as_slice(),
+            StructKind::Plain {
+                has_stripped_fields: true,
+                ..
+            } => return None,
             _ => &[],
         };
         let mut lifted_members = Vec::new();
@@ -200,6 +210,9 @@ impl RustInterop {
         name: &str,
         enum_: &Enum,
     ) -> Option<ImportedTypeDecl> {
+        if enum_.has_stripped_variants {
+            return None;
+        }
         let mut lifted_members = Vec::new();
         for id in &enum_.variants {
             let variant = krate.index.get(id)?;
@@ -278,6 +291,9 @@ impl RustInterop {
         match kind {
             VariantKind::Plain => Some(Vec::new()),
             VariantKind::Tuple(field_ids) => {
+                if field_ids.iter().any(Option::is_none) {
+                    return None;
+                }
                 let mut fields = Vec::new();
                 for id in field_ids.iter().flatten() {
                     let field = krate.index.get(id)?;
@@ -289,7 +305,8 @@ impl RustInterop {
                 Some(fields)
             }
             VariantKind::Struct {
-                fields: field_ids, ..
+                fields: field_ids,
+                has_stripped_fields: false,
             } => {
                 let mut fields = Vec::new();
                 for id in field_ids {
@@ -302,6 +319,10 @@ impl RustInterop {
                 }
                 Some(fields)
             }
+            VariantKind::Struct {
+                has_stripped_fields: true,
+                ..
+            } => None,
         }
     }
 
@@ -457,7 +478,6 @@ impl RustInterop {
             );
             let return_conversion = match name.as_ref() {
                 "Box" if standard_wrapper => RustReturnConversion::BoxDeref,
-                "Rc" if standard_wrapper => RustReturnConversion::RcCloneDeref,
                 _ => RustReturnConversion::None,
             };
             if return_conversion != RustReturnConversion::None {
@@ -534,7 +554,12 @@ impl RustInterop {
             Type::BorrowedRef {
                 is_mutable, type_, ..
             } => {
-                let mut lifted = self.lift_type_from_json(krate, crate_name, type_)?;
+                let mut lifted = match type_.as_ref() {
+                    Type::Slice(element) => self
+                        .lift_type_from_json(krate, crate_name, element)
+                        .map(array_type)?,
+                    _ => self.lift_type_from_json(krate, crate_name, type_)?,
+                };
                 if *is_mutable {
                     lifted.decl_modifier = Some(galvan_ast::DeclModifier::Mut);
                 } else {
@@ -542,12 +567,6 @@ impl RustInterop {
                 }
                 Some(lifted)
             }
-            Type::Slice(element) => self
-                .lift_type_from_json(krate, crate_name, element)
-                .map(array_type),
-            Type::Array { type_, .. } => self
-                .lift_type_from_json(krate, crate_name, type_)
-                .map(array_type),
             Type::FunctionPointer(function) => self
                 .function_pointer_type_from_json(krate, crate_name, function)
                 .map(LiftedType::new),

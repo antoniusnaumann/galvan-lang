@@ -608,6 +608,7 @@ pub struct HirStringLiteral {
 #[derive(Clone, Debug)]
 pub enum HirCollection {
     Array(Vec<HirExpression>),
+    Tuple(Vec<HirExpression>),
     Set(Vec<HirExpression>),
     Dict(Vec<HirDictElement>),
     OrderedDict(Vec<HirDictElement>),

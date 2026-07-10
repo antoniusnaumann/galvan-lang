@@ -42,9 +42,6 @@ commands remain subcommands.
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
-  - Complete atomic `ref` operation coverage beyond primitive locals,
-    parameters, fields, assignment, arithmetic assignment, reads, and basic
-    mut-argument call-boundaries
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)
@@ -73,8 +70,6 @@ commands remain subcommands.
     building `galvan-test`
   - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
     instead of printing Cargo messages from the public transpilation path
-  - Normalize existing Rust formatting drift so `cargo fmt --all --check`
-    can be used as a clean verification step without unrelated diffs
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
@@ -84,8 +79,6 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
-  - Allow type identifiers in member-call receiver position so
-    `TypeName.associated_function()` parses as an expression
 
 ## Future Enhancements
 
@@ -101,8 +94,7 @@ commands remain subcommands.
   - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve external-target function and constant re-exports from rustdoc JSON;
     external type re-exports without target metadata are imported as empty types
-  - Support parser/grammar syntax for imported Rust constants with uppercase
-    names and qualified constant paths
+  - Support qualified external Rust constant paths
   - Support qualified external Rust type paths in Galvan type syntax; rustdoc
     metadata preserves module paths, but imported Rust types currently become
     unqualified only through `use`
@@ -117,12 +109,11 @@ commands remain subcommands.
     qualified Rust type path once Galvan has qualified type syntax, so same-named
     imported Rust types from different modules can carry distinct conversion
     metadata instead of suppressing ambiguous unqualified conversion lookups
-  - Wire parsed `Ticket.new()` / `Router.new()` syntax into the existing
-    typechecker support for imported inherent associated functions
-  - Extend safe Rust wrapper lifting beyond the current common cases (`Option<T>`,
-    Rust list/map/set collections, `Result<T, E>`, `Arc<Mutex<T>>` /
-    `Arc<RwLock<T>>` / `Arc<Atomic*>`, and `Box<T>` / `Rc<T>` interop
-    conversions) to cover additional smart pointers and standard wrappers
+  - Extend safe Rust wrapper lifting beyond the exact lowering-compatible cases
+    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `BTreeMap<K, V>`,
+    `Result<T, E>`, `Arc<Mutex<T>>`, `Box<T>`, and parameter-side `Rc<T>`)
+    where an explicit, trait-safe conversion can preserve the Rust API's
+    concrete type
   - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
     including `dyn Trait`, `impl Trait`, associated type projections, and
     generic associated types
@@ -143,8 +134,6 @@ commands remain subcommands.
 - Support full Axum-style API declarations in Galvan:
   - Add async functions and `.await`
   - Generate async `main` with the default Tokio runtime
-  - Resolve type-associated Rust methods and constants with Galvan member
-    syntax, such as `Router.new()` and `StatusCode.CREATED`
   - Support builtin auto traits, `@derive(...)`, `@derive(!Trait)` opt-outs,
     and user-declared `auto trait`s
   - Support shared-state interop from Galvan `ref` fields
@@ -157,5 +146,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

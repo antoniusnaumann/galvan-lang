@@ -1,7 +1,8 @@
 use galvan_ast::{
-    ArithmeticOperator, BitwiseOperator, CollectionOperator, ComparisonOperator, CustomInfix,
-    DeclModifier, EnumAccess, Expression, Group, InfixExpression, InfixOperation, InfixOperator,
-    LogicalOperator, MemberOperator, ModifiedExpression, RangeOperator, Span, TypeIdent,
+    ArithmeticOperator, AssociatedConstant, AssociatedFunctionCall, BitwiseOperator,
+    CollectionOperator, ComparisonOperator, CustomInfix, DeclModifier, EnumAccess, Expression,
+    FunctionCall, Group, Ident, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
+    MemberOperator, ModifiedExpression, RangeOperator, Span, TypeIdent,
 };
 use galvan_parse::TreeCursor;
 
@@ -53,6 +54,52 @@ impl ReadCursor for EnumAccess {
         cursor.goto_parent();
 
         Ok(EnumAccess { target, case, span })
+    }
+}
+
+impl ReadCursor for AssociatedFunctionCall {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "associated_function_call");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+
+        let receiver = TypeIdent::read_cursor(cursor, source)?;
+        cursor.next();
+        cursor_expect!(cursor, "member_call_operator");
+        cursor.next();
+        let call = FunctionCall::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(AssociatedFunctionCall {
+            receiver,
+            call,
+            span,
+        })
+    }
+}
+
+impl ReadCursor for AssociatedConstant {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "associated_constant");
+        let span = Span::from_node(node);
+
+        cursor.goto_first_child();
+
+        let receiver = TypeIdent::read_cursor(cursor, source)?;
+        cursor.next();
+        cursor_expect!(cursor, "member_call_operator");
+        cursor.next();
+        let name = TypeIdent::read_cursor(cursor, source)?;
+
+        cursor.goto_parent();
+
+        Ok(AssociatedConstant {
+            receiver,
+            name: Ident::new(name.as_str()),
+            span,
+        })
     }
 }
 

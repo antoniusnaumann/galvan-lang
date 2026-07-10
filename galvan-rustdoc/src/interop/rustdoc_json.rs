@@ -33,6 +33,10 @@ pub(super) fn type_generic_params(item: &Item) -> Vec<Ident> {
         .unwrap_or_default()
 }
 
+pub(super) fn type_has_unliftable_generics(item: &Item) -> bool {
+    item_generics(item).is_some_and(generics_contain_const_params)
+}
+
 fn item_generics(item: &Item) -> Option<&Generics> {
     match &item.inner {
         ItemEnum::Struct(struct_) => Some(&struct_.generics),
@@ -53,11 +57,18 @@ pub(super) fn generic_type_params(generics: &Generics) -> Vec<Ident> {
         .collect()
 }
 
-pub(super) fn function_is_unsafe(function: &Function) -> bool {
+pub(super) fn function_is_unliftable(krate: &Crate, function: &Function) -> bool {
     function.header.is_unsafe
+        || function.header.is_async
+        || function.sig.is_c_variadic
+        || generics_contain_const_params(&function.generics)
+        || signature_contains_unliftable_type(krate, &function.sig)
 }
 
-pub(super) fn signature_contains_unliftable_type(krate: &Crate, signature: &FunctionSignature) -> bool {
+pub(super) fn signature_contains_unliftable_type(
+    krate: &Crate,
+    signature: &FunctionSignature,
+) -> bool {
     signature
         .inputs
         .iter()
@@ -69,6 +80,10 @@ pub(super) fn signature_contains_unliftable_type(krate: &Crate, signature: &Func
 }
 
 pub(super) fn type_decl_contains_unliftable_type(krate: &Crate, item: &Item) -> bool {
+    if type_has_unliftable_generics(item) {
+        return true;
+    }
+
     match &item.inner {
         ItemEnum::TypeAlias(alias) => type_contains_unliftable_type(krate, &alias.type_),
         ItemEnum::Struct(struct_) => struct_field_ids(&struct_.kind)
@@ -89,27 +104,39 @@ pub(super) fn type_contains_unliftable_type(krate: &Crate, ty: &Type) -> bool {
     type_contains_unliftable_type_inner(krate, ty, false)
 }
 
-fn type_contains_unliftable_type_inner(krate: &Crate, ty: &Type, allow_standard_lock: bool) -> bool {
+fn type_contains_unliftable_type_inner(
+    krate: &Crate,
+    ty: &Type,
+    allow_standard_lock: bool,
+) -> bool {
     match ty {
         Type::RawPointer { .. }
         | Type::QualifiedPath { .. }
         | Type::DynTrait(_)
-        | Type::ImplTrait(_) => true,
+        | Type::ImplTrait(_)
+        | Type::Array { .. } => true,
         Type::BorrowedRef { type_, .. } => type_contains_unliftable_type_inner(krate, type_, false),
         Type::Slice(element) => type_contains_unliftable_type_inner(krate, element, false),
-        Type::Array { type_, .. } => type_contains_unliftable_type_inner(krate, type_, false),
         Type::FunctionPointer(function) => {
             function_header_is_unliftable(&function.header)
                 || signature_contains_unliftable_type(krate, &function.sig)
         }
         Type::ResolvedPath(path) => {
-            if resolved_type_is_standard_lock(krate, path) && !allow_standard_lock {
+            if resolved_type_args_are_unliftable(path) {
+                return true;
+            }
+            if resolved_type_has_standard_name(krate, path, "Rc")
+                && resolved_type_args(path).is_empty()
+            {
+                return true;
+            }
+            if resolved_type_is_standard_mutex(krate, path) && !allow_standard_lock {
                 return true;
             }
             let allow_nested_standard_lock = resolved_type_is_standard_arc(krate, path);
-            resolved_type_args(path)
-                .into_iter()
-                .any(|ty| type_contains_unliftable_type_inner(krate, ty, allow_nested_standard_lock))
+            resolved_type_args(path).into_iter().any(|ty| {
+                type_contains_unliftable_type_inner(krate, ty, allow_nested_standard_lock)
+            })
         }
         Type::Tuple(types) => types
             .iter()
@@ -122,9 +149,8 @@ fn resolved_type_is_standard_arc(krate: &Crate, path: &Path) -> bool {
     resolved_type_has_standard_name(krate, path, "Arc")
 }
 
-fn resolved_type_is_standard_lock(krate: &Crate, path: &Path) -> bool {
+fn resolved_type_is_standard_mutex(krate: &Crate, path: &Path) -> bool {
     resolved_type_has_standard_name(krate, path, "Mutex")
-        || resolved_type_has_standard_name(krate, path, "RwLock")
 }
 
 fn resolved_type_has_standard_name(krate: &Crate, path: &Path, expected_name: &str) -> bool {
@@ -133,7 +159,24 @@ fn resolved_type_has_standard_name(krate: &Crate, path: &Path, expected_name: &s
 }
 
 fn function_header_is_unliftable(header: &FunctionHeader) -> bool {
-    header.is_unsafe || !matches!(header.abi, Abi::Rust)
+    header.is_unsafe || header.is_async || !matches!(header.abi, Abi::Rust)
+}
+
+fn generics_contain_const_params(generics: &Generics) -> bool {
+    generics
+        .params
+        .iter()
+        .any(|param| matches!(param.kind, GenericParamDefKind::Const { .. }))
+}
+
+fn resolved_type_args_are_unliftable(path: &Path) -> bool {
+    match path.args.as_deref() {
+        Some(GenericArgs::AngleBracketed { args, .. }) => args
+            .iter()
+            .any(|arg| matches!(arg, GenericArg::Const(_) | GenericArg::Infer)),
+        Some(GenericArgs::Parenthesized { .. } | GenericArgs::ReturnTypeNotation) => true,
+        None => false,
+    }
 }
 
 fn struct_field_ids(kind: &StructKind) -> Vec<Id> {

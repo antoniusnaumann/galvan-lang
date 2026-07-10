@@ -110,6 +110,7 @@ fn resolve_launcher() -> Result<RustdocLauncher, RustdocError> {
 
 pub(super) fn run_rustdoc_json(
     manifest_path: &Path,
+    features: &[String],
     target_dir: &Path,
 ) -> Result<Output, RustdocError> {
     let launcher = resolve_launcher()?;
@@ -123,12 +124,7 @@ pub(super) fn run_rustdoc_json(
     };
 
     command
-        .arg("rustdoc")
-        .arg("--manifest-path")
-        .arg(manifest_path)
-        .arg("--lib")
-        .arg("--target-dir")
-        .arg(target_dir)
+        .args(rustdoc_args(manifest_path, features, target_dir))
         .arg("--")
         .arg("-Z")
         .arg("unstable-options")
@@ -142,6 +138,23 @@ pub(super) fn run_rustdoc_json(
         .map_err(RustdocError::RustdocSpawn)
 }
 
+fn rustdoc_args(manifest_path: &Path, features: &[String], target_dir: &Path) -> Vec<String> {
+    let mut args = vec![
+        "rustdoc".to_string(),
+        "--manifest-path".to_string(),
+        manifest_path.display().to_string(),
+        "--lib".to_string(),
+        "--target-dir".to_string(),
+        target_dir.display().to_string(),
+        "--no-default-features".to_string(),
+    ];
+    if !features.is_empty() {
+        args.push("--features".to_string());
+        args.push(features.join(","));
+    }
+    args
+}
+
 /// rustdoc names its JSON output after the library target, not the package or
 /// the Galvan crate ident, so callers must pass the resolved lib name.
 pub(super) fn generated_json_path(lib_name: &str, target_dir: &Path) -> PathBuf {
@@ -151,6 +164,42 @@ pub(super) fn generated_json_path(lib_name: &str, target_dir: &Path) -> PathBuf 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rustdoc_args_reproduce_resolved_features() {
+        let args = rustdoc_args(
+            Path::new("/deps/demo/Cargo.toml"),
+            &["default".to_string(), "serde".to_string()],
+            Path::new("/target"),
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                "rustdoc",
+                "--manifest-path",
+                "/deps/demo/Cargo.toml",
+                "--lib",
+                "--target-dir",
+                "/target",
+                "--no-default-features",
+                "--features",
+                "default,serde",
+            ]
+        );
+    }
+
+    #[test]
+    fn rustdoc_args_disable_unresolved_default_features() {
+        let args = rustdoc_args(
+            Path::new("/deps/demo/Cargo.toml"),
+            &[],
+            Path::new("/target"),
+        );
+
+        assert!(args.contains(&"--no-default-features".to_string()));
+        assert!(!args.contains(&"--features".to_string()));
+    }
 
     #[test]
     fn command_override_takes_precedence_over_missing_rustup() {

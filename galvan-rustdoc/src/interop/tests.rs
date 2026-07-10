@@ -124,6 +124,17 @@ fn resolved_with_string_path(path: &str, args: Vec<Type>) -> Type {
     Type::ResolvedPath(path_of(path, args))
 }
 
+fn resolved_with_args(path: &str, args: Vec<GenericArg>) -> Type {
+    Type::ResolvedPath(Path {
+        path: path.to_string(),
+        id: resolved_id(path),
+        args: Some(Box::new(GenericArgs::AngleBracketed {
+            args,
+            constraints: vec![],
+        })),
+    })
+}
+
 /// A resolved reference whose `id` targets a specific in-crate item key, so
 /// `Crate.index`/`paths` lookups resolve to it (unlike [`resolved`], which
 /// namespaces its id away).
@@ -239,6 +250,16 @@ fn lifetime_param(name: &str) -> GenericParamDef {
     }
 }
 
+fn const_param(name: &str) -> GenericParamDef {
+    GenericParamDef {
+        name: name.to_string(),
+        kind: GenericParamDefKind::Const {
+            type_: primitive("usize"),
+            default: None,
+        },
+    }
+}
+
 fn type_generics(params: Vec<GenericParamDef>) -> Generics {
     Generics {
         params,
@@ -295,9 +316,30 @@ fn struct_plain_generic(fields: &[&str], generics: Generics) -> ItemEnum {
     })
 }
 
+fn struct_plain_with_stripped_fields(fields: &[&str]) -> ItemEnum {
+    ItemEnum::Struct(Struct {
+        kind: StructKind::Plain {
+            fields: ids(fields),
+            has_stripped_fields: true,
+        },
+        generics: no_generics(),
+        impls: vec![],
+    })
+}
+
 fn struct_tuple(fields: &[&str]) -> ItemEnum {
     ItemEnum::Struct(Struct {
         kind: StructKind::Tuple(some_ids(fields)),
+        generics: no_generics(),
+        impls: vec![],
+    })
+}
+
+fn struct_tuple_with_stripped_field(fields: &[&str]) -> ItemEnum {
+    let mut fields = some_ids(fields);
+    fields.push(None);
+    ItemEnum::Struct(Struct {
+        kind: StructKind::Tuple(fields),
         generics: no_generics(),
         impls: vec![],
     })
@@ -315,6 +357,15 @@ fn enum_(variants: &[&str]) -> ItemEnum {
     ItemEnum::Enum(Enum {
         generics: no_generics(),
         has_stripped_variants: false,
+        variants: ids(variants),
+        impls: vec![],
+    })
+}
+
+fn enum_with_stripped_variants(variants: &[&str]) -> ItemEnum {
+    ItemEnum::Enum(Enum {
+        generics: no_generics(),
+        has_stripped_variants: true,
         variants: ids(variants),
         impls: vec![],
     })
@@ -376,6 +427,16 @@ fn variant_struct(fields: &[&str]) -> ItemEnum {
     })
 }
 
+fn variant_struct_with_stripped_fields(fields: &[&str]) -> ItemEnum {
+    ItemEnum::Variant(Variant {
+        kind: VariantKind::Struct {
+            fields: ids(fields),
+            has_stripped_fields: true,
+        },
+        discriminant: None,
+    })
+}
+
 fn impl_item(for_: Type, trait_: Option<Type>, items: &[&str]) -> ItemEnum {
     ItemEnum::Impl(Impl {
         is_unsafe: false,
@@ -405,6 +466,29 @@ fn unsafe_function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> Item
         sig: signature(inputs, output),
         generics: no_generics(),
         header: header(true, Abi::Rust),
+        has_body: true,
+        default_unstable: None,
+    })
+}
+
+fn async_function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> ItemEnum {
+    ItemEnum::Function(Function {
+        sig: signature(inputs, output),
+        generics: no_generics(),
+        header: FunctionHeader {
+            is_async: true,
+            ..header(false, Abi::Rust)
+        },
+        has_body: true,
+        default_unstable: None,
+    })
+}
+
+fn const_generic_function_item(inputs: Vec<(&str, Type)>, output: Option<Type>) -> ItemEnum {
+    ItemEnum::Function(Function {
+        sig: signature(inputs, output),
+        generics: type_generics(vec![const_param("N")]),
+        header: header(false, Abi::Rust),
         has_body: true,
         default_unstable: None,
     })
@@ -487,7 +571,11 @@ fn public_item_at_string_path(name: &str, path: &str, inner: ItemEnum) -> TestIt
     TestItem {
         name: Some(name.to_string()),
         visibility: Visibility::Public,
-        module_path: Some(path.split("::").map(|segment| segment.to_string()).collect()),
+        module_path: Some(
+            path.split("::")
+                .map(|segment| segment.to_string())
+                .collect(),
+        ),
         inner,
     }
 }
@@ -648,12 +736,34 @@ fn imported_type<'a>(interop: &'a RustInterop, name: &str) -> &'a TypeDecl {
 }
 
 // ---------------------------------------------------------------------------
-// Real-crate tests (exercise the on-disk serde_json rustdoc cache).
+// Import behavior tests.
 // ---------------------------------------------------------------------------
+
+fn serde_json_import_fixture() -> Crate {
+    crate_(vec![
+        (
+            "to_string",
+            public_item_at_path(
+                "to_string",
+                &["serde_json", "to_string"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "from_str",
+            public_item_at_path(
+                "from_str",
+                &["serde_json", "from_str"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+    ])
+}
 
 #[test]
 fn loading_a_crate_does_not_import_its_functions_unqualified() {
-    let interop = RustInterop::from_crates_and_uses(["serde_json".to_string()], &[]).unwrap();
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &serde_json_import_fixture());
 
     assert!(interop
         .function(Some("serde_json"), None, &ident("to_string"), &[])
@@ -666,7 +776,9 @@ fn loading_a_crate_does_not_import_its_functions_unqualified() {
 #[test]
 fn use_declarations_import_functions_unqualified() {
     let uses = [use_decl(&["serde_json"])];
-    let interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &serde_json_import_fixture());
+    interop.import_uses(&uses);
 
     assert!(interop
         .function(None, None, &ident("to_string"), &[])
@@ -676,7 +788,9 @@ fn use_declarations_import_functions_unqualified() {
 #[test]
 fn path_use_declarations_import_only_the_named_item() {
     let uses = [use_decl(&["serde_json", "to_string"])];
-    let interop = RustInterop::from_crates_and_uses([], &uses).unwrap();
+    let mut interop = RustInterop::empty();
+    interop.add_crate("serde_json", &serde_json_import_fixture());
+    interop.import_uses(&uses);
 
     assert!(interop
         .function(None, None, &ident("to_string"), &[])
@@ -684,6 +798,80 @@ fn path_use_declarations_import_only_the_named_item() {
     assert!(interop
         .function(None, None, &ident("from_str"), &[])
         .is_none());
+}
+
+#[test]
+fn nested_path_use_declarations_match_complete_rust_paths() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item_at_path("Ticket", &["demo", "http", "Ticket"], struct_plain(&[])),
+        ),
+        (
+            "1",
+            public_item_at_path("Ticket", &["demo", "db", "Ticket"], struct_plain(&[])),
+        ),
+        (
+            "2",
+            public_item_at_path(
+                "parse",
+                &["demo", "http", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path(
+                "parse",
+                &["demo", "db", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "4",
+            public_item_at_path(
+                "LIMIT",
+                &["demo", "http", "LIMIT"],
+                constant_inner(primitive("u64")),
+            ),
+        ),
+        (
+            "5",
+            public_item_at_path(
+                "LIMIT",
+                &["demo", "db", "LIMIT"],
+                constant_inner(primitive("u64")),
+            ),
+        ),
+    ]);
+    let uses = [
+        use_decl(&["demo", "http", "Ticket"]),
+        use_decl(&["demo", "http", "parse"]),
+        use_decl(&["demo", "http", "LIMIT"]),
+    ];
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+    interop.import_uses(&uses);
+
+    let imported = interop.imported_types().collect::<Vec<_>>();
+    assert_eq!(imported.len(), 1);
+    assert_eq!(imported[0].rust_path.as_ref(), "::demo::http::Ticket");
+    assert_eq!(
+        interop
+            .function(None, None, &ident("parse"), &[])
+            .expect("expected nested function")
+            .rust_path
+            .as_ref(),
+        "::demo::http::parse"
+    );
+    assert_eq!(
+        interop
+            .constant(None, &ident("LIMIT"))
+            .expect("expected nested constant")
+            .rust_path
+            .as_ref(),
+        "::demo::http::LIMIT"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -744,7 +932,10 @@ fn rustdoc_crates_expose_only_their_lifted_items() {
 
 #[test]
 fn use_declarations_import_constants_unqualified() {
-    let krate = crate_(vec![("0", public_constant("DEFAULT_LIMIT", primitive("u64")))]);
+    let krate = crate_(vec![(
+        "0",
+        public_constant("DEFAULT_LIMIT", primitive("u64")),
+    )]);
     let uses = [use_decl(&["demo"])];
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
@@ -764,7 +955,10 @@ fn use_declarations_suppress_ambiguous_unqualified_items() {
             "0",
             public_item_at_path("Ticket", &["http", "Ticket"], struct_plain(&[])),
         ),
-        ("1", public_function("parse", vec![], resolved("Ticket", vec![]))),
+        (
+            "1",
+            public_function("parse", vec![], resolved("Ticket", vec![])),
+        ),
         ("2", public_constant("DEFAULT_LIMIT", primitive("u64"))),
     ]);
     let db = crate_(vec![
@@ -772,7 +966,10 @@ fn use_declarations_suppress_ambiguous_unqualified_items() {
             "0",
             public_item_at_path("Ticket", &["db", "Ticket"], struct_plain(&[])),
         ),
-        ("1", public_function("parse", vec![], resolved("Ticket", vec![]))),
+        (
+            "1",
+            public_function("parse", vec![], resolved("Ticket", vec![])),
+        ),
         ("2", public_constant("DEFAULT_LIMIT", primitive("u64"))),
     ]);
     let uses = [use_decl(&["http"]), use_decl(&["db"])];
@@ -823,7 +1020,9 @@ fn path_use_declarations_suppress_ambiguous_unqualified_items() {
         .map(|ty| format!("{} {}", ty.name.as_str(), ty.rust_path.as_ref()))
         .collect::<Vec<_>>();
     assert!(imported.is_empty(), "{imported:?}");
-    assert!(interop.type_by_qualified_path(&["http", "Ticket"]).is_some());
+    assert!(interop
+        .type_by_qualified_path(&["http", "Ticket"])
+        .is_some());
     assert!(interop.type_by_qualified_path(&["db", "Ticket"]).is_some());
 }
 
@@ -922,13 +1121,20 @@ fn rustdoc_preserves_generic_arity_for_referenced_type_placeholders() {
     lift_type(
         &mut interop,
         "demo",
-        &resolved_with_path("Pair", &["demo", "Pair"], vec![generic("Item"), primitive("u64")]),
+        &resolved_with_path(
+            "Pair",
+            &["demo", "Pair"],
+            vec![generic("Item"), primitive("u64")],
+        ),
     );
 
     let TypeDecl::Empty(pair) = imported_type(&interop, "Pair") else {
         panic!("expected referenced Pair type to be recorded");
     };
-    assert_eq!(pair.generic_params, vec![Ident::new("Item"), Ident::new("U")]);
+    assert_eq!(
+        pair.generic_params,
+        vec![Ident::new("Item"), Ident::new("U")]
+    );
 
     lift_type(
         &mut interop,
@@ -977,7 +1183,11 @@ fn rustdoc_preserves_qualified_paths_for_referenced_types() {
     let ty = lift_type(
         &mut interop,
         "axum",
-        &resolved_with_path("Json", &["axum", "response", "Json"], vec![primitive("str")]),
+        &resolved_with_path(
+            "Json",
+            &["axum", "response", "Json"],
+            vec![primitive("str")],
+        ),
     )
     .unwrap();
 
@@ -1046,7 +1256,10 @@ fn rustdoc_preserves_same_named_referenced_types_from_different_modules() {
         .map(|ty| ty.rust_path.as_ref())
         .collect::<Vec<_>>();
     error_paths.sort();
-    assert_eq!(error_paths, vec!["::demo::db::Error", "::demo::http::Error"]);
+    assert_eq!(
+        error_paths,
+        vec!["::demo::db::Error", "::demo::http::Error"]
+    );
 }
 
 #[test]
@@ -1056,7 +1269,11 @@ fn rustdoc_lifts_common_collections_and_results() {
     let optional = lift_type(
         &mut interop,
         "std",
-        &resolved_with_path("Option", &["core", "option", "Option"], vec![primitive("u64")]),
+        &resolved_with_path(
+            "Option",
+            &["core", "option", "Option"],
+            vec![primitive("u64")],
+        ),
     )
     .unwrap();
     let TypeElement::Optional(optional) = optional else {
@@ -1088,17 +1305,40 @@ fn rustdoc_lifts_common_collections_and_results() {
     assert_eq!(ordered_map.key, string_type());
     assert_eq!(ordered_map.value, u64_type());
 
-    let set = lift_type(&mut interop, "std", &resolved("BTreeSet", vec![primitive("str")])).unwrap();
+    let set = lift_type(
+        &mut interop,
+        "std",
+        &resolved("HashSet", vec![primitive("str")]),
+    )
+    .unwrap();
     let TypeElement::Set(set) = set else {
         panic!("expected set, got {set:?}");
     };
     assert_eq!(set.elements, string_type());
 
-    let deque = lift_type(&mut interop, "std", &resolved("VecDeque", vec![primitive("u64")])).unwrap();
-    let TypeElement::Array(deque) = deque else {
-        panic!("expected array, got {deque:?}");
+    let deque = lift_type(
+        &mut interop,
+        "std",
+        &resolved("VecDeque", vec![primitive("u64")]),
+    )
+    .unwrap();
+    let TypeElement::Parametric(deque) = deque else {
+        panic!("expected nominal VecDeque, got {deque:?}");
     };
-    assert_eq!(deque.elements, u64_type());
+    assert_eq!(deque.base_type, TypeIdent::new("VecDeque"));
+    assert_eq!(deque.type_args, vec![u64_type()]);
+
+    let tree_set = lift_type(
+        &mut interop,
+        "std",
+        &resolved("BTreeSet", vec![primitive("str")]),
+    )
+    .unwrap();
+    let TypeElement::Parametric(tree_set) = tree_set else {
+        panic!("expected nominal BTreeSet, got {tree_set:?}");
+    };
+    assert_eq!(tree_set.base_type, TypeIdent::new("BTreeSet"));
+    assert_eq!(tree_set.type_args, vec![string_type()]);
 
     let result = lift_type(
         &mut interop,
@@ -1126,7 +1366,11 @@ fn rustdoc_preserves_dependency_types_named_like_known_wrappers() {
     let optional = lift_type(
         &mut interop,
         "demo",
-        &resolved_with_path("Option", &["demo", "schema", "Option"], vec![primitive("u64")]),
+        &resolved_with_path(
+            "Option",
+            &["demo", "schema", "Option"],
+            vec![primitive("u64")],
+        ),
     )
     .unwrap();
     let TypeElement::Parametric(optional) = optional else {
@@ -1220,7 +1464,11 @@ fn rustdoc_inlines_wrapper_type_aliases_at_references() {
         ),
         (
             "f",
-            public_function("make", vec![], resolved_to("alias", "Result", vec![primitive("str")])),
+            public_function(
+                "make",
+                vec![],
+                resolved_to("alias", "Result", vec![primitive("str")]),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -1244,7 +1492,11 @@ fn rustdoc_lifts_flexible_result_types() {
     let mut interop = RustInterop::empty();
 
     for ty in [
-        resolved_with_path("FlexResult", &["galvan", "std", "FlexResult"], vec![primitive("u64")]),
+        resolved_with_path(
+            "FlexResult",
+            &["galvan", "std", "FlexResult"],
+            vec![primitive("u64")],
+        ),
         resolved_with_path("Result", &["anyhow", "Result"], vec![primitive("u64")]),
         resolved_with_string_path("anyhow::Result", vec![primitive("u64")]),
     ] {
@@ -1256,8 +1508,12 @@ fn rustdoc_lifts_flexible_result_types() {
         assert_eq!(result.error, None);
     }
 
-    let unresolved_result =
-        lift_type(&mut interop, "demo", &resolved("Result", vec![primitive("u64")])).unwrap();
+    let unresolved_result = lift_type(
+        &mut interop,
+        "demo",
+        &resolved("Result", vec![primitive("u64")]),
+    )
+    .unwrap();
     let TypeElement::Result(unresolved_result) = unresolved_result else {
         panic!("expected result, got {unresolved_result:?}");
     };
@@ -1268,20 +1524,19 @@ fn rustdoc_lifts_flexible_result_types() {
 }
 
 #[test]
-fn rustdoc_lifts_slice_and_array_types() {
+fn rustdoc_lifts_slices_but_rejects_fixed_array_types() {
     let mut interop = RustInterop::empty();
 
-    let slice = lift_type(&mut interop, "std", &slice(primitive("u64"))).unwrap();
+    let slice_type = slice(primitive("u64"));
+    assert!(lift_type(&mut interop, "std", &slice_type).is_none());
+
+    let slice = lift_type(&mut interop, "std", &borrowed(slice_type)).unwrap();
     let TypeElement::Array(slice) = slice else {
         panic!("expected slice to lift as array, got {slice:?}");
     };
     assert_eq!(slice.elements, u64_type());
 
-    let array = lift_type(&mut interop, "std", &array(primitive("str"))).unwrap();
-    let TypeElement::Array(array) = array else {
-        panic!("expected fixed array to lift as array, got {array:?}");
-    };
-    assert_eq!(array.elements, string_type());
+    assert!(lift_type(&mut interop, "std", &array(primitive("str"))).is_none());
 }
 
 #[test]
@@ -1319,7 +1574,12 @@ fn rustdoc_does_not_lift_non_rust_abi_function_pointer_types() {
 fn rustdoc_does_not_lift_unrepresentable_type_shapes() {
     let mut interop = RustInterop::empty();
 
-    assert!(lift_type(&mut interop, "demo", &qualified_path("Output", generic("T"))).is_none());
+    assert!(lift_type(
+        &mut interop,
+        "demo",
+        &qualified_path("Output", generic("T"))
+    )
+    .is_none());
     assert!(lift_type(&mut interop, "demo", &dyn_trait()).is_none());
     assert!(lift_type(&mut interop, "demo", &impl_trait()).is_none());
 }
@@ -1330,7 +1590,12 @@ fn rustdoc_does_not_lift_partial_type_shapes() {
 
     assert!(lift_type(&mut interop, "std", &resolved("Option", vec![])).is_none());
     assert!(lift_type(&mut interop, "std", &resolved("Vec", vec![])).is_none());
-    assert!(lift_type(&mut interop, "std", &resolved("HashMap", vec![primitive("str")])).is_none());
+    assert!(lift_type(
+        &mut interop,
+        "std",
+        &resolved("HashMap", vec![primitive("str")])
+    )
+    .is_none());
     assert!(lift_type(&mut interop, "std", &resolved("Result", vec![])).is_none());
     assert!(lift_type(
         &mut interop,
@@ -1391,17 +1656,17 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
             resolved_with_path(
                 "Arc",
                 &["alloc", "sync", "Arc"],
-                vec![resolved_with_path("Mutex", &["std", "sync", "Mutex"], vec![generic("T")])],
+                vec![resolved_with_path(
+                    "Mutex",
+                    &["std", "sync", "Mutex"],
+                    vec![generic("T")],
+                )],
             ),
             "Mutex",
         ),
         (
             resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
             "Mutex",
-        ),
-        (
-            resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
-            "RwLock",
         ),
     ] {
         let param = lift_param(&mut interop, "std", "tickets", &wrapper).unwrap();
@@ -1416,16 +1681,12 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
 }
 
 #[test]
-fn rustdoc_skips_bare_standard_lock_wrappers() {
+fn rustdoc_skips_bare_mutex_wrappers() {
     let mut interop = RustInterop::empty();
 
-    for wrapper in [
-        resolved("Mutex", vec![generic("T")]),
-        resolved("RwLock", vec![generic("T")]),
-    ] {
-        assert!(lift_type(&mut interop, "std", &wrapper).is_none());
-        assert!(lift_param(&mut interop, "std", "tickets", &wrapper).is_none());
-    }
+    let wrapper = resolved("Mutex", vec![generic("T")]);
+    assert!(lift_type(&mut interop, "std", &wrapper).is_none());
+    assert!(lift_param(&mut interop, "std", "tickets", &wrapper).is_none());
 }
 
 #[test]
@@ -1442,7 +1703,10 @@ fn rustdoc_preserves_non_shared_arc_types_nominally() {
         panic!("expected Arc<Ticket>, got {ty:?}");
     };
     assert_eq!(parametric.base_type, TypeIdent::new("Arc"));
-    assert_eq!(parametric.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
+    assert_eq!(
+        parametric.type_args,
+        vec![plain_type(TypeIdent::new("Ticket"))]
+    );
     assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Arc"));
     assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Ticket"));
 }
@@ -1450,13 +1714,19 @@ fn rustdoc_preserves_non_shared_arc_types_nominally() {
 #[test]
 fn rustdoc_keeps_single_owner_atomics_nominal() {
     let mut interop = RustInterop::empty();
-    let atomic = lift_param(&mut interop, "std", "next_id", &resolved("AtomicU64", vec![])).unwrap();
+    let atomic = lift_param(
+        &mut interop,
+        "std",
+        "next_id",
+        &resolved("AtomicU64", vec![]),
+    )
+    .unwrap();
     assert_eq!(atomic.decl_modifier, Some(galvan_ast::DeclModifier::Move));
     assert_eq!(atomic.param_type, plain_type(TypeIdent::new("AtomicU64")));
 }
 
 #[test]
-fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
+fn rustdoc_keeps_arc_atomic_primitives_nominal() {
     let mut interop = RustInterop::empty();
     let param = lift_param(
         &mut interop,
@@ -1466,12 +1736,20 @@ fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
     )
     .unwrap();
 
-    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
-    assert_eq!(param.param_type, u64_type());
+    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Move));
+    let TypeElement::Parametric(parametric) = param.param_type else {
+        panic!("expected nominal Arc<AtomicU64>");
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Arc"));
+    assert_eq!(
+        parametric.type_args,
+        vec![plain_type(TypeIdent::new("AtomicU64"))]
+    );
+    assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Arc"));
     assert!(interop
         .types
         .iter()
-        .all(|ty| !matches!(ty.name.as_str(), "Arc" | "AtomicU64")));
+        .any(|ty| ty.name.as_str() == "AtomicU64"));
 }
 
 #[test]
@@ -1535,7 +1813,10 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
     let function = interop
         .function(Some("demo"), None, &ident("takes_ref"), &[])
         .expect("expected imported function");
-    assert_eq!(function.arg_conversions, vec![RustArgConversion::SharedBorrow]);
+    assert_eq!(
+        function.arg_conversions,
+        vec![RustArgConversion::SharedBorrow]
+    );
     assert_eq!(
         function.decl.item.signature.parameters.params[0].param_type,
         TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
@@ -1557,6 +1838,70 @@ fn rustdoc_does_not_import_unsafe_functions() {
     assert!(interop
         .function(Some("demo"), None, &ident("from_raw_parts"), &[])
         .is_none());
+}
+
+#[test]
+fn rustdoc_does_not_import_async_or_const_generic_functions() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item(
+                "fetch_ticket",
+                async_function_item(vec![], Some(resolved("Ticket", vec![]))),
+            ),
+        ),
+        (
+            "1",
+            public_item(
+                "new_buffer",
+                const_generic_function_item(vec![], Some(resolved("Buffer", vec![]))),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("fetch_ticket"), &[])
+        .is_none());
+    assert!(interop
+        .function(Some("demo"), None, &ident("new_buffer"), &[])
+        .is_none());
+}
+
+#[test]
+fn rustdoc_rejects_const_generic_type_arguments_and_declarations() {
+    let array_vec = resolved_with_args(
+        "demo::ArrayVec",
+        vec![
+            GenericArg::Type(primitive("u64")),
+            GenericArg::Const(Constant {
+                expr: "8".to_string(),
+                value: Some("8".to_string()),
+                is_literal: true,
+            }),
+        ],
+    );
+    let krate = crate_(vec![
+        ("0", public_function("make_array_vec", vec![], array_vec)),
+        (
+            "1",
+            public_item(
+                "ArrayVec",
+                struct_unit_generic(type_generics(vec![generic_param("T"), const_param("N")])),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    assert!(interop
+        .function(Some("demo"), None, &ident("make_array_vec"), &[])
+        .is_none());
+    assert!(interop
+        .types
+        .iter()
+        .all(|ty| ty.name.as_str() != "ArrayVec"));
 }
 
 #[test]
@@ -1662,9 +2007,19 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
     assert!(interop
         .function(Some("demo"), None, &ident("bare_lock_input"), &[])
         .is_none());
-    assert!(interop
+    let function = interop
         .function(Some("demo"), None, &ident("nested_bare_lock_input"), &[])
-        .is_none());
+        .expect("expected nominal RwLock parameter to remain importable");
+    let TypeElement::Optional(optional) =
+        &function.decl.item.signature.parameters.params[0].param_type
+    else {
+        panic!("expected optional RwLock parameter");
+    };
+    let TypeElement::Parametric(lock) = &optional.inner else {
+        panic!("expected nominal RwLock parameter");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(lock.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
     assert!(interop
         .constant(Some("demo"), &ident("LOCKED_TICKETS"))
         .is_none());
@@ -1703,10 +2058,15 @@ fn rustdoc_imports_functions_with_shared_arc_lock_signatures() {
         function.decl.item.signature.parameters.params[0].param_type,
         plain_type(TypeIdent::new("Ticket"))
     );
-    assert_eq!(
-        function.decl.item.signature.return_type,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    let TypeElement::Parametric(arc) = &function.decl.item.signature.return_type else {
+        panic!("expected nominal Arc<RwLock<Ticket>> return type");
+    };
+    assert_eq!(arc.base_type, TypeIdent::new("Arc"));
+    let [TypeElement::Parametric(lock)] = arc.type_args.as_slice() else {
+        panic!("expected nominal RwLock<Ticket> payload");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(lock.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
 }
 
 #[test]
@@ -1730,7 +2090,10 @@ fn rustdoc_imports_function_pointer_parameters() {
         .expect("expected imported function");
     let parameter = &function.decl.item.signature.parameters.params[0];
     let TypeElement::Closure(closure) = &parameter.param_type else {
-        panic!("expected closure parameter type, got {:?}", parameter.param_type);
+        panic!(
+            "expected closure parameter type, got {:?}",
+            parameter.param_type
+        );
     };
     assert_eq!(closure.parameters, vec![u64_type()]);
     assert_eq!(closure.return_ty, TypeElement::bool());
@@ -1740,7 +2103,10 @@ fn rustdoc_imports_function_pointer_parameters() {
 fn rustdoc_keeps_types_with_raw_pointer_fields_opaque() {
     let krate = crate_(vec![
         ("0", public_item("Buffer", struct_plain(&["1"]))),
-        ("1", public_field("ptr", raw_pointer(primitive("u8"), false))),
+        (
+            "1",
+            public_field("ptr", raw_pointer(primitive("u8"), false)),
+        ),
     ]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
@@ -1815,18 +2181,68 @@ fn rustdoc_imports_unions_as_opaque_types() {
 #[test]
 fn rustdoc_keeps_types_with_incomplete_field_metadata_opaque() {
     let krate = crate_(vec![
-        ("0", public_item("PartialTicket", struct_plain(&["1", "missing"]))),
+        (
+            "0",
+            public_item("PartialTicket", struct_plain(&["1", "missing"])),
+        ),
         ("1", public_field("title", primitive("str"))),
-        ("2", public_item("PartialTuple", struct_tuple(&["3", "missing"]))),
+        (
+            "2",
+            public_item("PartialTuple", struct_tuple(&["3", "missing"])),
+        ),
         ("3", public_field("0", primitive("u64"))),
         ("4", public_item("PartialEvent", enum_(&["5"]))),
-        ("5", public_item("Renamed", variant_tuple(&["6", "missing"]))),
+        (
+            "5",
+            public_item("Renamed", variant_tuple(&["6", "missing"])),
+        ),
         ("6", public_field("0", primitive("str"))),
     ]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
 
     for name in ["PartialTicket", "PartialTuple", "PartialEvent"] {
+        let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
+            panic!("expected {name} to import as an opaque type");
+        };
+        assert_eq!(opaque.ident, TypeIdent::new(name));
+    }
+}
+
+#[test]
+fn rustdoc_keeps_types_with_stripped_metadata_opaque() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item("StrippedStruct", struct_plain_with_stripped_fields(&["1"])),
+        ),
+        ("1", public_field("visible", primitive("u64"))),
+        (
+            "2",
+            public_item("StrippedTuple", struct_tuple_with_stripped_field(&["3"])),
+        ),
+        ("3", public_field("0", primitive("u64"))),
+        (
+            "4",
+            public_item("StrippedEnum", enum_with_stripped_variants(&["5"])),
+        ),
+        ("5", public_item("Visible", variant_plain())),
+        ("6", public_item("StrippedVariantEnum", enum_(&["7"]))),
+        (
+            "7",
+            public_item("Visible", variant_struct_with_stripped_fields(&["8"])),
+        ),
+        ("8", public_field("visible", primitive("u64"))),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    for name in [
+        "StrippedStruct",
+        "StrippedTuple",
+        "StrippedEnum",
+        "StrippedVariantEnum",
+    ] {
         let TypeDecl::Empty(opaque) = imported_type(&interop, name) else {
             panic!("expected {name} to import as an opaque type");
         };
@@ -1863,7 +2279,10 @@ fn rustdoc_preserves_generic_params_on_opaque_types() {
         "0",
         public_item(
             "State",
-            struct_unit_generic(type_generics(vec![lifetime_param("'a"), generic_param("T")])),
+            struct_unit_generic(type_generics(vec![
+                lifetime_param("'a"),
+                generic_param("T"),
+            ])),
         ),
     )]);
     let mut interop = RustInterop::empty();
@@ -1885,7 +2304,10 @@ fn rustdoc_preserves_generic_params_on_structs() {
                 struct_plain_generic(&["1"], type_generics(vec![generic_param("T")])),
             ),
         ),
-        ("1", public_field("items", resolved("Vec", vec![generic("T")]))),
+        (
+            "1",
+            public_field("items", resolved("Vec", vec![generic("T")])),
+        ),
     ]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
@@ -1905,7 +2327,10 @@ fn rustdoc_preserves_generic_params_on_structs() {
 
 #[test]
 fn rustdoc_imports_never_returning_functions() {
-    let krate = crate_(vec![("0", public_function("abort_request", vec![], never()))]);
+    let krate = crate_(vec![(
+        "0",
+        public_function("abort_request", vec![], never()),
+    )]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
 
@@ -1965,11 +2390,19 @@ fn rustdoc_does_not_import_incomplete_owned_wrapper_parameters() {
     let krate = crate_(vec![
         (
             "0",
-            public_function("takes_box", vec![("value", resolved("Box", vec![]))], primitive("bool")),
+            public_function(
+                "takes_box",
+                vec![("value", resolved("Box", vec![]))],
+                primitive("bool"),
+            ),
         ),
         (
             "1",
-            public_function("takes_rc", vec![("value", resolved("Rc", vec![]))], primitive("bool")),
+            public_function(
+                "takes_rc",
+                vec![("value", resolved("Rc", vec![]))],
+                primitive("bool"),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -1986,8 +2419,14 @@ fn rustdoc_does_not_import_incomplete_owned_wrapper_parameters() {
 #[test]
 fn rustdoc_does_not_import_incomplete_owned_wrapper_returns() {
     let krate = crate_(vec![
-        ("0", public_function("returns_box", vec![], resolved("Box", vec![]))),
-        ("1", public_function("returns_rc", vec![], resolved("Rc", vec![]))),
+        (
+            "0",
+            public_function("returns_box", vec![], resolved("Box", vec![])),
+        ),
+        (
+            "1",
+            public_function("returns_rc", vec![], resolved("Rc", vec![])),
+        ),
     ]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
@@ -2076,7 +2515,10 @@ fn rustdoc_preserves_dependency_owned_wrapper_names_without_conversions() {
         );
     };
     assert_eq!(field_type.base_type, TypeIdent::new("Box"));
-    assert_eq!(field_type.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
+    assert_eq!(
+        field_type.type_args,
+        vec![plain_type(TypeIdent::new("Ticket"))]
+    );
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("Envelope"), &ident("ticket")),
         RustReturnConversion::None
@@ -2111,7 +2553,7 @@ fn rustdoc_lifts_box_returns_with_return_conversions() {
 }
 
 #[test]
-fn rustdoc_lifts_rc_returns_with_clone_return_conversions() {
+fn rustdoc_keeps_rc_returns_nominal_without_clone_bounds() {
     let krate = crate_(vec![(
         "0",
         public_function(
@@ -2126,11 +2568,12 @@ fn rustdoc_lifts_rc_returns_with_clone_return_conversions() {
     let function = interop
         .function(Some("demo"), None, &ident("shared_ticket"), &[])
         .expect("expected imported Rc return function");
-    assert_eq!(function.return_conversion, RustReturnConversion::RcCloneDeref);
-    assert_eq!(
-        function.decl.item.signature.return_type,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    assert_eq!(function.return_conversion, RustReturnConversion::None);
+    let TypeElement::Parametric(rc) = &function.decl.item.signature.return_type else {
+        panic!("expected nominal Rc<Ticket> return");
+    };
+    assert_eq!(rc.base_type, TypeIdent::new("Rc"));
+    assert_eq!(rc.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
 }
 
 #[test]
@@ -2150,7 +2593,10 @@ fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
     };
     assert_eq!(envelope.members.len(), 1);
     assert_eq!(envelope.members[0].ident.as_str(), "ticket");
-    assert_eq!(envelope.members[0].r#type, plain_type(TypeIdent::new("Ticket")));
+    assert_eq!(
+        envelope.members[0].r#type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("TicketEnvelope"), &ident("ticket")),
         RustReturnConversion::BoxDeref
@@ -2162,7 +2608,7 @@ fn rustdoc_lifts_box_struct_fields_with_field_conversions() {
 }
 
 #[test]
-fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
+fn rustdoc_keeps_rc_struct_fields_nominal_without_clone_bounds() {
     let krate = crate_(vec![
         ("0", public_item("TicketCache", struct_plain(&["1"]))),
         (
@@ -2178,14 +2624,18 @@ fn rustdoc_lifts_rc_struct_fields_with_field_conversions() {
     };
     assert_eq!(cache.members.len(), 1);
     assert_eq!(cache.members[0].ident.as_str(), "latest");
-    assert_eq!(cache.members[0].r#type, plain_type(TypeIdent::new("Ticket")));
+    let TypeElement::Parametric(rc) = &cache.members[0].r#type else {
+        panic!("expected nominal Rc<Ticket> field");
+    };
+    assert_eq!(rc.base_type, TypeIdent::new("Rc"));
+    assert_eq!(rc.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
     assert_eq!(
         interop.field_return_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
-        RustReturnConversion::RcCloneDeref
+        RustReturnConversion::None
     );
     assert_eq!(
         interop.field_arg_conversion(&TypeIdent::new("TicketCache"), &ident("latest")),
-        RustArgConversion::RcNew
+        RustArgConversion::None
     );
 }
 
@@ -2194,7 +2644,11 @@ fn rustdoc_suppresses_conversions_for_ambiguous_type_names() {
     let krate = crate_(vec![
         (
             "0",
-            public_item_at_path("Envelope", &["demo", "http", "Envelope"], struct_plain(&["1"])),
+            public_item_at_path(
+                "Envelope",
+                &["demo", "http", "Envelope"],
+                struct_plain(&["1"]),
+            ),
         ),
         (
             "1",
@@ -2202,7 +2656,11 @@ fn rustdoc_suppresses_conversions_for_ambiguous_type_names() {
         ),
         (
             "2",
-            public_item_at_path("Envelope", &["demo", "db", "Envelope"], struct_plain(&["3"])),
+            public_item_at_path(
+                "Envelope",
+                &["demo", "db", "Envelope"],
+                struct_plain(&["3"]),
+            ),
         ),
         (
             "3",
@@ -2280,7 +2738,10 @@ fn rustdoc_suppresses_conversions_for_ambiguous_type_names() {
 #[test]
 fn rustdoc_keeps_types_with_incomplete_owned_wrapper_fields_opaque() {
     let krate = crate_(vec![
-        ("0", public_item("TicketEnvelope", struct_plain(&["1", "2"]))),
+        (
+            "0",
+            public_item("TicketEnvelope", struct_plain(&["1", "2"])),
+        ),
         ("1", public_field("ticket", resolved("Box", vec![]))),
         ("2", public_field("latest", resolved("Rc", vec![]))),
     ]);
@@ -2296,21 +2757,30 @@ fn rustdoc_keeps_types_with_incomplete_owned_wrapper_fields_opaque() {
 #[test]
 fn rustdoc_imports_public_struct_fields() {
     let krate = crate_(vec![
-        ("0", public_item("Ticket", struct_plain(&["1", "2", "3", "4"]))),
+        (
+            "0",
+            public_item("Ticket", struct_plain(&["1", "2", "3", "4"])),
+        ),
         ("1", public_field("id", primitive("u64"))),
         ("2", public_field("title", primitive("str"))),
         (
             "3",
             public_field(
                 "state",
-                resolved("Arc", vec![resolved("RwLock", vec![resolved("TicketState", vec![])])]),
+                resolved(
+                    "Arc",
+                    vec![resolved("RwLock", vec![resolved("TicketState", vec![])])],
+                ),
             ),
         ),
         (
             "4",
             public_field(
                 "draft",
-                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketDraft", vec![])])]),
+                resolved(
+                    "Arc",
+                    vec![resolved("Mutex", vec![resolved("TicketDraft", vec![])])],
+                ),
             ),
         ),
     ]);
@@ -2326,10 +2796,27 @@ fn rustdoc_imports_public_struct_fields() {
     assert_eq!(ticket.members[0].r#type, u64_type());
     assert_eq!(ticket.members[1].ident.as_str(), "title");
     assert_eq!(ticket.members[1].r#type, string_type());
-    assert_eq!(ticket.members[2].decl_modifier, Some(galvan_ast::DeclModifier::Ref));
-    assert_eq!(ticket.members[2].r#type, plain_type(TypeIdent::new("TicketState")));
-    assert_eq!(ticket.members[3].decl_modifier, Some(galvan_ast::DeclModifier::Ref));
-    assert_eq!(ticket.members[3].r#type, plain_type(TypeIdent::new("TicketDraft")));
+    assert_eq!(ticket.members[2].decl_modifier, None);
+    let TypeElement::Parametric(arc) = &ticket.members[2].r#type else {
+        panic!("expected nominal Arc<RwLock<TicketState>> field");
+    };
+    assert_eq!(arc.base_type, TypeIdent::new("Arc"));
+    let [TypeElement::Parametric(lock)] = arc.type_args.as_slice() else {
+        panic!("expected nominal RwLock<TicketState> payload");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(
+        lock.type_args,
+        vec![plain_type(TypeIdent::new("TicketState"))]
+    );
+    assert_eq!(
+        ticket.members[3].decl_modifier,
+        Some(galvan_ast::DeclModifier::Ref)
+    );
+    assert_eq!(
+        ticket.members[3].r#type,
+        plain_type(TypeIdent::new("TicketDraft"))
+    );
 }
 
 #[test]
@@ -2338,7 +2825,10 @@ fn rustdoc_keeps_types_with_bare_lock_fields_opaque() {
         ("0", public_item("TicketStore", struct_plain(&["1"]))),
         (
             "1",
-            public_field("tickets", resolved("Mutex", vec![resolved("Ticket", vec![])])),
+            public_field(
+                "tickets",
+                resolved("Mutex", vec![resolved("Ticket", vec![])]),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -2379,7 +2869,10 @@ fn rustdoc_lifts_tuple_struct_wrapper_fields() {
             "2",
             public_field(
                 "1",
-                resolved("Arc", vec![resolved("Mutex", vec![resolved("TicketState", vec![])])]),
+                resolved(
+                    "Arc",
+                    vec![resolved("Mutex", vec![resolved("TicketState", vec![])])],
+                ),
             ),
         ),
     ]);
@@ -2390,7 +2883,10 @@ fn rustdoc_lifts_tuple_struct_wrapper_fields() {
         panic!("expected SharedTicket tuple struct");
     };
     assert_eq!(shared_ticket.members.len(), 2);
-    assert_eq!(shared_ticket.members[0].r#type, plain_type(TypeIdent::new("Ticket")));
+    assert_eq!(
+        shared_ticket.members[0].r#type,
+        plain_type(TypeIdent::new("Ticket"))
+    );
     assert_eq!(
         shared_ticket.members[1].r#type,
         plain_type(TypeIdent::new("TicketState"))
@@ -2409,7 +2905,10 @@ fn rustdoc_imports_enum_variants() {
         ("2", public_item("Renamed", variant_tuple(&["3"]))),
         ("3", public_field("0", primitive("str"))),
         ("4", public_item("Closed", variant_struct(&["5"]))),
-        ("5", public_field("reason", resolved("Option", vec![primitive("str")]))),
+        (
+            "5",
+            public_field("reason", resolved("Option", vec![primitive("str")])),
+        ),
     ]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
@@ -2442,7 +2941,10 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
             public_field("0", resolved("Rc", vec![resolved("User", vec![])])),
         ),
         ("3", public_item("Moved", variant_struct(&["4", "5"]))),
-        ("4", public_field("queue", resolved("Option", vec![primitive("str")]))),
+        (
+            "4",
+            public_field("queue", resolved("Option", vec![primitive("str")])),
+        ),
         (
             "5",
             public_field("owner", resolved("Box", vec![resolved("User", vec![])])),
@@ -2455,14 +2957,21 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
         panic!("expected TicketEvent enum");
     };
     assert_eq!(event.members.len(), 2);
-    assert_eq!(event.members[0].fields[0].r#type, plain_type(TypeIdent::new("User")));
+    let TypeElement::Parametric(rc) = &event.members[0].fields[0].r#type else {
+        panic!("expected nominal Rc<User> variant field");
+    };
+    assert_eq!(rc.base_type, TypeIdent::new("Rc"));
+    assert_eq!(rc.type_args, vec![plain_type(TypeIdent::new("User"))]);
     assert_eq!(event.members[1].fields[0].name, Some(Ident::new("queue")));
     assert!(matches!(
         event.members[1].fields[0].r#type,
         TypeElement::Optional(_)
     ));
     assert_eq!(event.members[1].fields[1].name, Some(Ident::new("owner")));
-    assert_eq!(event.members[1].fields[1].r#type, plain_type(TypeIdent::new("User")));
+    assert_eq!(
+        event.members[1].fields[1].r#type,
+        plain_type(TypeIdent::new("User"))
+    );
     assert_eq!(
         interop.enum_variant_arg_conversion(
             &TypeIdent::new("TicketEvent"),
@@ -2470,7 +2979,7 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
             0,
             None,
         ),
-        RustArgConversion::RcNew
+        RustArgConversion::None
     );
     assert_eq!(
         interop.enum_variant_return_conversion(
@@ -2479,7 +2988,7 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
             0,
             None,
         ),
-        RustReturnConversion::RcCloneDeref
+        RustReturnConversion::None
     );
     assert_eq!(
         interop.enum_variant_arg_conversion(
@@ -2505,7 +3014,10 @@ fn rustdoc_lifts_enum_variant_wrapper_fields() {
 fn rustdoc_imports_type_aliases_with_lifted_targets() {
     let krate = crate_(vec![
         ("0", public_item("UserId", type_alias(primitive("u64")))),
-        ("1", public_item("Names", type_alias(resolved("Vec", vec![primitive("str")])))),
+        (
+            "1",
+            public_item("Names", type_alias(resolved("Vec", vec![primitive("str")]))),
+        ),
         (
             "2",
             public_item(
@@ -2549,10 +3061,16 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
     };
     assert_eq!(parse_result.generic_params, vec![Ident::new("T")]);
     let TypeElement::Result(parse_result) = &parse_result.r#type else {
-        panic!("expected lifted Result alias, got {:?}", parse_result.r#type);
+        panic!(
+            "expected lifted Result alias, got {:?}",
+            parse_result.r#type
+        );
     };
     assert_eq!(parse_result.success, generic_type("T"));
-    assert_eq!(parse_result.error, Some(plain_type(TypeIdent::new("Error"))));
+    assert_eq!(
+        parse_result.error,
+        Some(plain_type(TypeIdent::new("Error")))
+    );
 
     let TypeDecl::Alias(fallible_ticket) = imported_type(&interop, "FallibleTicket") else {
         panic!("expected FallibleTicket alias");
@@ -2563,13 +3081,19 @@ fn rustdoc_imports_type_aliases_with_lifted_targets() {
             fallible_ticket.r#type
         );
     };
-    assert_eq!(fallible_ticket.success, plain_type(TypeIdent::new("Ticket")));
+    assert_eq!(
+        fallible_ticket.success,
+        plain_type(TypeIdent::new("Ticket"))
+    );
     assert_eq!(fallible_ticket.error, None);
 }
 
 #[test]
 fn rustdoc_imports_top_level_constants() {
-    let krate = crate_(vec![("0", public_constant("DEFAULT_LIMIT", primitive("u64")))]);
+    let krate = crate_(vec![(
+        "0",
+        public_constant("DEFAULT_LIMIT", primitive("u64")),
+    )]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
 
@@ -2585,10 +3109,17 @@ fn rustdoc_imports_top_level_constants() {
 fn rustdoc_imports_associated_constants() {
     let krate = crate_(vec![
         ("0", public_item("StatusCode", struct_plain(&[]))),
-        ("1", public_impl(resolved("StatusCode", vec![]), None, &["2"])),
+        (
+            "1",
+            public_impl(resolved("StatusCode", vec![]), None, &["2"]),
+        ),
         (
             "2",
-            public_item_at_path("CREATED", &["demo", "StatusCode"], assoc_const(resolved("StatusCode", vec![]))),
+            public_item_at_path(
+                "CREATED",
+                &["demo", "StatusCode"],
+                assoc_const(resolved("StatusCode", vec![])),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -2596,8 +3127,44 @@ fn rustdoc_imports_associated_constants() {
 
     assert!(interop.constant(Some("demo"), &ident("CREATED")).is_none());
     let constant = interop
-        .associated_constant(Some("demo"), &TypeIdent::new("StatusCode"), &ident("CREATED"))
+        .associated_constant(
+            Some("demo"),
+            &TypeIdent::new("StatusCode"),
+            &ident("CREATED"),
+        )
         .expect("expected associated constant");
+    assert_eq!(constant.rust_path.as_ref(), "::demo::StatusCode::CREATED");
+    assert_eq!(constant.ty, plain_type(TypeIdent::new("StatusCode")));
+}
+
+#[test]
+fn rustdoc_imports_associated_constants_for_reexported_types() {
+    let krate = crate_(vec![
+        ("0", public_item("InternalStatusCode", struct_plain(&[]))),
+        (
+            "1",
+            public_impl(resolved("InternalStatusCode", vec![]), None, &["2"]),
+        ),
+        (
+            "2",
+            public_item_at_path(
+                "CREATED",
+                &["demo", "InternalStatusCode"],
+                assoc_const(resolved("InternalStatusCode", vec![])),
+            ),
+        ),
+        ("3", public_use("StatusCode", "0")),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    let constant = interop
+        .associated_constant(
+            Some("demo"),
+            &TypeIdent::new("StatusCode"),
+            &ident("CREATED"),
+        )
+        .expect("expected re-exported associated constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::StatusCode::CREATED");
     assert_eq!(constant.ty, plain_type(TypeIdent::new("StatusCode")));
 }
@@ -2617,7 +3184,11 @@ fn rustdoc_imports_trait_impl_associated_constants() {
         ),
         (
             "3",
-            public_item_at_path("KIND", &["demo", "TicketKind"], assoc_const(primitive("str"))),
+            public_item_at_path(
+                "KIND",
+                &["demo", "TicketKind"],
+                assoc_const(primitive("str")),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -2662,7 +3233,11 @@ fn rustdoc_imports_trait_methods_and_constants() {
         ),
         (
             "3",
-            public_item_at_path("KIND", &["demo", "DisplayName"], assoc_const(primitive("str"))),
+            public_item_at_path(
+                "KIND",
+                &["demo", "DisplayName"],
+                assoc_const(primitive("str")),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -2685,10 +3260,19 @@ fn rustdoc_imports_trait_methods_and_constants() {
             &[],
         )
         .expect("expected imported DisplayName.display_name trait method");
-    assert_eq!(function.rust_path.as_ref(), "::demo::DisplayName::display_name");
+    assert_eq!(
+        function.rust_path.as_ref(),
+        "::demo::DisplayName::display_name"
+    );
     let receiver = function.decl.item.signature.receiver().unwrap();
-    assert_eq!(receiver.param_type, plain_type(TypeIdent::new("DisplayName")));
-    assert_eq!(function.arg_conversions, vec![RustArgConversion::SharedBorrow]);
+    assert_eq!(
+        receiver.param_type,
+        plain_type(TypeIdent::new("DisplayName"))
+    );
+    assert_eq!(
+        function.arg_conversions,
+        vec![RustArgConversion::SharedBorrow]
+    );
     assert_eq!(function.decl.item.signature.return_type, string_type());
 
     let clone_function = interop
@@ -2715,26 +3299,48 @@ fn rustdoc_imports_trait_methods_and_constants() {
 fn rustdoc_suppresses_ambiguous_unqualified_associated_items() {
     let http = crate_(vec![
         ("0", public_item("Ticket", struct_plain(&[]))),
-        ("1", public_impl(resolved("Ticket", vec![]), None, &["2", "3"])),
+        (
+            "1",
+            public_impl(resolved("Ticket", vec![]), None, &["2", "3"]),
+        ),
         (
             "2",
-            public_item_at_path("new", &["http", "Ticket"], function_item(vec![], Some(resolved("Ticket", vec![])))),
+            public_item_at_path(
+                "new",
+                &["http", "Ticket"],
+                function_item(vec![], Some(resolved("Ticket", vec![]))),
+            ),
         ),
         (
             "3",
-            public_item_at_path("DEFAULT", &["http", "Ticket"], assoc_const(resolved("Ticket", vec![]))),
+            public_item_at_path(
+                "DEFAULT",
+                &["http", "Ticket"],
+                assoc_const(resolved("Ticket", vec![])),
+            ),
         ),
     ]);
     let db = crate_(vec![
         ("0", public_item("Ticket", struct_plain(&[]))),
-        ("1", public_impl(resolved("Ticket", vec![]), None, &["2", "3"])),
+        (
+            "1",
+            public_impl(resolved("Ticket", vec![]), None, &["2", "3"]),
+        ),
         (
             "2",
-            public_item_at_path("new", &["db", "Ticket"], function_item(vec![], Some(resolved("Ticket", vec![])))),
+            public_item_at_path(
+                "new",
+                &["db", "Ticket"],
+                function_item(vec![], Some(resolved("Ticket", vec![]))),
+            ),
         ),
         (
             "3",
-            public_item_at_path("DEFAULT", &["db", "Ticket"], assoc_const(resolved("Ticket", vec![]))),
+            public_item_at_path(
+                "DEFAULT",
+                &["db", "Ticket"],
+                assoc_const(resolved("Ticket", vec![])),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -2788,7 +3394,10 @@ fn rustdoc_imports_reexported_type_aliases() {
 fn rustdoc_imports_external_reexported_types_without_index_targets() {
     let krate = crate_(vec![
         ("0", public_external_use("StatusCode", "http::StatusCode")),
-        ("1", public_external_use("DEFAULT_LIMIT", "http::DEFAULT_LIMIT")),
+        (
+            "1",
+            public_external_use("DEFAULT_LIMIT", "http::DEFAULT_LIMIT"),
+        ),
     ]);
     let mut interop = RustInterop::empty();
     interop.add_crate("demo", &krate);
@@ -2803,7 +3412,10 @@ fn rustdoc_imports_external_reexported_types_without_index_targets() {
         panic!("expected external re-export to import as empty type");
     };
     assert_eq!(status_code.ident, TypeIdent::new("StatusCode"));
-    assert!(interop.types.iter().all(|ty| ty.name.as_str() != "DEFAULT_LIMIT"));
+    assert!(interop
+        .types
+        .iter()
+        .all(|ty| ty.name.as_str() != "DEFAULT_LIMIT"));
 }
 
 #[test]
@@ -2819,7 +3431,10 @@ fn rustdoc_imports_reexported_functions() {
         .function(Some("demo"), None, &ident("display_name"), &[])
         .expect("expected re-exported function");
     assert_eq!(function.rust_path.as_ref(), "::demo::display_name");
-    assert_eq!(function.decl.item.signature.identifier, ident("display_name"));
+    assert_eq!(
+        function.decl.item.signature.identifier,
+        ident("display_name")
+    );
     assert_eq!(function.decl.item.signature.return_type, string_type());
 }
 
@@ -2828,11 +3443,17 @@ fn rustdoc_imports_reexported_constants() {
     let krate = crate_(vec![
         ("0", public_constant("DEFAULT_LIMIT", primitive("u64"))),
         ("1", public_use("LIMIT", "0")),
-        ("2", public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false))),
+        (
+            "2",
+            public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false)),
+        ),
         ("3", public_use("BUFFER", "2")),
         (
             "4",
-            public_constant("LOCKED_TICKETS", resolved("Mutex", vec![resolved("Ticket", vec![])])),
+            public_constant(
+                "LOCKED_TICKETS",
+                resolved("Mutex", vec![resolved("Ticket", vec![])]),
+            ),
         ),
         ("5", public_use("TICKETS", "4")),
     ]);
@@ -2853,14 +3474,23 @@ fn rustdoc_imports_glob_reexported_items() {
     let krate = crate_(vec![
         ("0", public_module("internal", &["1", "2", "4", "6", "7"])),
         ("1", public_item("Ticket", struct_plain(&["3"]))),
-        ("2", public_function("display_name", vec![], primitive("str"))),
+        (
+            "2",
+            public_function("display_name", vec![], primitive("str")),
+        ),
         ("3", public_field("title", primitive("str"))),
         ("4", public_constant("LIMIT", primitive("u64"))),
         ("5", public_glob_use("internal", "0")),
-        ("6", public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false))),
+        (
+            "6",
+            public_constant("RAW_BUFFER", raw_pointer(primitive("u8"), false)),
+        ),
         (
             "7",
-            public_constant("LOCKED_TICKETS", resolved("RwLock", vec![resolved("Ticket", vec![])])),
+            public_constant(
+                "LOCKED_TICKETS",
+                resolved("RwLock", vec![resolved("Ticket", vec![])]),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -2883,8 +3513,17 @@ fn rustdoc_imports_glob_reexported_items() {
         .expect("expected glob re-exported constant");
     assert_eq!(constant.rust_path.as_ref(), "::demo::LIMIT");
     assert_eq!(constant.ty, u64_type());
-    assert!(interop.constant(Some("demo"), &ident("RAW_BUFFER")).is_none());
-    assert!(interop.constant(Some("demo"), &ident("LOCKED_TICKETS")).is_none());
+    assert!(interop
+        .constant(Some("demo"), &ident("RAW_BUFFER"))
+        .is_none());
+    let constant = interop
+        .constant(Some("demo"), &ident("LOCKED_TICKETS"))
+        .expect("expected nominal RwLock constant");
+    let TypeElement::Parametric(lock) = &constant.ty else {
+        panic!("expected nominal RwLock constant");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(lock.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
 }
 
 #[test]
@@ -2914,7 +3553,12 @@ fn rustdoc_imports_inherent_impl_methods_with_receivers() {
         .function(Some("demo"), None, &ident("rename"), &[])
         .is_none());
     let function = interop
-        .function(Some("demo"), Some(&TypeIdent::new("Ticket")), &ident("rename"), &[])
+        .function(
+            Some("demo"),
+            Some(&TypeIdent::new("Ticket")),
+            &ident("rename"),
+            &[],
+        )
         .expect("expected imported Ticket.rename method");
     assert_eq!(function.rust_path.as_ref(), "::demo::Ticket::rename");
     let receiver = function.decl.item.signature.receiver().unwrap();
@@ -2977,11 +3621,19 @@ fn rustdoc_does_not_import_impl_items_with_unliftable_receivers() {
         ),
         (
             "1",
-            public_item_at_path("from_address", &["demo", "PointerExt"], function_item(vec![], Some(primitive("bool")))),
+            public_item_at_path(
+                "from_address",
+                &["demo", "PointerExt"],
+                function_item(vec![], Some(primitive("bool"))),
+            ),
         ),
         (
             "2",
-            public_item_at_path("KIND", &["demo", "PointerExt"], assoc_const(primitive("str"))),
+            public_item_at_path(
+                "KIND",
+                &["demo", "PointerExt"],
+                assoc_const(primitive("str")),
+            ),
         ),
     ]);
     let mut interop = RustInterop::empty();
@@ -3014,7 +3666,12 @@ fn rustdoc_does_not_import_unsafe_associated_functions() {
     interop.add_crate("demo", &krate);
 
     assert!(interop
-        .associated_function(Some("demo"), &TypeIdent::new("Ticket"), &ident("from_raw"), &[])
+        .associated_function(
+            Some("demo"),
+            &TypeIdent::new("Ticket"),
+            &ident("from_raw"),
+            &[]
+        )
         .is_none());
 }
 
@@ -3037,7 +3694,10 @@ fn rustdoc_imports_trait_impl_methods() {
                 "display_name",
                 &["demo", "DisplayName"],
                 function_item(
-                    vec![("self", borrowed(resolved_with_string_path("crate::Ticket", vec![])))],
+                    vec![(
+                        "self",
+                        borrowed(resolved_with_string_path("crate::Ticket", vec![])),
+                    )],
                     Some(primitive("str")),
                 ),
             ),

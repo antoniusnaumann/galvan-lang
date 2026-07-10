@@ -45,10 +45,25 @@ Inside imported impl and trait associated function signatures, Rust `Self`
 types are substituted with the associated receiver type before Galvan sees the
 signature.
 
-`use namespace` and `use namespace::item` expose dependency items for
-unqualified lookup only when the imported unqualified name is not ambiguous
-across the active `use` declarations. Ambiguous unqualified type, function, and
-constant imports are suppressed; qualified namespace lookup remains available.
+`use namespace`, `use namespace::item`, and deeper paths such as
+`use namespace::module::item` expose dependency items for unqualified lookup.
+Explicit item uses match the complete preserved Rust path. Imports are exposed
+only when the unqualified name is not ambiguous across active `use`
+declarations; qualified namespace lookup remains available.
+
+Dependency namespaces are resolved from the consuming package's Cargo resolve
+graph, so a renamed dependency uses its local Rust crate identifier and an exact
+package ID selects the intended version. Rustdoc runs with the features Cargo
+resolved for that package node, including an explicitly resolved `default`
+feature. Package ID and the sorted feature set are part of the rustdoc cache
+fingerprint, so switching versions or features invalidates the cached API.
+
+The plain `RustInterop::from_*` and `galvan_transpiler::transpile` APIs report
+rustdoc setup failures as errors. Callers that deliberately allow compilation
+to continue without dependency metadata must use the warning-callback variants;
+the build-script integration uses that path to emit Cargo warnings. Setting
+`GALVAN_RUSTDOC_REQUIRE_LIFT` also makes the callback path require a non-empty
+lift, as used by the serde example in CI.
 
 ## Primitive Types
 
@@ -75,8 +90,10 @@ surface remains visible instead of silently disappearing.
 Rust generic type parameters lift to Galvan generic type parameters with the
 same name. Public Rust type declarations also preserve their type generic
 parameter list, including opaque imported types whose fields are not exposed.
-Rust lifetime parameters and const generic parameters are ignored because
-Galvan does not currently have corresponding API-surface syntax.
+Rust lifetime parameters are erased because Galvan does not currently have
+corresponding API-surface syntax. Items and resolved paths with const generic
+parameters or arguments are not imported: dropping the const argument would
+generate a different, usually invalid, Rust type.
 
 Resolved Rust paths lift by their item name. If the resolved type has generic
 arguments, those arguments are lifted recursively and preserved as Galvan
@@ -119,12 +136,16 @@ Rust collection types lift to Galvan collection types:
 
 | Rust | Galvan |
 | --- | --- |
-| `[T]`, `[T; N]`, `Vec<T>`, `VecDeque<T>`, `LinkedList<T>` | `[T]` |
-| `HashSet<T>`, `BTreeSet<T>`, `IndexSet<T>` | `{T}` |
+| `[T]`, `Vec<T>` | `[T]` |
+| `HashSet<T>` | `{T}` |
 | `HashMap<K, V>` | `{K: V}` |
-| `BTreeMap<K, V>`, `IndexMap<K, V>` | `[K: V]` |
+| `BTreeMap<K, V>` | `[K: V]` |
 
-Fixed array lengths are not preserved in the lifted Galvan type.
+These are the concrete Rust types produced by Galvan collection lowering.
+Fixed arrays and slices outside a borrow are not lifted because Galvan arrays
+lower to `Vec<T>`. `VecDeque`, `LinkedList`, `BTreeSet`, `IndexSet`, and
+`IndexMap` remain nominal dependency types so their concrete representation is
+preserved.
 
 ## Algebraic Types
 
@@ -143,55 +164,35 @@ pointer types are not lifted.
 ## Shared State Wrappers
 
 Rust shared synchronization wrappers lift to Galvan `ref` fields and parameters
-only when the Rust type carries shared ownership:
+only when their representation matches Galvan's `Arc<Mutex<T>>` storage:
 
 | Rust | Galvan |
 | --- | --- |
-| `Arc<Mutex<T>>`, `Arc<RwLock<T>>` | `ref T` |
-| `Arc<AtomicBool>` | `ref Bool` |
-| `Arc<AtomicI8>`, `Arc<AtomicI16>`, `Arc<AtomicI32>`, `Arc<AtomicI64>`, `Arc<AtomicIsize>` | `ref I8`, `ref I16`, `ref I32`, `ref I64`, `ref ISize` |
-| `Arc<AtomicU8>`, `Arc<AtomicU16>`, `Arc<AtomicU32>`, `Arc<AtomicU64>`, `Arc<AtomicUsize>` | `ref U8`, `ref U16`, `ref U32`, `ref U64`, `ref USize` |
+| `Arc<Mutex<T>>` | `ref T` |
 
-When a shared-state wrapper is consumed, the `Arc`, lock, or atomic wrapper type
-is not recorded as part of the Galvan API surface. Bare `Mutex<T>` and
-`RwLock<T>` are not lifted to `ref`; they are skipped because Galvan `ref`
-represents shared state, and a lock without `Arc` does not provide shared
-ownership across the boundary. A lock is recognized as shared state only when it
-is the immediate payload of `Arc`, so shapes such as `Option<Mutex<T>>` or
-`Vec<RwLock<T>>` are unliftable rather than rewritten to `ref`. Naked `Atomic*`
-types remain nominal Rust
-dependency types because Galvan only treats atomic primitives as shared `ref`
-storage when they appear behind `Arc`. Other `Arc<T>` shapes remain `Arc<T>` in
-the lifted Galvan type and are recorded as dependency types. They are not
-treated as Galvan `ref` unless the inner type is one of the recognized shared
-state wrappers above.
+When this wrapper is consumed, `Arc` and `Mutex` are not recorded as part of the
+Galvan API surface. Bare `Mutex<T>` is not lifted to `ref` because it lacks shared
+ownership. `Arc<RwLock<T>>`, `Arc<Atomic*>`, bare atomic types, and other
+`Arc<T>` shapes remain nominal Rust dependency types so generated Rust preserves
+the dependency API's concrete representation.
 
-Atomic-backed `ref` accesses use `SeqCst` memory ordering, because a Galvan
-`ref` models shared mutable state and needs cross-thread happens-before
-ordering. Compound assignments without a dedicated atomic intrinsic (`*=`, `/=`,
-`%=`, `^=`) lower to an atomic `fetch_update` compare-and-swap loop rather than a
-load/modify/store pair, so the whole read-modify-write stays atomic.
-
-Passing an atomic-backed `ref` as a `.mut` argument to a single-argument
-function (e.g. `bump(counter.mut)`) also lowers to a `fetch_update` loop that
-runs the whole call atomically. Because a compare-and-swap loop may retry, the
-called function may run more than once and must have no observable effect beyond
-mutating its argument. Calls with additional arguments or several atomic `.mut`
-arguments currently fall back to a non-atomic load/call/store and are not yet
-race-free.
+Every Galvan `ref T`, including primitive values, lowers to `Arc<Mutex<T>>`.
+Reads, assignments, compound assignments, and `.mut` calls operate through a
+mutex guard, so the called function executes exactly once and multi-argument
+calls do not use a load/call/store approximation.
 
 Known wrapper lifting is path-aware when rustdoc provides a path. Standard
-library wrappers are lifted from `std`, `core`, or `alloc` paths; `IndexMap` and
-`IndexSet` are lifted from the `indexmap` crate; `anyhow::Result<T>` and
-`galvan::std::FlexResult<T>` lift to `T!`. Same-named dependency types such as a
+library wrappers are lifted from `std`, `core`, or `alloc` paths;
+`anyhow::Result<T>` and `galvan::std::FlexResult<T>` lift to `T!`. Same-named dependency types such as a
 crate-local `Option<T>`, `Vec<T>`, `Result<T, E>`, `Arc<T>`, or `Mutex<T>`
 remain nominal imported Rust types instead of being rewritten to Galvan wrapper
 syntax.
 
 ## Owned Wrapper Conversions
 
-`Box<T>` and `Rc<T>` are lifted away at the Galvan boundary for common owned
-interop cases:
+`Box<T>` and parameter-side `Rc<T>` are lifted away at the Galvan boundary for
+owned interop cases where the conversion is valid without additional trait
+bounds:
 
 - function parameters of type `Box<T>` lift as `T` and call Rust with
   `Box::new(argument)`
@@ -199,11 +200,12 @@ interop cases:
   `Rc::new(argument)`
 - function returns of type `Box<T>` lift as `T` and dereference the Rust return
   value
-- function returns of type `Rc<T>` lift as `T` and clone through the Rust return
-  value
-- struct fields, tuple struct fields, and enum variant fields using `Box<T>` or
-  `Rc<T>` lift as `T` and carry the same constructor, field, and match
-  conversions
+- struct fields, tuple struct fields, and enum variant fields using `Box<T>`
+  lift as `T` and carry the same constructor, field, and match conversions
+
+`Rc<T>` returns and fields remain nominal `Rc<T>` values. Dereferencing an
+`Rc<T>` into an owned `T` would require a `T: Clone` bound that rustdoc lifting
+does not currently prove.
 
 As with the shared-state wrappers above, these conversions are path-aware when
 rustdoc provides a path. Only standard-library `Box` and `Rc` shapes are lifted
@@ -216,17 +218,19 @@ that name until Galvan can key those conversions by qualified Rust type paths.
 
 ## Explicit Exclusions
 
-`galvan-rustdoc` does not bridge raw pointers, unsafe functions, unsafe function
-pointer types, non-Rust ABI function pointer types, or other Rust-only surfaces
-that Galvan cannot represent safely. Functions whose signatures contain raw
-pointers, currently unliftable type shapes, or incomplete type metadata are
-skipped. Constants with unliftable types are skipped. Data declarations whose
+`galvan-rustdoc` does not bridge raw pointers, unsafe or async functions,
+variadic functions, unsafe function pointer types, non-Rust ABI function
+pointer types, or other Rust-only surfaces that Galvan cannot represent safely.
+Functions whose signatures contain raw pointers, currently unliftable type
+shapes, const generics, or incomplete type metadata are skipped. Constants with
+unliftable types are skipped. Data declarations whose
 public surface contains raw pointers or unliftable type shapes are kept opaque
 instead of exposing those fields or variants. Rust unions are imported as opaque
 types; union fields and representation details are not exposed in Galvan. Data
 declarations are also kept
 opaque when rustdoc metadata is incomplete enough that fields or variants would
-otherwise be silently dropped, or when rustdoc exposes non-public fields that
+otherwise be silently dropped (including rustdoc's stripped fields/variants
+flags), or when rustdoc exposes non-public fields that
 Galvan cannot represent as part of a constructible public data declaration. Impl
 items are skipped when their receiver type cannot be lifted into a Galvan
 associated receiver. If an API requires raw pointers or unsafe contracts, write
@@ -242,6 +246,8 @@ The following safe Rust shapes are also not lifted yet:
 - associated type projections such as `<T as Trait>::Item`
 - generic associated types
 - union fields and `repr` details
-- lifetime and const generic parameters
+- const generic parameters and arguments
+- fixed-size arrays
+- async functions
 - external function and constant re-exports that do not have local rustdoc
   target metadata

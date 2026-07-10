@@ -29,14 +29,23 @@ impl RustInterop {
                     &mut ambiguous_functions,
                     &mut ambiguous_constants,
                 ),
-                [_, item] => self.import_namespace(
-                    namespace,
-                    Some(item.as_str()),
-                    &mut ambiguous_types,
-                    &mut ambiguous_functions,
-                    &mut ambiguous_constants,
-                ),
-                _ => {}
+                segments => {
+                    let rust_path = format!(
+                        "::{}",
+                        segments
+                            .iter()
+                            .map(|segment| segment.as_str())
+                            .collect::<Vec<_>>()
+                            .join("::")
+                    );
+                    self.import_namespace(
+                        namespace,
+                        Some(&rust_path),
+                        &mut ambiguous_types,
+                        &mut ambiguous_functions,
+                        &mut ambiguous_constants,
+                    )
+                }
             }
         }
     }
@@ -44,7 +53,7 @@ impl RustInterop {
     fn import_namespace(
         &mut self,
         namespace: &str,
-        name: Option<&str>,
+        rust_path: Option<&str>,
         ambiguous_types: &mut HashSet<TypeIdent>,
         ambiguous_functions: &mut HashSet<RustFunctionId>,
         ambiguous_constants: &mut HashSet<Ident>,
@@ -59,7 +68,7 @@ impl RustInterop {
             if ty.namespace.as_ref() != namespace {
                 continue;
             }
-            if name.is_some_and(|name| ty.name.as_str() != name) {
+            if rust_path.is_some_and(|rust_path| ty.rust_path.as_ref() != rust_path) {
                 continue;
             }
             types.insert(ty.name.clone(), idx);
@@ -74,7 +83,7 @@ impl RustInterop {
                 continue;
             }
             let signature = &function.decl.item.signature;
-            if name.is_some_and(|name| signature.identifier.as_str() != name) {
+            if rust_path.is_some_and(|rust_path| function.rust_path.as_ref() != rust_path) {
                 continue;
             }
             let labels = signature.overload_labels();
@@ -93,7 +102,12 @@ impl RustInterop {
             functions.insert(id, idx);
         }
         for (key, idx) in functions {
-            insert_unambiguous(&mut self.by_imported_function, ambiguous_functions, key, idx);
+            insert_unambiguous(
+                &mut self.by_imported_function,
+                ambiguous_functions,
+                key,
+                idx,
+            );
         }
 
         let mut constants: HashMap<Ident, usize> = HashMap::new();
@@ -101,13 +115,18 @@ impl RustInterop {
             if constant.namespace.as_ref() != namespace || constant.associated_receiver.is_some() {
                 continue;
             }
-            if name.is_some_and(|name| constant.name.as_str() != name) {
+            if rust_path.is_some_and(|rust_path| constant.rust_path.as_ref() != rust_path) {
                 continue;
             }
             constants.insert(constant.name.clone(), idx);
         }
         for (key, idx) in constants {
-            insert_unambiguous(&mut self.by_imported_constant, ambiguous_constants, key, idx);
+            insert_unambiguous(
+                &mut self.by_imported_constant,
+                ambiguous_constants,
+                key,
+                idx,
+            );
         }
     }
 }

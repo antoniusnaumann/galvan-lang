@@ -26,64 +26,26 @@ impl Transpile for HirExpression {
     }
 }
 
-pub(crate) fn ref_storage_type(ty: &TypeElement, rendered: String) -> String {
-    atomic_ref_storage_type(ty)
-        .map(|atomic| format!("std::sync::Arc<std::sync::atomic::{atomic}>"))
-        .unwrap_or_else(|| format!("std::sync::Arc<std::sync::Mutex<{rendered}>>"))
+pub(crate) fn ref_storage_type(_ty: &TypeElement, rendered: String) -> String {
+    format!("std::sync::Arc<std::sync::Mutex<{rendered}>>")
 }
 
 pub(crate) fn wrap_ref_storage_value(
     rendered: String,
     value: &HirExpression,
-    storage_ty: &TypeElement,
+    _storage_ty: &TypeElement,
 ) -> String {
     if value.adjustments.last() == Some(&Adjustment::ArcClone) {
         rendered
-    } else if let Some(atomic) = atomic_ref_storage_type(storage_ty) {
-        format!("std::sync::Arc::new(std::sync::atomic::{atomic}::new({rendered}))")
     } else {
         format!("(&({rendered})).__to_ref()")
     }
 }
 
-pub(crate) fn atomic_ref_storage_type(ty: &TypeElement) -> Option<&'static str> {
-    let TypeElement::Plain(plain) = ty else {
-        return None;
-    };
-
-    match plain.ident.as_str() {
-        "Bool" => Some("AtomicBool"),
-        "I8" => Some("AtomicI8"),
-        "I16" => Some("AtomicI16"),
-        "I32" => Some("AtomicI32"),
-        "I64" | "Int" => Some("AtomicI64"),
-        "ISize" => Some("AtomicIsize"),
-        "U8" => Some("AtomicU8"),
-        "U16" => Some("AtomicU16"),
-        "U32" => Some("AtomicU32"),
-        "U64" => Some("AtomicU64"),
-        "USize" => Some("AtomicUsize"),
-        _ => None,
-    }
-}
-
-/// Memory ordering used for all atomic-backed `ref` accesses.
-///
-/// Galvan `ref` models shared mutable state, so it must provide
-/// cross-thread happens-before ordering. `SeqCst` gives the strongest,
-/// least-surprising guarantee; `Relaxed` would let updates race in ways a
-/// user treating a `ref` as ordinary shared state would not expect.
-pub(crate) fn atomic_ordering() -> &'static str {
-    "std::sync::atomic::Ordering::SeqCst"
-}
-
 /// Renders the coercions determined by the typechecker around an expression
 fn apply_adjustments(rendered: String, expression: &HirExpression) -> String {
     let mut result = rendered;
-    let mut loaded_atomic_ref = false;
     for (i, adjustment) in expression.adjustments.iter().enumerate() {
-        let was_loaded_atomic_ref = loaded_atomic_ref;
-        loaded_atomic_ref = false;
         // Once the first adjustment is applied, the rendered code is a call,
         // wrap or reference that needs no further parenthesization
         let parenthesize = i == 0 && needs_parens(&expression.kind);
@@ -92,17 +54,12 @@ fn apply_adjustments(rendered: String, expression: &HirExpression) -> String {
             Adjustment::Borrow => format!("&{result}"),
             Adjustment::MutBorrow if parenthesize => format!("&mut ({result})"),
             Adjustment::MutBorrow => format!("&mut {result}"),
-            Adjustment::Deref if was_loaded_atomic_ref => result,
             Adjustment::Deref => format!("*{result}"),
             Adjustment::ToOwned if parenthesize => format!("({result}).to_owned()"),
             Adjustment::ToOwned => format!("{result}.to_owned()"),
             Adjustment::WrapSome => format!("Some({result})"),
             Adjustment::WrapOk => format!("Ok({result})"),
             Adjustment::WrapErr => format!("Err({result})"),
-            Adjustment::LockRef if atomic_ref_storage_type(&expression.ty).is_some() => {
-                loaded_atomic_ref = true;
-                format!("{result}.load({})", atomic_ordering())
-            }
             Adjustment::LockRef => format!("{result}.lock().unwrap()"),
             Adjustment::ArcClone => format!("::std::sync::Arc::clone(&{result})"),
         };

@@ -1,5 +1,4 @@
 use crate::{DeclModifier, EnumAccess, Expression, Ident, PrintAst, TypeIdent, UsePath};
-use derive_more::From;
 use galvan_ast_macro::PrintAst;
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
@@ -22,9 +21,9 @@ pub struct ConstructorCall {
     pub arguments: Vec<ConstructorCallArg>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, From, PrintAst)]
+#[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ConstructorCallArg {
-    pub ident: Ident,
+    pub field_name: Option<Ident>, // None for anonymous (tuple-struct) args
     pub modifier: Option<DeclModifier>,
     pub expression: Expression,
 }

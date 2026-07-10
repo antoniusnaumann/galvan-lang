@@ -1,6 +1,6 @@
 use galvan_ast::{
     ArrayLiteral, CollectionLiteral, DictLiteral, DictLiteralElement, Expression,
-    OrderedDictLiteral, SetLiteral, Span,
+    OrderedDictLiteral, SetLiteral, Span, TupleLiteral,
 };
 use galvan_parse::TreeCursor;
 
@@ -13,6 +13,7 @@ impl ReadCursor for CollectionLiteral {
         cursor.child();
         let inner = match cursor.kind()? {
             "array_literal" => ArrayLiteral::read_cursor(cursor, source)?.into(),
+            "tuple_literal" => TupleLiteral::read_cursor(cursor, source)?.into(),
             "set_literal" => SetLiteral::read_cursor(cursor, source)?.into(),
             "ordered_dict_literal" => OrderedDictLiteral::read_cursor(cursor, source)?.into(),
             "dict_literal" => DictLiteral::read_cursor(cursor, source)?.into(),
@@ -46,6 +47,31 @@ impl ReadCursor for ArrayLiteral {
         cursor.goto_parent();
 
         Ok(ArrayLiteral { elements, span })
+    }
+}
+
+impl ReadCursor for TupleLiteral {
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let node = cursor_expect!(cursor, "tuple_literal");
+        let span = Span::from_node(node);
+
+        cursor.child();
+        cursor_expect!(cursor, "paren_open");
+
+        cursor.next();
+        let mut elements = Vec::new();
+        while cursor.kind()? == "expression" {
+            elements.push(Expression::read_cursor(cursor, source)?);
+            cursor.next();
+            while cursor.kind()? == "," {
+                cursor.next();
+            }
+        }
+
+        cursor_expect!(cursor, "paren_close");
+        cursor.goto_parent();
+
+        Ok(TupleLiteral { elements, span })
     }
 }
 

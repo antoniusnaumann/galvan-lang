@@ -304,12 +304,20 @@ impl ReadCursor for ConstructorCallArg {
         cursor_expect!(cursor, "constructor_call_arg");
 
         cursor.child();
-        let ident = Ident::read_cursor(cursor, source)?;
 
-        cursor.next();
-        cursor_expect!(cursor, "colon");
+        // A leading bare `ident` followed by `:` marks a named field. Anonymous
+        // tuple-struct arguments start directly with the value expression (or a
+        // modifier preceding it), so the first child is not a bare `ident`.
+        let field_name = if cursor.kind()? == "ident" {
+            let ident = Ident::read_cursor(cursor, source)?;
+            cursor.next();
+            cursor_expect!(cursor, "colon");
+            cursor.next();
+            Some(ident)
+        } else {
+            None
+        };
 
-        cursor.next();
         let modifier = if cursor.kind()? == "declaration_modifier" {
             let modifier = Some(DeclModifier::read_cursor(cursor, source)?);
             cursor.next();
@@ -322,7 +330,7 @@ impl ReadCursor for ConstructorCallArg {
         cursor.goto_parent();
 
         Ok(ConstructorCallArg {
-            ident,
+            field_name,
             modifier,
             expression,
         })
