@@ -34,7 +34,9 @@ pub fn builtins() -> Mapping {
         ("USize" => "usize", copy),
 
         ("Float" => "f32", copy),
+        ("F32" => "f32", copy),
         ("Double" => "f64", copy),
+        ("F64" => "f64", copy),
 
         ("String" => "String", "str"),
         ("Char" => "char", copy),

@@ -72,4 +72,4 @@ a blanket-implemented extension trait.
 - `where t: ToString` — one bound; `where a, b: ToString` — the same bound
   for two parameters.
 - A generic `self` parameter turns the function into a method on *every*
-  conforming type: `15.repr()`, `"fragile".repr()`.
+  conforming type: `"order ".concat_str("ready")`, `15.concat_str("!")`.

@@ -3736,7 +3736,7 @@ fn are_compatible_numeric_types(a: &TypeIdent, b: &TypeIdent) -> bool {
         "I8", "I16", "I32", "I64", "I128", "ISize", "Int", "U8", "U16", "U32", "U64", "U128",
         "USize", "UInt",
     ];
-    let float_types = ["Float", "Double"];
+    let float_types = ["Float", "F32", "Double", "F64"];
 
     let a = a.as_str();
     let b = b.as_str();

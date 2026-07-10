@@ -38,9 +38,9 @@ test "Iterate over interval range" {
     for 7..+5 |i| {
         last = i
 
-        assert i < 12
+        assert i <= 12
     }
 
-    assert last == 11
+    assert last == 12
 }
 

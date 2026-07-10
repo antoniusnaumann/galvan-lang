@@ -57,7 +57,8 @@ pub(crate) fn __main__() {
 - The error type follows the `!`: `Float!String`, `Int!IoError`, …
 - Omitting it (`Float!`) selects the *flexible* error type, and a bare `-> !`
   is shorthand for `Void!` — a fallible function with no success payload.
-- Functions that specify such a flexible Result type can throw any error, it will be auto converted. 
+- Functions that specify such a flexible Result type can throw any error; it
+  is converted automatically.
 
 > [!WARNING]
 > **Partially implemented.** Typed errors (`T!E`) are solid. Flexible-error
