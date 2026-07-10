@@ -1490,10 +1490,6 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
             resolved("Arc", vec![resolved("Mutex", vec![generic("T")])]),
             "Mutex",
         ),
-        (
-            resolved("Arc", vec![resolved("RwLock", vec![generic("T")])]),
-            "RwLock",
-        ),
     ] {
         let param = lift_param(&mut interop, "std", "tickets", &wrapper).unwrap();
 
@@ -1507,16 +1503,12 @@ fn rustdoc_lifts_shared_wrappers_to_ref_parameters() {
 }
 
 #[test]
-fn rustdoc_skips_bare_standard_lock_wrappers() {
+fn rustdoc_skips_bare_mutex_wrappers() {
     let mut interop = RustInterop::empty();
 
-    for wrapper in [
-        resolved("Mutex", vec![generic("T")]),
-        resolved("RwLock", vec![generic("T")]),
-    ] {
-        assert!(lift_type(&mut interop, "std", &wrapper).is_none());
-        assert!(lift_param(&mut interop, "std", "tickets", &wrapper).is_none());
-    }
+    let wrapper = resolved("Mutex", vec![generic("T")]);
+    assert!(lift_type(&mut interop, "std", &wrapper).is_none());
+    assert!(lift_param(&mut interop, "std", "tickets", &wrapper).is_none());
 }
 
 #[test]
@@ -1556,7 +1548,7 @@ fn rustdoc_keeps_single_owner_atomics_nominal() {
 }
 
 #[test]
-fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
+fn rustdoc_keeps_arc_atomic_primitives_nominal() {
     let mut interop = RustInterop::empty();
     let param = lift_param(
         &mut interop,
@@ -1566,12 +1558,20 @@ fn rustdoc_lifts_arc_atomic_primitives_to_ref_parameters() {
     )
     .unwrap();
 
-    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Ref));
-    assert_eq!(param.param_type, u64_type());
+    assert_eq!(param.decl_modifier, Some(galvan_ast::DeclModifier::Move));
+    let TypeElement::Parametric(parametric) = param.param_type else {
+        panic!("expected nominal Arc<AtomicU64>");
+    };
+    assert_eq!(parametric.base_type, TypeIdent::new("Arc"));
+    assert_eq!(
+        parametric.type_args,
+        vec![plain_type(TypeIdent::new("AtomicU64"))]
+    );
+    assert!(interop.types.iter().any(|ty| ty.name.as_str() == "Arc"));
     assert!(interop
         .types
         .iter()
-        .all(|ty| !matches!(ty.name.as_str(), "Arc" | "AtomicU64")));
+        .any(|ty| ty.name.as_str() == "AtomicU64"));
 }
 
 #[test]
@@ -1765,9 +1765,19 @@ fn rustdoc_does_not_import_functions_with_unliftable_signatures() {
     assert!(interop
         .function(Some("demo"), None, &ident("bare_lock_input"), &[])
         .is_none());
-    assert!(interop
+    let function = interop
         .function(Some("demo"), None, &ident("nested_bare_lock_input"), &[])
-        .is_none());
+        .expect("expected nominal RwLock parameter to remain importable");
+    let TypeElement::Optional(optional) =
+        &function.decl.item.signature.parameters.params[0].param_type
+    else {
+        panic!("expected optional RwLock parameter");
+    };
+    let TypeElement::Parametric(lock) = &optional.inner else {
+        panic!("expected nominal RwLock parameter");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(lock.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
     assert!(interop
         .constant(Some("demo"), &ident("LOCKED_TICKETS"))
         .is_none());
@@ -1806,10 +1816,15 @@ fn rustdoc_imports_functions_with_shared_arc_lock_signatures() {
         function.decl.item.signature.parameters.params[0].param_type,
         plain_type(TypeIdent::new("Ticket"))
     );
-    assert_eq!(
-        function.decl.item.signature.return_type,
-        plain_type(TypeIdent::new("Ticket"))
-    );
+    let TypeElement::Parametric(arc) = &function.decl.item.signature.return_type else {
+        panic!("expected nominal Arc<RwLock<Ticket>> return type");
+    };
+    assert_eq!(arc.base_type, TypeIdent::new("Arc"));
+    let [TypeElement::Parametric(lock)] = arc.type_args.as_slice() else {
+        panic!("expected nominal RwLock<Ticket> payload");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(lock.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
 }
 
 #[test]
@@ -2499,13 +2514,18 @@ fn rustdoc_imports_public_struct_fields() {
     assert_eq!(ticket.members[0].r#type, u64_type());
     assert_eq!(ticket.members[1].ident.as_str(), "title");
     assert_eq!(ticket.members[1].r#type, string_type());
+    assert_eq!(ticket.members[2].decl_modifier, None);
+    let TypeElement::Parametric(arc) = &ticket.members[2].r#type else {
+        panic!("expected nominal Arc<RwLock<TicketState>> field");
+    };
+    assert_eq!(arc.base_type, TypeIdent::new("Arc"));
+    let [TypeElement::Parametric(lock)] = arc.type_args.as_slice() else {
+        panic!("expected nominal RwLock<TicketState> payload");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
     assert_eq!(
-        ticket.members[2].decl_modifier,
-        Some(galvan_ast::DeclModifier::Ref)
-    );
-    assert_eq!(
-        ticket.members[2].r#type,
-        plain_type(TypeIdent::new("TicketState"))
+        lock.type_args,
+        vec![plain_type(TypeIdent::new("TicketState"))]
     );
     assert_eq!(
         ticket.members[3].decl_modifier,
@@ -3213,9 +3233,14 @@ fn rustdoc_imports_glob_reexported_items() {
     assert!(interop
         .constant(Some("demo"), &ident("RAW_BUFFER"))
         .is_none());
-    assert!(interop
+    let constant = interop
         .constant(Some("demo"), &ident("LOCKED_TICKETS"))
-        .is_none());
+        .expect("expected nominal RwLock constant");
+    let TypeElement::Parametric(lock) = &constant.ty else {
+        panic!("expected nominal RwLock constant");
+    };
+    assert_eq!(lock.base_type, TypeIdent::new("RwLock"));
+    assert_eq!(lock.type_args, vec![plain_type(TypeIdent::new("Ticket"))]);
 }
 
 #[test]

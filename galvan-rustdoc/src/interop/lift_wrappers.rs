@@ -6,7 +6,7 @@ use galvan_ast::{
 };
 
 use super::lift_model::LiftedType;
-use super::lift_type::{atomic_type, plain_type, result_type, string_type};
+use super::lift_type::{plain_type, result_type, string_type};
 use super::rustdoc_json::resolved_type_args;
 use super::rustdoc_path::{
     resolved_path_is_unqualified_or_in_crates, resolved_path_is_unqualified_or_matches_any,
@@ -103,12 +103,10 @@ impl RustInterop {
         if !resolved_path_is_unqualified_or_in_crates(krate, resolved, &["std", "core", "alloc"]) {
             return None;
         }
-        if matches!(name.as_ref(), "Mutex" | "RwLock") {
+        if name.as_ref() == "Mutex" {
             return self.lift_lock_type_from_json(krate, crate_name, resolved);
         }
-
-        atomic_type(name.as_ref())
-            .map(|ty| LiftedType::with_modifier(ty, galvan_ast::DeclModifier::Ref))
+        None
     }
 
     pub(super) fn lift_lock_type_from_json(
@@ -174,7 +172,7 @@ fn classify_wrapper(krate: &Crate, name: &str, resolved: &Path) -> Option<Wrappe
         "HashMap" if standard_wrapper => Some(WrapperShape::Dictionary),
         "BTreeMap" if standard_wrapper => Some(WrapperShape::OrderedDictionary),
         "IndexMap" if indexmap_wrapper => Some(WrapperShape::OrderedDictionary),
-        "Mutex" | "RwLock" if standard_wrapper => Some(WrapperShape::Lock),
+        "Mutex" if standard_wrapper => Some(WrapperShape::Lock),
         _ => None,
     }
 }

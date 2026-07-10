@@ -542,9 +542,8 @@ impl<'a> Checker<'a> {
 }
 
 /// Narrows an inferred `__Number` type to `Int` for `ref` declarations whose
-/// value is a direct integer literal (e.g. `ref counter = 0`), so the field
-/// lowers to an atomic (`Arc<AtomicI64>`) rather than the fallback
-/// `Arc<Mutex<__Number>>`.
+/// value is a direct integer literal (e.g. `ref counter = 0`), so the shared
+/// storage has a concrete integer type.
 ///
 /// Limitation: this only fires for a *direct* numeric-literal initializer and
 /// leaves anything float-shaped or non-literal as `__Number`. It does not run

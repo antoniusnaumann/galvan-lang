@@ -34,8 +34,8 @@ type ErrorResponse {
 }
 
 type ApiState {
-    // TODO(ref-codegen): Shared primitive ref fields should lower to atomic
-    // storage, such as Arc<AtomicU64>, instead of Arc<Mutex<U64>>.
+    // Galvan ref fields currently use Arc<Mutex<T>> for one consistent shared
+    // state representation across primitive and non-primitive values.
     ref next_ticket_id: U64,
 
     // TODO(ref-codegen): Shared non-primitive ref fields should provide

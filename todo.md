@@ -42,9 +42,6 @@ commands remain subcommands.
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
-  - Complete atomic `ref` operation coverage beyond primitive locals,
-    parameters, fields, assignment, arithmetic assignment, reads, and basic
-    mut-argument call-boundaries
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)

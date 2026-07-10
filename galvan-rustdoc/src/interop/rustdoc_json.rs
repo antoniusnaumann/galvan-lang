@@ -110,7 +110,7 @@ fn type_contains_unliftable_type_inner(
                 || signature_contains_unliftable_type(krate, &function.sig)
         }
         Type::ResolvedPath(path) => {
-            if resolved_type_is_standard_lock(krate, path) && !allow_standard_lock {
+            if resolved_type_is_standard_mutex(krate, path) && !allow_standard_lock {
                 return true;
             }
             let allow_nested_standard_lock = resolved_type_is_standard_arc(krate, path);
@@ -129,9 +129,8 @@ fn resolved_type_is_standard_arc(krate: &Crate, path: &Path) -> bool {
     resolved_type_has_standard_name(krate, path, "Arc")
 }
 
-fn resolved_type_is_standard_lock(krate: &Crate, path: &Path) -> bool {
+fn resolved_type_is_standard_mutex(krate: &Crate, path: &Path) -> bool {
     resolved_type_has_standard_name(krate, path, "Mutex")
-        || resolved_type_has_standard_name(krate, path, "RwLock")
 }
 
 fn resolved_type_has_standard_name(krate: &Crate, path: &Path, expected_name: &str) -> bool {

@@ -42,24 +42,6 @@ pub(super) fn array_type(inner: LiftedType) -> LiftedType {
     })))
 }
 
-pub(super) fn atomic_type(name: &str) -> Option<TypeElement> {
-    let galvan = match name {
-        "AtomicBool" => "Bool",
-        "AtomicI8" => "I8",
-        "AtomicI16" => "I16",
-        "AtomicI32" => "I32",
-        "AtomicI64" => "I64",
-        "AtomicIsize" => "ISize",
-        "AtomicU8" => "U8",
-        "AtomicU16" => "U16",
-        "AtomicU32" => "U32",
-        "AtomicU64" => "U64",
-        "AtomicUsize" => "USize",
-        _ => return None,
-    };
-    Some(plain_type(TypeIdent::new(galvan)))
-}
-
 pub(super) fn string_type() -> TypeElement {
     plain_type(TypeIdent::new("String"))
 }
