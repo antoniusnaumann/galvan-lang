@@ -78,7 +78,7 @@ impl RustInterop {
         crate_names: impl IntoIterator<Item = String>,
         uses: &[ToplevelItem<UseDecl>],
     ) -> Result<Self, RustdocError> {
-        Self::from_crates_and_uses_with_options(crate_names, uses, |_| {}, true)
+        Self::from_crates_and_uses_with_options(crate_names, uses, |_| {}, false, true)
     }
 
     pub fn from_crates_and_uses_with_warnings(
@@ -91,6 +91,7 @@ impl RustInterop {
             uses,
             warn,
             require_lift_from_env(env::var(RUSTDOC_REQUIRE_LIFT_ENV).ok().as_deref()),
+            false,
         )
     }
 
@@ -99,6 +100,7 @@ impl RustInterop {
         uses: &[ToplevelItem<UseDecl>],
         mut warn: impl FnMut(&RustdocError),
         require_lift: bool,
+        strict_setup: bool,
     ) -> Result<Self, RustdocError> {
         let mut interop = RustInterop::default();
         let imported_crates = imported_crates(uses);
@@ -113,7 +115,9 @@ impl RustInterop {
             match cache.update_if_needed() {
                 Ok(()) => {}
                 Err(error) if is_soft_cache_error(&error) => {
-                    if require_lift {
+                    if require_lift
+                        || (strict_setup && !matches!(error, RustdocError::DependencyNotFound(_)))
+                    {
                         return Err(error);
                     }
                     warn_soft_cache_error_once(&error, &mut warned, &mut warn);
@@ -370,6 +374,7 @@ mod format_version_tests {
             &[],
             |_| {},
             true,
+            false,
         )
         .expect_err("required lift should reject missing dependency");
 
@@ -377,11 +382,11 @@ mod format_version_tests {
     }
 
     #[test]
-    fn default_constructor_reports_rustdoc_failures() {
-        let error =
+    fn default_constructor_allows_unresolved_passthrough_namespaces() {
+        let interop =
             RustInterop::from_crates_and_uses(["definitely_missing_galvan_dep".to_string()], &[])
-                .expect_err("default construction should not discard rustdoc failures");
+                .expect("unresolved namespace should remain available for passthrough codegen");
 
-        assert!(matches!(error, RustdocError::DependencyNotFound(_)));
+        assert!(interop.types.is_empty());
     }
 }
