@@ -39,9 +39,8 @@ trait items all come across. The type translation follows fixed rules:
 | --- | --- |
 | `&T` parameter | `T` (borrow inserted at the call) |
 | `&mut T` parameter | `mut T` |
-| `Box<T>`, `Rc<T>` | `T` (wrapped/unwrapped at the boundary) |
-| `Arc<Mutex<T>>`, `Arc<RwLock<T>>` | `ref T` |
-| `Arc<AtomicUsize>` etc. | `ref USize` etc. |
+| `Box<T>` | `T` (wrapped/unwrapped at the boundary) |
+| `Arc<Mutex<T>>` | `ref T` |
 
 Two properties keep the rules honest:
 
