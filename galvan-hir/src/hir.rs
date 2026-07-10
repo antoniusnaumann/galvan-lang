@@ -262,6 +262,7 @@ pub enum HirExpressionKind {
     ConstructorCall(HirConstructorCall),
     EnumConstructor(HirEnumConstructor),
     EnumAccess(HirEnumAccess),
+    RustConstant(HirRustConstant),
     Literal(HirLiteral),
     Variable(Ident),
     Collection(HirCollection),
@@ -399,7 +400,14 @@ pub struct HirMatch {
 #[derive(Clone, Debug)]
 pub struct HirMatchArm {
     pub pattern: HirMatchPattern,
+    pub binding_conversions: Vec<HirMatchBindingConversion>,
     pub body: HirBlock,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirMatchBindingConversion {
+    pub ident: Ident,
+    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
 }
 
 #[derive(Clone, Debug)]
@@ -461,6 +469,10 @@ pub struct HirPrint {
 #[derive(Clone, Debug)]
 pub struct HirFunctionCall {
     pub namespace: Option<UsePath>,
+    /// `Some` when the call resolved to an imported Rust (rustdoc) function,
+    /// carrying the rendered path and the boundary conversions. `None` for
+    /// native Galvan calls.
+    pub rust: Option<HirRustCall>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
@@ -471,14 +483,41 @@ pub struct HirMethodCall {
     pub receiver: HirExpression,
     pub receiver_modifier: Option<DeclModifier>,
     pub namespace: Option<UsePath>,
+    /// `Some` when the call resolved to an imported Rust (rustdoc) method.
+    /// `None` for native Galvan calls.
+    pub rust: Option<HirRustMethodCall>,
     pub ident: Ident,
     pub labels: Vec<Ident>,
     pub args: Vec<HirExpression>,
 }
 
+/// Rust-interop metadata for an imported free/associated function call.
+#[derive(Clone, Debug)]
+pub struct HirRustCall {
+    pub rust_path: Box<str>,
+    pub return_conversion: galvan_rustdoc::RustReturnConversion,
+    pub arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
+}
+
+/// Rust-interop metadata for an imported method call. Identical to
+/// [`HirRustCall`] but additionally records the receiver conversion.
+#[derive(Clone, Debug)]
+pub struct HirRustMethodCall {
+    pub rust_path: Box<str>,
+    pub return_conversion: galvan_rustdoc::RustReturnConversion,
+    pub receiver_conversion: galvan_rustdoc::RustArgConversion,
+    pub arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirRustConstant {
+    pub rust_path: Box<str>,
+}
+
 #[derive(Clone, Debug)]
 pub struct HirFieldAccess {
     pub receiver: HirExpression,
+    pub rust_return_conversion: galvan_rustdoc::RustReturnConversion,
     pub field: Ident,
 }
 
@@ -511,7 +550,14 @@ pub struct HirSafeAccess {
 #[derive(Clone, Debug)]
 pub struct HirConstructorCall {
     pub ident: TypeIdent,
+    pub kind: HirConstructorKind,
     pub args: Vec<HirConstructorArg>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HirConstructorKind {
+    Struct,
+    Tuple,
 }
 
 #[derive(Clone, Debug)]
@@ -519,6 +565,7 @@ pub struct HirConstructorArg {
     pub field: Ident,
     pub value: HirExpression,
     pub store_as_ref: bool,
+    pub rust_arg_conversion: galvan_rustdoc::RustArgConversion,
 }
 
 #[derive(Clone, Debug)]
@@ -532,6 +579,7 @@ pub struct HirEnumConstructor {
 pub struct HirEnumConstructorArg {
     pub field: Option<Ident>,
     pub value: HirExpression,
+    pub rust_arg_conversion: galvan_rustdoc::RustArgConversion,
 }
 
 #[derive(Clone, Debug)]
@@ -560,6 +608,7 @@ pub struct HirStringLiteral {
 #[derive(Clone, Debug)]
 pub enum HirCollection {
     Array(Vec<HirExpression>),
+    Tuple(Vec<HirExpression>),
     Set(Vec<HirExpression>),
     Dict(Vec<HirDictElement>),
     OrderedDict(Vec<HirDictElement>),

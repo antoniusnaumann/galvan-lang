@@ -45,7 +45,15 @@ impl ReadCursor for UsePath {
 
         let mut segments = Vec::new();
         loop {
-            segments.push(Ident::read_cursor(cursor, source)?);
+            let segment = match cursor.kind()? {
+                "ident" => Ident::read_cursor(cursor, source)?,
+                "type_ident" => {
+                    let ident = TypeIdent::read_cursor(cursor, source)?;
+                    Ident::new(ident.as_str())
+                }
+                other => unreachable!("Unexpected use path segment: {other}"),
+            };
+            segments.push(segment);
             if !cursor.next() {
                 break;
             }
@@ -375,5 +383,33 @@ impl ReadCursor for Param {
             param_type,
             span,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use galvan_ast::RootItem;
+    use galvan_files::Source;
+
+    use crate::SourceIntoAst;
+
+    #[test]
+    fn reads_uppercase_type_names_in_use_paths() {
+        let ast = Source::from_string("use std::net::SocketAddr")
+            .try_into_ast()
+            .expect("use path should convert to AST");
+        let [RootItem::Use(use_decl)] = ast.toplevel.as_slice() else {
+            panic!("expected one use declaration");
+        };
+
+        assert_eq!(
+            use_decl
+                .path
+                .segments
+                .iter()
+                .map(|segment| segment.as_str())
+                .collect::<Vec<_>>(),
+            vec!["std", "net", "SocketAddr"]
+        );
     }
 }

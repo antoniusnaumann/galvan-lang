@@ -86,6 +86,7 @@ pub fn predefined_from(mapping: &Mapping, functions: Vec<FnDecl>) -> SegmentedAs
             item: TypeDecl::Empty(EmptyTypeDecl {
                 visibility: Visibility::new(VisibilityKind::Inherited, ident.span().clone()),
                 ident: ident.clone(),
+                generic_params: Vec::new(),
                 span: ident.span().clone(),
             }),
             source: Source::Missing,

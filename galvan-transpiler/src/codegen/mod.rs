@@ -12,6 +12,7 @@ pub(crate) use function::{
     transpile_function, transpile_main, transpile_signature, transpile_test,
 };
 
+use galvan_ast::TypeElement;
 use galvan_hir::hir::{Adjustment, HirExpression, HirExpressionKind};
 
 use crate::context::Context;
@@ -21,11 +22,19 @@ use crate::Transpile;
 impl Transpile for HirExpression {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let rendered = self.kind.transpile(ctx, errors);
-        apply_adjustments(rendered, &self.kind, &self.adjustments)
+        apply_adjustments(rendered, self)
     }
 }
 
-pub(crate) fn wrap_ref_storage_value(rendered: String, value: &HirExpression) -> String {
+pub(crate) fn ref_storage_type(_ty: &TypeElement, rendered: String) -> String {
+    format!("std::sync::Arc<std::sync::Mutex<{rendered}>>")
+}
+
+pub(crate) fn wrap_ref_storage_value(
+    rendered: String,
+    value: &HirExpression,
+    _storage_ty: &TypeElement,
+) -> String {
     if value.adjustments.last() == Some(&Adjustment::ArcClone) {
         rendered
     } else {
@@ -34,16 +43,12 @@ pub(crate) fn wrap_ref_storage_value(rendered: String, value: &HirExpression) ->
 }
 
 /// Renders the coercions determined by the typechecker around an expression
-fn apply_adjustments(
-    rendered: String,
-    kind: &HirExpressionKind,
-    adjustments: &[Adjustment],
-) -> String {
+fn apply_adjustments(rendered: String, expression: &HirExpression) -> String {
     let mut result = rendered;
-    for (i, adjustment) in adjustments.iter().enumerate() {
+    for (i, adjustment) in expression.adjustments.iter().enumerate() {
         // Once the first adjustment is applied, the rendered code is a call,
         // wrap or reference that needs no further parenthesization
-        let parenthesize = i == 0 && needs_parens(kind);
+        let parenthesize = i == 0 && needs_parens(&expression.kind);
         result = match adjustment {
             Adjustment::Borrow if parenthesize => format!("&({result})"),
             Adjustment::Borrow => format!("&{result}"),
@@ -69,7 +74,8 @@ fn needs_parens(kind: &HirExpressionKind) -> bool {
     match kind {
         Variable(_) | Literal(_) | FunctionCall(_) | MethodCall(_) | FieldAccess(_)
         | SafeAccess(_) | ConstructorCall(_) | EnumAccess(_) | EnumConstructor(_)
-        | Collection(_) | Index(_) | Group(_) | Yeet(_) | Print(_) | Assert(_) | Error(_) => false,
+        | RustConstant(_) | Collection(_) | Index(_) | Group(_) | Yeet(_) | Print(_)
+        | Assert(_) | Error(_) => false,
         If(_) | ElseUnwrap(_) | Try(_) | For(_) | Match(_) | Closure(_) | Logical(_)
         | Arithmetic(_) | Bitwise(_) | Comparison(_) | CollectionOp(_) | Range(_) => true,
     }

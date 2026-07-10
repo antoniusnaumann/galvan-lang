@@ -2,13 +2,12 @@ use galvan_ast::{DeclModifier, TypeElement};
 use galvan_hir::hir::*;
 use itertools::Itertools;
 
+use crate::codegen::{ref_storage_type, wrap_ref_storage_value};
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
 use crate::ErrorCollector;
 use crate::Transpile;
-
-use super::wrap_ref_storage_value;
 
 impl Transpile for HirBlock {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
@@ -70,21 +69,22 @@ impl Transpile for HirDeclaration {
             DeclModifier::Let => "let",
             DeclModifier::Ref => "let mut",
             DeclModifier::Mut => "let mut",
+            DeclModifier::Move => "let",
         };
 
         let identifier = sanitize_name(self.identifier.as_str());
 
         let ty = self.ty.transpile(ctx, errors);
         let ty = match self.modifier {
-            DeclModifier::Let | DeclModifier::Mut => format!(": {ty}"),
-            DeclModifier::Ref => format!(": std::sync::Arc<std::sync::Mutex<{ty}>>"),
+            DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => format!(": {ty}"),
+            DeclModifier::Ref => format!(": {}", ref_storage_type(&self.ty, ty)),
         };
 
         match &self.value {
             Some(value) => {
                 let rendered = value.transpile(ctx, errors);
                 let value = if matches!(self.modifier, DeclModifier::Ref) {
-                    wrap_ref_storage_value(rendered, value)
+                    wrap_ref_storage_value(rendered, value, &self.ty)
                 } else {
                     rendered
                 };

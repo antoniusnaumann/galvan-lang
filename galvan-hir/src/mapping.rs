@@ -1,6 +1,7 @@
-use galvan_ast::{TypeElement, TypeIdent};
 use std::borrow::Cow;
 use std::collections::HashMap;
+
+use galvan_ast::{TypeElement, TypeIdent};
 
 #[derive(Debug, Default)]
 pub struct Mapping {

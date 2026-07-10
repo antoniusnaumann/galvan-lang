@@ -322,6 +322,7 @@ dependencies = [
  "galvan-ast",
  "galvan-files",
  "galvan-resolver",
+ "galvan-rustdoc",
  "itertools",
  "thiserror 1.0.69",
 ]
@@ -358,6 +359,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "galvan-rustdoc"
+version = "0.0.3"
+dependencies = [
+ "galvan-ast",
+ "galvan-files",
+ "rustdoc-types",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "galvan-transpiler"
 version = "0.0.3"
 dependencies = [
@@ -369,6 +381,7 @@ dependencies = [
  "galvan-hir",
  "galvan-into-ast",
  "galvan-resolver",
+ "galvan-rustdoc",
  "itertools",
  "regex",
  "thiserror 1.0.69",
@@ -547,6 +560,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "rustdoc-types"
+version = "0.60.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5b3f47eac1cf443b5556c2351d68ea609197f7a40735c9725ce7515d6fd5e91"
+dependencies = [
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]

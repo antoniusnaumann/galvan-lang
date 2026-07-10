@@ -68,6 +68,8 @@ commands remain subcommands.
     scanner stub (tree-sitter-galvan/src/scanner.c)
   - Investigate the generic-container type mismatch warning emitted while
     building `galvan-test`
+  - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
+    instead of printing Cargo messages from the public transpilation path
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
@@ -80,9 +82,61 @@ commands remain subcommands.
 
 ## Future Enhancements
 
-- Add resolver-level checks for imported crates/items and namespaced method
-  calls. `use` declarations and `value.crate_name::method()` are currently
-  syntax/codegen only and cannot be checked by the Galvan compiler.
+- Rustdoc toolchain configuration follow-ups:
+  - Add manifest-level rustdoc configuration if Galvan gains a project config
+    file.
+  - Consider an explicit rustup auto-install command for the pinned toolchain,
+    gated behind user intent rather than mutating the environment during
+    detection.
+  - Evaluate auto-detecting compatible installed nightly toolchains now that
+    the golden rustdoc fixture guards schema compatibility.
+- Extend Rust interop beyond rustdoc-backed free functions:
+  - Typecheck namespaced method calls such as `value.crate_name::method()`
+  - Resolve external-target function and constant re-exports from rustdoc JSON;
+    external type re-exports without target metadata are imported as empty types
+  - Support qualified external Rust constant paths
+  - Support qualified external Rust type paths in Galvan type syntax; rustdoc
+    metadata preserves module paths, but imported Rust types currently become
+    unqualified only through `use`
+  - Surface ambiguous unqualified associated Rust function and constant lookups
+    as diagnostics once qualified Galvan paths are available end to end
+  - Surface ambiguous unqualified Rust `use` imports as diagnostics instead of
+    suppressing the lookup silently
+  - Replace synthetic generic parameter names on resolved-only dependency type
+    placeholders with the real Rust names once the declaring rustdoc item is
+    available
+  - Key rustdoc field, constructor, and enum variant conversion metadata by
+    qualified Rust type path once Galvan has qualified type syntax, so same-named
+    imported Rust types from different modules can carry distinct conversion
+    metadata instead of suppressing ambiguous unqualified conversion lookups
+  - Extend safe Rust wrapper lifting beyond the exact lowering-compatible cases
+    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `BTreeMap<K, V>`,
+    `Result<T, E>`, `Arc<Mutex<T>>`, `Box<T>`, and parameter-side `Rc<T>`)
+    where an explicit, trait-safe conversion can preserve the Rust API's
+    concrete type
+  - Lift the remaining safe rustdoc type shapes needed for API round-tripping,
+    including `dyn Trait`, `impl Trait`, associated type projections, and
+    generic associated types
+  - Extend imported public Rust data declarations beyond the current named
+    struct fields, tuple struct fields, enum variants, and type aliases to
+    cover safe modeling for union fields and repr details, full trait
+    declarations beyond opaque trait placeholders with associated items,
+    explicit Galvan syntax for generic type declarations, and Rust
+    lifetime/const generic parameters
+  - Infer all Galvan passing modes from lifted Rust signatures beyond owned
+    copy/value params, mutable refs, shared borrowed refs, and parameter-side
+    owned wrapper conversions, including the remaining receiver/argument cases
+    not yet covered by rustdoc import
+  - Improve generic substitution and trait-bound handling for external Rust APIs
+  - Add qualified type-path syntax to the parser/AST/typechecker and wire it to
+    rustdoc's preserved namespace/module paths so same-named Rust types can be
+    addressed from Galvan without ambiguity
+- Support full Axum-style API declarations in Galvan:
+  - Add async functions and `.await`
+  - Generate async `main` with the default Tokio runtime
+  - Support builtin auto traits, `@derive(...)`, `@derive(!Trait)` opt-outs,
+    and user-declared `auto trait`s
+  - Support shared-state interop from Galvan `ref` fields
 - Add "todo" and "panic" as special handling functions
 - Implement build entry points and custom tasks (galvan-into-ast/src/items/toplevel.rs)
 - Add nested contexts for imported module name resolution (galvan-resolver/src/lookup.rs)
@@ -92,5 +146,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-06-25*
+*Last updated: 2026-07-10*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

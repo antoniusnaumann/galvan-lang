@@ -119,6 +119,7 @@ pub enum DeclModifier {
     Let,
     Mut,
     Ref,
+    Move,
 }
 
 impl PrintAst for DeclModifier {
@@ -128,6 +129,7 @@ impl PrintAst for DeclModifier {
             DeclModifier::Let => format!("{indent_str}let"),
             DeclModifier::Mut => format!("{indent_str}mut"),
             DeclModifier::Ref => format!("{indent_str}ref"),
+            DeclModifier::Move => format!("{indent_str}move"),
         }
     }
 }

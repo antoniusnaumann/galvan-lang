@@ -5,6 +5,7 @@ use galvan_hir::builtins::CheckBuiltins;
 use galvan_hir::hir::{HirFunction, HirMain, HirMainKind, HirTest};
 use itertools::Itertools;
 
+use crate::codegen::ref_storage_type;
 use crate::context::Context;
 use crate::sanitize::{mangle_function_name, sanitize_name};
 use crate::transpile_item::ident::{TranspileType, TypeOwnership};
@@ -119,6 +120,13 @@ impl Transpile for Param {
                     transpile_param(self, ctx, ownership, errors)
                 }
             }
+            Some(DeclModifier::Move) => {
+                if is_self {
+                    "self".into()
+                } else {
+                    transpile_param(self, ctx, TypeOwnership::Owned, errors)
+                }
+            }
             Some(DeclModifier::Mut) => {
                 if is_self {
                     "&mut self".into()
@@ -131,10 +139,11 @@ impl Transpile for Param {
                     return "__self: std::sync::Arc<std::sync::Mutex<Self>>".into();
                 }
 
+                let ty = self.param_type.transpile(ctx, errors);
                 format!(
-                    "{}: std::sync::Arc<std::sync::Mutex<{}>>",
+                    "{}: {}",
                     sanitize_name(self.identifier.as_str()),
-                    self.param_type.transpile(ctx, errors)
+                    ref_storage_type(&self.param_type, ty),
                 )
             }
         }
@@ -232,5 +241,122 @@ impl Transpile for CmdSignature {
             .join(", ");
 
         format!("fn {identifier}({parameters})")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use galvan_ast::{
+        BasicTypeItem, EmptyTypeDecl, FnSignature, Ident, ParamList, ParametricTypeItem,
+        SegmentedAsts, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent, Visibility,
+    };
+    use galvan_files::Source;
+    use galvan_hir::mapping::{Mapping, RustType};
+
+    use super::*;
+
+    fn empty_type(name: &str) -> ToplevelItem<TypeDecl> {
+        ToplevelItem {
+            item: TypeDecl::Empty(EmptyTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new(name),
+                generic_params: Vec::new(),
+                span: Span::default(),
+            }),
+            source: Source::Builtin,
+        }
+    }
+
+    fn context_with_json_mapping() -> Context<'static> {
+        let mut mapping = Mapping::default();
+        mapping.types.insert(
+            TypeIdent::new("Json"),
+            RustType::new("::axum::Json", "::axum::Json", "::axum::Json", false),
+        );
+
+        let segmented = Box::leak(Box::new(SegmentedAsts {
+            uses: Vec::new(),
+            types: vec![
+                ToplevelItem {
+                    item: TypeDecl::Empty(EmptyTypeDecl {
+                        visibility: Visibility::public(),
+                        ident: TypeIdent::new("Json"),
+                        generic_params: vec![Ident::new("T")],
+                        span: Span::default(),
+                    }),
+                    source: Source::Builtin,
+                },
+                empty_type("HealthResponse"),
+                empty_type("TicketResponse"),
+            ],
+            functions: Vec::new(),
+            tests: Vec::new(),
+            main: None,
+            cmds: Vec::new(),
+        }));
+
+        Context::new(mapping)
+            .with(segmented)
+            .expect("test context should resolve")
+    }
+
+    fn signature_with_return(return_type: TypeElement) -> FnSignature {
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("health"),
+            parameters: ParamList {
+                params: Vec::new(),
+                span: Span::default(),
+            },
+            return_type,
+            where_clause: None,
+            span: Span::default(),
+        }
+    }
+
+    #[test]
+    fn generic_external_return_types_render_qualified_rust_path() {
+        let ctx = context_with_json_mapping();
+        let mut errors = ErrorCollector::new();
+        let signature = signature_with_return(TypeElement::Parametric(ParametricTypeItem {
+            base_type: TypeIdent::new("Json"),
+            type_args: vec![TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("HealthResponse"),
+                span: Span::default(),
+            })],
+            span: Span::default(),
+        }));
+
+        let rendered = transpile_signature(&signature, &ctx, &mut errors, &HashSet::new());
+
+        assert_eq!(rendered, "pub fn health() -> ::axum::Json<HealthResponse>");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn generic_external_array_return_types_render_qualified_rust_path() {
+        let ctx = context_with_json_mapping();
+        let mut errors = ErrorCollector::new();
+        let signature = signature_with_return(TypeElement::Parametric(ParametricTypeItem {
+            base_type: TypeIdent::new("Json"),
+            type_args: vec![TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+                elements: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("TicketResponse"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }))],
+            span: Span::default(),
+        }));
+
+        let rendered = transpile_signature(&signature, &ctx, &mut errors, &HashSet::new());
+
+        assert_eq!(
+            rendered,
+            "pub fn health() -> ::axum::Json<::std::vec::Vec<TicketResponse>>"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 }

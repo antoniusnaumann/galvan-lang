@@ -29,27 +29,31 @@ impl TypeDecl {
         let mut generics = std::collections::HashSet::new();
         match self {
             TypeDecl::Tuple(t) => {
+                generics.extend(t.generic_params.iter().cloned());
                 for member in &t.members {
                     member.r#type.collect_generics_recursive(&mut generics);
                 }
             }
             TypeDecl::Struct(s) => {
+                generics.extend(s.generic_params.iter().cloned());
                 for member in &s.members {
                     member.r#type.collect_generics_recursive(&mut generics);
                 }
             }
             TypeDecl::Alias(a) => {
+                generics.extend(a.generic_params.iter().cloned());
                 a.r#type.collect_generics_recursive(&mut generics);
             }
             TypeDecl::Enum(e) => {
+                generics.extend(e.generic_params.iter().cloned());
                 for member in &e.members {
                     for field in &member.fields {
                         field.r#type.collect_generics_recursive(&mut generics);
                     }
                 }
             }
-            TypeDecl::Empty(_) => {
-                // Empty types have no generics
+            TypeDecl::Empty(e) => {
+                generics.extend(e.generic_params.iter().cloned());
             }
         }
         generics
@@ -60,6 +64,7 @@ impl TypeDecl {
 pub struct TupleTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub generic_params: Vec<Ident>,
     pub members: Vec<TupleTypeMember>,
     pub span: Span,
 }
@@ -75,6 +80,7 @@ pub struct TupleTypeMember {
 pub struct StructTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub generic_params: Vec<Ident>,
     pub members: Vec<StructTypeMember>,
     pub span: Span,
 }
@@ -93,6 +99,7 @@ pub struct StructTypeMember {
 pub struct AliasTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub generic_params: Vec<Ident>,
     pub r#type: TypeElement,
     pub span: Span,
 }
@@ -101,6 +108,7 @@ pub struct AliasTypeDecl {
 pub struct EnumTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub generic_params: Vec<Ident>,
     pub members: Vec<EnumTypeMember>,
     pub span: Span,
 }
@@ -124,5 +132,6 @@ pub struct EnumVariantField {
 pub struct EmptyTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
+    pub generic_params: Vec<Ident>,
     pub span: Span,
 }

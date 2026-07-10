@@ -75,6 +75,8 @@ pub struct Expression {
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub type ExpressionKind = ElseExpression
     + Match
+    + AssociatedFunctionCall
+    + AssociatedConstant
     + FunctionCall
     + Infix
     + Postfix
@@ -92,5 +94,19 @@ pub type ExpressionKind = ElseExpression
 pub struct EnumAccess {
     pub target: TypeIdent,
     pub case: TypeIdent,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct AssociatedFunctionCall {
+    pub receiver: TypeIdent,
+    pub call: FunctionCall,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, AstNode)]
+pub struct AssociatedConstant {
+    pub receiver: TypeIdent,
+    pub name: Ident,
     pub span: Span,
 }
