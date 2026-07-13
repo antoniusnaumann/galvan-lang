@@ -2582,3 +2582,37 @@ fn namespaced_associated_calls_lower_without_parse_errors() {
         "expected a semantic diagnostic for the unresolved namespaced receiver"
     );
 }
+
+#[test]
+fn tuple_type_annotations_parse_and_lower() {
+    let module = lower(
+        "fn pair() -> (Int, String) {
+             (1, \"a\")
+         }",
+    );
+    let pair = function(&module, "pair");
+    assert!(
+        matches!(pair.signature.return_type, TypeElement::Tuple(_)),
+        "expected a tuple return type, got: {:?}",
+        pair.signature.return_type
+    );
+}
+
+#[test]
+fn multi_argument_parametric_types_parse() {
+    // `Result<Json, (Int, String)>` style annotations: multiple generic
+    // arguments separated by commas (previously only single-arg generics
+    // converted).
+    let (_, errors) = lower_with_diagnostics(
+        "fn handler() -> Result<Int, (Int, String)> {
+             Result::Ok(1)
+         }",
+    );
+    assert!(
+        errors
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| !diagnostic.message.contains("syntax")),
+        "expected the annotation to convert, got: {errors}"
+    );
+}

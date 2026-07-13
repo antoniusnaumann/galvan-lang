@@ -60,6 +60,60 @@ fn interop_cache() -> &'static DashMap<(PathBuf, BTreeSet<String>), InteropSlot>
 
 static INTEROP_EVENTS: OnceLock<tokio::sync::mpsc::UnboundedSender<PathBuf>> = OnceLock::new();
 
+/// A queued interop build.
+struct InteropRequest {
+    manifest_dir: PathBuf,
+    crates: BTreeSet<String>,
+    uses: Vec<galvan_ast::ToplevelItem<galvan_ast::UseDecl>>,
+}
+
+/// The most recently requested crate set per project. Lets the build worker
+/// skip requests that were superseded while queued (typing a `use` line
+/// changes the set on every keystroke).
+fn latest_interop_request() -> &'static DashMap<PathBuf, BTreeSet<String>> {
+    static LATEST: OnceLock<DashMap<PathBuf, BTreeSet<String>>> = OnceLock::new();
+    LATEST.get_or_init(DashMap::new)
+}
+
+/// The queue feeding the single interop build worker. One worker serializes
+/// all cargo/rustdoc invocations: concurrent builds of the same project
+/// would contend on cargo's locks, and a burst of keystrokes must not spawn
+/// a thread (and a cargo run) per intermediate `use` set.
+fn interop_build_queue() -> &'static tokio::sync::mpsc::UnboundedSender<InteropRequest> {
+    static QUEUE: OnceLock<tokio::sync::mpsc::UnboundedSender<InteropRequest>> = OnceLock::new();
+    QUEUE.get_or_init(|| {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<InteropRequest>();
+        std::thread::Builder::new()
+            .name("galvan-interop".into())
+            .spawn(move || {
+                while let Some(request) = receiver.blocking_recv() {
+                    let key = (request.manifest_dir.clone(), request.crates.clone());
+                    let superseded = latest_interop_request()
+                        .get(&request.manifest_dir)
+                        .is_some_and(|latest| *latest.value() != request.crates);
+                    if superseded {
+                        // Drop the Building marker: if this set ever comes
+                        // back (an undo), the next analysis re-queues it.
+                        interop_cache().remove(&key);
+                        continue;
+                    }
+                    let interop =
+                        RustInterop::from_uses_in(&request.manifest_dir, &request.uses, |warning| {
+                            eprintln!("galvan-lsp: rustdoc interop: {warning}");
+                        })
+                        .unwrap_or_else(|error| {
+                            eprintln!("galvan-lsp: rustdoc interop unavailable: {error}");
+                            RustInterop::empty()
+                        });
+                    interop_cache().insert(key, InteropSlot::Ready(Arc::new(interop)));
+                    notify_interop_ready(request.manifest_dir);
+                }
+            })
+            .expect("spawning the interop build worker should succeed");
+        sender
+    })
+}
+
 /// Subscribe to interop-build completions: yields the consumer project
 /// directory whenever a background build finishes and analyses should be
 /// refreshed. Only the first caller receives events (the server); later
@@ -159,11 +213,8 @@ impl Crate {
         let files = sources
             .into_iter()
             .map(|source| {
-                let segmented = source
-                    .clone()
-                    .try_into_ast()
-                    .and_then(SegmentAst::segmented)
-                    .ok();
+                let segmented =
+                    ast_of(&source).and_then(|ast| SegmentAst::segmented(vec![ast]).ok());
                 CrateFile { source, segmented }
             })
             .collect();
@@ -244,7 +295,7 @@ impl Crate {
         let asts: Vec<Ast> = self
             .files
             .iter()
-            .filter_map(|file| file.source.clone().try_into_ast().ok())
+            .filter_map(|file| ast_of(&file.source))
             .collect();
         let segmented = asts.segmented().ok()?;
         let (interop, manifest_dir) = self.rust_interop(&segmented);
@@ -310,26 +361,35 @@ impl Crate {
             }
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 entry.insert(InteropSlot::Building);
-                let uses = segmented.uses.clone();
-                let build_dir = manifest_dir.clone();
-                std::thread::Builder::new()
-                    .name("galvan-interop".into())
-                    .spawn(move || {
-                        let interop = RustInterop::from_uses_in(&build_dir, &uses, |warning| {
-                            eprintln!("galvan-lsp: rustdoc interop: {warning}");
-                        })
-                        .unwrap_or_else(|error| {
-                            eprintln!("galvan-lsp: rustdoc interop unavailable: {error}");
-                            RustInterop::empty()
-                        });
-                        interop_cache().insert(key, InteropSlot::Ready(Arc::new(interop)));
-                        notify_interop_ready(build_dir);
-                    })
-                    .expect("spawning the interop build thread should succeed");
+                latest_interop_request().insert(manifest_dir.clone(), key.1.clone());
+                let _ = interop_build_queue().send(InteropRequest {
+                    manifest_dir: manifest_dir.clone(),
+                    crates: key.1,
+                    uses: segmented.uses.clone(),
+                });
                 (Arc::new(RustInterop::empty()), Some(manifest_dir))
             }
         }
     }
+}
+
+/// Convert a source to its AST, treating a conversion panic like a parse
+/// failure. The AST conversion still has `todo!()` gaps for constructs the
+/// grammar accepts; a language server must survive whatever is typed into
+/// the buffer, so those degrade to "this file does not parse".
+fn ast_of(source: &Source) -> Option<Ast> {
+    std::panic::catch_unwind(AssertUnwindSafe(|| source.clone().try_into_ast().ok()))
+        .map_err(|panic| {
+            let message = panic
+                .downcast_ref::<&str>()
+                .copied()
+                .map(str::to_owned)
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "<non-string panic>".to_string());
+            eprintln!("galvan-lsp: AST conversion panicked: {message}");
+        })
+        .ok()
+        .flatten()
 }
 
 /// The source root of the crate containing `file`: the nearest ancestor

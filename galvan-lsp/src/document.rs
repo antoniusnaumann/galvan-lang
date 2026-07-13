@@ -9,6 +9,7 @@ use galvan_parse::{parse_source, ParseTree};
 
 use crate::position::LineIndex;
 
+#[derive(Clone)]
 pub struct Document {
     /// The raw buffer text.
     pub text: String,

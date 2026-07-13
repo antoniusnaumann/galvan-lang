@@ -11,6 +11,7 @@ use tower_lsp::lsp_types::{Position, Range};
 
 /// Maps between byte offsets and `(line, utf-16 character)` positions for a
 /// single document revision.
+#[derive(Clone)]
 pub struct LineIndex {
     /// Byte offset at which each line starts. Always begins with `0`.
     line_starts: Vec<usize>,

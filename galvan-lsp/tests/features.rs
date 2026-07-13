@@ -2358,3 +2358,20 @@ mod background_interop_build {
         }
     }
 }
+
+mod conversion_robustness {
+    //! The AST conversion still has `todo!()` gaps for constructs the grammar
+    //! accepts (e.g. `build` blocks). The server must treat a conversion
+    //! panic like a parse failure instead of dying.
+
+    use super::*;
+
+    #[test]
+    fn conversion_panics_degrade_to_unparsed_files() {
+        let krate = single_file_crate("build {}\n");
+        // Must not propagate the todo!() panic; the file simply does not
+        // participate in the analysis.
+        let _ = krate.analyze();
+        assert!(!krate.file_parses(&main_path()));
+    }
+}

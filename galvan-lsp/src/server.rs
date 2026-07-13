@@ -45,16 +45,17 @@ struct CachedCrate {
     krate: Arc<Crate>,
 }
 
-/// Everything a per-document request needs: the open document, the (cached)
-/// crate it belongs to, and its on-disk path when it has one. Holds a read
-/// guard on the document — resolve it before any `.await`.
-struct RequestContext<'a> {
-    document: dashmap::mapref::one::Ref<'a, Url, Document>,
+/// Everything a per-document request needs: the open document (an owned
+/// snapshot — holding a map reference across the potentially long analysis
+/// would serialize every request behind concurrent edits), the (cached)
+/// crate it belongs to, and its on-disk path when it has one.
+struct RequestContext {
+    document: Document,
     krate: Arc<Crate>,
     file: Option<PathBuf>,
 }
 
-impl RequestContext<'_> {
+impl RequestContext {
     fn document(&self) -> &Document {
         &self.document
     }
@@ -77,9 +78,12 @@ impl Backend {
     }
 
     /// The context for a request against the document at `uri`; `None` when
-    /// the document is not open.
-    fn request_context(&self, uri: &Url) -> Option<RequestContext<'_>> {
-        let document = self.shared.documents.get(uri)?;
+    /// the document is not open. The document is snapshotted and the map
+    /// reference released immediately: `crate_for` iterates the document map,
+    /// and holding an entry reference across map iteration (or across the
+    /// analysis) can deadlock with concurrent `didChange` writes.
+    fn request_context(&self, uri: &Url) -> Option<RequestContext> {
+        let document = self.shared.documents.get(uri)?.clone();
         Some(RequestContext {
             krate: self.shared.crate_for(uri),
             file: uri.to_file_path().ok(),
@@ -166,16 +170,14 @@ async fn refresh(client: &Client, shared: &Shared, uri: Url) {
 
     for doc_uri in crate_docs {
         let file = doc_uri.to_file_path().ok();
-        // Scope the document borrow so it is released before the await.
-        let published = {
-            let Some(document) = shared.documents.get(&doc_uri) else {
-                continue; // Closed concurrently.
-            };
-            let diags = diagnostics::diagnostics(&document, &krate, file.as_deref());
-            (diags, document.version)
+        // Snapshot the document so no map reference is held while the
+        // (potentially long) analysis runs.
+        let Some(document) = shared.documents.get(&doc_uri).map(|entry| entry.clone()) else {
+            continue; // Closed concurrently.
         };
+        let diags = diagnostics::diagnostics(&document, &krate, file.as_deref());
         client
-            .publish_diagnostics(doc_uri, published.0, Some(published.1))
+            .publish_diagnostics(doc_uri, diags, Some(document.version))
             .await;
     }
 }
