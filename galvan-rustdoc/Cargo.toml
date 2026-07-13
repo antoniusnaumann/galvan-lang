@@ -12,4 +12,5 @@ galvan-ast.workspace = true
 galvan-files.workspace = true
 
 serde_json.workspace = true
+rustdoc-types.workspace = true
 thiserror.workspace = true

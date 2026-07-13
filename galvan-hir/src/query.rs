@@ -184,7 +184,9 @@ fn visit_expression<'m>(expression: &'m HirExpression, visit: &mut impl FnMut(&'
             }
         }
         HirExpressionKind::Collection(collection) => match collection {
-            HirCollection::Array(elements) | HirCollection::Set(elements) => {
+            HirCollection::Array(elements)
+            | HirCollection::Set(elements)
+            | HirCollection::Tuple(elements) => {
                 for element in elements {
                     visit_expression(element, visit);
                 }

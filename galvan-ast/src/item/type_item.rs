@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use galvan_ast_macro::AstNode;
@@ -54,7 +55,7 @@ impl TypeElement {
         VoidTypeItem::default().into()
     }
 
-    pub fn collect_generics_recursive(&self, generics: &mut std::collections::HashSet<Ident>) {
+    pub fn collect_generics_recursive(&self, generics: &mut HashSet<Ident>) {
         self.collect_generics_recursive_with_depth(generics, 0, 512);
     }
 
@@ -106,7 +107,7 @@ impl TypeElement {
 
     fn collect_generics_recursive_with_depth(
         &self,
-        generics: &mut std::collections::HashSet<Ident>,
+        generics: &mut HashSet<Ident>,
         depth: u32,
         max_depth: u32,
     ) {
@@ -177,6 +178,61 @@ impl TypeElement {
             | TypeElement::Void(_)
             | TypeElement::Infer(_)
             | TypeElement::Never(_) => {}
+        }
+    }
+
+    /// Replaces `Plain`/`Generic` placeholders whose names appear in
+    /// `substitutions`, recursing through compound type structure.
+    pub fn substitute_generics(&mut self, substitutions: &HashMap<String, TypeElement>) {
+        match self {
+            TypeElement::Plain(plain) => {
+                if let Some(replacement) = substitutions.get(plain.ident.as_str()) {
+                    *self = replacement.clone();
+                }
+            }
+            TypeElement::Generic(generic) => {
+                if let Some(replacement) = substitutions.get(generic.ident.as_str()) {
+                    *self = replacement.clone();
+                }
+            }
+            TypeElement::Array(array) => array.elements.substitute_generics(substitutions),
+            TypeElement::Dictionary(dictionary) => {
+                dictionary.key.substitute_generics(substitutions);
+                dictionary.value.substitute_generics(substitutions);
+            }
+            TypeElement::OrderedDictionary(dictionary) => {
+                dictionary.key.substitute_generics(substitutions);
+                dictionary.value.substitute_generics(substitutions);
+            }
+            TypeElement::Set(set) => set.elements.substitute_generics(substitutions),
+            TypeElement::Tuple(tuple) => {
+                for element in &mut tuple.elements {
+                    element.substitute_generics(substitutions);
+                }
+            }
+            TypeElement::Optional(optional) => optional.inner.substitute_generics(substitutions),
+            TypeElement::Result(result) => {
+                result.success.substitute_generics(substitutions);
+                if let Some(error) = &mut result.error {
+                    error.substitute_generics(substitutions);
+                }
+            }
+            TypeElement::Parametric(parametric) => {
+                if let Some(replacement) = substitutions.get(parametric.base_type.as_str()) {
+                    *self = replacement.clone();
+                } else {
+                    for arg in &mut parametric.type_args {
+                        arg.substitute_generics(substitutions);
+                    }
+                }
+            }
+            TypeElement::Closure(closure) => {
+                for param in &mut closure.parameters {
+                    param.substitute_generics(substitutions);
+                }
+                closure.return_ty.substitute_generics(substitutions);
+            }
+            TypeElement::Void(_) | TypeElement::Infer(_) | TypeElement::Never(_) => {}
         }
     }
 }

@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
-    RangeOperator, TypeElement,
+    RangeOperator, TypeElement, UsePath,
 };
 use galvan_hir::hir::*;
 use galvan_resolver::Lookup;
@@ -14,7 +14,7 @@ use crate::sanitize::{mangle_function_name, sanitize_name, sanitize_path};
 use crate::ErrorCollector;
 use crate::Transpile;
 
-use super::{atomic_ordering, atomic_ref_storage_type, wrap_ref_storage_value};
+use super::wrap_ref_storage_value;
 
 impl Transpile for HirExpressionKind {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
@@ -353,86 +353,55 @@ impl Transpile for HirPrint {
 
 impl Transpile for HirFunctionCall {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        if let Some(call) = transpile_call_with_atomic_mut_ref_args(self, ctx, errors) {
-            return call;
-        }
-
-        let args = transpile_rust_arguments(
-            &self.args,
-            self.rust_arg_conversions.as_slice(),
-            ctx,
-            errors,
+        let args = transpile_rust_arguments(&self.args, call_arg_conversions(self), ctx, errors);
+        let rendered = render_call(
+            call_rust_path(self),
+            self.namespace.as_ref(),
+            &self.ident,
+            &self.labels,
+            &args,
         );
-        if let Some(rust_path) = &self.rust_path {
-            let call = format!("{rust_path}({args})");
-            return transpile_rust_return(call, self.rust_return_conversion);
-        }
-
-        let name = mangle_function_name(self.ident.as_str(), &self.labels);
-        if let Some(namespace) = &self.namespace {
-            return format!("{}::{}({})", sanitize_path(namespace), name, args);
-        }
-
-        format!("{}({})", name, args)
+        apply_call_return(self, rendered)
     }
 }
 
-fn transpile_call_with_atomic_mut_ref_args(
-    call: &HirFunctionCall,
-    ctx: &Context,
-    errors: &mut ErrorCollector,
-) -> Option<String> {
-    if !call.args.iter().any(is_atomic_mut_ref_arg) {
-        return None;
+/// Renders `path(args)`, `namespace::name(args)`, or `name(args)` depending on
+/// whether the call resolved to an imported Rust path, a namespaced call, or a
+/// plain local call.
+fn render_call(
+    rust_path: Option<&str>,
+    namespace: Option<&UsePath>,
+    ident: &Ident,
+    labels: &[Ident],
+    args: &str,
+) -> String {
+    if let Some(rust_path) = rust_path {
+        return format!("{rust_path}({args})");
     }
 
-    let mut setup = Vec::new();
-    let mut stores = Vec::new();
-    let args = call
-        .args
-        .iter()
-        .enumerate()
-        .map(|(idx, argument)| {
-            if is_atomic_mut_ref_arg(argument) {
-                let base = transpile_without_adjustments(argument, ctx, errors);
-                let temp = format!("__galvan_atomic_arg_{idx}");
-                setup.push(format!(
-                    "let mut {temp} = {base}.load({})",
-                    atomic_ordering()
-                ));
-                stores.push(format!("{base}.store({temp}, {})", atomic_ordering()));
-                format!("&mut {temp}")
-            } else {
-                transpile_rust_argument(
-                    argument,
-                    call.rust_arg_conversions
-                        .get(idx)
-                        .copied()
-                        .unwrap_or_default(),
-                    ctx,
-                    errors,
-                )
-            }
-        })
-        .join(", ");
+    let name = mangle_function_name(ident.as_str(), labels);
+    match namespace {
+        Some(namespace) => format!("{}::{}({})", sanitize_path(namespace), name, args),
+        None => format!("{name}({args})"),
+    }
+}
 
-    let rendered = if let Some(rust_path) = &call.rust_path {
-        format!("{rust_path}({args})")
-    } else {
-        let name = mangle_function_name(call.ident.as_str(), &call.labels);
-        if let Some(namespace) = &call.namespace {
-            format!("{}::{}({})", sanitize_path(namespace), name, args)
-        } else {
-            format!("{}({})", name, args)
-        }
-    };
-    let rendered = transpile_rust_return(rendered, call.rust_return_conversion);
-    let setup = setup.into_iter().map(|line| format!("{line};")).join(" ");
-    let stores = stores.into_iter().map(|line| format!("{line};")).join(" ");
+fn call_rust_path(call: &HirFunctionCall) -> Option<&str> {
+    call.rust.as_ref().map(|rust| rust.rust_path.as_ref())
+}
 
-    Some(format!(
-        "{{ {setup} let __galvan_result = {rendered}; {stores} __galvan_result }}"
-    ))
+fn call_arg_conversions(call: &HirFunctionCall) -> &[RustArgConversion] {
+    call.rust
+        .as_ref()
+        .map(|rust| rust.arg_conversions.as_slice())
+        .unwrap_or_default()
+}
+
+fn apply_call_return(call: &HirFunctionCall, rendered: String) -> String {
+    match &call.rust {
+        Some(rust) => transpile_rust_return(rendered, rust.return_conversion),
+        None => rendered,
+    }
 }
 
 impl Transpile for HirMethodCall {
@@ -450,19 +419,19 @@ impl Transpile for HirMethodCall {
             .join(", ");
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
 
-        if let Some(rust_path) = &self.rust_path {
+        if let Some(rust) = &self.rust {
             let receiver =
-                transpile_rust_argument(&self.receiver, self.rust_receiver_conversion, ctx, errors);
+                transpile_rust_argument(&self.receiver, rust.receiver_conversion, ctx, errors);
             let args = std::iter::once(receiver)
                 .chain(transpile_rust_arguments_vec(
                     &self.args,
-                    self.rust_arg_conversions.as_slice(),
+                    rust.arg_conversions.as_slice(),
                     ctx,
                     errors,
                 ))
                 .join(", ");
-            let call = format!("{rust_path}({args})");
-            return transpile_rust_return(call, self.rust_return_conversion);
+            let call = format!("{}({args})", rust.rust_path);
+            return transpile_rust_return(call, rust.return_conversion);
         }
 
         if let Some(namespace) = &self.namespace {
@@ -529,26 +498,6 @@ fn transpile_rust_argument(
     apply_rust_arg_conversion_for_expr(rendered, argument, conversion)
 }
 
-fn is_atomic_mut_ref_arg(argument: &HirExpression) -> bool {
-    argument.adjustments
-        == [
-            Adjustment::LockRef,
-            Adjustment::Deref,
-            Adjustment::MutBorrow,
-        ]
-        && atomic_ref_storage_type(&argument.ty).is_some()
-}
-
-fn transpile_without_adjustments(
-    expression: &HirExpression,
-    ctx: &Context,
-    errors: &mut ErrorCollector,
-) -> String {
-    let mut base = expression.clone();
-    base.adjustments.clear();
-    base.transpile(ctx, errors)
-}
-
 fn apply_rust_arg_conversion(rendered: String, conversion: RustArgConversion) -> String {
     match conversion {
         RustArgConversion::None => rendered,
@@ -581,7 +530,6 @@ fn transpile_rust_return(rendered: String, conversion: RustReturnConversion) -> 
     match conversion {
         RustReturnConversion::None => rendered,
         RustReturnConversion::BoxDeref => format!("*({rendered})"),
-        RustReturnConversion::RcCloneDeref => format!("(*({rendered})).clone()"),
     }
 }
 
@@ -775,6 +723,10 @@ impl Transpile for HirCollection {
 
         match self {
             HirCollection::Array(items) => format!("vec![{}]", elements(items, ctx, errors)),
+            HirCollection::Tuple(items) if items.len() == 1 => {
+                format!("({},)", elements(items, ctx, errors))
+            }
+            HirCollection::Tuple(items) => format!("({})", elements(items, ctx, errors)),
             HirCollection::Set(items) => format!(
                 "::std::collections::HashSet::from([{}])",
                 elements(items, ctx, errors)
@@ -1200,7 +1152,7 @@ mod tests {
             }),
             binding_conversions: vec![HirMatchBindingConversion {
                 ident: Ident::new("user"),
-                rust_return_conversion: RustReturnConversion::RcCloneDeref,
+                rust_return_conversion: RustReturnConversion::BoxDeref,
             }],
             body: HirBlock {
                 statements: vec![HirStatement::Expression(HirExpression::new(
@@ -1218,7 +1170,7 @@ mod tests {
 
         assert_eq!(
             arm.transpile(&ctx, &mut errors),
-            "TicketEvent::Assigned(user) => {\nlet user = (*(user)).clone();\n{\nuser\n}\n}"
+            "TicketEvent::Assigned(user) => {\nlet user = *(user);\n{\nuser\n}\n}"
         );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
@@ -1227,9 +1179,11 @@ mod tests {
     fn rust_calls_apply_shared_borrow_argument_conversions() {
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::takes_ref".into()),
-            rust_return_conversion: RustReturnConversion::None,
-            rust_arg_conversions: vec![RustArgConversion::SharedBorrow],
+            rust: Some(HirRustCall {
+                rust_path: "::demo::takes_ref".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: vec![RustArgConversion::SharedBorrow],
+            }),
             ident: Ident::new("takes_ref"),
             labels: Vec::new(),
             args: vec![HirExpression::new(
@@ -1246,6 +1200,193 @@ mod tests {
         let mut errors = ErrorCollector::new();
 
         assert_eq!(call.transpile(&ctx, &mut errors), "::demo::takes_ref(&42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn imported_generic_types_render_with_qualified_path_and_type_args() {
+        use galvan_ast::{
+            BasicTypeItem, GenericTypeItem, ParametricTypeItem, StructTypeDecl, ToplevelItem,
+            TupleTypeDecl, TupleTypeMember, TypeDecl, Visibility,
+        };
+        use galvan_files::Source;
+        use galvan_hir::mapping::RustType;
+
+        // An external tuple struct `Json<T>` imported from axum: registered in the
+        // lookup and mapped to its fully-qualified Rust path. The `HealthResponse`
+        // type argument is a local struct, so it renders unqualified.
+        let json_decl = ToplevelItem {
+            item: TypeDecl::Tuple(TupleTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new("Json"),
+                generic_params: vec![Ident::new("T")],
+                members: vec![TupleTypeMember {
+                    r#type: TypeElement::Generic(GenericTypeItem {
+                        ident: Ident::new("T"),
+                        span: Span::default(),
+                    }),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            }),
+            source: Source::Builtin,
+        };
+        let health_decl = ToplevelItem {
+            item: TypeDecl::Struct(StructTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new("HealthResponse"),
+                generic_params: Vec::new(),
+                members: Vec::new(),
+                span: Span::default(),
+            }),
+            source: Source::Builtin,
+        };
+
+        let mut mapping = Mapping::default();
+        mapping.types.insert(
+            TypeIdent::new("Json"),
+            RustType::new("::axum::Json", "::axum::Json", "::axum::Json", false),
+        );
+        let mut ctx = Context::new(mapping);
+        ctx.lookup.types.insert(TypeIdent::new("Json"), &json_decl);
+        ctx.lookup
+            .types
+            .insert(TypeIdent::new("HealthResponse"), &health_decl);
+        let mut errors = ErrorCollector::new();
+
+        let plain = TypeElement::Parametric(ParametricTypeItem {
+            base_type: TypeIdent::new("Json"),
+            type_args: vec![TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("HealthResponse"),
+                span: Span::default(),
+            })],
+            span: Span::default(),
+        });
+        assert_eq!(
+            plain.transpile(&ctx, &mut errors),
+            "::axum::Json<HealthResponse>"
+        );
+
+        // A Galvan list type argument lowers to `Vec`, still under the qualified path.
+        let nested = TypeElement::Parametric(ParametricTypeItem {
+            base_type: TypeIdent::new("Json"),
+            type_args: vec![TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+                elements: TypeElement::Plain(BasicTypeItem {
+                    ident: TypeIdent::new("HealthResponse"),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }))],
+            span: Span::default(),
+        });
+        assert_eq!(
+            nested.transpile(&ctx, &mut errors),
+            "::axum::Json<::std::vec::Vec<HealthResponse>>"
+        );
+
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_associated_function_paths_render_as_rust_paths() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust: Some(HirRustCall {
+                rust_path: "::external::Router::new".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: Vec::new(),
+            }),
+            ident: Ident::new("new"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::external::Router::new()"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_associated_function_tuple_arguments_render_as_tuple_arguments() {
+        let octets = HirExpression::new(
+            HirExpressionKind::Collection(HirCollection::Array(vec![
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("127".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("0".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("0".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Literal(HirLiteral::Number("1".to_string())),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+            ])),
+            TypeElement::infer(),
+            Ownership::UniqueOwned,
+            Span::default(),
+        );
+        let port = HirExpression::new(
+            HirExpressionKind::Literal(HirLiteral::Number("3000".to_string())),
+            TypeElement::infer(),
+            Ownership::UniqueOwned,
+            Span::default(),
+        );
+        let call = HirFunctionCall {
+            namespace: None,
+            rust: Some(HirRustCall {
+                rust_path: "::std::net::SocketAddr::from".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: Vec::new(),
+            }),
+            ident: Ident::new("from"),
+            labels: Vec::new(),
+            args: vec![HirExpression::new(
+                HirExpressionKind::Collection(HirCollection::Tuple(vec![octets, port])),
+                TypeElement::infer(),
+                Ownership::UniqueOwned,
+                Span::default(),
+            )],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::std::net::SocketAddr::from((vec![127, 0, 0, 1], 3000))"
+        );
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_associated_constants_render_as_rust_paths() {
+        let constant = HirExpressionKind::RustConstant(HirRustConstant {
+            rust_path: "::external::StatusCode::CREATED".into(),
+        });
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            constant.transpile(&ctx, &mut errors),
+            "::external::StatusCode::CREATED"
+        );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 
@@ -1273,9 +1414,11 @@ mod tests {
         ];
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::takes_wrappers".into()),
-            rust_return_conversion: RustReturnConversion::None,
-            rust_arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
+            rust: Some(HirRustCall {
+                rust_path: "::demo::takes_wrappers".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: vec![RustArgConversion::BoxNew, RustArgConversion::RcNew],
+            }),
             ident: Ident::new("takes_wrappers"),
             labels: Vec::new(),
             args,
@@ -1294,9 +1437,11 @@ mod tests {
     fn rust_calls_apply_box_return_conversions() {
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::boxed_ticket".into()),
-            rust_return_conversion: RustReturnConversion::BoxDeref,
-            rust_arg_conversions: Vec::new(),
+            rust: Some(HirRustCall {
+                rust_path: "::demo::boxed_ticket".into(),
+                return_conversion: RustReturnConversion::BoxDeref,
+                arg_conversions: Vec::new(),
+            }),
             ident: Ident::new("boxed_ticket"),
             labels: Vec::new(),
             args: Vec::new(),
@@ -1312,12 +1457,14 @@ mod tests {
     }
 
     #[test]
-    fn rust_calls_apply_rc_return_conversions() {
+    fn rust_calls_without_return_conversions_remain_unchanged() {
         let call = HirFunctionCall {
             namespace: None,
-            rust_path: Some("::demo::shared_ticket".into()),
-            rust_return_conversion: RustReturnConversion::RcCloneDeref,
-            rust_arg_conversions: Vec::new(),
+            rust: Some(HirRustCall {
+                rust_path: "::demo::shared_ticket".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: Vec::new(),
+            }),
             ident: Ident::new("shared_ticket"),
             labels: Vec::new(),
             args: Vec::new(),
@@ -1325,10 +1472,7 @@ mod tests {
         let ctx = Context::new(Mapping::default());
         let mut errors = ErrorCollector::new();
 
-        assert_eq!(
-            call.transpile(&ctx, &mut errors),
-            "(*(::demo::shared_ticket())).clone()"
-        );
+        assert_eq!(call.transpile(&ctx, &mut errors), "::demo::shared_ticket()");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 

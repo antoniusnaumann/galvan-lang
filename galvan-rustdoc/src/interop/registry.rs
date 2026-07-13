@@ -1,4 +1,4 @@
-use serde_json::Value;
+use rustdoc_types::{Crate, Item, Path};
 
 use galvan_ast::{
     EmptyTypeDecl, FnDecl, Ident, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent, Visibility,
@@ -11,27 +11,44 @@ use crate::model::{
 
 use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
-use super::rustdoc_json::{public_type_name, receiver_type_ident, type_generic_params};
+use super::rustdoc_json::{
+    public_type_name, receiver_type_ident, resolved_type_generic_params, type_generic_params,
+    type_has_unliftable_generics,
+};
 use super::rustdoc_path::{resolved_type_rust_path, rust_path};
+use super::state::Unambiguous;
 use super::RustInterop;
 
 impl RustInterop {
-    pub(super) fn push_type(&mut self, crate_name: &str, name: &str) {
-        let rust_path = format!("::{crate_name}::{name}").into_boxed_str();
-        self.push_empty_type(crate_name, name, rust_path);
+    pub(super) fn push_resolved_type(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        name: &str,
+        resolved: &Path,
+    ) {
+        let rust_path = resolved_type_rust_path(krate, crate_name, name, resolved);
+        self.push_empty_type(
+            crate_name,
+            name,
+            rust_path,
+            resolved_type_generic_params(resolved),
+        );
     }
 
-    pub(super) fn push_resolved_type(&mut self, crate_name: &str, name: &str, resolved: &Value) {
-        let rust_path = resolved_type_rust_path(crate_name, name, resolved);
-        self.push_empty_type(crate_name, name, rust_path);
-    }
-
-    fn push_empty_type(&mut self, crate_name: &str, name: &str, rust_path: Box<str>) {
-        if self
+    fn push_empty_type(
+        &mut self,
+        crate_name: &str,
+        name: &str,
+        rust_path: Box<str>,
+        generic_params: Vec<Ident>,
+    ) {
+        if let Some(existing) = self
             .types
             .iter()
-            .any(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
+            .position(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
         {
+            self.update_empty_type_generics(existing, generic_params);
             return;
         }
 
@@ -47,7 +64,7 @@ impl RustInterop {
                 item: TypeDecl::Empty(EmptyTypeDecl {
                     visibility: Visibility::public(),
                     ident,
-                    generic_params: Vec::new(),
+                    generic_params,
                     span: Span::default(),
                 }),
                 source: Source::Builtin,
@@ -55,19 +72,30 @@ impl RustInterop {
         });
     }
 
-    pub(super) fn push_type_from_item(
-        &mut self,
-        crate_name: &str,
-        item: &Value,
-        index: &serde_json::Map<String, Value>,
-    ) {
+    fn update_empty_type_generics(&mut self, index: usize, generic_params: Vec<Ident>) {
+        if generic_params.is_empty() {
+            return;
+        }
+
+        let TypeDecl::Empty(empty) = &mut self.types[index].decl.item else {
+            return;
+        };
+        if generic_params.len() > empty.generic_params.len() {
+            empty.generic_params = generic_params;
+        }
+    }
+
+    pub(super) fn push_type_from_item(&mut self, krate: &Crate, crate_name: &str, item: &Item) {
+        if type_has_unliftable_generics(item) {
+            return;
+        }
         let Some(name) = public_type_name(item) else {
             return;
         };
 
-        let rust_path = rust_path(crate_name, name, item);
+        let rust_path = rust_path(krate, crate_name, name, item);
         let imported = self
-            .type_decl_from_item(crate_name, name, item, index)
+            .type_decl_from_item(krate, crate_name, name, item)
             .unwrap_or_else(|| {
                 ImportedTypeDecl::empty_with_generics(name, type_generic_params(item))
             });
@@ -100,26 +128,41 @@ impl RustInterop {
 
     pub(super) fn push_reexported_type_from_item(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
         exported_name: &str,
         rust_path: Box<str>,
-        item: &Value,
-        index: &serde_json::Map<String, Value>,
+        item: &Item,
     ) {
+        if type_has_unliftable_generics(item) {
+            return;
+        }
+        let imported = self
+            .type_decl_from_item(krate, crate_name, exported_name, item)
+            .unwrap_or_else(|| {
+                ImportedTypeDecl::empty_with_generics(exported_name, type_generic_params(item))
+            });
+
         if let Some(existing) = self
             .types
             .iter_mut()
             .find(|ty| ty.rust_path.as_ref() == rust_path.as_ref())
         {
+            // Upgrade a placeholder opaque decl (e.g. an out-of-index re-export
+            // registered at the same public path) to this richer lifted decl;
+            // otherwise just adopt the re-export name.
+            if matches!(existing.decl.item, TypeDecl::Empty(_))
+                && !matches!(imported.decl, TypeDecl::Empty(_))
+            {
+                existing.field_conversions = imported.field_conversions;
+                existing.constructor_arg_conversions = imported.constructor_arg_conversions;
+                existing.enum_variant_conversions = imported.enum_variant_conversions;
+                existing.decl.item = imported.decl;
+            }
             existing.name = TypeIdent::new(exported_name);
             return;
         }
 
-        let imported = self
-            .type_decl_from_item(crate_name, exported_name, item, index)
-            .unwrap_or_else(|| {
-                ImportedTypeDecl::empty_with_generics(exported_name, type_generic_params(item))
-            });
         self.types.push(RustTypeDecl {
             namespace: crate_name.into(),
             name: TypeIdent::new(exported_name),
@@ -205,6 +248,12 @@ impl RustInterop {
         });
 
         if let Some(receiver) = associated_receiver {
+            insert_unambiguous_associated(
+                &mut self.by_associated_constant,
+                (receiver.clone(), ident.clone()),
+                crate_name,
+                idx,
+            );
             self.by_namespace_associated_constant
                 .insert((crate_name.to_string(), receiver, ident), idx);
         } else {
@@ -254,19 +303,59 @@ impl RustInterop {
                 source: Source::Builtin,
             },
         });
-        if !has_receiver {
-            if let Some(associated_receiver) = associated_receiver {
-                self.by_namespace_associated_function.insert(
-                    (crate_name.to_string(), associated_receiver, id.clone()),
-                    idx,
-                );
-            } else {
-                self.by_namespace_function
-                    .insert((crate_name.to_string(), id.clone()), idx);
-            }
-        } else {
+        let has_associated_receiver = associated_receiver.is_some();
+        if let Some(associated_receiver) = associated_receiver {
+            insert_unambiguous_associated(
+                &mut self.by_associated_function,
+                (associated_receiver.clone(), id.clone()),
+                crate_name,
+                idx,
+            );
+            self.by_namespace_associated_function.insert(
+                (crate_name.to_string(), associated_receiver, id.clone()),
+                idx,
+            );
+        }
+        if has_receiver || !has_associated_receiver {
             self.by_namespace_function
                 .insert((crate_name.to_string(), id.clone()), idx);
         }
     }
+}
+
+/// Records that `namespace` exposes the associated `key`, tracking whether the
+/// key remains exposed by a single namespace (`One`) or becomes ambiguous
+/// (`Many`). Mirrors the overwrite semantics of the namespaced maps: a repeated
+/// insert from the same namespace keeps the latest index and stays unambiguous.
+fn insert_unambiguous_associated<K>(
+    map: &mut std::collections::HashMap<K, Unambiguous>,
+    key: K,
+    namespace: &str,
+    idx: usize,
+) where
+    K: Eq + std::hash::Hash,
+{
+    match map.get_mut(&key) {
+        None => {
+            map.insert(
+                key,
+                Unambiguous::One {
+                    namespace: namespace.to_string(),
+                    idx,
+                },
+            );
+            return;
+        }
+        Some(Unambiguous::One {
+            namespace: existing_namespace,
+            idx: existing_idx,
+        }) => {
+            if existing_namespace == namespace {
+                *existing_idx = idx;
+                return;
+            }
+        }
+        Some(Unambiguous::Many) => return,
+    }
+    map.insert(key, Unambiguous::Many);
 }

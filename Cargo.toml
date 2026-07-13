@@ -21,6 +21,7 @@ galvan-format = { path = "galvan-format", version = "0.0.3" }
 thiserror = "1.0.61"
 itertools = "0.13.0"
 serde_json = "1.0.120"
+rustdoc-types = "=0.60.0"
 
 [package]
 name = "galvan"

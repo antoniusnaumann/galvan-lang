@@ -1,70 +1,68 @@
 use std::collections::HashSet;
 
-use serde_json::Value;
+use rustdoc_types::{Crate, Id, Impl, Item, ItemEnum, Use};
+
+use galvan_ast::{FnSignature, TypeElement, TypeIdent};
+
+use crate::model::RustdocCrateLiftSummary;
 
 use super::rustdoc_json::{
-    constant_inner, constant_type, function_is_unsafe, impl_constant_ids, impl_function_ids,
-    is_public, item_ids, item_inner, public_type_name, receiver_type_ident, return_is_borrowed,
-    signature_contains_unliftable_type, type_contains_unliftable_type,
+    constant_type, function_is_unliftable, impl_constant_ids, impl_function_ids, is_public,
+    public_type_name, receiver_type_ident, return_is_borrowed, trait_constant_ids,
+    trait_function_ids, type_contains_unliftable_type,
 };
 use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_function_rust_path};
 use super::RustInterop;
 
+struct ReexportedImplImport<'a> {
+    krate: &'a Crate,
+    crate_name: &'a str,
+    impl_: &'a Impl,
+    original_receiver: &'a TypeIdent,
+    exported_receiver: &'a TypeIdent,
+    receiver_rust_path: &'a str,
+}
+
 impl RustInterop {
-    pub fn add_crate(&mut self, crate_name: &str, json: &Value) {
-        let Some(index) = json.get("index").and_then(Value::as_object) else {
-            self.add_curated_crate(crate_name);
-            return;
-        };
+    pub fn add_crate(&mut self, crate_name: &str, krate: &Crate) -> RustdocCrateLiftSummary {
+        let before = LiftCounts::from(&*self);
 
-        let mut type_item_ids = Vec::new();
-        for item in index.values() {
-            if !is_public(item) {
-                continue;
-            }
-            if public_type_name(item).is_some() {
-                type_item_ids.push(item);
+        // rustdoc's `index` is an unordered `HashMap`; walk it in a stable id
+        // order so lifting (and any duplicate rust_path resolution) is
+        // deterministic across runs and snapshot tests.
+        let items = sorted_items(krate);
+
+        for (_, item) in &items {
+            if is_public(item) && public_type_name(item).is_some() {
+                self.push_type_from_item(krate, crate_name, item);
             }
         }
 
-        let mut found_item = !type_item_ids.is_empty();
-        for item in type_item_ids {
-            self.push_type_from_item(crate_name, item, index);
-        }
-
-        let impl_function_ids = impl_function_ids(index);
-        let impl_constant_ids = impl_constant_ids(index);
-        for item in index.values() {
+        let impl_function_ids = impl_function_ids(krate);
+        let impl_constant_ids = impl_constant_ids(krate);
+        let trait_function_ids = trait_function_ids(krate);
+        let trait_constant_ids = trait_constant_ids(krate);
+        for (id, item) in &items {
             if !is_public(item) {
                 continue;
             }
-            if item
-                .get("id")
-                .and_then(Value::as_str)
-                .is_some_and(|id| impl_function_ids.contains(id))
-            {
+            if impl_function_ids.contains(id) || trait_function_ids.contains(id) {
                 continue;
             }
-            let Some(name) = item.get("name").and_then(Value::as_str) else {
+            let Some(name) = item.name.as_deref() else {
                 continue;
             };
-            let Some(function) = item_inner(item, "function") else {
+            let ItemEnum::Function(function) = &item.inner else {
                 continue;
             };
-            if function_is_unsafe(function) {
+            if function_is_unliftable(krate, function) {
                 continue;
             }
-            let Some(signature) = function.get("sig") else {
+            let rust_path = callable_rust_path(krate, crate_name, name, item);
+            let Some(imported) = self.function_decl(krate, crate_name, name, &function.sig) else {
                 continue;
             };
-            if signature_contains_unliftable_type(signature) {
-                continue;
-            }
-            let rust_path = callable_rust_path(crate_name, name, item);
-            let Some(imported) = self.function_decl(crate_name, name, signature) else {
-                continue;
-            };
-            let borrowed_return = return_is_borrowed(signature);
+            let borrowed_return = return_is_borrowed(&function.sig);
             self.push_function(
                 crate_name,
                 name,
@@ -74,352 +72,525 @@ impl RustInterop {
                 imported.return_conversion,
                 imported.arg_conversions,
             );
-            found_item = true;
         }
-        found_item |= self.import_top_level_constants(crate_name, index, &impl_constant_ids);
-        found_item |= self.import_impl_functions(crate_name, index);
-        found_item |= self.import_public_reexports(crate_name, index);
+        self.import_top_level_constants(krate, crate_name, &impl_constant_ids, &trait_constant_ids);
+        self.import_impl_functions(krate, crate_name);
+        self.import_trait_items(krate, crate_name);
+        self.import_public_reexports(krate, crate_name);
 
-        if !found_item {
-            self.add_curated_crate(crate_name);
-        }
+        let summary = RustdocCrateLiftSummary {
+            crate_name: crate_name.into(),
+            types: self.types.len().saturating_sub(before.types),
+            functions: self.functions.len().saturating_sub(before.functions),
+            constants: self.constants.len().saturating_sub(before.constants),
+        };
+        self.lift_summaries
+            .insert(summary.crate_name.clone(), summary.clone());
+        summary
     }
 
-    fn import_impl_functions(
-        &mut self,
-        crate_name: &str,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let mut found_item = false;
-        for impl_item in index.values() {
-            let Some(impl_inner) = item_inner(impl_item, "impl") else {
+    fn import_impl_functions(&mut self, krate: &Crate, crate_name: &str) {
+        for (_, impl_item) in sorted_items(krate) {
+            let ItemEnum::Impl(impl_) = &impl_item.inner else {
                 continue;
             };
-            found_item |= self.import_impl_constants(crate_name, impl_inner, index);
+            let Some(associated_receiver) = self.impl_associated_receiver(krate, crate_name, impl_)
+            else {
+                continue;
+            };
+            self.import_impl_constants(krate, crate_name, impl_, &associated_receiver);
 
-            for id in item_ids(impl_inner, "items") {
-                let Some(item) = index.get(id) else {
+            for id in &impl_.items {
+                let Some(item) = krate.index.get(id) else {
                     continue;
                 };
                 if !is_public(item) {
                     continue;
                 }
-                let Some(name) = item.get("name").and_then(Value::as_str) else {
+                let Some(name) = item.name.as_deref() else {
                     continue;
                 };
-                let Some(function) = item_inner(item, "function") else {
+                let ItemEnum::Function(function) = &item.inner else {
                     continue;
                 };
-                if function_is_unsafe(function) {
-                    continue;
-                }
-                let Some(signature) = function.get("sig") else {
-                    continue;
-                };
-                if signature_contains_unliftable_type(signature) {
+                if function_is_unliftable(krate, function) {
                     continue;
                 }
 
-                let associated_receiver = impl_inner
-                    .get("for")
-                    .and_then(|ty| self.type_from_json(crate_name, ty))
-                    .and_then(|ty| receiver_type_ident(&ty));
                 let Some(imported) =
-                    self.impl_function_decl(crate_name, name, signature, impl_inner)
+                    self.impl_function_decl(krate, crate_name, name, &function.sig, impl_)
                 else {
                     continue;
                 };
-                let rust_path = impl_function_rust_path(crate_name, name, item, impl_inner);
-                let borrowed_return = return_is_borrowed(signature);
+                let rust_path = impl_function_rust_path(krate, crate_name, name, item, impl_);
+                let borrowed_return = return_is_borrowed(&function.sig);
                 self.push_function_with_associated_receiver(
                     crate_name,
                     name,
                     rust_path,
                     imported.decl,
                     borrowed_return,
-                    associated_receiver,
+                    Some(associated_receiver.clone()),
                     imported.return_conversion,
                     imported.arg_conversions,
                 );
-                found_item = true;
             }
         }
-
-        found_item
     }
 
-    fn import_public_reexports(
-        &mut self,
-        crate_name: &str,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let mut found_item = false;
-        for item in index.values() {
-            if !is_public(item) {
+    fn import_trait_items(&mut self, krate: &Crate, crate_name: &str) {
+        for (_, trait_item) in sorted_items(krate) {
+            if !is_public(trait_item) {
                 continue;
             }
-            let Some(use_item) = item_inner(item, "use") else {
+            let Some(name) = trait_item.name.as_deref() else {
                 continue;
             };
-            if use_item.get("is_glob").and_then(Value::as_bool) == Some(true) {
-                found_item |= self.import_glob_reexport(crate_name, item, use_item, index);
-                continue;
-            }
-            let Some(exported_name) = item
-                .get("name")
-                .and_then(Value::as_str)
-                .or_else(|| use_item.get("name").and_then(Value::as_str))
-            else {
+            let ItemEnum::Trait(trait_) = &trait_item.inner else {
                 continue;
             };
-            let Some(target_id) = use_item.get("id").and_then(Value::as_str) else {
-                found_item |=
-                    self.import_external_reexported_type(crate_name, exported_name, use_item);
-                continue;
-            };
-            let Some(target) = index.get(target_id) else {
-                found_item |=
-                    self.import_external_reexported_type(crate_name, exported_name, use_item);
-                continue;
-            };
-            let rust_path = callable_rust_path(crate_name, exported_name, item);
+            let receiver = TypeIdent::new(name);
 
-            if public_type_name(target).is_some() {
-                self.push_reexported_type_from_item(
-                    crate_name,
-                    exported_name,
-                    rust_path,
-                    target,
-                    index,
-                );
-                found_item = true;
-                continue;
-            }
-
-            if let Some(function) = item_inner(target, "function") {
-                if function_is_unsafe(function) {
+            for id in &trait_.items {
+                let Some(item) = krate.index.get(id) else {
+                    continue;
+                };
+                if !is_public(item) {
                     continue;
                 }
-                if let Some(signature) = function.get("sig") {
-                    if signature_contains_unliftable_type(signature) {
+                let Some(item_name) = item.name.as_deref() else {
+                    continue;
+                };
+
+                if let ItemEnum::Function(function) = &item.inner {
+                    if function_is_unliftable(krate, function) {
                         continue;
                     }
-                    let Some(imported) = self.function_decl(crate_name, exported_name, signature)
-                    else {
+                    let Some(imported) = self.trait_function_decl(
+                        krate,
+                        crate_name,
+                        item_name,
+                        &function.sig,
+                        &receiver,
+                    ) else {
                         continue;
                     };
-                    let borrowed_return = return_is_borrowed(signature);
-                    self.push_function(
+                    let rust_path = callable_rust_path(krate, crate_name, item_name, item);
+                    let borrowed_return = return_is_borrowed(&function.sig);
+                    self.push_function_with_associated_receiver(
                         crate_name,
-                        exported_name,
+                        item_name,
                         rust_path,
                         imported.decl,
                         borrowed_return,
+                        Some(receiver.clone()),
                         imported.return_conversion,
                         imported.arg_conversions,
                     );
-                    found_item = true;
-                }
-                continue;
-            }
-
-            if let Some(constant) = constant_inner(target) {
-                let Some(ty) =
-                    constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-                else {
                     continue;
-                };
-                self.push_constant(crate_name, None, exported_name, rust_path, ty);
-                found_item = true;
+                }
+
+                if constant_type(item).is_some() {
+                    let rust_path = callable_rust_path(krate, crate_name, item_name, item);
+                    self.import_trait_constant(
+                        krate, crate_name, item_name, rust_path, item, &receiver,
+                    );
+                }
             }
         }
-        found_item
+    }
+
+    fn import_public_reexports(&mut self, krate: &Crate, crate_name: &str) {
+        for (_, item) in sorted_items(krate) {
+            if !is_public(item) {
+                continue;
+            }
+            let ItemEnum::Use(use_) = &item.inner else {
+                continue;
+            };
+            if use_.is_glob {
+                self.import_glob_reexport(krate, crate_name, item, use_);
+                continue;
+            }
+            let exported_name = if item.name.as_deref().is_some_and(|name| !name.is_empty()) {
+                item.name.as_deref().unwrap()
+            } else {
+                use_.name.as_str()
+            };
+            let Some(target_id) = use_.id else {
+                // A primitive re-export (`pub use i32 as …`): rustdoc records no
+                // target id, so the `use` source is the item's absolute path.
+                self.import_external_reexported_type(crate_name, exported_name, use_);
+                continue;
+            };
+            let Some(target) = krate.index.get(&target_id) else {
+                // An intra-crate re-export of an item rustdoc did not include in
+                // the index (e.g. a foreign type aliased through a private module,
+                // such as serde_json's `pub use self::imp::Result`). Register it as
+                // an opaque type under this re-export's own public path — not the
+                // module-relative `use` source (`self::…`/`crate::…`), which is not
+                // a valid absolute path — so it dedupes against any richer decl
+                // already imported at that path.
+                if looks_like_type_name(exported_name) {
+                    let rust_path = callable_rust_path(krate, crate_name, exported_name, item);
+                    self.push_external_reexported_type(crate_name, exported_name, rust_path);
+                }
+                continue;
+            };
+            let rust_path = callable_rust_path(krate, crate_name, exported_name, item);
+            self.import_reexport_target(krate, crate_name, exported_name, rust_path, target);
+        }
+    }
+
+    fn import_reexport_target(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        exported_name: &str,
+        rust_path: Box<str>,
+        target: &Item,
+    ) {
+        if let Some(original_name) = public_type_name(target) {
+            self.push_reexported_type_from_item(
+                krate,
+                crate_name,
+                exported_name,
+                rust_path.clone(),
+                target,
+            );
+            self.import_reexported_impl_items(
+                krate,
+                crate_name,
+                &TypeIdent::new(original_name),
+                &TypeIdent::new(exported_name),
+                rust_path,
+            );
+            return;
+        }
+
+        if let ItemEnum::Function(function) = &target.inner {
+            if function_is_unliftable(krate, function) {
+                return;
+            }
+            let Some(imported) =
+                self.function_decl(krate, crate_name, exported_name, &function.sig)
+            else {
+                return;
+            };
+            let borrowed_return = return_is_borrowed(&function.sig);
+            self.push_function(
+                crate_name,
+                exported_name,
+                rust_path,
+                imported.decl,
+                borrowed_return,
+                imported.return_conversion,
+                imported.arg_conversions,
+            );
+            return;
+        }
+
+        if constant_type(target).is_some() {
+            self.import_reexported_constant(krate, crate_name, exported_name, rust_path, target);
+        }
     }
 
     fn import_external_reexported_type(
         &mut self,
         crate_name: &str,
         exported_name: &str,
-        use_item: &Value,
-    ) -> bool {
+        use_: &Use,
+    ) {
         if !looks_like_type_name(exported_name) {
-            return false;
+            return;
         }
 
-        let Some(source) = use_item.get("source").and_then(Value::as_str) else {
-            return false;
-        };
-
-        self.push_external_reexported_type(crate_name, exported_name, absolute_rust_path(source));
-        true
+        self.push_external_reexported_type(
+            crate_name,
+            exported_name,
+            absolute_rust_path(&use_.source),
+        );
     }
 
-    fn import_glob_reexport(
-        &mut self,
-        crate_name: &str,
-        item: &Value,
-        use_item: &Value,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let Some(target_id) = use_item.get("id").and_then(Value::as_str) else {
-            return false;
+    fn import_glob_reexport(&mut self, krate: &Crate, crate_name: &str, item: &Item, use_: &Use) {
+        let Some(target_id) = use_.id else {
+            return;
         };
-        let Some(module) = index
-            .get(target_id)
-            .and_then(|target| item_inner(target, "module"))
+        let Some(ItemEnum::Module(module)) =
+            krate.index.get(&target_id).map(|target| &target.inner)
         else {
-            return false;
+            return;
         };
 
-        let mut found_item = false;
-        for id in item_ids(module, "items") {
-            let Some(target) = index.get(id) else {
+        for id in &module.items {
+            let Some(target) = krate.index.get(id) else {
                 continue;
             };
             if !is_public(target) {
                 continue;
             }
-            let Some(exported_name) = target.get("name").and_then(Value::as_str) else {
+            let Some(exported_name) = target.name.as_deref() else {
                 continue;
             };
-            let rust_path = callable_rust_path(crate_name, exported_name, item);
-
-            if public_type_name(target).is_some() {
-                self.push_reexported_type_from_item(
-                    crate_name,
-                    exported_name,
-                    rust_path,
-                    target,
-                    index,
-                );
-                found_item = true;
-                continue;
-            }
-
-            if let Some(function) = item_inner(target, "function") {
-                if function_is_unsafe(function) {
-                    continue;
-                }
-                if let Some(signature) = function.get("sig") {
-                    if signature_contains_unliftable_type(signature) {
-                        continue;
-                    }
-                    let Some(imported) = self.function_decl(crate_name, exported_name, signature)
-                    else {
-                        continue;
-                    };
-                    let borrowed_return = return_is_borrowed(signature);
-                    self.push_function(
-                        crate_name,
-                        exported_name,
-                        rust_path,
-                        imported.decl,
-                        borrowed_return,
-                        imported.return_conversion,
-                        imported.arg_conversions,
-                    );
-                    found_item = true;
-                }
-                continue;
-            }
-
-            if let Some(constant) = constant_inner(target) {
-                let Some(ty) =
-                    constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-                else {
-                    continue;
-                };
-                self.push_constant(crate_name, None, exported_name, rust_path, ty);
-                found_item = true;
-            }
+            let rust_path = callable_rust_path(krate, crate_name, exported_name, item);
+            self.import_reexport_target(krate, crate_name, exported_name, rust_path, target);
         }
+    }
 
-        found_item
+    fn import_reexported_constant(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        exported_name: &str,
+        rust_path: Box<str>,
+        constant: &Item,
+    ) {
+        let Some(constant_ty) = constant_type(constant) else {
+            return;
+        };
+        if type_contains_unliftable_type(krate, constant_ty) {
+            return;
+        }
+        let Some(ty) = self.type_from_json(krate, crate_name, constant_ty) else {
+            return;
+        };
+        self.push_constant(crate_name, None, exported_name, rust_path, ty);
+    }
+
+    fn import_reexported_impl_items(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        original_receiver: &TypeIdent,
+        exported_receiver: &TypeIdent,
+        receiver_rust_path: Box<str>,
+    ) {
+        for (_, impl_item) in sorted_items(krate) {
+            let ItemEnum::Impl(impl_) = &impl_item.inner else {
+                continue;
+            };
+            if impl_.trait_.is_some() {
+                continue;
+            }
+            let Some(receiver) = self.impl_associated_receiver(krate, crate_name, impl_) else {
+                continue;
+            };
+            if &receiver != original_receiver {
+                continue;
+            }
+
+            let import = ReexportedImplImport {
+                krate,
+                crate_name,
+                impl_,
+                original_receiver,
+                exported_receiver,
+                receiver_rust_path: receiver_rust_path.as_ref(),
+            };
+            self.import_reexported_impl_constants(&import);
+            self.import_reexported_impl_functions(&import);
+        }
+    }
+
+    fn import_reexported_impl_constants(&mut self, import: &ReexportedImplImport<'_>) {
+        for id in &import.impl_.items {
+            let Some(item) = import.krate.index.get(id) else {
+                continue;
+            };
+            if !is_public(item) {
+                continue;
+            }
+            let Some(name) = item.name.as_deref() else {
+                continue;
+            };
+            let Some(constant_ty) = constant_type(item) else {
+                continue;
+            };
+            if type_contains_unliftable_type(import.krate, constant_ty) {
+                continue;
+            }
+            let Some(mut ty) = self.type_from_json(import.krate, import.crate_name, constant_ty)
+            else {
+                continue;
+            };
+            rename_type_references(&mut ty, import.original_receiver, import.exported_receiver);
+            self.push_constant(
+                import.crate_name,
+                Some(import.exported_receiver.clone()),
+                name,
+                format!("{}::{name}", import.receiver_rust_path).into_boxed_str(),
+                ty,
+            );
+        }
+    }
+
+    fn import_reexported_impl_functions(&mut self, import: &ReexportedImplImport<'_>) {
+        for id in &import.impl_.items {
+            let Some(item) = import.krate.index.get(id) else {
+                continue;
+            };
+            if !is_public(item) {
+                continue;
+            }
+            let Some(name) = item.name.as_deref() else {
+                continue;
+            };
+            let ItemEnum::Function(function) = &item.inner else {
+                continue;
+            };
+            if function_is_unliftable(import.krate, function) {
+                continue;
+            }
+
+            let Some(mut imported) = self.impl_function_decl(
+                import.krate,
+                import.crate_name,
+                name,
+                &function.sig,
+                import.impl_,
+            ) else {
+                continue;
+            };
+            rename_function_type_references(
+                &mut imported.decl.signature,
+                import.original_receiver,
+                import.exported_receiver,
+            );
+            let borrowed_return = return_is_borrowed(&function.sig);
+            self.push_function_with_associated_receiver(
+                import.crate_name,
+                name,
+                format!("{}::{name}", import.receiver_rust_path).into_boxed_str(),
+                imported.decl,
+                borrowed_return,
+                Some(import.exported_receiver.clone()),
+                imported.return_conversion,
+                imported.arg_conversions,
+            );
+        }
+    }
+
+    fn import_trait_constant(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        name: &str,
+        rust_path: Box<str>,
+        constant: &Item,
+        receiver: &TypeIdent,
+    ) {
+        let Some(constant_ty) = constant_type(constant) else {
+            return;
+        };
+        if type_contains_unliftable_type(krate, constant_ty) {
+            return;
+        }
+        let Some(ty) = self.type_from_json(krate, crate_name, constant_ty) else {
+            return;
+        };
+        self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
     }
 
     fn import_top_level_constants(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        index: &serde_json::Map<String, Value>,
-        impl_constant_ids: &HashSet<&str>,
-    ) -> bool {
-        let mut found_item = false;
-        for item in index.values() {
+        impl_constant_ids: &HashSet<Id>,
+        trait_constant_ids: &HashSet<Id>,
+    ) {
+        for (id, item) in sorted_items(krate) {
             if !is_public(item) {
                 continue;
             }
-            if item
-                .get("id")
-                .and_then(Value::as_str)
-                .is_some_and(|id| impl_constant_ids.contains(id))
-            {
+            if impl_constant_ids.contains(id) || trait_constant_ids.contains(id) {
                 continue;
             }
-            let Some(name) = item.get("name").and_then(Value::as_str) else {
+            let Some(name) = item.name.as_deref() else {
                 continue;
             };
-            let Some(constant) = constant_inner(item) else {
+            let Some(constant_ty) = constant_type(item) else {
                 continue;
             };
-            let Some(ty) =
-                constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-            else {
-                continue;
-            };
-            if constant_type(constant).is_some_and(type_contains_unliftable_type) {
+            if type_contains_unliftable_type(krate, constant_ty) {
                 continue;
             }
+            let Some(ty) = self.type_from_json(krate, crate_name, constant_ty) else {
+                continue;
+            };
             self.push_constant(
                 crate_name,
                 None,
                 name,
-                callable_rust_path(crate_name, name, item),
+                callable_rust_path(krate, crate_name, name, item),
                 ty,
             );
-            found_item = true;
         }
-        found_item
     }
 
     fn import_impl_constants(
         &mut self,
+        krate: &Crate,
         crate_name: &str,
-        impl_inner: &Value,
-        index: &serde_json::Map<String, Value>,
-    ) -> bool {
-        let receiver = impl_inner
-            .get("for")
-            .and_then(|ty| self.type_from_json(crate_name, ty))
-            .and_then(|ty| receiver_type_ident(&ty));
-
-        let mut found_item = false;
-        for id in item_ids(impl_inner, "items") {
-            let Some(item) = index.get(id) else {
+        impl_: &Impl,
+        receiver: &TypeIdent,
+    ) {
+        for id in &impl_.items {
+            let Some(item) = krate.index.get(id) else {
                 continue;
             };
             if !is_public(item) {
                 continue;
             }
-            let Some(name) = item.get("name").and_then(Value::as_str) else {
+            let Some(name) = item.name.as_deref() else {
                 continue;
             };
-            let Some(constant) = constant_inner(item) else {
+            let Some(constant_ty) = constant_type(item) else {
                 continue;
             };
-            let Some(ty) =
-                constant_type(constant).and_then(|ty| self.type_from_json(crate_name, ty))
-            else {
-                continue;
-            };
-            if constant_type(constant).is_some_and(type_contains_unliftable_type) {
+            if type_contains_unliftable_type(krate, constant_ty) {
                 continue;
             }
-            let rust_path = impl_constant_rust_path(crate_name, name, item, impl_inner);
-            self.push_constant(crate_name, receiver.clone(), name, rust_path, ty);
-            found_item = true;
+            let Some(ty) = self.type_from_json(krate, crate_name, constant_ty) else {
+                continue;
+            };
+            let rust_path = impl_constant_rust_path(krate, crate_name, name, item, impl_);
+            self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
         }
-        found_item
     }
+
+    fn impl_associated_receiver(
+        &mut self,
+        krate: &Crate,
+        crate_name: &str,
+        impl_: &Impl,
+    ) -> Option<TypeIdent> {
+        self.type_from_json(krate, crate_name, &impl_.for_)
+            .and_then(|ty| receiver_type_ident(&ty))
+    }
+}
+
+struct LiftCounts {
+    types: usize,
+    functions: usize,
+    constants: usize,
+}
+
+impl From<&RustInterop> for LiftCounts {
+    fn from(interop: &RustInterop) -> Self {
+        Self {
+            types: interop.types.len(),
+            functions: interop.functions.len(),
+            constants: interop.constants.len(),
+        }
+    }
+}
+
+/// The items of a crate's `index`, ordered by their stable rustdoc `Id` so
+/// iteration is deterministic (the underlying map is a `HashMap`).
+fn sorted_items(krate: &Crate) -> Vec<(&Id, &Item)> {
+    let mut items: Vec<_> = krate.index.iter().collect();
+    items.sort_by_key(|(id, _)| **id);
+    items
 }
 
 fn absolute_rust_path(source: &str) -> Box<str> {
@@ -432,4 +603,69 @@ fn absolute_rust_path(source: &str) -> Box<str> {
 
 fn looks_like_type_name(name: &str) -> bool {
     name.chars().next().is_some_and(char::is_uppercase) && name.chars().any(char::is_lowercase)
+}
+
+fn rename_function_type_references(
+    signature: &mut FnSignature,
+    original: &TypeIdent,
+    exported: &TypeIdent,
+) {
+    for param in &mut signature.parameters.params {
+        rename_type_references(&mut param.param_type, original, exported);
+    }
+    rename_type_references(&mut signature.return_type, original, exported);
+}
+
+fn rename_type_references(ty: &mut TypeElement, original: &TypeIdent, exported: &TypeIdent) {
+    match ty {
+        TypeElement::Plain(plain) => {
+            if &plain.ident == original {
+                plain.ident = exported.clone();
+            }
+        }
+        TypeElement::Parametric(parametric) => {
+            if &parametric.base_type == original {
+                parametric.base_type = exported.clone();
+            }
+            for arg in &mut parametric.type_args {
+                rename_type_references(arg, original, exported);
+            }
+        }
+        TypeElement::Array(array) => {
+            rename_type_references(&mut array.elements, original, exported)
+        }
+        TypeElement::Dictionary(dictionary) => {
+            rename_type_references(&mut dictionary.key, original, exported);
+            rename_type_references(&mut dictionary.value, original, exported);
+        }
+        TypeElement::OrderedDictionary(dictionary) => {
+            rename_type_references(&mut dictionary.key, original, exported);
+            rename_type_references(&mut dictionary.value, original, exported);
+        }
+        TypeElement::Set(set) => rename_type_references(&mut set.elements, original, exported),
+        TypeElement::Tuple(tuple) => {
+            for element in &mut tuple.elements {
+                rename_type_references(element, original, exported);
+            }
+        }
+        TypeElement::Optional(optional) => {
+            rename_type_references(&mut optional.inner, original, exported);
+        }
+        TypeElement::Result(result) => {
+            rename_type_references(&mut result.success, original, exported);
+            if let Some(error) = &mut result.error {
+                rename_type_references(error, original, exported);
+            }
+        }
+        TypeElement::Closure(closure) => {
+            for param in &mut closure.parameters {
+                rename_type_references(param, original, exported);
+            }
+            rename_type_references(&mut closure.return_ty, original, exported);
+        }
+        TypeElement::Generic(_)
+        | TypeElement::Infer(_)
+        | TypeElement::Never(_)
+        | TypeElement::Void(_) => {}
+    }
 }

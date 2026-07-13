@@ -667,6 +667,15 @@ impl<'a> Checker<'a> {
     }
 }
 
+/// Narrows an inferred `__Number` type to `Int` for `ref` declarations whose
+/// value is a direct integer literal (e.g. `ref counter = 0`), so the shared
+/// storage has a concrete integer type.
+///
+/// Limitation: this only fires for a *direct* numeric-literal initializer and
+/// leaves anything float-shaped or non-literal as `__Number`. It does not run
+/// the value through the general inference/unification path, so `ref x = f()`
+/// or `ref y = a + b` are not concretized here. Generalizing this belongs in
+/// the normal type-inference flow rather than in this ref-specific shortcut.
 fn concretize_inferred_integer_ref_type(
     ty: TypeElement,
     value: Option<&HirExpression>,

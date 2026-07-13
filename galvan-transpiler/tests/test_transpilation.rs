@@ -194,7 +194,7 @@ fn transpiles_namespaced_method_calls_as_scoped_imports() {
 }
 
 #[test]
-fn primitive_ref_struct_fields_use_atomic_storage() {
+fn primitive_ref_struct_fields_use_mutex_storage() {
     let output = transpile_source(
         "type State {
              ref next_id: U64,
@@ -205,12 +205,11 @@ fn primitive_ref_struct_fields_use_atomic_storage() {
          }",
     );
 
-    assert!(output.contains("pub(crate) next_id: std::sync::Arc<std::sync::atomic::AtomicU64>"));
-    assert!(output.contains("pub(crate) active: std::sync::Arc<std::sync::atomic::AtomicBool>"));
-    assert!(output.contains("next_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1))"));
-    assert!(
-        output.contains("active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))")
-    );
+    assert!(output.contains("pub(crate) next_id: std::sync::Arc<std::sync::Mutex<u64>>"));
+    assert!(output.contains("pub(crate) active: std::sync::Arc<std::sync::Mutex<bool>>"));
+    assert!(output.contains("next_id: (&(1)).__to_ref()"));
+    assert!(output.contains("active: (&(true)).__to_ref()"));
+    assert!(!output.contains("Atomic"));
 }
 
 #[test]
@@ -234,7 +233,7 @@ fn non_primitive_ref_struct_fields_keep_mutex_storage() {
 }
 
 #[test]
-fn primitive_ref_locals_and_params_use_atomic_storage() {
+fn primitive_ref_locals_and_params_use_mutex_storage() {
     let output = transpile_source(
         "fn increment_ref(ref counter: Int) {
              counter += 1
@@ -247,19 +246,17 @@ fn primitive_ref_locals_and_params_use_atomic_storage() {
          }",
     );
 
-    assert!(
-        output.contains("fn increment_ref(counter: std::sync::Arc<std::sync::atomic::AtomicI64>)")
-    );
-    assert!(output.contains(
-        "let mut counter: std::sync::Arc<std::sync::atomic::AtomicI64> = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0))"
-    ));
-    assert!(output.contains("counter.store(42, std::sync::atomic::Ordering::Relaxed)"));
-    assert!(output.contains("counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)"));
-    assert!(output.contains("counter.load(std::sync::atomic::Ordering::Relaxed)"));
+    assert!(output.contains("fn increment_ref(counter: std::sync::Arc<std::sync::Mutex<i64>>)"));
+    assert!(output
+        .contains("let mut counter: std::sync::Arc<std::sync::Mutex<i64>> = (&(0)).__to_ref()"));
+    assert!(output.contains("*counter.lock().unwrap() = 42"));
+    assert!(output.contains("*counter.lock().unwrap() += 1"));
+    assert!(output.matches("counter.lock().unwrap()").count() >= 3);
+    assert!(!output.contains("Atomic"));
 }
 
 #[test]
-fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
+fn primitive_ref_mut_arguments_use_one_mutex_guard() {
     let output = transpile_source(
         "fn bump(mut value: Int) {
              value += 1
@@ -270,12 +267,32 @@ fn primitive_ref_mut_arguments_store_back_through_atomic_storage() {
          }",
     );
 
-    assert!(output.contains(
-        "let mut __galvan_atomic_arg_0 = counter.load(std::sync::atomic::Ordering::Relaxed)"
-    ));
-    assert!(output.contains("bump(&mut __galvan_atomic_arg_0)"));
-    assert!(output
-        .contains("counter.store(__galvan_atomic_arg_0, std::sync::atomic::Ordering::Relaxed)"));
+    assert!(
+        output.contains("bump(&mut *counter.lock().unwrap())"),
+        "got: {output}"
+    );
+    assert!(!output.contains("fetch_update"), "got: {output}");
+}
+
+#[test]
+fn primitive_ref_compound_assignments_use_mutex_guards() {
+    let output = transpile_source(
+        "fn check() {
+             ref counter = 2
+             counter *= 3
+             counter ^= 4
+         }",
+    );
+
+    assert!(
+        output.contains("*counter.lock().unwrap() *= 3"),
+        "got: {output}"
+    );
+    assert!(
+        output.contains("let mut __guard = counter.lock().unwrap()"),
+        "got: {output}"
+    );
+    assert!(!output.contains("fetch_update"), "got: {output}");
 }
 
 #[test]
@@ -322,4 +339,12 @@ fn rejects_invalid_main_function_signatures() {
     assert!(transpile(vec![Source::from_string("fn main(value: Int) {}")]).is_err());
     assert!(transpile(vec![Source::from_string("main {}")]).is_err());
     assert!(transpile(vec![Source::from_string("fn main() {} cmd main() {}")]).is_err());
+}
+
+#[test]
+fn transpiles_positional_tuple_struct_construction() {
+    let output = transpile_source("type Wrapper(Int)\nfn make() -> Wrapper { Wrapper(5) }");
+
+    assert!(output.contains("struct Wrapper(i64)"));
+    assert!(output.contains("Wrapper(5)"));
 }

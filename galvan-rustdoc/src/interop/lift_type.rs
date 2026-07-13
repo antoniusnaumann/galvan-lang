@@ -1,5 +1,3 @@
-use serde_json::Value;
-
 use galvan_ast::{
     ArrayTypeItem, BasicTypeItem, Ident, ParametricTypeItem, ResultTypeItem, Span, TypeElement,
     TypeIdent,
@@ -8,13 +6,10 @@ use galvan_ast::{
 use crate::model::{RustArgConversion, RustReturnConversion};
 
 use super::lift_model::LiftedType;
-use super::rustdoc_path::resolved_path_segments_raw;
 
-pub(super) fn result_type(success: Option<&LiftedType>, error: Option<TypeElement>) -> LiftedType {
+pub(super) fn result_type(success: &LiftedType, error: Option<TypeElement>) -> LiftedType {
     LiftedType::new(TypeElement::Result(Box::new(ResultTypeItem {
-        success: success
-            .map(|arg| arg.ty.clone())
-            .unwrap_or_else(TypeElement::infer),
+        success: success.ty.clone(),
         error,
         span: Span::default(),
     })))
@@ -24,7 +19,6 @@ pub(super) fn member_arg_conversion(return_conversion: RustReturnConversion) -> 
     match return_conversion {
         RustReturnConversion::None => RustArgConversion::None,
         RustReturnConversion::BoxDeref => RustArgConversion::BoxNew,
-        RustReturnConversion::RcCloneDeref => RustArgConversion::RcNew,
     }
 }
 
@@ -45,60 +39,6 @@ pub(super) fn array_type(inner: LiftedType) -> LiftedType {
         elements: inner.ty,
         span: Span::default(),
     })))
-}
-
-pub(super) fn function_pointer_input_type(input: &Value) -> &Value {
-    input
-        .as_array()
-        .and_then(|pair| pair.get(1))
-        .unwrap_or(input)
-}
-
-pub(super) fn resolved_path_matches(resolved: &Value, expected: &[&str]) -> bool {
-    let Some(actual) = resolved_path_segments_raw(resolved) else {
-        return false;
-    };
-    actual.as_slice() == expected || actual.as_slice() == &expected[..expected.len() - 1]
-}
-
-pub(super) fn resolved_path_is_unqualified_or_in_crates(
-    resolved: &Value,
-    crate_names: &[&str],
-) -> bool {
-    let Some(actual) = resolved_path_segments_raw(resolved) else {
-        return true;
-    };
-    actual
-        .first()
-        .is_none_or(|first| crate_names.contains(first))
-}
-
-pub(super) fn resolved_path_is_unqualified_or_matches_any(
-    resolved: &Value,
-    expected_paths: &[&[&str]],
-) -> bool {
-    resolved_path_segments_raw(resolved).is_none()
-        || expected_paths
-            .iter()
-            .any(|expected| resolved_path_matches(resolved, expected))
-}
-
-pub(super) fn atomic_type(name: &str) -> Option<TypeElement> {
-    let galvan = match name {
-        "AtomicBool" => "Bool",
-        "AtomicI8" => "I8",
-        "AtomicI16" => "I16",
-        "AtomicI32" => "I32",
-        "AtomicI64" => "I64",
-        "AtomicIsize" => "ISize",
-        "AtomicU8" => "U8",
-        "AtomicU16" => "U16",
-        "AtomicU32" => "U32",
-        "AtomicU64" => "U64",
-        "AtomicUsize" => "USize",
-        _ => return None,
-    };
-    Some(plain_type(TypeIdent::new(galvan)))
 }
 
 pub(super) fn string_type() -> TypeElement {

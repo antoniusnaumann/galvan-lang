@@ -2,9 +2,7 @@ use galvan_ast::{DeclModifier, TypeElement};
 use galvan_hir::hir::*;
 use itertools::Itertools;
 
-use crate::codegen::{
-    atomic_ordering, atomic_ref_storage_type, ref_storage_type, wrap_ref_storage_value,
-};
+use crate::codegen::{ref_storage_type, wrap_ref_storage_value};
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::sanitize::sanitize_name;
@@ -99,10 +97,6 @@ impl Transpile for HirDeclaration {
 
 impl Transpile for HirAssignment {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        if self.deref_target && locks_atomic_target(&self.target) {
-            return transpile_atomic_ref_assignment(self, ctx, errors);
-        }
-
         let prefix = if self.deref_target { "*" } else { "" };
 
         // Assigning through an index on a dictionary or set becomes an insert
@@ -191,53 +185,6 @@ impl Transpile for HirAssignment {
 /// Whether the rendered target ends in a mutex lock (`ref` variables)
 fn locks_target(target: &HirExpression) -> bool {
     target.adjustments.last() == Some(&Adjustment::LockRef)
-}
-
-fn locks_atomic_target(target: &HirExpression) -> bool {
-    locks_target(target) && atomic_ref_storage_type(&target.ty).is_some()
-}
-
-fn transpile_atomic_ref_assignment(
-    assignment: &HirAssignment,
-    ctx: &Context,
-    errors: &mut ErrorCollector,
-) -> String {
-    let target = transpile_without_final_lock(&assignment.target, ctx, errors);
-    let value = assignment.value.transpile(ctx, errors);
-    let ordering = atomic_ordering();
-
-    match assignment.operator {
-        HirAssignmentOperator::Assign => format!("{target}.store({value}, {ordering})"),
-        HirAssignmentOperator::AddAssign => format!("{target}.fetch_add({value}, {ordering})"),
-        HirAssignmentOperator::SubAssign => format!("{target}.fetch_sub({value}, {ordering})"),
-        HirAssignmentOperator::MulAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value *= {value}; {target}.store(__value, {ordering}); }}")
-        }
-        HirAssignmentOperator::DivAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value /= {value}; {target}.store(__value, {ordering}); }}")
-        }
-        HirAssignmentOperator::RemAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value %= {value}; {target}.store(__value, {ordering}); }}")
-        }
-        HirAssignmentOperator::PowAssign => {
-            format!("{{ let mut __value = {target}.load({ordering}); __value = __value.pow({value}); {target}.store(__value, {ordering}); }}")
-        }
-        HirAssignmentOperator::ConcatAssign(kind) => {
-            transpile_concat_assign(assignment, kind, ctx, errors, "")
-        }
-    }
-}
-
-fn transpile_without_final_lock(
-    expression: &HirExpression,
-    ctx: &Context,
-    errors: &mut ErrorCollector,
-) -> String {
-    let mut base = expression.clone();
-    if base.adjustments.last() == Some(&Adjustment::LockRef) {
-        base.adjustments.pop();
-    }
-    base.transpile(ctx, errors)
 }
 
 /// `++=` appends an element or extends with a collection; the shape was

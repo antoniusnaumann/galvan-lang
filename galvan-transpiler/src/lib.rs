@@ -330,21 +330,55 @@ pub enum TranspileError {
 fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
     let asts = sources
         .into_iter()
+        .map(|source| source.try_into_ast())
+        .collect::<Result<Vec<_>, _>>()?;
+    transpile_asts(asts)
+}
+
+/// Transpiles while reporting recoverable rustdoc setup failures to the caller.
+/// The plain [`transpile`] entry point treats the same failures as errors.
+pub fn transpile_sources_with_rustdoc_warnings(
+    sources: Vec<Source>,
+    rustdoc_warning: impl FnMut(&RustdocError),
+) -> Result<Vec<TranspileOutput>, TranspileError> {
+    let asts = sources
+        .into_iter()
         .map(|s| s.try_into_ast())
         .collect::<Result<Vec<_>, _>>()?;
 
-    transpile_asts(asts)
+    transpile_asts_with_rustdoc_warnings(asts, rustdoc_warning)
 }
 
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
     let segmented = asts.segmented()?;
     let rust_interop =
         RustInterop::from_crates_and_uses(qualified_namespaces(&segmented), &segmented.uses)?;
+    transpile_segmented_asts(segmented, rust_interop)
+}
+
+fn transpile_asts_with_rustdoc_warnings(
+    asts: Vec<Ast>,
+    rustdoc_warning: impl FnMut(&RustdocError),
+) -> Result<Vec<TranspileOutput>, TranspileError> {
+    let segmented = asts.segmented()?;
+    let rust_interop = RustInterop::from_crates_and_uses_with_warnings(
+        qualified_namespaces(&segmented),
+        &segmented.uses,
+        rustdoc_warning,
+    )?;
+    transpile_segmented_asts(segmented, rust_interop)
+}
+
+fn transpile_segmented_asts(
+    segmented: SegmentedAsts,
+    rust_interop: RustInterop,
+) -> Result<Vec<TranspileOutput>, TranspileError> {
     let checked = typecheck_with_interop(segmented, &rust_interop);
     let (module, mut errors) = (checked.module, checked.errors);
+    let rust_types = codegen_rust_types(&rust_interop);
 
     let mut builtins = builtins();
-    for ty in &rust_interop.types {
+    for ty in &rust_types {
         builtins.types.insert(
             ty.name.clone(),
             RustType::new(
@@ -361,11 +395,34 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     for ty in &module.types {
         ctx.lookup.types.insert(ty.item.ident().clone(), ty);
     }
-    for ty in &rust_interop.types {
+    for ty in rust_types {
         ctx.lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
     }
 
     transpile_module(&module, &ctx, &mut errors)
+}
+
+fn codegen_rust_types(rust_interop: &RustInterop) -> Vec<&galvan_rustdoc::RustTypeDecl> {
+    let mut by_name = HashMap::new();
+    for ty in &rust_interop.types {
+        by_name
+            .entry(ty.name.clone())
+            .and_modify(|existing: &mut Option<&galvan_rustdoc::RustTypeDecl>| {
+                if existing.is_some_and(|existing| existing.rust_path != ty.rust_path) {
+                    *existing = None;
+                }
+            })
+            .or_insert(Some(ty));
+    }
+    for ty in rust_interop.imported_types() {
+        by_name.insert(ty.name.clone(), Some(ty));
+    }
+
+    by_name
+        .into_values()
+        .flatten()
+        .sorted_by(|left, right| left.name.as_str().cmp(right.name.as_str()))
+        .collect()
 }
 
 fn qualified_namespaces(asts: &SegmentedAsts) -> HashSet<String> {
@@ -414,6 +471,9 @@ fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashS
         ExpressionKind::FunctionCall(call) => {
             collect_call_namespaces(call, namespaces);
         }
+        ExpressionKind::AssociatedFunctionCall(call) => {
+            collect_call_namespaces(&call.call, namespaces);
+        }
         ExpressionKind::ElseExpression(else_expression) => {
             collect_expression_namespaces(&else_expression.receiver, namespaces);
             collect_body_namespaces(&else_expression.block.body, namespaces);
@@ -456,7 +516,10 @@ fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashS
         ExpressionKind::Group(group) => {
             collect_expression_namespaces(&group.inner, namespaces);
         }
-        ExpressionKind::EnumAccess(_) | ExpressionKind::Literal(_) | ExpressionKind::Ident(_) => {}
+        ExpressionKind::AssociatedConstant(_)
+        | ExpressionKind::EnumAccess(_)
+        | ExpressionKind::Literal(_)
+        | ExpressionKind::Ident(_) => {}
     }
 }
 
@@ -495,6 +558,11 @@ fn collect_collection_namespaces(literal: &CollectionLiteral, namespaces: &mut H
     match literal {
         CollectionLiteral::ArrayLiteral(array) => {
             for element in &array.elements {
+                collect_expression_namespaces(element, namespaces);
+            }
+        }
+        CollectionLiteral::TupleLiteral(tuple) => {
+            for element in &tuple.elements {
                 collect_expression_namespaces(element, namespaces);
             }
         }
@@ -1081,6 +1149,52 @@ impl TranspileErrors<'_> {
 
 pub fn transpile(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
     transpile_sources(sources)
+}
+
+#[cfg(test)]
+mod rust_type_mapping_tests {
+    use super::*;
+
+    fn empty_type(name: &str) -> TypeDecl {
+        TypeDecl::Empty(EmptyTypeDecl {
+            visibility: Visibility::public(),
+            ident: TypeIdent::new(name),
+            generic_params: Vec::new(),
+            span: galvan_ast::Span::default(),
+        })
+    }
+
+    #[test]
+    fn codegen_types_require_unambiguous_or_explicit_rust_paths() {
+        let mut interop = RustInterop::empty();
+        interop.add_type_decl(
+            "demo",
+            "Ticket",
+            "::demo::http::Ticket",
+            empty_type("Ticket"),
+        );
+        interop.add_type_decl("demo", "Ticket", "::demo::db::Ticket", empty_type("Ticket"));
+
+        assert!(codegen_rust_types(&interop).is_empty());
+
+        interop.import_uses(&[ToplevelItem {
+            item: UseDecl {
+                path: UsePath {
+                    segments: ["demo", "http", "Ticket"]
+                        .into_iter()
+                        .map(Ident::new)
+                        .collect(),
+                    span: galvan_ast::Span::default(),
+                },
+                span: galvan_ast::Span::default(),
+            },
+            source: Source::Builtin,
+        }]);
+
+        let types = codegen_rust_types(&interop);
+        assert_eq!(types.len(), 1);
+        assert_eq!(types[0].rust_path.as_ref(), "::demo::http::Ticket");
+    }
 }
 
 mod transpile_item;

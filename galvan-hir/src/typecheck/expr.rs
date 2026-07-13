@@ -1,13 +1,16 @@
 //! Expression lowering: turns AST expressions into typed [`HirExpression`]s.
 
+use std::collections::HashMap;
+
 use galvan_ast::{
-    AstNode, BasicTypeItem, Closure, ClosureParameter, ClosureTypeItem, CollectionLiteral,
-    ComparisonOperator, ConstructorCall, DeclModifier, DictLiteralElement, ElseExpression,
-    EnumConstructor, Expression, ExpressionKind, FunctionCall, FunctionCallArg, Ident,
-    InfixExpression, InfixOperation, Literal, MatchArm, MatchBindingPattern, MatchExpression,
-    MatchNamedPatternArg, MatchPattern, MatchPatternArg, MemberOperator, NeverTypeItem,
-    OptionalTypeItem, Ownership, Param, ParametricTypeItem, PostfixExpression, ResultTypeItem,
-    Span, TypeDecl, TypeElement, TypeIdent, UsePath,
+    AssociatedConstant, AssociatedFunctionCall, AstNode, BasicTypeItem, Closure, ClosureParameter,
+    ClosureTypeItem, CollectionLiteral, ComparisonOperator, ConstructorCall, ConstructorCallArg,
+    DeclModifier, DictLiteralElement, ElseExpression, EnumConstructor, Expression, ExpressionKind,
+    FnSignature, FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation, Literal,
+    MatchArm, MatchBindingPattern, MatchExpression, MatchNamedPatternArg, MatchPattern,
+    MatchPatternArg, MemberOperator, NeverTypeItem, OptionalTypeItem, Ownership, Param,
+    ParametricTypeItem, PostfixExpression, ResultTypeItem, Span, TupleTypeItem, TypeDecl,
+    TypeElement, TypeIdent, UsePath,
 };
 use galvan_resolver::Lookup;
 
@@ -16,6 +19,31 @@ use crate::error::{ErrorCollector, TranspilerError};
 use crate::hir::*;
 
 use super::{concat_kind, types_compatible, Checker, Expected, Variable};
+
+struct RustCall<'a> {
+    function: &'a galvan_rustdoc::RustFunctionDecl,
+    receiver: Option<(HirExpression, Option<DeclModifier>)>,
+    namespace: Option<UsePath>,
+    ident: &'a Ident,
+    labels: Vec<Ident>,
+    arguments: &'a [FunctionCallArg],
+    expected: &'a Expected,
+    associated_receiver: Option<&'a TypeIdent>,
+    span: Span,
+}
+
+struct LoweredCallArg {
+    param_index: usize,
+    value: HirExpression,
+    modifier: Option<DeclModifier>,
+    span: Span,
+}
+
+struct RustGenericConflict {
+    ident: Ident,
+    existing: TypeElement,
+    actual: TypeElement,
+}
 
 impl Checker<'_> {
     pub(crate) fn lower_expression(
@@ -30,6 +58,12 @@ impl Checker<'_> {
             }
             ExpressionKind::Match(match_expression) => {
                 self.lower_match_expression(match_expression, expected, span)
+            }
+            ExpressionKind::AssociatedFunctionCall(call) => {
+                self.lower_associated_rust_call(call, expected, span)
+            }
+            ExpressionKind::AssociatedConstant(constant) => {
+                self.lower_associated_rust_constant(constant, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
@@ -251,6 +285,7 @@ impl Checker<'_> {
             call.namespace.as_ref(),
             &call.identifier,
             &call.arguments,
+            expected,
             span,
         )
     }
@@ -292,6 +327,7 @@ impl Checker<'_> {
         namespace: Option<&UsePath>,
         ident: &Ident,
         arguments: &[FunctionCallArg],
+        expected: &Expected,
         span: Span,
     ) -> HirExpression {
         if let Some(namespace) = namespace {
@@ -300,6 +336,28 @@ impl Checker<'_> {
             let receiver_ident = receiver
                 .as_ref()
                 .and_then(|(receiver, _)| receiver_type_ident(&receiver.ty));
+            if let Some(function) = receiver_ident.as_ref().and_then(|receiver| {
+                namespace.segments.first().and_then(|segment| {
+                    self.rust_interop.associated_method_function(
+                        Some(segment.as_str()),
+                        receiver,
+                        ident,
+                        &labels_ref,
+                    )
+                })
+            }) {
+                return self.lower_rust_call(RustCall {
+                    function,
+                    receiver,
+                    namespace: Some(namespace.clone()),
+                    ident,
+                    labels,
+                    arguments,
+                    expected,
+                    associated_receiver: receiver_ident.as_ref(),
+                    span,
+                });
+            }
             if let Some(function) = namespace.segments.first().and_then(|segment| {
                 self.rust_interop.function(
                     Some(segment.as_str()),
@@ -308,18 +366,19 @@ impl Checker<'_> {
                     &labels_ref,
                 )
             }) {
-                return self.lower_rust_call(
+                return self.lower_rust_call(RustCall {
                     function,
                     receiver,
-                    Some(namespace.clone()),
+                    namespace: Some(namespace.clone()),
                     ident,
                     labels,
                     arguments,
+                    expected,
+                    associated_receiver: None,
                     span,
-                );
+                });
             }
 
-            let labels = argument_labels(arguments);
             let args = arguments
                 .iter()
                 .map(|argument| self.lower_unknown_argument(argument))
@@ -332,10 +391,7 @@ impl Checker<'_> {
                         receiver,
                         receiver_modifier: modifier,
                         namespace,
-                        rust_path: None,
-                        rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                        rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
-                        rust_arg_conversions: Vec::new(),
+                        rust: None,
                         ident: ident.clone(),
                         labels,
                         args,
@@ -343,9 +399,7 @@ impl Checker<'_> {
                 }
                 None => HirExpressionKind::FunctionCall(HirFunctionCall {
                     namespace,
-                    rust_path: None,
-                    rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                    rust_arg_conversions: Vec::new(),
+                    rust: None,
                     ident: ident.clone(),
                     labels,
                     args,
@@ -366,9 +420,7 @@ impl Checker<'_> {
                     return HirExpression::new(
                         HirExpressionKind::FunctionCall(HirFunctionCall {
                             namespace: None,
-                            rust_path: None,
-                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                            rust_arg_conversions: Vec::new(),
+                            rust: None,
                             ident: ident.clone(),
                             labels: Vec::new(),
                             args,
@@ -403,7 +455,33 @@ impl Checker<'_> {
             self.rust_interop
                 .function(None, receiver_ident.as_ref(), ident, &labels_ref)
         {
-            return self.lower_rust_call(function, receiver, None, ident, labels, arguments, span);
+            return self.lower_rust_call(RustCall {
+                function,
+                receiver,
+                namespace: None,
+                ident,
+                labels,
+                arguments,
+                expected,
+                associated_receiver: None,
+                span,
+            });
+        }
+        if let Some(function) = receiver_ident.as_ref().and_then(|receiver| {
+            self.rust_interop
+                .associated_method_function(None, receiver, ident, &labels_ref)
+        }) {
+            return self.lower_rust_call(RustCall {
+                function,
+                receiver,
+                namespace: None,
+                ident,
+                labels,
+                arguments,
+                expected,
+                associated_receiver: receiver_ident.as_ref(),
+                span,
+            });
         }
 
         if receiver.is_none() && function.is_none() {
@@ -438,10 +516,7 @@ impl Checker<'_> {
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
-                            rust_path: None,
-                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
-                            rust_arg_conversions: Vec::new(),
+                            rust: None,
                             ident: ident.clone(),
                             labels: receiver_labels,
                             args,
@@ -474,10 +549,7 @@ impl Checker<'_> {
                                 .receiver()
                                 .and_then(|receiver| receiver.decl_modifier),
                             namespace: None,
-                            rust_path: None,
-                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
-                            rust_arg_conversions: Vec::new(),
+                            rust: None,
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -485,9 +557,7 @@ impl Checker<'_> {
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
-                        rust_path: None,
-                        rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                        rust_arg_conversions: Vec::new(),
+                        rust: None,
                         ident: ident.clone(),
                         labels: labels.clone(),
                         args,
@@ -507,10 +577,7 @@ impl Checker<'_> {
                             receiver,
                             receiver_modifier: modifier,
                             namespace: None,
-                            rust_path: None,
-                            rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                            rust_receiver_conversion: galvan_rustdoc::RustArgConversion::None,
-                            rust_arg_conversions: Vec::new(),
+                            rust: None,
                             ident: ident.clone(),
                             labels: labels.clone(),
                             args,
@@ -518,9 +585,7 @@ impl Checker<'_> {
                     }
                     None => HirExpressionKind::FunctionCall(HirFunctionCall {
                         namespace: None,
-                        rust_path: None,
-                        rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                        rust_arg_conversions: Vec::new(),
+                        rust: None,
                         ident: ident.clone(),
                         labels,
                         args,
@@ -531,20 +596,25 @@ impl Checker<'_> {
         }
     }
 
-    fn lower_rust_call(
-        &mut self,
-        function: &galvan_rustdoc::RustFunctionDecl,
-        receiver: Option<(HirExpression, Option<DeclModifier>)>,
-        namespace: Option<UsePath>,
-        ident: &Ident,
-        labels: Vec<Ident>,
-        arguments: &[FunctionCallArg],
-        span: Span,
-    ) -> HirExpression {
-        let signature = function.decl.item.signature.clone();
-        let args = self.lower_call_args(&signature.parameters.params, arguments);
+    fn lower_rust_call(&mut self, call: RustCall<'_>) -> HirExpression {
+        let mut signature = call.function.decl.item.signature.clone();
+        let binding_signature = signature.clone();
+        let mut generic_substitutions = self.rust_call_generic_substitutions(
+            &signature,
+            call.receiver.as_ref(),
+            call.associated_receiver,
+            call.expected,
+            call.span,
+        );
+        substitute_signature_generics(&mut signature, &generic_substitutions);
+        let args = self.lower_rust_call_args(
+            &mut signature,
+            &binding_signature.parameters.params,
+            call.arguments,
+            &mut generic_substitutions,
+        );
         let receiver_conversion = if signature.receiver().is_some() {
-            function
+            call.function
                 .arg_conversions
                 .first()
                 .copied()
@@ -552,57 +622,166 @@ impl Checker<'_> {
         } else {
             galvan_rustdoc::RustArgConversion::None
         };
-        let arg_conversions = function
+        let arg_conversions = call
+            .function
             .arg_conversions
             .iter()
             .copied()
             .skip(usize::from(signature.receiver().is_some()))
             .collect::<Vec<_>>();
-        let kind = match receiver {
+        let kind = match call.receiver {
             Some((receiver, modifier)) => {
                 let receiver =
-                    self.lower_known_receiver(receiver, modifier, signature.receiver(), span);
+                    self.lower_known_receiver(receiver, modifier, signature.receiver(), call.span);
                 HirExpressionKind::MethodCall(Box::new(HirMethodCall {
                     receiver,
                     receiver_modifier: signature
                         .receiver()
                         .and_then(|receiver| receiver.decl_modifier),
-                    namespace,
-                    rust_path: Some(function.rust_path.clone()),
-                    rust_return_conversion: function.return_conversion,
-                    rust_receiver_conversion: receiver_conversion,
-                    rust_arg_conversions: arg_conversions,
-                    ident: ident.clone(),
-                    labels,
+                    namespace: call.namespace,
+                    rust: Some(HirRustMethodCall {
+                        rust_path: call.function.rust_path.clone(),
+                        return_conversion: call.function.return_conversion,
+                        receiver_conversion,
+                        arg_conversions,
+                    }),
+                    ident: call.ident.clone(),
+                    labels: call.labels,
                     args,
                 }))
             }
             None => HirExpressionKind::FunctionCall(HirFunctionCall {
-                namespace,
-                rust_path: Some(function.rust_path.clone()),
-                rust_return_conversion: function.return_conversion,
-                rust_arg_conversions: arg_conversions,
-                ident: ident.clone(),
-                labels,
+                namespace: call.namespace,
+                rust: Some(HirRustCall {
+                    rust_path: call.function.rust_path.clone(),
+                    return_conversion: call.function.return_conversion,
+                    arg_conversions,
+                }),
+                ident: call.ident.clone(),
+                labels: call.labels,
                 args,
             }),
         };
         let expression = HirExpression::new(
             kind,
             signature.return_type,
-            if function.borrowed_return {
+            if call.function.borrowed_return {
                 Ownership::Borrowed
             } else {
                 Ownership::UniqueOwned
             },
-            span,
+            call.span,
         );
 
-        if function.borrowed_return {
+        if call.function.borrowed_return {
             self.ensure_owned(expression)
         } else {
             expression
         }
+    }
+
+    fn rust_call_generic_substitutions(
+        &mut self,
+        signature: &FnSignature,
+        receiver: Option<&(HirExpression, Option<DeclModifier>)>,
+        associated_receiver: Option<&TypeIdent>,
+        expected: &Expected,
+        span: Span,
+    ) -> HashMap<String, TypeElement> {
+        let mut substitutions = HashMap::new();
+        let mut conflicts = Vec::new();
+
+        if let Some(receiver) = associated_receiver {
+            if let Some(decl) = self.lookup.resolve_type(receiver) {
+                for param in type_decl_generic_params(&decl.item) {
+                    substitutions.insert(param.as_str().to_string(), TypeElement::infer());
+                }
+            }
+        }
+
+        if let (Some((receiver, _)), Some(param)) = (receiver, signature.receiver()) {
+            collect_rust_call_generic_bindings(
+                &param.param_type,
+                &receiver.ty,
+                &mut substitutions,
+                &mut conflicts,
+            );
+        }
+
+        if !expected.ty.is_infer() && !expected.ty.is_void() {
+            collect_rust_call_generic_bindings(
+                &signature.return_type,
+                &expected.ty,
+                &mut substitutions,
+                &mut conflicts,
+            );
+        }
+
+        self.report_rust_generic_conflicts(conflicts, span);
+
+        substitutions
+    }
+
+    fn report_rust_generic_conflicts(&mut self, conflicts: Vec<RustGenericConflict>, span: Span) {
+        for conflict in conflicts {
+            self.report_rust_generic_conflict(conflict, Some(span.into()));
+        }
+    }
+
+    fn report_rust_generic_conflict(
+        &mut self,
+        conflict: RustGenericConflict,
+        span: Option<crate::error::Span>,
+    ) {
+        self.errors.error_with_span(
+            TranspilerError::InvalidSyntax {
+                message: format!(
+                    "conflicting type inference for Rust generic '{}': inferred {} and {}",
+                    conflict.ident, conflict.existing, conflict.actual
+                ),
+            },
+            span,
+        );
+    }
+
+    fn lower_rust_call_args(
+        &mut self,
+        signature: &mut FnSignature,
+        binding_params: &[Param],
+        arguments: &[FunctionCallArg],
+        substitutions: &mut HashMap<String, TypeElement>,
+    ) -> Vec<HirExpression> {
+        let lowered = self.lower_call_arg_values(&signature.parameters.params, arguments);
+        let binding_params = call_params(binding_params);
+        for argument in &lowered {
+            let Some(binding_param) = binding_params.get(argument.param_index) else {
+                continue;
+            };
+            let mut conflicts = Vec::new();
+            collect_rust_call_generic_bindings(
+                &binding_param.param_type,
+                &argument.value.ty,
+                substitutions,
+                &mut conflicts,
+            );
+            for conflict in conflicts {
+                self.report_rust_generic_conflict(conflict, Some(argument.span.into()));
+            }
+        }
+
+        substitute_signature_generics(signature, substitutions);
+        let params = call_params(&signature.parameters.params)
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        lowered
+            .into_iter()
+            .zip(&params)
+            .map(|(lowered, param)| {
+                self.lower_known_argument(lowered.value, lowered.modifier, param, lowered.span)
+            })
+            .collect()
     }
 
     fn lower_known_receiver(
@@ -642,10 +821,23 @@ impl Checker<'_> {
         params: &[Param],
         arguments: &[FunctionCallArg],
     ) -> Vec<HirExpression> {
-        let params = params
-            .iter()
-            .skip_while(|param| param.identifier.is_self())
-            .collect::<Vec<_>>();
+        let lowered = self.lower_call_arg_values(params, arguments);
+        let params = call_params(params);
+        lowered
+            .into_iter()
+            .zip(&params)
+            .map(|(argument, param)| {
+                self.lower_known_argument(argument.value, argument.modifier, param, argument.span)
+            })
+            .collect()
+    }
+
+    fn lower_call_arg_values(
+        &mut self,
+        params: &[Param],
+        arguments: &[FunctionCallArg],
+    ) -> Vec<LoweredCallArg> {
+        let params = call_params(params);
 
         if params.len() != arguments.len() {
             // Point at the arguments when there are any; the caller's span is
@@ -673,7 +865,8 @@ impl Checker<'_> {
         params
             .into_iter()
             .zip(arguments)
-            .map(|(param, argument)| {
+            .enumerate()
+            .map(|(param_index, (param, argument))| {
                 self.validate_argument_label(param, argument);
                 let (lowered, expression_modifier) = self.lower_call_value(&argument.expression);
                 let modifier = self.merge_argument_modifiers(
@@ -681,7 +874,12 @@ impl Checker<'_> {
                     expression_modifier,
                     argument.expression.span,
                 );
-                self.lower_known_argument(lowered, modifier, param, argument.expression.span)
+                LoweredCallArg {
+                    param_index,
+                    value: lowered,
+                    modifier,
+                    span: argument.expression.span,
+                }
             })
             .collect()
     }
@@ -961,9 +1159,7 @@ impl Checker<'_> {
         HirExpression::new(
             HirExpressionKind::FunctionCall(HirFunctionCall {
                 namespace: None,
-                rust_path: None,
-                rust_return_conversion: galvan_rustdoc::RustReturnConversion::None,
-                rust_arg_conversions: Vec::new(),
+                rust: None,
                 ident: call.identifier.clone(),
                 labels: Vec::new(),
                 args,
@@ -2301,32 +2497,23 @@ impl Checker<'_> {
     fn lower_member(
         &mut self,
         operation: &InfixOperation<MemberOperator>,
-        _expected: &Expected,
+        expected: &Expected,
         span: Span,
     ) -> HirExpression {
         match operation.operator {
             MemberOperator::Dot => match &operation.rhs.kind {
                 ExpressionKind::FunctionCall(call) => {
-                    if let Some(associated) =
-                        self.lower_associated_rust_call(&operation.lhs, call, span)
-                    {
-                        return associated;
-                    }
                     let (receiver, modifier) = self.lower_call_value(&operation.lhs);
                     self.lower_call(
                         Some((receiver, modifier)),
                         call.namespace.as_ref(),
                         &call.identifier,
                         &call.arguments,
+                        expected,
                         span,
                     )
                 }
                 ExpressionKind::Ident(field) => {
-                    if let Some(constant) =
-                        self.lower_associated_rust_constant(&operation.lhs, field, span)
-                    {
-                        return constant;
-                    }
                     let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
                     if let Some(owner) = receiver_type_ident(&receiver.ty) {
@@ -2372,41 +2559,59 @@ impl Checker<'_> {
 
     fn lower_associated_rust_constant(
         &mut self,
-        lhs: &Expression,
-        constant_name: &Ident,
+        constant: &AssociatedConstant,
         span: Span,
-    ) -> Option<HirExpression> {
-        let ExpressionKind::Ident(type_name) = &lhs.kind else {
-            return None;
-        };
-        let receiver = TypeIdent::new(type_name.as_str());
-        self.lookup.resolve_type(&receiver)?;
-        let constant = self
-            .rust_interop
-            .associated_constant(None, &receiver, constant_name)?;
+    ) -> HirExpression {
+        if self.lookup.resolve_type(&constant.receiver).is_none() {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: constant.receiver.to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated constant receiver", span);
+        }
 
-        Some(HirExpression::new(
+        let Some(decl) =
+            self.rust_interop
+                .associated_constant(None, &constant.receiver, &constant.name)
+        else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownIdentifier {
+                    name: format!("{}.{}", constant.receiver, constant.name),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated constant", span);
+        };
+
+        HirExpression::new(
             HirExpressionKind::RustConstant(HirRustConstant {
-                rust_path: constant.rust_path.clone(),
+                rust_path: decl.rust_path.clone(),
             }),
-            constant.ty.clone(),
+            decl.ty.clone(),
             Ownership::UniqueOwned,
             span,
-        ))
+        )
     }
 
     fn lower_associated_rust_call(
         &mut self,
-        lhs: &Expression,
-        call: &FunctionCall,
+        associated: &AssociatedFunctionCall,
+        expected: &Expected,
         span: Span,
-    ) -> Option<HirExpression> {
-        let ExpressionKind::Ident(type_name) = &lhs.kind else {
-            return None;
-        };
-        let receiver = TypeIdent::new(type_name.as_str());
-        self.lookup.resolve_type(&receiver)?;
+    ) -> HirExpression {
+        if self.lookup.resolve_type(&associated.receiver).is_none() {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: associated.receiver.to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated function receiver", span);
+        }
 
+        let call = &associated.call;
         let labels = argument_labels(&call.arguments);
         let labels_ref = label_refs(&labels);
         let namespace = call.namespace.as_ref().cloned();
@@ -2414,25 +2619,40 @@ impl Checker<'_> {
             namespace.segments.first().and_then(|segment| {
                 self.rust_interop.associated_function(
                     Some(segment.as_str()),
-                    &receiver,
+                    &associated.receiver,
                     &call.identifier,
                     &labels_ref,
                 )
             })
         } else {
-            self.rust_interop
-                .associated_function(None, &receiver, &call.identifier, &labels_ref)
-        }?;
+            self.rust_interop.associated_function(
+                None,
+                &associated.receiver,
+                &call.identifier,
+                &labels_ref,
+            )
+        };
+        let Some(function) = function else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownIdentifier {
+                    name: format!("{}.{}", associated.receiver, call.identifier),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown associated function", span);
+        };
 
-        Some(self.lower_rust_call(
+        self.lower_rust_call(RustCall {
             function,
-            None,
+            receiver: None,
             namespace,
-            &call.identifier,
+            ident: &call.identifier,
             labels,
-            &call.arguments,
+            arguments: &call.arguments,
+            expected,
+            associated_receiver: Some(&associated.receiver),
             span,
-        ))
+        })
     }
 
     fn lower_access_base(&mut self, expression: &Expression) -> (HirExpression, bool) {
@@ -2787,6 +3007,21 @@ impl Checker<'_> {
                     })),
                 )
             }
+            CollectionLiteral::TupleLiteral(tuple) => {
+                let elements: Vec<_> = tuple
+                    .elements
+                    .iter()
+                    .map(|element| self.lower_expression(element, &Expected::free()))
+                    .collect();
+                let element_tys = elements.iter().map(|element| element.ty.clone()).collect();
+                (
+                    HirCollection::Tuple(elements),
+                    TypeElement::Tuple(Box::new(TupleTypeItem {
+                        elements: element_tys,
+                        span: Span::default(),
+                    })),
+                )
+            }
             CollectionLiteral::SetLiteral(set) => {
                 let (elements, elem_ty) = self.lower_collection_elements(&set.elements);
                 (
@@ -2910,18 +3145,19 @@ impl Checker<'_> {
 
         let args = match type_decl.map(|decl| &decl.item) {
             Some(TypeDecl::Struct(decl)) => {
+                self.reject_positional_struct_arguments(constructor, span);
                 let mut args = Vec::with_capacity(decl.members.len());
                 for member in &decl.members {
                     let is_ref_field = matches!(member.decl_modifier, Some(DeclModifier::Ref));
                     let provided = constructor
                         .arguments
                         .iter()
-                        .find(|argument| argument.ident == member.ident);
-                    if let Some(argument) = provided {
+                        .find(|argument| argument.field_name.as_ref() == Some(&member.ident));
+                    if let Some(name) = provided.and_then(|argument| argument.field_name.as_ref()) {
                         self.index.reference_member(
                             &constructor.identifier,
-                            argument.ident.as_str(),
-                            argument.ident.span(),
+                            name.as_str(),
+                            name.span(),
                         );
                     }
                     let value = match provided {
@@ -3004,7 +3240,7 @@ impl Checker<'_> {
                             &mut inferred_type_args,
                         );
                         HirConstructorArg {
-                            field: argument.ident.clone(),
+                            field: tuple_field_name(argument, idx),
                             value,
                             store_as_ref: false,
                             rust_arg_conversion: rust_arg_conversions
@@ -3019,7 +3255,8 @@ impl Checker<'_> {
             _ => constructor
                 .arguments
                 .iter()
-                .map(|argument| {
+                .enumerate()
+                .map(|(idx, argument)| {
                     let value = self.lower_modified_value(
                         &argument.expression,
                         argument.modifier,
@@ -3028,7 +3265,7 @@ impl Checker<'_> {
                     );
                     let value = self.ensure_owned(value);
                     HirConstructorArg {
-                        field: argument.ident.clone(),
+                        field: tuple_field_name(argument, idx),
                         value,
                         store_as_ref: false,
                         rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
@@ -3047,6 +3284,27 @@ impl Checker<'_> {
             Ownership::UniqueOwned,
             span,
         )
+    }
+
+    /// Named structs must be constructed with `field: value` arguments. Anonymous
+    /// (positional) arguments are only valid for tuple structs, so reject them here
+    /// with a targeted diagnostic instead of letting them surface as missing fields.
+    fn reject_positional_struct_arguments(&mut self, constructor: &ConstructorCall, span: Span) {
+        if constructor
+            .arguments
+            .iter()
+            .any(|argument| argument.field_name.is_none())
+        {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: format!(
+                        "constructor for struct `{}` requires named `field: value` arguments",
+                        constructor.identifier
+                    ),
+                },
+                Some(span.into()),
+            );
+        }
     }
 
     fn lower_enum_constructor(
@@ -3183,6 +3441,135 @@ fn plain_type(ident: TypeIdent) -> TypeElement {
     })
 }
 
+fn type_decl_generic_params(decl: &TypeDecl) -> &[Ident] {
+    match decl {
+        TypeDecl::Struct(decl) => &decl.generic_params,
+        TypeDecl::Tuple(decl) => &decl.generic_params,
+        TypeDecl::Enum(decl) => &decl.generic_params,
+        TypeDecl::Alias(decl) => &decl.generic_params,
+        TypeDecl::Empty(decl) => &decl.generic_params,
+    }
+}
+
+fn collect_rust_call_generic_bindings(
+    declared: &TypeElement,
+    actual: &TypeElement,
+    substitutions: &mut HashMap<String, TypeElement>,
+    conflicts: &mut Vec<RustGenericConflict>,
+) {
+    match (declared, actual) {
+        (TypeElement::Generic(generic), actual) => {
+            bind_rust_call_generic(&generic.ident, actual, substitutions, conflicts);
+        }
+        (TypeElement::Plain(plain), actual) if substitutions.contains_key(plain.ident.as_str()) => {
+            bind_rust_call_generic(
+                &Ident::new(plain.ident.as_str()),
+                actual,
+                substitutions,
+                conflicts,
+            );
+        }
+        (TypeElement::Array(declared), TypeElement::Array(actual)) => {
+            collect_rust_call_generic_bindings(
+                &declared.elements,
+                &actual.elements,
+                substitutions,
+                conflicts,
+            );
+        }
+        (TypeElement::Optional(declared), TypeElement::Optional(actual)) => {
+            collect_rust_call_generic_bindings(
+                &declared.inner,
+                &actual.inner,
+                substitutions,
+                conflicts,
+            );
+        }
+        (TypeElement::Result(declared), TypeElement::Result(actual)) => {
+            collect_rust_call_generic_bindings(
+                &declared.success,
+                &actual.success,
+                substitutions,
+                conflicts,
+            );
+            if let (Some(declared), Some(actual)) = (&declared.error, &actual.error) {
+                collect_rust_call_generic_bindings(declared, actual, substitutions, conflicts);
+            }
+        }
+        (TypeElement::Tuple(declared), TypeElement::Tuple(actual)) => {
+            for (declared, actual) in declared.elements.iter().zip(&actual.elements) {
+                collect_rust_call_generic_bindings(declared, actual, substitutions, conflicts);
+            }
+        }
+        (TypeElement::Parametric(declared), TypeElement::Parametric(actual))
+            if declared.base_type == actual.base_type =>
+        {
+            for (declared, actual) in declared.type_args.iter().zip(&actual.type_args) {
+                collect_rust_call_generic_bindings(declared, actual, substitutions, conflicts);
+            }
+        }
+        (TypeElement::Closure(declared), TypeElement::Closure(actual)) => {
+            for (declared, actual) in declared.parameters.iter().zip(&actual.parameters) {
+                collect_rust_call_generic_bindings(declared, actual, substitutions, conflicts);
+            }
+            collect_rust_call_generic_bindings(
+                &declared.return_ty,
+                &actual.return_ty,
+                substitutions,
+                conflicts,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn bind_rust_call_generic(
+    ident: &Ident,
+    actual: &TypeElement,
+    substitutions: &mut HashMap<String, TypeElement>,
+    conflicts: &mut Vec<RustGenericConflict>,
+) {
+    if actual.is_infer() {
+        substitutions
+            .entry(ident.as_str().to_string())
+            .or_insert_with(TypeElement::infer);
+        return;
+    }
+
+    let entry = substitutions
+        .entry(ident.as_str().to_string())
+        .or_insert_with(TypeElement::infer);
+    if entry.is_infer() {
+        *entry = actual.clone();
+    } else if !types_compatible(entry, actual) || !types_compatible(actual, entry) {
+        conflicts.push(RustGenericConflict {
+            ident: ident.clone(),
+            existing: entry.clone(),
+            actual: actual.clone(),
+        });
+    }
+}
+
+fn substitute_signature_generics(
+    signature: &mut FnSignature,
+    substitutions: &HashMap<String, TypeElement>,
+) {
+    for param in &mut signature.parameters.params {
+        param.param_type.substitute_generics(substitutions);
+    }
+    signature.return_type.substitute_generics(substitutions);
+}
+
+/// The field identifier stored for a tuple-struct constructor argument. Tuple
+/// fields are positional, so an anonymous argument is keyed by its index; a name
+/// is only present when the caller redundantly labelled the argument.
+fn tuple_field_name(argument: &ConstructorCallArg, index: usize) -> Ident {
+    argument
+        .field_name
+        .clone()
+        .unwrap_or_else(|| Ident::new(&index.to_string()))
+}
+
 fn constructor_result_type(
     identifier: &TypeIdent,
     expected: &Expected,
@@ -3313,6 +3700,13 @@ fn argument_labels(arguments: &[FunctionCallArg]) -> Vec<Ident> {
 
 fn label_refs(labels: &[Ident]) -> Vec<&str> {
     labels.iter().map(|label| label.as_str()).collect()
+}
+
+fn call_params(params: &[Param]) -> Vec<&Param> {
+    params
+        .iter()
+        .skip_while(|param| param.identifier.is_self())
+        .collect()
 }
 
 /// Unifies the types of two branches of a conditional

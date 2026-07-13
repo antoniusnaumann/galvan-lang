@@ -6,6 +6,7 @@ use crate::model::{
 };
 
 use super::function_id::RustFunctionId;
+use super::state::Unambiguous;
 use super::RustInterop;
 
 impl RustInterop {
@@ -25,7 +26,7 @@ impl RustInterop {
         }
 
         self.by_imported_function
-            .get(&("".to_string(), id))
+            .get(&id)
             .and_then(|idx| self.functions.get(*idx))
     }
 
@@ -44,12 +45,25 @@ impl RustInterop {
                 .and_then(|idx| self.functions.get(*idx));
         }
 
-        self.by_namespace_associated_function
-            .iter()
-            .find(|((_, stored_receiver, stored_id), _)| {
-                stored_receiver == receiver && stored_id == &id
-            })
-            .and_then(|(_, idx)| self.functions.get(*idx))
+        self.unambiguous_associated_function(receiver, &id)
+    }
+
+    pub fn associated_method_function(
+        &self,
+        namespace: Option<&str>,
+        receiver: &TypeIdent,
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&RustFunctionDecl> {
+        let id = RustFunctionId::new(Some(receiver), name.as_str(), labels);
+        if let Some(namespace) = namespace {
+            return self
+                .by_namespace_associated_function
+                .get(&(namespace.to_string(), receiver.clone(), id))
+                .and_then(|idx| self.functions.get(*idx));
+        }
+
+        self.unambiguous_associated_function(receiver, &id)
     }
 
     pub fn imported_types(&self) -> impl Iterator<Item = &RustTypeDecl> {
@@ -74,9 +88,7 @@ impl RustInterop {
         receiver: &TypeIdent,
         field: &Ident,
     ) -> RustReturnConversion {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .and_then(|ty| {
                 ty.field_conversions
                     .iter()
@@ -87,9 +99,7 @@ impl RustInterop {
     }
 
     pub fn field_arg_conversion(&self, receiver: &TypeIdent, field: &Ident) -> RustArgConversion {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .and_then(|ty| {
                 ty.field_conversions
                     .iter()
@@ -100,9 +110,7 @@ impl RustInterop {
     }
 
     pub fn constructor_arg_conversions(&self, receiver: &TypeIdent) -> Vec<RustArgConversion> {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .map(|ty| ty.constructor_arg_conversions.clone())
             .unwrap_or_default()
     }
@@ -138,9 +146,7 @@ impl RustInterop {
         index: usize,
         field: Option<&Ident>,
     ) -> Option<&RustEnumVariantArgConversion> {
-        self.types
-            .iter()
-            .find(|ty| ty.name == *receiver)
+        self.unambiguous_type(receiver)
             .and_then(|ty| {
                 ty.enum_variant_conversions
                     .iter()
@@ -155,6 +161,12 @@ impl RustInterop {
                 }
                 conversion.args.get(index)
             })
+    }
+
+    fn unambiguous_type(&self, receiver: &TypeIdent) -> Option<&RustTypeDecl> {
+        let mut matches = self.types.iter().filter(|ty| ty.name == *receiver);
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
     }
 
     pub fn constant(&self, namespace: Option<&str>, name: &Ident) -> Option<&RustConstantDecl> {
@@ -183,11 +195,34 @@ impl RustInterop {
                 .and_then(|idx| self.constants.get(*idx));
         }
 
-        self.by_namespace_associated_constant
-            .iter()
-            .find(|((_, stored_receiver, stored_name), _)| {
-                stored_receiver == receiver && stored_name == name
-            })
-            .and_then(|(_, idx)| self.constants.get(*idx))
+        self.unambiguous_associated_constant(receiver, name)
+    }
+
+    fn unambiguous_associated_function(
+        &self,
+        receiver: &TypeIdent,
+        id: &RustFunctionId,
+    ) -> Option<&RustFunctionDecl> {
+        match self
+            .by_associated_function
+            .get(&(receiver.clone(), id.clone()))?
+        {
+            Unambiguous::One { idx, .. } => self.functions.get(*idx),
+            Unambiguous::Many => None,
+        }
+    }
+
+    fn unambiguous_associated_constant(
+        &self,
+        receiver: &TypeIdent,
+        name: &Ident,
+    ) -> Option<&RustConstantDecl> {
+        match self
+            .by_associated_constant
+            .get(&(receiver.clone(), name.clone()))?
+        {
+            Unambiguous::One { idx, .. } => self.constants.get(*idx),
+            Unambiguous::Many => None,
+        }
     }
 }
