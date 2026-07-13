@@ -1,6 +1,6 @@
 use galvan_ast_macro::PrintAst;
 
-use crate::{Block, Expression, Ident, PrintAst, TypeElement};
+use crate::{Block, DeclModifier, Expression, Ident, PrintAst, TypeElement};
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct Closure {
@@ -10,6 +10,7 @@ pub struct Closure {
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct ClosureParameter {
+    pub modifier: Option<DeclModifier>,
     pub ident: Ident,
     pub ty: TypeElement,
 }

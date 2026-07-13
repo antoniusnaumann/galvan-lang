@@ -20,7 +20,7 @@ use galvan_resolver::LookupContext;
 use galvan_rustdoc::RustInterop;
 
 use crate::builtins::{builtin_fns, builtins, predefined_from, CheckBuiltins};
-use crate::error::ErrorCollector;
+use crate::error::{ErrorCollector, TranspilerError};
 use crate::hir::*;
 use crate::index::{IndexBuilder, SymbolIndex};
 use crate::mapping::Mapping;
@@ -135,6 +135,14 @@ pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -
 
         let main = asts.main.as_ref().map(|main| {
             checker.enter_source(&main.source);
+            if main.item.is_async {
+                checker.errors.error_with_span(
+                    TranspilerError::Unimplemented {
+                        feature: "async function 'main'".to_string(),
+                    },
+                    Some(main.item.span.into()),
+                );
+            }
             checker.push_scope(main.item.span);
             let kind = match &main.item.kind {
                 MainKind::Command(signature) => {
@@ -311,6 +319,15 @@ impl<'a> Checker<'a> {
 
     fn lower_function(&mut self, func: &ToplevelItem<FnDecl>) -> HirFunction {
         let signature = func.item.signature.clone();
+
+        if signature.is_async {
+            self.errors.error_with_span(
+                TranspilerError::Unimplemented {
+                    feature: format!("async function '{}'", signature.identifier.as_str()),
+                },
+                Some(signature.span.into()),
+            );
+        }
 
         self.push_scope(func.item.span);
         for param in &signature.parameters.params {

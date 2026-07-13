@@ -99,6 +99,7 @@ pub struct EnumAccess {
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct AssociatedFunctionCall {
+    pub namespace: Option<UsePath>,
     pub receiver: TypeIdent,
     pub call: FunctionCall,
     pub span: Span,
@@ -106,6 +107,7 @@ pub struct AssociatedFunctionCall {
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct AssociatedConstant {
+    pub namespace: Option<UsePath>,
     pub receiver: TypeIdent,
     pub name: Ident,
     pub span: Span,

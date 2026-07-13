@@ -85,6 +85,7 @@ fn serde_json_interop(uses: &[ToplevelItem<UseDecl>]) -> RustInterop {
         "::serde_json::to_string",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("to_string"),
             parameters: ParamList {
                 params: vec![Param {
@@ -965,6 +966,7 @@ fn borrowed_rust_returns_are_cloned_in_hir() {
         "::borrowed::name",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("name"),
             parameters: ParamList {
                 params: Vec::new(),
@@ -1066,6 +1068,7 @@ fn qualified_rust_methods_are_typechecked_with_receivers() {
         "::external::nickname",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("nickname"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1122,6 +1125,7 @@ fn rust_associated_functions_are_typechecked_as_type_member_calls() {
         "::external::Dog::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1189,6 +1193,7 @@ fn generic_rust_associated_constructors_instantiate_receiver_generics() {
         "::external::Router::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![],
@@ -1249,6 +1254,7 @@ fn rust_associated_constructor_lowers_tuple_argument_literals() {
         "::std::net::SocketAddr::from",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("from"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1349,6 +1355,7 @@ fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
         "::external::Router::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![],
@@ -1375,6 +1382,7 @@ fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
         "::external::Router::route",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("route"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1414,6 +1422,7 @@ fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
         "::external::Router::with_state",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("with_state"),
             parameters: ParamList {
                 params: vec![
@@ -1530,6 +1539,7 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
         "::external::State::into_inner",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("into_inner"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1582,6 +1592,7 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
         item: FnDecl {
             signature: FnSignature {
                 visibility: Visibility::public(),
+                is_async: false,
                 identifier: Ident::new("read"),
                 parameters: ParamList {
                     params: vec![Param {
@@ -1679,6 +1690,7 @@ fn conflicting_rust_generic_bindings_are_reported_directly() {
         "::external::State::replace",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("replace"),
             parameters: ParamList {
                 params: vec![
@@ -1747,6 +1759,7 @@ fn conflicting_rust_generic_bindings_are_reported_directly() {
         item: FnDecl {
             signature: FnSignature {
                 visibility: Visibility::public(),
+                is_async: false,
                 identifier: Ident::new("update"),
                 parameters: ParamList {
                     params: vec![
@@ -1831,6 +1844,7 @@ fn imported_rust_types_are_available_to_typecheck_after_use() {
         "::external::Dog::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![],
@@ -2088,6 +2102,7 @@ fn imported_rust_constants_are_typechecked_as_identifiers() {
         item: FnDecl {
             signature: FnSignature {
                 visibility: Visibility::public(),
+                is_async: false,
                 identifier: Ident::new("limit"),
                 parameters: ParamList {
                     params: vec![],
@@ -2500,4 +2515,70 @@ fn query_returns_the_inferred_type_of_the_expression_at_a_position() {
         expression.kind,
         HirExpressionKind::Literal(HirLiteral::Number(_))
     ));
+}
+
+#[test]
+fn async_functions_parse_but_are_unimplemented() {
+    let (_, errors) = lower_with_diagnostics(
+        "async fn fetch() {
+             println \"fetching\"
+         }",
+    );
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("unimplemented")
+                && diagnostic.message.contains("async function 'fetch'")
+        }),
+        "expected an unimplemented diagnostic for the async fn, got: {errors}"
+    );
+}
+
+#[test]
+fn async_main_parses_but_is_unimplemented() {
+    let (_, errors) = lower_with_diagnostics(
+        "async fn main() {
+             println \"serving\"
+         }",
+    );
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("unimplemented")
+                && diagnostic.message.contains("async function 'main'")
+        }),
+        "expected an unimplemented diagnostic for async main, got: {errors}"
+    );
+}
+
+#[test]
+fn closure_parameter_modifiers_parse_but_are_unimplemented() {
+    let (_, errors) = lower_with_diagnostics(
+        "fn update(tickets: [Int]) {
+             for tickets |mut ticket| {
+                 ticket = 1
+             }
+         }",
+    );
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("unimplemented")
+                && diagnostic.message.contains("modifier on closure parameter 'ticket'")
+        }),
+        "expected an unimplemented diagnostic for the mut closure param, got: {errors}"
+    );
+}
+
+#[test]
+fn namespaced_associated_calls_lower_without_parse_errors() {
+    // `tokio::net::TcpListener.bind(addr)` must parse; without interop data
+    // for the namespace the receiver is reported as an unknown type instead
+    // of a syntax error.
+    let (_, errors) = lower_with_diagnostics(
+        "fn listen() {
+             let listener = tokio::net::TcpListener.bind(\"addr\")
+         }",
+    );
+    assert!(
+        !errors.diagnostics().is_empty(),
+        "expected a semantic diagnostic for the unresolved namespaced receiver"
+    );
 }

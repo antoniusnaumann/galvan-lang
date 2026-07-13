@@ -1623,6 +1623,7 @@ impl Checker<'_> {
         expected: &Expected,
         span: Span,
     ) -> HirExpression {
+        self.reject_closure_param_modifiers(&else_expression.parameters);
         match &else_expression.receiver.kind {
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "if" => {
                 self.lower_if(call, expected, Some(else_expression), span)
@@ -1740,6 +1741,7 @@ impl Checker<'_> {
             );
             return HirExpression::error("invalid if body", span);
         };
+        self.reject_closure_param_modifiers(&body.parameters);
 
         let condition = self.lower_expression(
             &call.arguments[0].expression,
@@ -1859,6 +1861,7 @@ impl Checker<'_> {
             );
             return HirExpression::error("invalid try body", span);
         };
+        self.reject_closure_param_modifiers(&body.parameters);
 
         let condition = self.lower_expression(&call.arguments[0].expression, &Expected::free());
 
@@ -2017,6 +2020,7 @@ impl Checker<'_> {
             );
             return HirExpression::error("invalid for body", span);
         };
+        self.reject_closure_param_modifiers(&body.parameters);
 
         let iterable = self.lower_expression(&call.arguments[0].expression, &Expected::free());
         let iterable_info = self.for_iterable_info(&iterable.ty, iterable.span);
@@ -3356,6 +3360,24 @@ impl Checker<'_> {
         )
     }
 
+    /// Closure parameter modifiers (`|mut ticket|`) parse but are not
+    /// lowered yet; reject them until ref-aware closure bindings exist.
+    fn reject_closure_param_modifiers(&mut self, parameters: &[ClosureParameter]) {
+        for parameter in parameters {
+            if parameter.modifier.is_some() {
+                self.errors.error_with_span(
+                    TranspilerError::Unimplemented {
+                        feature: format!(
+                            "modifier on closure parameter '{}'",
+                            parameter.ident.as_str()
+                        ),
+                    },
+                    Some(parameter.ident.span().into()),
+                );
+            }
+        }
+    }
+
     fn lower_closure(
         &mut self,
         closure: &Closure,
@@ -3363,6 +3385,7 @@ impl Checker<'_> {
         deref_params: bool,
         span: Span,
     ) -> HirExpression {
+        self.reject_closure_param_modifiers(&closure.parameters);
         let expected_closure = match &expected.ty {
             TypeElement::Closure(closure_ty) => Some(closure_ty.as_ref()),
             _ => None,

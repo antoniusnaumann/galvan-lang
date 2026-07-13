@@ -40,9 +40,9 @@ impl From<FnSignature> for FnDecl {
 
 #[derive(Clone, Debug, PartialEq, Eq, AstNode)]
 pub struct FnSignature {
-    // pub asyncness: Async,
     // pub constness: Const,
     pub visibility: Visibility,
+    pub is_async: bool,
     pub identifier: Ident,
     pub parameters: ParamList,
     pub return_type: TypeElement,

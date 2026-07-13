@@ -952,6 +952,7 @@ fn transpile_extension_functions(
         .iter()
         .map(|f| FnSignature {
             visibility: Visibility::private(),
+            is_async: false,
             ..f.signature.clone()
         })
         .map(|s| transpile_signature(&s, ctx, errors, &no_generics))

@@ -303,6 +303,7 @@ mod tests {
     fn signature_with_return(return_type: TypeElement) -> FnSignature {
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("health"),
             parameters: ParamList {
                 params: Vec::new(),

@@ -55,6 +55,7 @@ pub fn builtin_fns() -> Vec<FnDecl> {
 fn func(name: &str, parameters: Vec<TypeElement>, ret: TypeElement) -> FnDecl {
     FnSignature {
         visibility: Visibility::public(),
+        is_async: false,
         identifier: name.to_owned().into(),
         parameters: ParamList {
             params: parameters

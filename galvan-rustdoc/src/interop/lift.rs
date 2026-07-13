@@ -376,6 +376,9 @@ impl RustInterop {
 
         let decl = FnSignature {
             visibility: Visibility::public(),
+            // TODO(async): lift `header.is_async` from rustdoc so awaited Rust
+            // futures can be typechecked once async is supported.
+            is_async: false,
             identifier: Ident::new(name),
             parameters: ParamList {
                 params,
