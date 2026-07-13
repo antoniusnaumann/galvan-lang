@@ -58,6 +58,64 @@ fn source_file(source: &Source) -> String {
         .unwrap_or_default()
 }
 
+/// Register every lifted Rust-interop item in the symbol index so tooling can
+/// complete, hover and navigate to them. Types brought in by a `use`
+/// declaration additionally join the bare type namespace.
+fn define_rust_items(checker: &mut Checker<'_>, rust_interop: &RustInterop) {
+    use crate::index::{render_fn_signature, RustItemKind, RustLocation};
+
+    let rust_location = |span: &Option<galvan_rustdoc::RustSourceSpan>| {
+        span.as_ref().map(|span| RustLocation {
+            path: span.path.clone(),
+            line: span.line,
+            column: span.column,
+        })
+    };
+
+    let imported: std::collections::HashSet<&str> = rust_interop
+        .imported_types()
+        .map(|ty| ty.rust_path.as_ref())
+        .collect();
+    for ty in &rust_interop.types {
+        checker.index.define_rust_item(
+            ty.name.as_str(),
+            RustItemKind::Type,
+            &ty.namespace,
+            &ty.rust_path,
+            format!("type {} (Rust: {})", ty.name.as_str(), ty.rust_path),
+            rust_location(&ty.source_span),
+            imported.contains(ty.rust_path.as_ref()),
+        );
+    }
+    for function in &rust_interop.functions {
+        let signature = render_fn_signature(&function.decl.item.signature);
+        checker.index.define_rust_item(
+            function.decl.item.signature.identifier.as_str(),
+            RustItemKind::Function {
+                receiver: function.associated_receiver.clone(),
+            },
+            &function.namespace,
+            &function.rust_path,
+            signature,
+            rust_location(&function.source_span),
+            false,
+        );
+    }
+    for constant in &rust_interop.constants {
+        checker.index.define_rust_item(
+            constant.name.as_str(),
+            RustItemKind::Constant {
+                receiver: constant.associated_receiver.clone(),
+            },
+            &constant.namespace,
+            &constant.rust_path,
+            format!("{}: {}", constant.name.as_str(), constant.ty),
+            rust_location(&constant.source_span),
+            false,
+        );
+    }
+}
+
 pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -> Typechecked {
     let mapping = builtins();
     let predefined = predefined_from(&mapping, builtin_fns());
@@ -96,6 +154,7 @@ pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -
         for func in &asts.functions {
             checker.index.define_function(func);
         }
+        define_rust_items(&mut checker, rust_interop);
         // Types referenced from type declarations and signatures.
         for ty in &asts.types {
             checker.enter_source(&ty.source);

@@ -89,6 +89,21 @@ pub fn render_definition(definition: &Definition) -> String {
         DefinitionKind::Parameter { ty, .. } => format!("{}: {ty}", definition.name),
         DefinitionKind::Field { owner, ty } => format!("{owner}.{}: {ty}", definition.name),
         DefinitionKind::EnumVariant { owner } => format!("{owner}::{}", definition.name),
+        DefinitionKind::RustItem {
+            namespace,
+            signature,
+            ..
+        } => format!("{signature} (from Rust crate `{namespace}`)"),
+    }
+}
+
+/// The Rust source location of an imported Rust item, if rustdoc recorded
+/// one. Paths may be relative to the consuming project; callers resolve them
+/// best-effort.
+pub fn rust_location(definition: &Definition) -> Option<&galvan_hir::RustLocation> {
+    match &definition.kind {
+        DefinitionKind::RustItem { location, .. } => location.as_ref(),
+        _ => None,
     }
 }
 

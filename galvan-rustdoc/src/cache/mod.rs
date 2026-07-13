@@ -11,16 +11,28 @@ use crate::RustdocError;
 
 pub(crate) struct RustdocCache {
     crate_name: Box<str>,
+    manifest_dir: PathBuf,
     root: PathBuf,
 }
 
+/// The consumer project directory rustdoc metadata is resolved against when
+/// none is given explicitly: `CARGO_MANIFEST_DIR` (set under cargo, e.g. in
+/// build scripts) or the current directory.
+pub(crate) fn env_manifest_dir() -> PathBuf {
+    env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 impl RustdocCache {
-    pub(crate) fn new(crate_name: &str) -> Self {
-        let manifest_dir = env::var_os("CARGO_MANIFEST_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
+    /// A cache rooted at an explicit consumer project directory (the directory
+    /// containing its `Cargo.toml`). Callers run by cargo derive it from
+    /// `CARGO_MANIFEST_DIR` via [`env_manifest_dir`]; others (most importantly
+    /// the language server) pass the project they analyze.
+    pub(crate) fn new_in(crate_name: &str, manifest_dir: &std::path::Path) -> Self {
         Self {
             crate_name: crate_name.into(),
+            manifest_dir: manifest_dir.to_path_buf(),
             root: manifest_dir
                 .join("target")
                 .join("galvan")
@@ -39,7 +51,7 @@ impl RustdocCache {
         }
 
         let _ = fs::create_dir_all(&self.root);
-        let dependency = match dependency_manifest_path(&self.crate_name) {
+        let dependency = match dependency_manifest_path(&self.crate_name, &self.manifest_dir) {
             Ok(Some(dependency)) => dependency,
             Ok(None) => {
                 let error = RustdocError::DependencyNotFound(self.crate_name.clone());
@@ -55,6 +67,7 @@ impl RustdocCache {
             }
         };
 
+        self.record_dependency_root(&dependency.manifest_path);
         if self.is_current(&dependency.fingerprint) {
             self.clear_diagnostics();
             return Ok(());
@@ -103,6 +116,24 @@ impl RustdocCache {
 
     fn cache_path(&self) -> PathBuf {
         self.root.join(format!("{}.json", self.crate_name))
+    }
+
+    /// Remember where the documented dependency's sources live, so relative
+    /// rustdoc span paths (`src/ser.rs`) can be resolved to absolute ones.
+    fn record_dependency_root(&self, manifest_path: &std::path::Path) {
+        if let Some(dir) = manifest_path.parent() {
+            let _ = fs::write(self.dependency_root_path(), dir.to_string_lossy().as_ref());
+        }
+    }
+
+    /// The recorded source directory of the documented dependency, if any.
+    pub(crate) fn dependency_root(&self) -> Option<PathBuf> {
+        let root = PathBuf::from(fs::read_to_string(self.dependency_root_path()).ok()?);
+        root.is_dir().then_some(root)
+    }
+
+    fn dependency_root_path(&self) -> PathBuf {
+        self.root.join(format!("{}.rootdir", self.crate_name))
     }
 
     fn fingerprint_path(&self) -> PathBuf {
@@ -168,6 +199,7 @@ mod tests {
     fn test_cache(name: &str) -> RustdocCache {
         RustdocCache {
             crate_name: "definitely_missing_galvan_dep".into(),
+            manifest_dir: PathBuf::from("."),
             root: unique_temp_dir(name),
         }
     }

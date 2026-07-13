@@ -225,6 +225,12 @@ impl Collector<'_> {
             }
             DefinitionKind::Field { .. } => TokenKind::Property,
             DefinitionKind::EnumVariant { .. } => TokenKind::EnumMember,
+            DefinitionKind::RustItem { kind, .. } => match kind {
+                galvan_hir::RustItemKind::Type => TokenKind::Struct,
+                galvan_hir::RustItemKind::Function { receiver: None } => TokenKind::Function,
+                galvan_hir::RustItemKind::Function { receiver: Some(_) } => TokenKind::Method,
+                galvan_hir::RustItemKind::Constant { .. } => TokenKind::Variable,
+            },
         };
         Some((kind, modifiers))
     }

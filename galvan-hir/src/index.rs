@@ -20,10 +20,11 @@
 //!   completion of top-level names or members of a receiver type.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use galvan_ast::{
-    AstNode, DeclModifier, FnDecl, Span, ToplevelItem, TypeDecl, TypeElement, TypeIdent,
+    AstNode, DeclModifier, FnDecl, FnSignature, Span, ToplevelItem, TypeDecl, TypeElement,
+    TypeIdent,
 };
 use galvan_files::Source;
 
@@ -59,13 +60,35 @@ impl Definition {
             | DefinitionKind::Field { ty, .. } => Some(ty),
             DefinitionKind::Function { .. }
             | DefinitionKind::Type
-            | DefinitionKind::EnumVariant { .. } => None,
+            | DefinitionKind::EnumVariant { .. }
+            | DefinitionKind::RustItem { .. } => None,
         }
     }
 
     fn is_positional(&self) -> bool {
         self.span != Span::default()
     }
+}
+
+/// Location of an imported Rust item's declaration in its Rust source.
+/// rustdoc spans are line/column based (no byte offsets): `line` is 1-based,
+/// `column` 0-based.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RustLocation {
+    pub path: PathBuf,
+    pub line: usize,
+    pub column: usize,
+}
+
+/// What kind of Rust item a [`DefinitionKind::RustItem`] definition is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RustItemKind {
+    Type,
+    /// A function; associated functions carry the Galvan receiver type they
+    /// are called on (`Type.function()`).
+    Function { receiver: Option<TypeIdent> },
+    /// A constant; associated constants carry their receiver type.
+    Constant { receiver: Option<TypeIdent> },
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +110,22 @@ pub enum DefinitionKind {
     Field { owner: TypeIdent, ty: TypeElement },
     /// A case of an enum type. `owner` is the enum's name.
     EnumVariant { owner: TypeIdent },
+    /// An item imported from Rust through the rustdoc interop. These have no
+    /// Galvan source; `location` points into the Rust sources when rustdoc
+    /// recorded a span, and `signature` is a rendered Galvan-style header for
+    /// hover and completion details.
+    RustItem {
+        kind: RustItemKind,
+        /// The Galvan namespace (Rust crate) exposing the item.
+        namespace: String,
+        /// The fully qualified Rust path the item lowers to.
+        rust_path: String,
+        signature: String,
+        location: Option<RustLocation>,
+        /// Whether a `use` declaration brings the item into the bare-name
+        /// namespace (as opposed to being reachable only via `namespace::`).
+        imported: bool,
+    },
 }
 
 /// A resolved use of a [`Definition`] at a specific source position.
@@ -222,6 +261,8 @@ pub(crate) struct IndexBuilder {
     types: HashMap<String, DefinitionId>,
     /// Struct fields and enum variants, keyed by `(owner name, member name)`.
     members: HashMap<(String, String), DefinitionId>,
+    /// Imported Rust items, keyed by their fully qualified Rust path.
+    rust_items: HashMap<String, DefinitionId>,
     current_source: Source,
 }
 
@@ -248,6 +289,7 @@ impl IndexBuilder {
             functions: HashMap::new(),
             types: HashMap::new(),
             members: HashMap::new(),
+            rust_items: HashMap::new(),
             current_source: Source::Missing,
         }
     }
@@ -386,6 +428,53 @@ impl IndexBuilder {
         }
     }
 
+    /// Record an item imported from Rust. `imported` marks items brought into
+    /// the bare-name namespace by a `use` declaration: imported types join the
+    /// name-keyed type map so ordinary type references resolve to them.
+    #[allow(clippy::too_many_arguments)]
+    pub fn define_rust_item(
+        &mut self,
+        name: &str,
+        kind: RustItemKind,
+        namespace: &str,
+        rust_path: &str,
+        signature: String,
+        location: Option<RustLocation>,
+        imported: bool,
+    ) -> DefinitionId {
+        if let Some(&id) = self.rust_items.get(rust_path) {
+            return id;
+        }
+        let is_type = matches!(kind, RustItemKind::Type);
+        let id = self.add_definition(Definition {
+            name: name.to_owned(),
+            kind: DefinitionKind::RustItem {
+                kind,
+                namespace: namespace.to_owned(),
+                rust_path: rust_path.to_owned(),
+                signature,
+                location,
+                imported,
+            },
+            source: Source::Builtin,
+            span: Span::default(),
+            decl_span: Span::default(),
+        });
+        self.rust_items.insert(rust_path.to_owned(), id);
+        if is_type && imported {
+            // Do not shadow a Galvan type of the same name.
+            self.types.entry(name.to_owned()).or_insert(id);
+        }
+        id
+    }
+
+    /// Record a reference to an imported Rust item by its Rust path.
+    pub fn reference_rust_item(&mut self, span: Span, rust_path: &str) {
+        if let Some(&id) = self.rust_items.get(rust_path) {
+            self.reference(span, id);
+        }
+    }
+
     /// Record a reference at `span` to an already-registered definition.
     pub fn reference(&mut self, span: Span, definition: DefinitionId) {
         if span == Span::default() {
@@ -464,4 +553,36 @@ impl IndexBuilder {
     pub fn finish(self) -> SymbolIndex {
         self.index
     }
+}
+
+/// Render a function signature as a line of Galvan code (`fn name(a: T) -> R`)
+/// from the AST alone — used for declarations without source text, like items
+/// lifted from rustdoc.
+pub fn render_fn_signature(signature: &FnSignature) -> String {
+    let mut rendered = format!("fn {}(", signature.identifier.as_str());
+    for (i, param) in signature.parameters.params.iter().enumerate() {
+        if i > 0 {
+            rendered.push_str(", ");
+        }
+        if param.identifier.is_self() {
+            rendered.push_str("self");
+            continue;
+        }
+        if let Some(label) = param.call_label().filter(|label| **label != param.identifier) {
+            rendered.push_str(label.as_str());
+            rendered.push(' ');
+        }
+        rendered.push_str(param.identifier.as_str());
+        rendered.push_str(": ");
+        rendered.push_str(&param.param_type.to_string());
+    }
+    rendered.push(')');
+    match &signature.return_type {
+        TypeElement::Void(_) | TypeElement::Infer(_) => {}
+        ty => {
+            rendered.push_str(" -> ");
+            rendered.push_str(&ty.to_string());
+        }
+    }
+    rendered
 }

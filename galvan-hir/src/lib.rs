@@ -11,5 +11,8 @@ pub mod typecheck;
 
 pub use error::{Diagnostic, DiagnosticSeverity, ErrorCollector, Fix, TranspilerError};
 pub use hir::*;
-pub use index::{Definition, DefinitionId, DefinitionKind, Reference, SymbolIndex};
-pub use typecheck::{typecheck, Typechecked};
+pub use index::{
+    render_fn_signature, Definition, DefinitionId, DefinitionKind, Reference, RustItemKind,
+    RustLocation, SymbolIndex,
+};
+pub use typecheck::{typecheck, typecheck_with_interop, Typechecked};

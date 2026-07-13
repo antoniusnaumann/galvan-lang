@@ -7,6 +7,6 @@ pub use error::RustdocError;
 pub use interop::{check_format_version, RustInterop};
 pub use model::{
     RustArgConversion, RustConstantDecl, RustEnumVariantArgConversion, RustEnumVariantConversion,
-    RustFieldConversion, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
+    RustFieldConversion, RustFunctionDecl, RustReturnConversion, RustSourceSpan, RustTypeDecl,
     RustdocCrateLiftSummary,
 };

@@ -188,6 +188,7 @@ impl Checker<'_> {
             }
             None => {
                 if let Some(constant) = self.rust_interop.constant(None, ident) {
+                    self.index.reference_rust_item(span, &constant.rust_path);
                     return HirExpression::new(
                         HirExpressionKind::RustConstant(HirRustConstant {
                             rust_path: constant.rust_path.clone(),
@@ -597,6 +598,8 @@ impl Checker<'_> {
     }
 
     fn lower_rust_call(&mut self, call: RustCall<'_>) -> HirExpression {
+        self.index
+            .reference_rust_item(call.ident.span(), &call.function.rust_path);
         let mut signature = call.function.decl.item.signature.clone();
         let binding_signature = signature.clone();
         let mut generic_substitutions = self.rust_call_generic_substitutions(
@@ -2566,6 +2569,7 @@ impl Checker<'_> {
         constant: &AssociatedConstant,
         span: Span,
     ) -> HirExpression {
+        self.index.reference_type(&constant.receiver);
         if self.lookup.resolve_type(&constant.receiver).is_none() {
             self.errors.error_with_span(
                 TranspilerError::UnknownType {
@@ -2589,6 +2593,8 @@ impl Checker<'_> {
             return HirExpression::error("unknown associated constant", span);
         };
 
+        self.index
+            .reference_rust_item(constant.name.span(), &decl.rust_path);
         HirExpression::new(
             HirExpressionKind::RustConstant(HirRustConstant {
                 rust_path: decl.rust_path.clone(),
@@ -2605,6 +2611,7 @@ impl Checker<'_> {
         expected: &Expected,
         span: Span,
     ) -> HirExpression {
+        self.index.reference_type(&associated.receiver);
         if self.lookup.resolve_type(&associated.receiver).is_none() {
             self.errors.error_with_span(
                 TranspilerError::UnknownType {

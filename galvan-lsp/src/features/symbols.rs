@@ -162,8 +162,11 @@ pub fn workspace_symbols(krate: &Crate, query: &str) -> Vec<SymbolInformation> {
             DefinitionKind::EnumVariant { owner } => {
                 (SymbolKind::ENUM_MEMBER, Some(owner.as_str()))
             }
-            // Locals and parameters are not workspace symbols.
-            DefinitionKind::Local { .. } | DefinitionKind::Parameter { .. } => continue,
+            // Locals and parameters are not workspace symbols; Rust items
+            // have no location in the Galvan crate.
+            DefinitionKind::Local { .. }
+            | DefinitionKind::Parameter { .. }
+            | DefinitionKind::RustItem { .. } => continue,
         };
         if !query.is_empty() && !definition.name.to_lowercase().contains(&query) {
             continue;

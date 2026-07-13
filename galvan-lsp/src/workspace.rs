@@ -9,6 +9,7 @@
 //! Files that are open in the editor are taken from their in-memory buffer
 //! (honouring unsaved edits); the rest are read from disk.
 
+use std::collections::BTreeSet;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -16,9 +17,10 @@ use std::sync::{Arc, OnceLock};
 use dashmap::DashMap;
 use galvan_ast::{Ast, SegmentedAsts};
 use galvan_files::{read_sources, Source};
-use galvan_hir::{typecheck, Diagnostic, HirModule, SymbolIndex};
+use galvan_hir::{typecheck_with_interop, Diagnostic, HirModule, SymbolIndex};
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
 use galvan_resolver::LookupContext;
+use galvan_rustdoc::RustInterop;
 use tower_lsp::lsp_types::Url;
 
 use crate::document::Document;
@@ -30,6 +32,29 @@ pub struct Analysis {
     pub module: HirModule,
     pub index: SymbolIndex,
     pub diagnostics: Vec<Diagnostic>,
+    /// The consumer Cargo project the Rust interop was resolved against, when
+    /// one was found. Relative Rust source paths (go-to-definition into Rust)
+    /// resolve against this directory.
+    pub manifest_dir: Option<PathBuf>,
+}
+
+/// Process-wide cache of built Rust interops, keyed by the consumer project
+/// and the set of crates the Galvan sources mention in `use` declarations.
+/// Building an interop can run `cargo metadata` and rustdoc (slow); analyze()
+/// runs per keystroke and must not. The cache is only invalidated by a new
+/// `use` (new key); dependency changes are picked up on server restart.
+fn interop_cache() -> &'static DashMap<(PathBuf, BTreeSet<String>), Arc<RustInterop>> {
+    static CACHE: OnceLock<DashMap<(PathBuf, BTreeSet<String>), Arc<RustInterop>>> =
+        OnceLock::new();
+    CACHE.get_or_init(DashMap::new)
+}
+
+/// The directory of the Cargo project containing `file`: the nearest ancestor
+/// with a `Cargo.toml`.
+fn cargo_manifest_dir(file: &Path) -> Option<PathBuf> {
+    file.ancestors()
+        .find(|ancestor| ancestor.join("Cargo.toml").is_file())
+        .map(Path::to_path_buf)
 }
 
 /// A single file's parsed contents within a crate.
@@ -44,6 +69,10 @@ pub struct Crate {
     /// Memoized result of [`Crate::analyze`]: the crate is typechecked at
     /// most once per `Crate` instance, however many features ask for it.
     analysis: OnceLock<Option<Analysis>>,
+    /// Interop to analyze with instead of resolving one from the crate's
+    /// `use` declarations — lets tests exercise the interop features without
+    /// running cargo/rustdoc.
+    interop_override: Option<Arc<RustInterop>>,
 }
 
 impl Crate {
@@ -89,6 +118,17 @@ impl Crate {
         Self::from_sources(sources)
     }
 
+    /// [`Crate::in_memory`] with a fixed Rust interop, bypassing cargo and
+    /// rustdoc. Intended for tests of the interop-backed features.
+    pub fn in_memory_with_interop(
+        files: impl IntoIterator<Item = (PathBuf, String)>,
+        interop: RustInterop,
+    ) -> Self {
+        let mut krate = Self::in_memory(files);
+        krate.interop_override = Some(Arc::new(interop));
+        krate
+    }
+
     fn from_sources(sources: Vec<Source>) -> Self {
         let files = sources
             .into_iter()
@@ -104,6 +144,7 @@ impl Crate {
         Self {
             files,
             analysis: OnceLock::new(),
+            interop_override: None,
         }
     }
 
@@ -148,7 +189,9 @@ impl Crate {
                 }
             })
             .collect();
-        Self::from_sources(sources)
+        let mut probe = Self::from_sources(sources);
+        probe.interop_override = self.interop_override.clone();
+        probe
     }
 
     /// Typecheck the whole crate.
@@ -178,25 +221,72 @@ impl Crate {
             .filter_map(|file| file.source.clone().try_into_ast().ok())
             .collect();
         let segmented = asts.segmented().ok()?;
+        let (interop, manifest_dir) = self.rust_interop(&segmented);
 
         // Guard against the typechecker panicking on pathological input: a
         // language server must keep running whatever the buffer contains.
-        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| typecheck(segmented)))
-            .map_err(|panic| {
-                let message = panic
-                    .downcast_ref::<&str>()
-                    .copied()
-                    .map(str::to_owned)
-                    .or_else(|| panic.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "<non-string panic>".to_string());
-                eprintln!("galvan-lsp: typechecker panicked: {message}");
-            })
-            .ok()?;
+        let checked = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            typecheck_with_interop(segmented, &interop)
+        }))
+        .map_err(|panic| {
+            let message = panic
+                .downcast_ref::<&str>()
+                .copied()
+                .map(str::to_owned)
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "<non-string panic>".to_string());
+            eprintln!("galvan-lsp: typechecker panicked: {message}");
+        })
+        .ok()?;
         Some(Analysis {
             module: checked.module,
             diagnostics: checked.errors.diagnostics().to_vec(),
             index: checked.index,
+            manifest_dir,
         })
+    }
+
+    /// The Rust interop for this crate's `use` declarations, built once per
+    /// (project, imported crates) pair and shared process-wide. Crates without
+    /// a Cargo project or without `use` declarations get an empty interop.
+    fn rust_interop(&self, segmented: &SegmentedAsts) -> (Arc<RustInterop>, Option<PathBuf>) {
+        if let Some(interop) = &self.interop_override {
+            return (interop.clone(), None);
+        }
+        let manifest_dir = self
+            .files
+            .iter()
+            .filter_map(|file| file.source.origin())
+            .find_map(cargo_manifest_dir);
+        let Some(manifest_dir) = manifest_dir else {
+            return (Arc::new(RustInterop::empty()), None);
+        };
+        let crates: BTreeSet<String> = segmented
+            .uses
+            .iter()
+            .filter_map(|decl| decl.item.path.segments.first())
+            .map(|segment| segment.as_str().to_owned())
+            .collect();
+        if crates.is_empty() {
+            return (Arc::new(RustInterop::empty()), Some(manifest_dir));
+        }
+
+        let key = (manifest_dir.clone(), crates);
+        let interop = interop_cache()
+            .entry(key)
+            .or_insert_with(|| {
+                let interop =
+                    RustInterop::from_uses_in(&manifest_dir, &segmented.uses, |warning| {
+                        eprintln!("galvan-lsp: rustdoc interop: {warning}");
+                    })
+                    .unwrap_or_else(|error| {
+                        eprintln!("galvan-lsp: rustdoc interop unavailable: {error}");
+                        RustInterop::empty()
+                    });
+                Arc::new(interop)
+            })
+            .clone();
+        (interop, Some(manifest_dir))
     }
 }
 

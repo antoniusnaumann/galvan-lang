@@ -30,7 +30,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use galvan_ast::TypeDecl;
-use galvan_hir::{query, DefinitionKind, SymbolIndex};
+use galvan_hir::{query, DefinitionKind, RustItemKind, SymbolIndex};
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, Position,
 };
@@ -388,6 +388,17 @@ fn member_completion(
         return items;
     }
 
+    // `Type.`: the receiver is a type name, not a value expression — offer
+    // the associated functions and constants Rust interop declares on it.
+    if let Some(type_name) = type_ident_before(&current.text, dot) {
+        if let Some(analysis) = krate.analyze() {
+            let items = associated_rust_items(&analysis.index, &type_name);
+            if !items.is_empty() {
+                return items;
+            }
+        }
+    }
+
     // The receiver was not found: the document does not parse as-is (e.g.
     // the cursor sits directly behind the dot) and is absent from the
     // analysis. Retry on a probe with a placeholder member name.
@@ -399,6 +410,52 @@ fn member_completion(
         .analyze()
         .and_then(|analysis| member_items(analysis, file, dot))
         .unwrap_or_default()
+}
+
+/// The type identifier directly before the `.` at byte offset `dot`, if the
+/// receiver is a bare capitalized name (an associated-item access).
+fn type_ident_before(text: &str, dot: usize) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut start = dot;
+    while start > 0 && is_ident_byte(bytes[start - 1]) {
+        start -= 1;
+    }
+    let name = &text[start..dot];
+    name.chars()
+        .next()
+        .filter(|first| first.is_ascii_uppercase())
+        .map(|_| name.to_string())
+}
+
+/// Associated functions and constants the Rust interop declares on the type
+/// named `receiver`.
+fn associated_rust_items(index: &SymbolIndex, receiver: &str) -> Vec<CompletionItem> {
+    index
+        .definitions()
+        .filter_map(|(_, definition)| {
+            let DefinitionKind::RustItem { kind, .. } = &definition.kind else {
+                return None;
+            };
+            let (kind, owner) = match kind {
+                RustItemKind::Function {
+                    receiver: Some(owner),
+                } => (CompletionItemKind::METHOD, owner),
+                RustItemKind::Constant {
+                    receiver: Some(owner),
+                } => (CompletionItemKind::CONSTANT, owner),
+                _ => return None,
+            };
+            if owner.as_str() != receiver {
+                return None;
+            }
+            Some(item(
+                definition.name.clone(),
+                kind,
+                Some(render_definition(definition)),
+                SORT_LOCAL,
+            ))
+        })
+        .collect()
 }
 
 /// The members of the receiver expression ending at `dot`, or `None` when the
@@ -415,6 +472,18 @@ fn member_items(analysis: &Analysis, file: &Path, dot: usize) -> Option<Vec<Comp
             DefinitionKind::Function {
                 receiver: Some(owner),
             } => (CompletionItemKind::METHOD, owner),
+            DefinitionKind::RustItem {
+                kind: RustItemKind::Function {
+                    receiver: Some(owner),
+                },
+                ..
+            } => (CompletionItemKind::METHOD, owner),
+            DefinitionKind::RustItem {
+                kind: RustItemKind::Constant {
+                    receiver: Some(owner),
+                },
+                ..
+            } => (CompletionItemKind::CONSTANT, owner),
             _ => continue,
         };
         if owner.as_str() != receiver_type {
@@ -442,8 +511,8 @@ fn insert_placeholder(text: &str, offset: usize, placeholder: char) -> Option<St
     Some(probe)
 }
 
-/// Completion after `qualifier::` — the cases of the enum named `qualifier`.
-/// Unknown qualifiers (e.g. package names) yield no suggestions.
+/// Completion after `qualifier::` — the cases of the enum named `qualifier`,
+/// or the items of the imported Rust crate named `qualifier`.
 fn path_completion(
     current: &Document,
     krate: &Crate,
@@ -453,6 +522,10 @@ fn path_completion(
 ) -> Vec<CompletionItem> {
     if let Some(analysis) = krate.analyze() {
         let items = variant_items(&analysis.index, qualifier);
+        if !items.is_empty() {
+            return items;
+        }
+        let items = rust_namespace_items(&analysis.index, qualifier);
         if !items.is_empty() {
             return items;
         }
@@ -483,6 +556,41 @@ fn variant_items(index: &SymbolIndex, qualifier: &str) -> Vec<CompletionItem> {
                 SORT_LOCAL,
             )),
             _ => None,
+        })
+        .collect()
+}
+
+/// Free functions, types and constants of the imported Rust crate
+/// `qualifier`, reachable as `qualifier::name`. Associated items complete
+/// after their receiver type instead.
+fn rust_namespace_items(index: &SymbolIndex, qualifier: &str) -> Vec<CompletionItem> {
+    index
+        .definitions()
+        .filter_map(|(_, definition)| {
+            let DefinitionKind::RustItem { kind, namespace, .. } = &definition.kind else {
+                return None;
+            };
+            if namespace != qualifier {
+                return None;
+            }
+            let (kind, sort_group) = match kind {
+                RustItemKind::Type => (CompletionItemKind::STRUCT, SORT_TYPE),
+                RustItemKind::Function { receiver: None } => {
+                    (CompletionItemKind::FUNCTION, SORT_FUNCTION)
+                }
+                RustItemKind::Constant { receiver: None } => {
+                    (CompletionItemKind::CONSTANT, SORT_FUNCTION)
+                }
+                // Associated items are reached through their receiver type.
+                RustItemKind::Function { receiver: Some(_) }
+                | RustItemKind::Constant { receiver: Some(_) } => return None,
+            };
+            Some(item(
+                definition.name.clone(),
+                kind,
+                Some(render_definition(definition)),
+                sort_group,
+            ))
         })
         .collect()
 }
@@ -524,7 +632,17 @@ fn type_completion(krate: &Crate) -> Vec<CompletionItem> {
             analysis
                 .index
                 .definitions()
-                .filter(|(_, definition)| matches!(definition.kind, DefinitionKind::Type))
+                .filter(|(_, definition)| {
+                    matches!(definition.kind, DefinitionKind::Type)
+                        || matches!(
+                            definition.kind,
+                            DefinitionKind::RustItem {
+                                kind: RustItemKind::Type,
+                                imported: true,
+                                ..
+                            }
+                        )
+                })
                 .map(|(_, definition)| {
                     item(
                         definition.name.clone(),
@@ -613,6 +731,11 @@ fn value_completion(
             }
             // Types are values too: constructor calls and enum qualifiers.
             DefinitionKind::Type => (type_kind(&enums, &definition.name), SORT_TYPE),
+            DefinitionKind::RustItem {
+                kind: RustItemKind::Type,
+                imported: true,
+                ..
+            } => (type_kind(&enums, &definition.name), SORT_TYPE),
             _ => continue,
         };
         items.push(item(

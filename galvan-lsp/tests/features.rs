@@ -2055,3 +2055,227 @@ fn on_type_formatting_dedents_a_closing_brace() {
     // Other lines are untouched even though the whole file was analysed.
     assert!(edits.iter().all(|e| e.range.start.line == 2));
 }
+
+mod rust_interop_features {
+    //! Interop-backed features: completion, hover and go-to-definition for
+    //! symbols lifted from Rust crates, exercised with an injected interop
+    //! (no cargo/rustdoc involved).
+
+    use super::*;
+    use galvan_ast::{
+        BasicTypeItem, EmptyTypeDecl, FnDecl, FnSignature, Ident, ParamList, Span, ToplevelItem,
+        TypeDecl, TypeElement, TypeIdent, UseDecl, UsePath, Visibility,
+    };
+    use galvan_files::Source;
+    use galvan_rustdoc::{RustInterop, RustSourceSpan};
+
+    const INTEROP_SOURCE: &str = "\
+use external::Dog
+
+fn main_fn() {
+    let dog = Dog.new()
+    let s = external::fetch()
+}
+";
+
+    fn plain(name: &str) -> TypeElement {
+        TypeElement::Plain(BasicTypeItem {
+            ident: TypeIdent::new(name),
+            span: Span::default(),
+        })
+    }
+
+    fn signature(name: &str, return_type: TypeElement) -> FnSignature {
+        FnSignature {
+            visibility: Visibility::public(),
+            is_async: false,
+            identifier: Ident::new(name),
+            parameters: ParamList {
+                params: vec![],
+                span: Span::default(),
+            },
+            return_type,
+            where_clause: None,
+            span: Span::default(),
+        }
+    }
+
+    fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
+        ToplevelItem {
+            item: UseDecl {
+                path: UsePath {
+                    segments: segments.iter().map(|segment| Ident::new(*segment)).collect(),
+                    span: Span::default(),
+                },
+                span: Span::default(),
+            },
+            source: Source::Builtin,
+        }
+    }
+
+    fn interop(new_span: Option<RustSourceSpan>) -> RustInterop {
+        let mut interop = RustInterop::empty();
+        interop.add_type_decl(
+            "external",
+            "Dog",
+            "::external::Dog",
+            TypeDecl::Empty(EmptyTypeDecl {
+                visibility: Visibility::public(),
+                ident: TypeIdent::new("Dog"),
+                generic_params: Vec::new(),
+                span: Span::default(),
+            }),
+        );
+        interop.add_function_decl(
+            "external",
+            "fetch",
+            "::external::fetch",
+            FnDecl::from(signature("fetch", plain("String"))),
+            false,
+        );
+        interop.add_associated_function_decl(
+            "external",
+            TypeIdent::new("Dog"),
+            "new",
+            "::external::Dog::new",
+            FnDecl::from(signature("new", plain("Dog"))),
+            false,
+        );
+        if let Some(span) = new_span {
+            interop
+                .functions
+                .last_mut()
+                .expect("associated fn was just added")
+                .source_span = Some(span);
+        }
+        interop.import_uses(&[use_decl(&["external", "Dog"])]);
+        interop
+    }
+
+    fn interop_crate(source: &str, new_span: Option<RustSourceSpan>) -> Crate {
+        Crate::in_memory_with_interop([(main_path(), source.into())], interop(new_span))
+    }
+
+    #[test]
+    fn hover_shows_rust_signature_for_associated_call() {
+        let doc = Document::new(INTEROP_SOURCE);
+        let krate = interop_crate(INTEROP_SOURCE, None);
+        let position = position_of(INTEROP_SOURCE, "new", 0);
+        let hover = hover::hover(&doc, &krate, Some(&main_path()), position)
+            .expect("hover on Dog.new should resolve");
+        let HoverContents::Markup(MarkupContent { value, .. }) = hover.contents else {
+            panic!("expected markdown hover");
+        };
+        assert!(
+            value.contains("fn new() -> Dog") && value.contains("external"),
+            "hover should show the lifted Rust signature, got: {value}"
+        );
+    }
+
+    #[test]
+    fn hover_shows_rust_origin_for_imported_type() {
+        let doc = Document::new(INTEROP_SOURCE);
+        let krate = interop_crate(INTEROP_SOURCE, None);
+        // The `Dog` in `let dog = Dog.new()` (occurrence 1; occurrence 0 is the use).
+        let position = position_of(INTEROP_SOURCE, "Dog", 1);
+        let hover = hover::hover(&doc, &krate, Some(&main_path()), position)
+            .expect("hover on the imported type should resolve");
+        let HoverContents::Markup(MarkupContent { value, .. }) = hover.contents else {
+            panic!("expected markdown hover");
+        };
+        assert!(
+            value.contains("::external::Dog"),
+            "hover should name the Rust type, got: {value}"
+        );
+    }
+
+    #[test]
+    fn goto_definition_jumps_into_rust_sources() {
+        // A real file, so the location survives the existence check.
+        let rust_file = std::env::temp_dir().join("galvan_lsp_interop_dog.rs");
+        std::fs::write(&rust_file, "pub struct Dog;\nimpl Dog { pub fn new() {} }\n").unwrap();
+
+        let doc = Document::new(INTEROP_SOURCE);
+        let krate = interop_crate(
+            INTEROP_SOURCE,
+            Some(RustSourceSpan {
+                path: rust_file.clone(),
+                line: 2,
+                column: 11,
+            }),
+        );
+        let position = position_of(INTEROP_SOURCE, "new", 0);
+        let location = goto_definition::goto_definition(&doc, &krate, Some(&main_path()), position)
+            .expect("goto definition on Dog.new should jump into the Rust source");
+        assert_eq!(location.uri, Url::from_file_path(&rust_file).unwrap());
+        // rustdoc lines are 1-based, LSP lines 0-based.
+        assert_eq!(location.range.start.line, 1);
+        assert_eq!(location.range.start.character, 11);
+
+        let _ = std::fs::remove_file(&rust_file);
+    }
+
+    #[test]
+    fn path_completion_offers_crate_items() {
+        let source = "\
+use external::Dog
+
+fn main_fn() {
+    let s = external::fetch()
+}
+";
+        let doc = Document::new(source);
+        let krate = interop_crate(source, None);
+        // Complete right after `external::`.
+        let offset = byte_of(source, "external::fetch", 0) + "external::".len();
+        let position = Document::new(source).line_index.position(source, offset);
+        let items = completion::completion(&doc, &krate, Some(&main_path()), position);
+        let labels: Vec<_> = items.iter().map(|item| item.label.as_str()).collect();
+        assert!(
+            labels.contains(&"fetch") && labels.contains(&"Dog"),
+            "external:: should complete the crate's items, got: {labels:?}"
+        );
+    }
+
+    #[test]
+    fn member_completion_offers_associated_functions() {
+        let source = "\
+use external::Dog
+
+fn main_fn() {
+    let dog = Dog.new()
+}
+";
+        let doc = Document::new(source);
+        let krate = interop_crate(source, None);
+        let offset = byte_of(source, "Dog.new", 0) + "Dog.".len();
+        let position = Document::new(source).line_index.position(source, offset);
+        let items = completion::completion(&doc, &krate, Some(&main_path()), position);
+        let labels: Vec<_> = items.iter().map(|item| item.label.as_str()).collect();
+        assert!(
+            labels.contains(&"new"),
+            "Dog. should complete associated functions, got: {labels:?}"
+        );
+    }
+
+    #[test]
+    fn type_completion_offers_imported_rust_types() {
+        let source = "\
+use external::Dog
+
+fn walk(dog: Dog) {
+}
+";
+        let doc = Document::new(source);
+        let krate = interop_crate(source, None);
+        // Complete in type position, after the `:` of a parameter.
+        let offset = byte_of(source, ": Dog", 0) + 2;
+        let position = Document::new(source).line_index.position(source, offset);
+        let items = completion::completion(&doc, &krate, Some(&main_path()), position);
+        let labels: Vec<_> = items.iter().map(|item| item.label.as_str()).collect();
+        assert!(
+            labels.contains(&"Dog"),
+            "type completion should offer imported Rust types, got: {labels:?}"
+        );
+    }
+}

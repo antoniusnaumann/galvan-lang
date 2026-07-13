@@ -49,14 +49,39 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   binary is a stdin/stdout + in-place + `--check` CLI usable from Helix
   (`formatter = { command = "galvan-format" }`).
 
+## Rust interop in the LSP (2026-07-13)
+
+- [x] **Interop symbols in analysis** — `Crate::analyze` builds a
+  `RustInterop` from the crate's `use` declarations (via the new
+  `RustInterop::from_uses_in`, resolving against the nearest `Cargo.toml`)
+  and typechecks with it. Built interops are cached process-wide per
+  (project, imported crates) pair so cargo/rustdoc only ever runs on the
+  first analysis; new `use` declarations trigger a rebuild, dependency
+  changes need a server restart (see `workspace/didChangeWatchedFiles`
+  below).
+- [x] **Completion** — `crate::` completes the crate's lifted free
+  functions, types and constants; `Type.` completes associated
+  functions/constants of imported Rust types; imported types appear in
+  type and value completion.
+- [x] **Hover** — interop symbols hover with a rendered Galvan signature
+  (`galvan_hir::render_fn_signature`) and their Rust path + crate.
+- [x] **Go-to-definition into Rust sources** — rustdoc item spans are
+  lifted into `RustSourceSpan` and flow through the symbol index
+  (`DefinitionKind::RustItem`); definition jumps to the `.rs` file
+  (registry paths are absolute; relative paths resolve against the
+  consumer project).
+- [ ] **Async interop build** — the first `analyze()` of a crate with new
+  `use` declarations builds the interop synchronously (cargo metadata +
+  possibly rustdoc). Consider building in the background and re-publishing
+  diagnostics when ready.
+
 ## Possible next steps
 
-- **Grammar gap: `use` paths with capitalized segments** — `use foo::Bar`
-  does not parse (`use_path` only accepts lowercase idents), although the
-  README and `example-projects/axum-api` use exactly that form; the axum
-  example currently parses as one whole-file error node. Root cause in
-  `tree-sitter-galvan`; once fixed, folding's import runs and diagnostics
-  automatically improve.
+- [x] **Grammar gap: `use` paths with capitalized segments** — fixed in
+  `tree-sitter-galvan` (2026-07-13, together with `async fn`, multi-segment
+  expression namespaces, `//` in strings and `mut` closure parameters); the
+  axum example now parses fully and async fns fail typecheck with an
+  `unimplemented` diagnostic instead.
 - **More compiler fixes** — the quickfix pipeline (`Diagnostic.code` +
   `Diagnostic.fix` → `quickfix` action) is generic; candidates: unknown
   callees (currently lowered silently for Rust-interop fallthrough),
