@@ -38,15 +38,41 @@ pub struct Analysis {
     pub manifest_dir: Option<PathBuf>,
 }
 
+/// State of one interop build in [`interop_cache`].
+enum InteropSlot {
+    /// A background thread is building; analyses proceed without interop
+    /// until it finishes.
+    Building,
+    Ready(Arc<RustInterop>),
+}
+
 /// Process-wide cache of built Rust interops, keyed by the consumer project
 /// and the set of crates the Galvan sources mention in `use` declarations.
 /// Building an interop can run `cargo metadata` and rustdoc (slow); analyze()
-/// runs per keystroke and must not. The cache is only invalidated by a new
+/// runs per keystroke and must not, so a miss spawns a background build and
+/// analysis proceeds without interop until the ready notification arrives
+/// (see [`interop_ready_events`]). The cache is only invalidated by a new
 /// `use` (new key); dependency changes are picked up on server restart.
-fn interop_cache() -> &'static DashMap<(PathBuf, BTreeSet<String>), Arc<RustInterop>> {
-    static CACHE: OnceLock<DashMap<(PathBuf, BTreeSet<String>), Arc<RustInterop>>> =
-        OnceLock::new();
+fn interop_cache() -> &'static DashMap<(PathBuf, BTreeSet<String>), InteropSlot> {
+    static CACHE: OnceLock<DashMap<(PathBuf, BTreeSet<String>), InteropSlot>> = OnceLock::new();
     CACHE.get_or_init(DashMap::new)
+}
+
+static INTEROP_EVENTS: OnceLock<tokio::sync::mpsc::UnboundedSender<PathBuf>> = OnceLock::new();
+
+/// Subscribe to interop-build completions: yields the consumer project
+/// directory whenever a background build finishes and analyses should be
+/// refreshed. Only the first caller receives events (the server); later
+/// calls return `None`.
+pub fn interop_ready_events() -> Option<tokio::sync::mpsc::UnboundedReceiver<PathBuf>> {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    INTEROP_EVENTS.set(sender).ok().map(|()| receiver)
+}
+
+fn notify_interop_ready(manifest_dir: PathBuf) {
+    if let Some(sender) = INTEROP_EVENTS.get() {
+        let _ = sender.send(manifest_dir);
+    }
 }
 
 /// The directory of the Cargo project containing `file`: the nearest ancestor
@@ -272,21 +298,37 @@ impl Crate {
         }
 
         let key = (manifest_dir.clone(), crates);
-        let interop = interop_cache()
-            .entry(key)
-            .or_insert_with(|| {
-                let interop =
-                    RustInterop::from_uses_in(&manifest_dir, &segmented.uses, |warning| {
-                        eprintln!("galvan-lsp: rustdoc interop: {warning}");
+        match interop_cache().entry(key.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                let interop = match entry.get() {
+                    InteropSlot::Ready(interop) => interop.clone(),
+                    // Still building: analyze without interop for now; the
+                    // ready notification will refresh this analysis.
+                    InteropSlot::Building => Arc::new(RustInterop::empty()),
+                };
+                (interop, Some(manifest_dir))
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(InteropSlot::Building);
+                let uses = segmented.uses.clone();
+                let build_dir = manifest_dir.clone();
+                std::thread::Builder::new()
+                    .name("galvan-interop".into())
+                    .spawn(move || {
+                        let interop = RustInterop::from_uses_in(&build_dir, &uses, |warning| {
+                            eprintln!("galvan-lsp: rustdoc interop: {warning}");
+                        })
+                        .unwrap_or_else(|error| {
+                            eprintln!("galvan-lsp: rustdoc interop unavailable: {error}");
+                            RustInterop::empty()
+                        });
+                        interop_cache().insert(key, InteropSlot::Ready(Arc::new(interop)));
+                        notify_interop_ready(build_dir);
                     })
-                    .unwrap_or_else(|error| {
-                        eprintln!("galvan-lsp: rustdoc interop unavailable: {error}");
-                        RustInterop::empty()
-                    });
-                Arc::new(interop)
-            })
-            .clone();
-        (interop, Some(manifest_dir))
+                    .expect("spawning the interop build thread should succeed");
+                (Arc::new(RustInterop::empty()), Some(manifest_dir))
+            }
+        }
     }
 }
 

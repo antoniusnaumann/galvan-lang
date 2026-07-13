@@ -21,6 +21,14 @@ use crate::workspace::{crate_root, Crate};
 
 pub struct Backend {
     client: Client,
+    shared: Arc<Shared>,
+    /// Receiver for interop-build completions, taken by the watcher task
+    /// spawned on `initialized` (see [`watch_interop_ready`]).
+    interop_events: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<PathBuf>>>,
+}
+
+/// The state the watcher task shares with the request handlers.
+struct Shared {
     documents: DashMap<Url, Document>,
     /// Loaded (and lazily analyzed) crates, keyed by crate root. An entry is
     /// reused as long as the same documents are open at the same versions;
@@ -60,22 +68,27 @@ impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            documents: DashMap::new(),
-            crates: Mutex::new(HashMap::new()),
+            shared: Arc::new(Shared {
+                documents: DashMap::new(),
+                crates: Mutex::new(HashMap::new()),
+            }),
+            interop_events: Mutex::new(crate::workspace::interop_ready_events()),
         }
     }
 
     /// The context for a request against the document at `uri`; `None` when
     /// the document is not open.
     fn request_context(&self, uri: &Url) -> Option<RequestContext<'_>> {
-        let document = self.documents.get(uri)?;
+        let document = self.shared.documents.get(uri)?;
         Some(RequestContext {
-            krate: self.crate_for(uri),
+            krate: self.shared.crate_for(uri),
             file: uri.to_file_path().ok(),
             document,
         })
     }
+}
 
+impl Shared {
     /// The (cached) crate the document at `uri` belongs to.
     fn crate_for(&self, uri: &Url) -> Arc<Crate> {
         let Some(root) = uri.to_file_path().ok().as_deref().and_then(crate_root) else {
@@ -129,39 +142,81 @@ impl Backend {
         }
     }
 
-    /// Re-analyse the crate containing `uri` and publish diagnostics for
-    /// *every* open document of that crate, so cross-file diagnostics never
-    /// go stale.
-    async fn refresh(&self, uri: Url) {
-        let krate = self.crate_for(&uri);
+}
 
-        let root = uri.to_file_path().ok().as_deref().and_then(crate_root);
-        let crate_docs: Vec<Url> = self
+/// Re-analyse the crate containing `uri` and publish diagnostics for
+/// *every* open document of that crate, so cross-file diagnostics never
+/// go stale. Shared between the request handlers and the interop watcher.
+async fn refresh(client: &Client, shared: &Shared, uri: Url) {
+    let krate = shared.crate_for(&uri);
+
+    let root = uri.to_file_path().ok().as_deref().and_then(crate_root);
+    let crate_docs: Vec<Url> = shared
+        .documents
+        .iter()
+        .map(|entry| entry.key().clone())
+        .filter(|doc_uri| {
+            doc_uri == &uri
+                || match (&root, doc_uri.to_file_path()) {
+                    (Some(root), Ok(path)) => path.starts_with(root),
+                    _ => false,
+                }
+        })
+        .collect();
+
+    for doc_uri in crate_docs {
+        let file = doc_uri.to_file_path().ok();
+        // Scope the document borrow so it is released before the await.
+        let published = {
+            let Some(document) = shared.documents.get(&doc_uri) else {
+                continue; // Closed concurrently.
+            };
+            let diags = diagnostics::diagnostics(&document, &krate, file.as_deref());
+            (diags, document.version)
+        };
+        client
+            .publish_diagnostics(doc_uri, published.0, Some(published.1))
+            .await;
+    }
+}
+
+/// React to finished background interop builds: drop the crate caches of the
+/// affected project (their analyses ran without interop) and re-publish
+/// diagnostics for its open documents, so the editor picks up the interop
+/// without waiting for the next edit.
+async fn watch_interop_ready(
+    client: Client,
+    shared: Arc<Shared>,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<PathBuf>,
+) {
+    while let Some(manifest_dir) = events.recv().await {
+        shared
+            .crates
+            .lock()
+            .unwrap()
+            .retain(|root, _| !root.starts_with(&manifest_dir));
+
+        // One refresh per affected crate root republishes every open
+        // document of that crate.
+        let mut seen_roots = std::collections::HashSet::new();
+        let open: Vec<Url> = shared
             .documents
             .iter()
             .map(|entry| entry.key().clone())
-            .filter(|doc_uri| {
-                doc_uri == &uri
-                    || match (&root, doc_uri.to_file_path()) {
-                        (Some(root), Ok(path)) => path.starts_with(root),
-                        _ => false,
-                    }
-            })
             .collect();
-
-        for doc_uri in crate_docs {
-            let file = doc_uri.to_file_path().ok();
-            // Scope the document borrow so it is released before the await.
-            let published = {
-                let Some(document) = self.documents.get(&doc_uri) else {
-                    continue; // Closed concurrently.
-                };
-                let diags = diagnostics::diagnostics(&document, &krate, file.as_deref());
-                (diags, document.version)
+        for uri in open {
+            let Ok(path) = uri.to_file_path() else {
+                continue;
             };
-            self.client
-                .publish_diagnostics(doc_uri, published.0, Some(published.1))
-                .await;
+            if !path.starts_with(&manifest_dir) {
+                continue;
+            }
+            let Some(root) = crate_root(&path) else {
+                continue;
+            };
+            if seen_roots.insert(root) {
+                refresh(&client, &shared, uri).await;
+            }
         }
     }
 }
@@ -231,6 +286,13 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
+        if let Some(events) = self.interop_events.lock().unwrap().take() {
+            tokio::spawn(watch_interop_ready(
+                self.client.clone(),
+                Arc::clone(&self.shared),
+                events,
+            ));
+        }
         self.client
             .log_message(MessageType::INFO, "galvan-lsp initialized")
             .await;
@@ -242,9 +304,10 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.documents
+        self.shared
+            .documents
             .insert(doc.uri.clone(), Document::with_version(doc.text, doc.version));
-        self.refresh(doc.uri).await;
+        refresh(&self.client, &self.shared, doc.uri).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -253,6 +316,7 @@ impl LanguageServer for Backend {
         // text produced by the previous one. A change without a range
         // replaces the whole document (clients may still send those).
         let mut text = self
+            .shared
             .documents
             .get(&uri)
             .map(|document| document.text.clone())
@@ -272,24 +336,24 @@ impl LanguageServer for Backend {
                 None => text = change.text,
             }
         }
-        self.documents.insert(
+        self.shared.documents.insert(
             uri.clone(),
             Document::with_version(text, params.text_document.version),
         );
-        self.refresh(uri).await;
+        refresh(&self.client, &self.shared, uri).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         // Sibling files may have changed on disk alongside the save (e.g. a
         // formatter run); re-read the crate.
         let uri = params.text_document.uri;
-        self.evict_crate(&uri);
-        self.refresh(uri).await;
+        self.shared.evict_crate(&uri);
+        refresh(&self.client, &self.shared, uri).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
-        self.documents.remove(&uri);
+        self.shared.documents.remove(&uri);
         // Clear this document's diagnostics in the client; they would
         // otherwise linger with no owner to update them.
         self.client.publish_diagnostics(uri, Vec::new(), None).await;
@@ -344,7 +408,7 @@ impl LanguageServer for Backend {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let Some(document) = self.documents.get(&params.text_document.uri) else {
+        let Some(document) = self.shared.documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
         Ok(formatting::formatting(&document, &params.options))
@@ -354,7 +418,7 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentRangeFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
-        let Some(document) = self.documents.get(&params.text_document.uri) else {
+        let Some(document) = self.shared.documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
         Ok(formatting::range_formatting(
@@ -369,7 +433,7 @@ impl LanguageServer for Backend {
         params: DocumentOnTypeFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
         let position = params.text_document_position;
-        let Some(document) = self.documents.get(&position.text_document.uri) else {
+        let Some(document) = self.shared.documents.get(&position.text_document.uri) else {
             return Ok(None);
         };
         Ok(formatting::on_type_formatting(
@@ -397,7 +461,7 @@ impl LanguageServer for Backend {
     }
 
     async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
-        let Some(document) = self.documents.get(&params.text_document.uri) else {
+        let Some(document) = self.shared.documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
         Ok(Some(folding_range::folding_ranges(&document)))
@@ -407,7 +471,7 @@ impl LanguageServer for Backend {
         &self,
         params: SelectionRangeParams,
     ) -> Result<Option<Vec<SelectionRange>>> {
-        let Some(document) = self.documents.get(&params.text_document.uri) else {
+        let Some(document) = self.shared.documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
         // One result per requested position, in order (the protocol requires
@@ -541,6 +605,7 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<SymbolInformation>>> {
         // Search every crate that has an open document.
         let uris: Vec<Url> = self
+            .shared
             .documents
             .iter()
             .map(|entry| entry.key().clone())
@@ -555,7 +620,7 @@ impl LanguageServer for Backend {
                 }
                 seen_roots.push(root.clone());
             }
-            let krate = self.crate_for(&uri);
+            let krate = self.shared.crate_for(&uri);
             results.extend(symbols::workspace_symbols(&krate, &params.query));
         }
         Ok(Some(results))

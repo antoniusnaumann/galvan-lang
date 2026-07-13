@@ -70,10 +70,14 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   (`DefinitionKind::RustItem`); definition jumps to the `.rs` file
   (registry paths are absolute; relative paths resolve against the
   consumer project).
-- [ ] **Async interop build** — the first `analyze()` of a crate with new
-  `use` declarations builds the interop synchronously (cargo metadata +
-  possibly rustdoc). Consider building in the background and re-publishing
-  diagnostics when ready.
+- [x] **Async interop build** (2026-07-13) — an interop cache miss spawns a
+  background build thread and analysis proceeds without interop; when the
+  build finishes, the server (subscribed via
+  `workspace::interop_ready_events`) evicts the affected crate caches and
+  re-publishes diagnostics for the project's open documents, so the editor
+  picks up the interop without waiting for the next edit. Covered by the
+  `background_interop_build` e2e test; verified against the serde-json
+  example (hover retries until the lifted signature appears).
 
 ## Possible next steps
 

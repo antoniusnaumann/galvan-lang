@@ -2279,3 +2279,82 @@ fn walk(dog: Dog) {
         );
     }
 }
+
+mod background_interop_build {
+    //! The interop for a project is built on a background thread: the first
+    //! analysis proceeds without it, a ready event fires when the build
+    //! completes, and subsequent analyses see the cached interop.
+
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn interop_build_completes_in_background_and_notifies() {
+        let mut events =
+            galvan_lsp::workspace::interop_ready_events().expect("first subscriber in the process");
+
+        // A real Cargo project (no dependencies), so the interop build has a
+        // manifest to resolve against and finishes quickly.
+        let project = std::env::temp_dir().join(format!(
+            "galvan_lsp_interop_bg_{}",
+            std::process::id()
+        ));
+        let src = project.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            project.join("Cargo.toml"),
+            "[package]\nname = \"galvan_lsp_interop_bg\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[lib]\npath = \"lib.rs\"\n",
+        )
+        .unwrap();
+        std::fs::write(project.join("lib.rs"), "").unwrap();
+        let main = src.join("main.galvan");
+        let source = "use missing_dep::Thing\n\nfn main_fn() {\n    println \"hi\"\n}\n";
+
+        // First analysis: interop not ready yet, but analysis succeeds.
+        let krate = Crate::in_memory([(main.clone(), source.to_string())]);
+        let analysis = krate.analyze().expect("crate should analyze without interop");
+        assert_eq!(analysis.manifest_dir.as_deref(), Some(project.as_path()));
+
+        // The background build finishes (the dependency is missing, which is
+        // a soft error yielding an empty interop) and fires the ready event.
+        let manifest_dir = events
+            .blocking_recv_timeout(Duration::from_secs(60))
+            .expect("interop build should signal completion");
+        assert_eq!(manifest_dir, project);
+
+        // A fresh crate (as after cache eviction) analyzes with the now
+        // cached interop — same manifest, no second build, no second event.
+        let krate = Crate::in_memory([(main, source.to_string())]);
+        krate.analyze().expect("crate should analyze with the cached interop");
+        assert!(
+            events.try_recv().is_err(),
+            "the cached interop must not trigger another build"
+        );
+
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// `blocking_recv` with a deadline, so a hung build fails the test
+    /// instead of hanging it.
+    trait RecvTimeout {
+        fn blocking_recv_timeout(&mut self, timeout: Duration) -> Option<std::path::PathBuf>;
+    }
+
+    impl RecvTimeout for tokio::sync::mpsc::UnboundedReceiver<std::path::PathBuf> {
+        fn blocking_recv_timeout(&mut self, timeout: Duration) -> Option<std::path::PathBuf> {
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                match self.try_recv() {
+                    Ok(event) => return Some(event),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                        if std::time::Instant::now() >= deadline {
+                            return None;
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => return None,
+                }
+            }
+        }
+    }
+}
