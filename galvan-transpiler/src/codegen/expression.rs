@@ -768,7 +768,7 @@ impl Transpile for HirCollection {
                 dict_elements(items, ctx, errors)
             ),
             HirCollection::OrderedDict(items) => format!(
-                "::std::collections::BTreeMap::from([{}])",
+                "::galvan::std::IndexMap::from([{}])",
                 dict_elements(items, ctx, errors)
             ),
         }

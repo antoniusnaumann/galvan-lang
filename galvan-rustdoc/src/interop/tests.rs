@@ -91,6 +91,7 @@ fn canonical_path(name: &str) -> &str {
         "HashSet" => "std::collections::hash::set::HashSet",
         "BTreeMap" => "alloc::collections::btree::map::BTreeMap",
         "BTreeSet" => "alloc::collections::btree::set::BTreeSet",
+        "IndexMap" => "indexmap::map::IndexMap",
         "Box" => "alloc::boxed::Box",
         "Rc" => "alloc::rc::Rc",
         "Arc" => "alloc::sync::Arc",
@@ -1295,8 +1296,8 @@ fn rustdoc_lifts_common_collections_and_results() {
 
     let ordered_map = lift_type(
         &mut interop,
-        "std",
-        &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
+        "indexmap",
+        &resolved("IndexMap", vec![primitive("str"), primitive("u64")]),
     )
     .unwrap();
     let TypeElement::OrderedDictionary(ordered_map) = ordered_map else {
@@ -1304,6 +1305,18 @@ fn rustdoc_lifts_common_collections_and_results() {
     };
     assert_eq!(ordered_map.key, string_type());
     assert_eq!(ordered_map.value, u64_type());
+
+    let tree_map = lift_type(
+        &mut interop,
+        "std",
+        &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
+    )
+    .unwrap();
+    let TypeElement::Parametric(tree_map) = tree_map else {
+        panic!("expected nominal BTreeMap, got {tree_map:?}");
+    };
+    assert_eq!(tree_map.base_type, TypeIdent::new("BTreeMap"));
+    assert_eq!(tree_map.type_args, vec![string_type(), u64_type()]);
 
     let set = lift_type(
         &mut interop,

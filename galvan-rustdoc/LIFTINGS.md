@@ -139,12 +139,12 @@ Rust collection types lift to Galvan collection types:
 | `[T]`, `Vec<T>` | `[T]` |
 | `HashSet<T>` | `{T}` |
 | `HashMap<K, V>` | `{K: V}` |
-| `BTreeMap<K, V>` | `[K: V]` |
+| `IndexMap<K, V>` | `[K: V]` |
 
 These are the concrete Rust types produced by Galvan collection lowering.
 Fixed arrays and slices outside a borrow are not lifted because Galvan arrays
-lower to `Vec<T>`. `VecDeque`, `LinkedList`, `BTreeSet`, `IndexSet`, and
-`IndexMap` remain nominal dependency types so their concrete representation is
+lower to `Vec<T>`. `VecDeque`, `LinkedList`, `BTreeSet`, `BTreeMap`, and
+`IndexSet` remain nominal dependency types so their concrete representation is
 preserved.
 
 ## Algebraic Types

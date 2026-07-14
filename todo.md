@@ -110,7 +110,7 @@ commands remain subcommands.
     imported Rust types from different modules can carry distinct conversion
     metadata instead of suppressing ambiguous unqualified conversion lookups
   - Extend safe Rust wrapper lifting beyond the exact lowering-compatible cases
-    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `BTreeMap<K, V>`,
+    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `IndexMap<K, V>`,
     `Result<T, E>`, `Arc<Mutex<T>>`, `Box<T>`, and parameter-side `Rc<T>`)
     where an explicit, trait-safe conversion can preserve the Rust API's
     concrete type
