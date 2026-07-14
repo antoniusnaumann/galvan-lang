@@ -265,7 +265,7 @@ impl RustInterop {
     pub(super) fn push_function_with_associated_receiver(
         &mut self,
         crate_name: &str,
-        name: &str,
+        _name: &str,
         rust_path: Box<str>,
         decl: FnDecl,
         borrowed_return: bool,
@@ -288,7 +288,7 @@ impl RustInterop {
                 .receiver()
                 .and_then(|param| receiver_type_ident(&param.param_type))
                 .as_ref(),
-            name,
+            decl.signature.identifier.as_str(),
             &labels,
         );
         let idx = self.functions.len();

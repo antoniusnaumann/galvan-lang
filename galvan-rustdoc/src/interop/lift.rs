@@ -362,6 +362,18 @@ impl RustInterop {
             .iter()
             .map(|param| param.param.clone())
             .collect::<Vec<_>>();
+        let (name, labels) = demangle_function_name(name, params.len())?;
+        let label_start = params.len() - labels.len();
+        let params = params
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut param)| {
+                if index >= label_start {
+                    param.short_name = Some(Ident::new(labels[index - label_start]));
+                }
+                param
+            })
+            .collect();
         let arg_conversions = lifted_params
             .iter()
             .map(|param| param.arg_conversion)
@@ -695,6 +707,17 @@ impl RustInterop {
             .map(|ty| self.type_from_json(krate, crate_name, ty))
             .collect()
     }
+}
+
+fn demangle_function_name(name: &str, param_count: usize) -> Option<(&str, Vec<&str>)> {
+    let mut segments = name.split("__");
+    let name = segments.next()?;
+    let labels = segments.collect::<Vec<_>>();
+    if name.is_empty() || labels.len() > param_count || labels.iter().any(|label| label.is_empty())
+    {
+        return None;
+    }
+    Some((name, labels))
 }
 
 /// Whether a lifted type is one of galvan's built-in wrapper forms (as opposed

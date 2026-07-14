@@ -787,6 +787,62 @@ fn use_declarations_import_functions_unqualified() {
 }
 
 #[test]
+fn rustdoc_demangles_galvan_overload_labels() {
+    let mut interop = RustInterop::empty();
+    interop.add_crate(
+        "demo",
+        &crate_(vec![(
+            "pick__plus__fallback",
+            public_function(
+                "pick__plus__fallback",
+                vec![
+                    ("value", primitive("u64")),
+                    ("increment", primitive("u64")),
+                    ("fallback", primitive("u64")),
+                ],
+                primitive("u64"),
+            ),
+        )]),
+    );
+
+    let function = interop
+        .function(Some("demo"), None, &ident("pick"), &["plus", "fallback"])
+        .expect("demangled function should be callable with labels");
+    assert_eq!(function.rust_path.as_ref(), "::demo::pick__plus__fallback");
+    assert_eq!(function.decl.item.signature.identifier, ident("pick"));
+    assert_eq!(
+        function
+            .decl
+            .item
+            .signature
+            .parameters
+            .params
+            .iter()
+            .map(|param| param.call_label().map(Ident::as_str))
+            .collect::<Vec<_>>(),
+        vec![None, Some("plus"), Some("fallback")]
+    );
+}
+
+#[test]
+fn rustdoc_skips_overload_names_with_more_labels_than_parameters() {
+    let mut interop = RustInterop::empty();
+    interop.add_crate(
+        "demo",
+        &crate_(vec![(
+            "pick__one__two",
+            public_function(
+                "pick__one__two",
+                vec![("value", primitive("u64"))],
+                primitive("u64"),
+            ),
+        )]),
+    );
+
+    assert!(interop.functions.is_empty());
+}
+
+#[test]
 fn path_use_declarations_import_only_the_named_item() {
     let uses = [use_decl(&["serde_json", "to_string"])];
     let mut interop = RustInterop::empty();
