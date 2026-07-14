@@ -27,10 +27,17 @@ use galvan_files::Source;
 pub struct HirModule {
     pub uses: Vec<ToplevelItem<UseDecl>>,
     pub types: Vec<ToplevelItem<TypeDecl>>,
+    pub default_impls: Vec<HirDefaultImpl>,
     pub functions: Vec<HirFunction>,
     pub tests: Vec<HirTest>,
     pub main: Option<HirMain>,
     pub cmds: Vec<HirCmd>,
+}
+
+#[derive(Debug)]
+pub struct HirDefaultImpl {
+    pub ident: TypeIdent,
+    pub constructor: HirConstructorCall,
 }
 
 #[derive(Debug)]

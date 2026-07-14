@@ -9,7 +9,9 @@ use thiserror::Error;
 
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
-use galvan_hir::hir::{HirCmd, HirFunction, HirMain, HirMainKind, HirModule, HirTest};
+use galvan_hir::hir::{
+    HirCmd, HirDefaultImpl, HirFunction, HirMain, HirMainKind, HirModule, HirTest,
+};
 use galvan_hir::mapping::RustType;
 use galvan_hir::typecheck::typecheck_with_interop;
 use galvan_into_ast::{AstError, SegmentAst, SourceIntoAst};
@@ -588,6 +590,7 @@ fn collect_collection_namespaces(literal: &CollectionLiteral, namespaces: &mut H
 struct TypeFileContent<'a> {
     pub ty: &'a TypeDecl,
     pub fns: Vec<&'a HirFunction>,
+    pub default_impl: Option<&'a HirDefaultImpl>,
 }
 
 struct ExtensionFileContent<'a> {
@@ -648,6 +651,7 @@ fn transpile_module(
             TypeFileContent {
                 ty: &ty.item,
                 fns: Vec::new(),
+                default_impl: None,
             },
         ) {
             panic!(
@@ -656,6 +660,13 @@ fn transpile_module(
                 duplicate.ty.ident()
             );
         }
+    }
+
+    for default_impl in &module.default_impls {
+        let content = type_files
+            .get_mut(&module_name(&default_impl.ident))
+            .expect("default impl should belong to a lowered type");
+        content.default_impl = Some(default_impl);
     }
 
     let mut toplevel_functions = Vec::new();
@@ -763,6 +774,9 @@ fn transpile_module(
                 "use crate::*;",
                 &imports,
                 &v.ty.transpile(ctx, errors),
+                &v.default_impl
+                    .map(|default_impl| transpile_default_impl(default_impl, v.ty, ctx, errors))
+                    .unwrap_or_default(),
                 &transpile_member_functions(v.ty, &v.fns, ctx, errors),
             ]
             .join("\n\n")
@@ -869,6 +883,47 @@ fn transpile_tests(
         + "\n}";
 
     test_mod
+}
+
+fn transpile_default_impl(
+    default_impl: &HirDefaultImpl,
+    ty: &TypeDecl,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let mut generics = ty.collect_generics().into_iter().collect::<Vec<_>>();
+    generics.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    let impl_generics = if generics.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<{}>",
+            generics
+                .iter()
+                .map(|generic| {
+                    let generic = capitalize_generic(generic.as_str());
+                    format!("{generic}: ToOwned<Owned = {generic}>")
+                })
+                .join(", ")
+        )
+    };
+    let type_generics = if generics.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<{}>",
+            generics
+                .iter()
+                .map(|generic| capitalize_generic(generic.as_str()))
+                .join(", ")
+        )
+    };
+    let constructor = default_impl.constructor.transpile(ctx, errors);
+
+    format!(
+        "impl{impl_generics} Default for {}{type_generics} {{\n    fn default() -> Self {{ {constructor} }}\n}}",
+        default_impl.ident
+    )
 }
 
 fn transpile_member_functions(

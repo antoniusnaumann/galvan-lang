@@ -599,6 +599,33 @@ fn constructor_defaults_are_materialized() {
 }
 
 #[test]
+fn all_defaulted_structs_get_lowered_default_impls() {
+    let module = lower(
+        "type Book {
+             title: String = \"Field Notes\"
+             pages: Int = 0
+         }",
+    );
+
+    assert_eq!(module.default_impls.len(), 1);
+    let default_impl = &module.default_impls[0];
+    assert_eq!(default_impl.ident, TypeIdent::new("Book"));
+    assert_eq!(default_impl.constructor.args.len(), 2);
+}
+
+#[test]
+fn partially_defaulted_structs_do_not_get_default_impls() {
+    let module = lower(
+        "type Book {
+             title: String = \"Field Notes\"
+             pages: Int
+         }",
+    );
+
+    assert!(module.default_impls.is_empty());
+}
+
+#[test]
 fn field_access_locks_ref_receiver() {
     let module = lower(
         "type Dog { name: String }

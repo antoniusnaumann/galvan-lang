@@ -12,8 +12,8 @@ mod scope;
 
 use galvan_ast::{
     Assignment, AssignmentOperator, BasicTypeItem, Body, DeclModifier, Declaration, FnDecl, Ident,
-    MainKind, Ownership, Param, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
-    TypeIdent,
+    MainKind, Ownership, Param, SegmentedAsts, Span, Statement, ToplevelItem, TypeDecl,
+    TypeElement, TypeIdent,
 };
 use galvan_resolver::{LookupContext, LookupError};
 use galvan_rustdoc::RustInterop;
@@ -45,7 +45,7 @@ pub fn typecheck_with_interop(
     let mapping = builtins();
     let predefined = predefined_from(&mapping, builtin_fns());
 
-    let (functions, tests, main, cmd_bodies, errors) = {
+    let (functions, tests, main, cmd_bodies, default_impls, errors) = {
         let mut lookup = LookupContext::new().with(&predefined)?.with(&asts)?;
         for ty in rust_interop.imported_types() {
             lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
@@ -130,7 +130,20 @@ pub fn typecheck_with_interop(
             })
             .collect::<Vec<_>>();
 
-        (functions, tests, main, cmd_bodies, checker.errors)
+        let default_impls = asts
+            .types
+            .iter()
+            .filter_map(|ty| checker.lower_default_impl(&ty.item))
+            .collect();
+
+        (
+            functions,
+            tests,
+            main,
+            cmd_bodies,
+            default_impls,
+            checker.errors,
+        )
     };
 
     let SegmentedAsts {
@@ -154,6 +167,7 @@ pub fn typecheck_with_interop(
         HirModule {
             uses,
             types,
+            default_impls,
             functions,
             tests,
             main,
@@ -257,6 +271,49 @@ impl<'a> Checker<'a> {
             source: func.source.clone(),
             span: func.item.span,
         }
+    }
+
+    fn lower_default_impl(&mut self, ty: &TypeDecl) -> Option<HirDefaultImpl> {
+        let TypeDecl::Struct(decl) = ty else {
+            return None;
+        };
+        if decl
+            .members
+            .iter()
+            .any(|member| member.default_value.is_none())
+        {
+            return None;
+        }
+
+        let args = decl
+            .members
+            .iter()
+            .map(|member| {
+                let default = member
+                    .default_value
+                    .as_ref()
+                    .expect("all fields were checked above");
+                let value = self.lower_expression(default, &Expected::free());
+                let value = self.coerce(value, &Expected::owned(member.r#type.clone()));
+                HirConstructorArg {
+                    field: member.ident.clone(),
+                    value,
+                    store_as_ref: member.decl_modifier == Some(DeclModifier::Ref),
+                    rust_arg_conversion: self
+                        .rust_interop
+                        .field_arg_conversion(&decl.ident, &member.ident),
+                }
+            })
+            .collect();
+
+        Some(HirDefaultImpl {
+            ident: decl.ident.clone(),
+            constructor: HirConstructorCall {
+                ident: TypeIdent::new("Self"),
+                kind: HirConstructorKind::Struct,
+                args,
+            },
+        })
     }
 
     fn validate_parameter_label_order(&mut self, params: &[Param]) {

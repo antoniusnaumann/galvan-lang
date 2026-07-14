@@ -28,7 +28,14 @@ pub(crate) struct Book {
     pub(crate) content: String,
 }
 
-// TODO: this should also contain the implementation of the `Default` trait as all fields have default values
+impl Default for Book {
+    fn default() -> Self {
+        Self {
+            title: format!("Field Notes"),
+            content: format!("No notes yet"),
+        }
+    }
+}
 
 pub(crate) fn __main__() {
     let blank: Book = Book {
@@ -44,11 +51,14 @@ pub(crate) fn __main__() {
 }
 ```
 
-Defaults are filled in at each construction site, so function calls as default fields run where the constructor is called.
+Defaults are filled in at each construction site, so function calls as default
+fields run where the constructor is called. The generated `Default`
+implementation evaluates the same expressions when `Book::default()` is
+called from Rust.
 
 </details>
 
 > [!NOTE]
 > When every field can be defaulted, the type is constructible with `Type()` —
-> and Galvan can emit a Rust `Default` implementation for it, so the type
+> and Galvan emits a Rust `Default` implementation for it, so the type
 > satisfies Rust APIs that expect `Default`.
