@@ -24,16 +24,15 @@ fn main() {
 <summary>Generated Rust</summary>
 
 ```rust
-pub(crate) fn increment(counter: std::sync::Arc<std::sync::atomic::AtomicI64>) {
+pub(crate) fn increment(counter: std::sync::Arc<std::sync::Mutex<i64>>) {
     {
-        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *counter.lock().unwrap() += 1;
     };
 }
 
 pub(crate) fn __main__() {
-    let mut counter: std::sync::Arc<std::sync::atomic::AtomicI64> =
-        std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-    counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mut counter: std::sync::Arc<std::sync::Mutex<i64>> = (&(0)).__to_ref();
+    *counter.lock().unwrap() += 1;
     increment(::std::sync::Arc::clone(&counter));
     increment(::std::sync::Arc::clone(&counter));
     println!("{}", &format!("{}", counter));

@@ -17,6 +17,14 @@ type Marker
 <summary>Generated Rust</summary>
 
 ```rust
+pub(crate) type Distance = f64;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Marker;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Meters(f64);
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Point {
     pub(crate) x: f64,
@@ -24,15 +32,7 @@ pub(crate) struct Point {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Meters(f64);
-
-#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Segment(Point, Point);
-
-pub(crate) type Distance = f64;
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Marker;
 ```
 
 </details>

@@ -23,17 +23,17 @@ test "Addition works correctly" {
 mod tests {
 
     #[test]
-    fn test() {
-        {
-            assert_eq!(2, 2,);
-        };
-    }
-
-    #[test]
     fn addition_works_correctly() {
         {
             let sum: _ = 2 + 2;
             assert_eq!(sum, 4,);
+        };
+    }
+
+    #[test]
+    fn test() {
+        {
+            assert_eq!(2, 2,);
         };
     }
 }

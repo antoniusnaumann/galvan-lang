@@ -27,16 +27,6 @@ fn main() {
 <summary>Generated Rust</summary>
 
 ```rust
-pub trait String_Ext {
-    fn shouted(&self) -> String;
-}
-
-impl String_Ext for String {
-    fn shouted(&self) -> String {
-        [(self.to_uppercase()).to_owned(), (format!("!")).to_owned()].concat()
-    }
-}
-
 pub trait Array_Int_Ext {
     fn counted(&self, value: i64) -> usize;
 }
@@ -44,6 +34,16 @@ pub trait Array_Int_Ext {
 impl Array_Int_Ext for ::std::vec::Vec<i64> {
     fn counted(&self, value: i64) -> usize {
         self.iter().copied().filter(|it| (it).eq(&value)).count()
+    }
+}
+
+pub trait String_Ext {
+    fn shouted(&self) -> String;
+}
+
+impl String_Ext for String {
+    fn shouted(&self) -> String {
+        [(self.to_uppercase()).to_owned(), (format!("!")).to_owned()].concat()
     }
 }
 

@@ -15,6 +15,8 @@ fn main() {
 }
 ```
 
+<!-- galvan-book: rustdoc-dependent -->
+
 <details>
 <summary>Generated Rust</summary>
 

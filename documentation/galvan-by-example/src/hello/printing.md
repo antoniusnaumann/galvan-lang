@@ -55,3 +55,14 @@ fn main() {
     println "Hello World!"
 }
 ```
+
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+pub(crate) fn __main__() {
+    println!("{}", &format!("Hello World!"));
+}
+```
+
+</details>

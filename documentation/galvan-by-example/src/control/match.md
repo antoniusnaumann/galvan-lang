@@ -29,6 +29,13 @@ fn main() {
 <summary>Generated Rust</summary>
 
 ```rust
+#[derive(Clone, Debug, PartialEq)]
+pub enum Color {
+    Transparent,
+    Gray(u8),
+    Rgb { r: u8, g: u8, b: u8 },
+}
+
 pub(crate) fn classify(color: &Color) -> String {
     match color.to_owned() {
         Color::Transparent => {

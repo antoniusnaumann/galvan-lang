@@ -36,9 +36,14 @@ pub(crate) fn pick__plus(value: u8, increment: u8) -> u8 {
     value + increment
 }
 
+pub(crate) fn pick__plus__fallback(value: u8, increment: u8, fallback: u8) -> u8 {
+    value + increment + fallback
+}
+
 pub(crate) fn __main__() {
     assert_eq!(pick(1), 1,);
     assert_eq!(pick__plus(2, 3), 5,);
+    assert_eq!(pick__plus__fallback(4, 5, 6), 15,);
 }
 ```
 

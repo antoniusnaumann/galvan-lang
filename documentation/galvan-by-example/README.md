@@ -25,8 +25,14 @@ mdbook build           # writes static HTML to book/
   the *actual* transpiler output for the example, lightly trimmed: the `galvan_module` wrapper, lint attributes, and
   `mod`/`pub use` plumbing are removed, and the result is formatted with
   `rustfmt`. Do not hand-write or "improve" these snippets — regenerate them
-  by running the example through `galvan_transpiler::transpile` when the
-  transpiler changes.
+  with `cargo run -p galvan-transpiler --bin galvan-book -- --write` when the
+  transpiler changes. Run the same command without `--write` to check for
+  drift.
+- Examples that require dependency rustdoc metadata carry a
+  `<!-- galvan-book: rustdoc-dependent -->` marker before their generated
+  output. Verify those in a fixture crate that declares the dependency; the
+  local checker deliberately skips them instead of accepting passthrough
+  codegen as authoritative output.
 - Features that do not transpile yet are marked with a `> [!WARNING]` alert
   stating what is missing. When you implement one of these features, update
   the page: remove or narrow the warning and add real generated output.

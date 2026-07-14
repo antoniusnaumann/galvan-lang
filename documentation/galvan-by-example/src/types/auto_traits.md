@@ -4,13 +4,9 @@ Galvan derives common traits automatically. Today every struct and enum
 derives `Clone`, `Debug`, and `PartialEq` (as the generated Rust throughout
 this book shows).
 
-The full design goes further: a set of **auto traits** — `Clone`, `Copy`,
-`Debug`, `Default`, `PartialEq`, `Eq`, `Hash`, `serde::Serialize`, and
-`serde::Deserialize` — is derived for a type whenever all of its fields
-conform, unless the type opts out:
+The implemented derive set is visible on every declared type:
 
 ```galvan
-@derive(!Clone)
 type SessionToken {
     value: String
 }
@@ -20,22 +16,26 @@ type SessionToken {
 <summary>Generated Rust</summary>
 
 ```rust
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SessionToken {
     pub(crate) value: String,
 }
 ```
 
-Once auto traits land, this derive list will expand and contract based on
-field capabilities and opt-outs — e.g. `serde::Serialize` only when every
-field is serializable, and no `Clone` for the example above.
-
 </details>
 
-Non-auto traits are derived explicitly with `@derive(...)`, and libraries can
-declare their own auto traits:
+The full design goes further: `Clone`, `Copy`, `Debug`, `Default`,
+`PartialEq`, `Eq`, `Hash`, `serde::Serialize`, and `serde::Deserialize` will
+be derived whenever all fields conform, unless the type opts out. Non-auto
+traits will be derived explicitly, and libraries will be able to declare
+their own auto traits:
 
 ```galvan
+@derive(!Clone)
+type SessionToken {
+    value: String
+}
+
 @derive(Response)
 type HealthResponse {
     status: String

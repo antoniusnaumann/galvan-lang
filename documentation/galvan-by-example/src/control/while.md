@@ -22,7 +22,7 @@ pub(crate) fn __main__() {
     while (remaining).gt(&0) {
         println!("{}", &format!("Launching in {}", remaining));
         remaining -= 1;
-    };
+    }
 }
 ```
 </details>

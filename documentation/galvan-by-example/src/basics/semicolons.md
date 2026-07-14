@@ -26,6 +26,19 @@ fn main() {
 }
 ```
 
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+pub(crate) fn __main__() {
+    let total: _ = 1 + 2 + 3;
+    let quantities: ::std::vec::Vec<_> = vec![1, 2, 3, 4];
+    let doubled: _ = quantities.iter().copied().map(|it| it * 2).vec();
+}
+```
+
+</details>
+
 The same rule powers struct declarations: fields separated by newlines get
 commas inferred, so both of these are valid:
 
@@ -38,7 +51,27 @@ type Point {
 type Vector { x: Double, y: Double }
 ```
 
-Explicit semicolons remain legal for putting several statements on one line:
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Point {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Vector {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+}
+```
+
+</details>
+
+The language design also permits explicit semicolons for putting several
+statements on one line:
 
 ```galvan
 fn main() {
@@ -46,3 +79,7 @@ fn main() {
     println("\(a + b)")
 }
 ```
+
+> [!WARNING]
+> Explicit same-line separators are not accepted by the parser yet. Newline
+> inference and multiline expressions are implemented and checked above.

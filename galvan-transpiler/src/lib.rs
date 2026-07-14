@@ -854,7 +854,7 @@ fn transpile_tests(
         by_name.entry(test_name(&test.name)).or_default().push(test);
     }
 
-    let resolved_tests = by_name
+    let mut resolved_tests = by_name
         .iter()
         .flat_map(|(name, tests)| {
             if tests.len() == 1 {
@@ -868,6 +868,7 @@ fn transpile_tests(
             }
         })
         .collect_vec();
+    resolved_tests.sort_by(|(left, _), (right, _)| left.as_ref().cmp(right.as_ref()));
 
     if resolved_tests.is_empty() {
         return "".into();
