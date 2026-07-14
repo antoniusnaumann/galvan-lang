@@ -18,7 +18,9 @@ pub type Theme(name: String) {
 }
 ```
 
-`// TODO: Generated Rust example should create a struct "Theme" with the common fields and a "__tag: __Theme" field which is the enum with the cases 
+The planned Rust lowering represents `Theme` as a struct containing `name` and
+a private tag enum. That tag enum carries the variant-specific fields, keeping
+the common data in one place while preserving exhaustive matching.
 
 The `name` field is shared by all variants; variant-specific fields are
 declared on each case. Construction supplies both:

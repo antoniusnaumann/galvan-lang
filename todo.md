@@ -61,7 +61,7 @@ commands remain subcommands.
 ## Low Priority - Language Polish
 
 - **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)
-  - Implement fully qualified name lookup / module paths
+  - Implement fully qualified type name lookup / module paths
 
 - **Warning cleanup**
   - Silence or handle unused-parameter warnings in the tree-sitter external
@@ -70,6 +70,8 @@ commands remain subcommands.
     building `galvan-test`
   - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
     instead of printing Cargo messages from the public transpilation path
+  - Resolve the synthetic `Self` type in generated `Default` constructors
+    without emitting a type-resolution warning
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
@@ -79,6 +81,8 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
+  - Accept explicit same-line statement separators without producing an
+    invalid body tree
 
 ## Future Enhancements
 
@@ -145,5 +149,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-14*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

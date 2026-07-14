@@ -69,11 +69,16 @@ pub(crate) fn __main__() {
 `mut self` is `&mut self`. A `ref self` receiver takes the shared handle
 (`Arc<Mutex<Self>>`) directly — which is why replacing the pointed-to value
 from inside the method is possible.
-// TODO: this does not hit it, mut args can also be replaced so that the callee sees it. The key here is that they can be long-living, i.e., stored in a struct that escapes which mut cannot.
+
+Both forms can replace the value during the call, and the caller observes that
+replacement. The difference is lifetime: a `mut` borrow ends with the call and
+cannot be stored, while a cloned `ref` handle can be retained in another value
+and continue sharing state afterward.
 
 </details>
 
 - A plain `self: Dog` receiver reads the value — calls need no annotation.
 - `mut self` mutates the receiver: call with `dog.mut.method(...)`,
   `(mut dog).method(...)`, or the free-function form `method(mut dog, ...)`.
-- `ref self` takes the receiver as a shared reference, so the method is free to store a handle to it in a struct.
+- `ref self` takes the receiver as a shared reference, so the method is free
+  to store a handle to it in a struct.
