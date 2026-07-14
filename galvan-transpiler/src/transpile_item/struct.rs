@@ -1,11 +1,13 @@
+use std::collections::HashSet;
+
+use galvan_ast::{
+    DeclModifier, EnumTypeMember, Ident, StructTypeMember, TupleTypeMember, TypeDecl,
+};
+
 use crate::codegen::ref_storage_type;
 use crate::context::Context;
 use crate::macros::{impl_transpile, transpile};
 use crate::{ErrorCollector, Transpile};
-use galvan_ast::{
-    DeclModifier, EnumTypeMember, Ident, StructTypeMember, TupleTypeMember, TypeDecl,
-};
-use std::collections::HashSet;
 
 static DERIVE: &str = "#[derive(Clone, Debug, PartialEq)]";
 
@@ -23,7 +25,12 @@ impl Transpile for TypeDecl {
                 let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
-                let members = def.members.transpile(ctx, errors);
+                let members = def
+                    .members
+                    .iter()
+                    .map(|member| transpile_struct_member(member, &visibility, ctx, errors))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
                 format!("{DERIVE} {visibility} struct {ident}{generic_params} {{\n{members}\n}}")
             }
             TypeDecl::Enum(def) => {
@@ -76,22 +83,58 @@ impl_transpile!(TupleTypeMember, "{}", r#type);
 
 impl Transpile for StructTypeMember {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        match self.decl_modifier {
-            Some(DeclModifier::Let) | Some(DeclModifier::Mut) | Some(DeclModifier::Move) => {
-                errors.error(crate::TranspilerError::InvalidModifier {
-                    modifier: "let/mut/move".to_string(),
-                    context: "struct fields".to_string(),
-                });
-                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
-            }
-            Some(DeclModifier::Ref) => {
-                let ty = self.r#type.transpile(ctx, errors);
-                let storage_ty = ref_storage_type(&self.r#type, ty);
-                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, storage_ty)
-            }
-            None => {
-                transpile!(ctx, errors, "pub(crate) {}: {}", self.ident, self.r#type)
-            }
+        transpile_struct_member(self, "pub(crate)", ctx, errors)
+    }
+}
+
+fn transpile_struct_member(
+    member: &StructTypeMember,
+    visibility: &str,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let visibility = if visibility.is_empty() {
+        String::new()
+    } else {
+        format!("{visibility} ")
+    };
+
+    match member.decl_modifier {
+        Some(DeclModifier::Let) | Some(DeclModifier::Mut) | Some(DeclModifier::Move) => {
+            errors.error(crate::TranspilerError::InvalidModifier {
+                modifier: "let/mut/move".to_string(),
+                context: "struct fields".to_string(),
+            });
+            transpile!(
+                ctx,
+                errors,
+                "{}{}: {}",
+                visibility,
+                member.ident,
+                member.r#type
+            )
+        }
+        Some(DeclModifier::Ref) => {
+            let ty = member.r#type.transpile(ctx, errors);
+            let storage_ty = ref_storage_type(&member.r#type, ty);
+            transpile!(
+                ctx,
+                errors,
+                "{}{}: {}",
+                visibility,
+                member.ident,
+                storage_ty
+            )
+        }
+        None => {
+            transpile!(
+                ctx,
+                errors,
+                "{}{}: {}",
+                visibility,
+                member.ident,
+                member.r#type
+            )
         }
     }
 }

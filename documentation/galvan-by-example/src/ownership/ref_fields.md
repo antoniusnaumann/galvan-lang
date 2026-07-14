@@ -38,8 +38,8 @@ pub(crate) struct Dog {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Person {
-    pub(crate) name: String,
-    pub(crate) dog: std::sync::Arc<std::sync::Mutex<Dog>>,
+    pub name: String,
+    pub dog: std::sync::Arc<std::sync::Mutex<Dog>>,
 }
 
 pub(crate) fn __main__() {

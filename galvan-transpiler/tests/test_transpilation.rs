@@ -79,6 +79,18 @@ fn transpiles_main_as_a_normal_function() {
 }
 
 #[test]
+fn struct_fields_inherit_the_type_visibility() {
+    let output = transpile_source(
+        "pub type Public { name: String, ref count: Int }
+         type Internal { name: String }",
+    );
+
+    assert!(output.contains("pub name: String"));
+    assert!(output.contains("pub count: std::sync::Arc<std::sync::Mutex<i64>>"));
+    assert!(output.contains("pub(crate) name: String"));
+}
+
+#[test]
 fn collects_argv_for_main_function_argument() {
     let output = transpile_source("fn main(args: [String]) { print args }");
 
