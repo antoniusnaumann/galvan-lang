@@ -3117,7 +3117,7 @@ impl Checker<'_> {
                         .arguments
                         .iter()
                         .find(|argument| argument.field_name.as_ref() == Some(&member.ident));
-                    let value = match provided {
+                    let (value, missing_ref_modifier) = match provided {
                         Some(argument) => {
                             let mut value = self.lower_modified_value(
                                 &argument.expression,
@@ -3129,13 +3129,16 @@ impl Checker<'_> {
                                 let expected = Expected::owned(member.r#type.clone());
                                 value = self.coerce(value, &expected);
                             }
-                            value
+                            (
+                                value,
+                                is_ref_field && argument.modifier != Some(DeclModifier::Ref),
+                            )
                         }
                         None => match &member.default_value {
                             Some(default) => {
                                 let value = self.lower_expression(default, &Expected::free());
                                 let expected = Expected::owned(member.r#type.clone());
-                                self.coerce(value, &expected)
+                                (self.coerce(value, &expected), false)
                             }
                             None => {
                                 self.errors.error(TranspilerError::ArgumentCountMismatch {
@@ -3143,7 +3146,7 @@ impl Checker<'_> {
                                     expected: decl.members.len(),
                                     found: constructor.arguments.len(),
                                 });
-                                HirExpression::error("missing field", span)
+                                (HirExpression::error("missing field", span), false)
                             }
                         },
                     };
@@ -3151,6 +3154,7 @@ impl Checker<'_> {
                         field: member.ident.clone(),
                         value,
                         store_as_ref: is_ref_field,
+                        missing_ref_modifier,
                         rust_arg_conversion: self
                             .rust_interop
                             .field_arg_conversion(&decl.ident, &member.ident),
@@ -3194,6 +3198,7 @@ impl Checker<'_> {
                             field: tuple_field_name(argument, idx),
                             value,
                             store_as_ref: false,
+                            missing_ref_modifier: false,
                             rust_arg_conversion: rust_arg_conversions
                                 .get(idx)
                                 .copied()
@@ -3219,6 +3224,7 @@ impl Checker<'_> {
                         field: tuple_field_name(argument, idx),
                         value,
                         store_as_ref: false,
+                        missing_ref_modifier: false,
                         rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
                     }
                 })

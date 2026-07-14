@@ -586,6 +586,7 @@ pub struct HirConstructorArg {
     pub field: Ident,
     pub value: HirExpression,
     pub store_as_ref: bool,
+    pub missing_ref_modifier: bool,
     pub rust_arg_conversion: galvan_rustdoc::RustArgConversion,
 }
 

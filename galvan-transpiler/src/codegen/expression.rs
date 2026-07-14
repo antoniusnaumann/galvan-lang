@@ -11,8 +11,7 @@ use galvan_rustdoc::{RustArgConversion, RustReturnConversion};
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::sanitize::{mangle_function_name, sanitize_name, sanitize_path};
-use crate::ErrorCollector;
-use crate::Transpile;
+use crate::{ErrorCollector, Transpile, TranspilerError};
 
 use super::wrap_ref_storage_value;
 
@@ -665,6 +664,14 @@ impl Transpile for HirConstructorCall {
             .args
             .iter()
             .map(|argument| {
+                if argument.missing_ref_modifier {
+                    errors.error(TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "ref field '{}' requires the `ref` modifier during construction",
+                            argument.field
+                        ),
+                    });
+                }
                 let value = argument.value.transpile(ctx, errors);
                 let value = if argument.store_as_ref {
                     if let Some(field_ty) = constructor_field_type(self, &argument.field, ctx) {
@@ -1083,6 +1090,7 @@ mod tests {
                     Span::default(),
                 ),
                 store_as_ref: false,
+                missing_ref_modifier: false,
                 rust_arg_conversion: RustArgConversion::None,
             }],
         };
@@ -1091,6 +1099,35 @@ mod tests {
 
         assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn struct_constructors_reject_missing_ref_field_modifiers() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("Owner"),
+            kind: HirConstructorKind::Struct,
+            args: vec![HirConstructorArg {
+                field: Ident::new("dog"),
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("dog")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                store_as_ref: true,
+                missing_ref_modifier: true,
+                rust_arg_conversion: RustArgConversion::None,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        constructor.transpile(&ctx, &mut errors);
+
+        assert!(errors.has_errors());
+        assert!(errors
+            .to_string()
+            .contains("ref field 'dog' requires the `ref` modifier during construction"));
     }
 
     #[test]
@@ -1145,6 +1182,7 @@ mod tests {
                         Span::default(),
                     ),
                     store_as_ref: false,
+                    missing_ref_modifier: false,
                     rust_arg_conversion: RustArgConversion::BoxNew,
                 },
                 HirConstructorArg {
@@ -1156,6 +1194,7 @@ mod tests {
                         Span::default(),
                     ),
                     store_as_ref: false,
+                    missing_ref_modifier: false,
                     rust_arg_conversion: RustArgConversion::RcNew,
                 },
             ],
@@ -1184,6 +1223,7 @@ mod tests {
                     Span::default(),
                 ),
                 store_as_ref: false,
+                missing_ref_modifier: false,
                 rust_arg_conversion: RustArgConversion::BoxNew,
             }],
         };

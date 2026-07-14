@@ -299,6 +299,7 @@ impl<'a> Checker<'a> {
                     field: member.ident.clone(),
                     value,
                     store_as_ref: member.decl_modifier == Some(DeclModifier::Ref),
+                    missing_ref_modifier: false,
                     rust_arg_conversion: self
                         .rust_interop
                         .field_arg_conversion(&decl.ident, &member.ident),
