@@ -212,6 +212,7 @@ impl HirExpression {
                 Adjustment::WrapSome => Ownership::UniqueOwned,
                 Adjustment::WrapOk => Ownership::UniqueOwned,
                 Adjustment::WrapErr => Ownership::UniqueOwned,
+                Adjustment::Into => Ownership::UniqueOwned,
                 Adjustment::LockRef => Ownership::MutBorrowed,
                 Adjustment::ArcClone => Ownership::UniqueOwned,
             })
@@ -240,6 +241,8 @@ pub enum Adjustment {
     WrapOk,
     /// `Err(expr)`
     WrapErr,
+    /// `(expr).into()`
+    Into,
     /// `expr.lock().unwrap()` - access the value behind a `ref` variable
     LockRef,
     /// `::std::sync::Arc::clone(&expr)` - share a `ref` variable
@@ -590,6 +593,7 @@ pub struct HirEnumAccess {
 
 #[derive(Clone, Debug)]
 pub enum HirLiteral {
+    Unit,
     Boolean(bool),
     Number(String),
     Char(char),

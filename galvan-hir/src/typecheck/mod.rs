@@ -231,7 +231,21 @@ impl<'a> Checker<'a> {
         } else {
             Expected::owned(signature.return_type.clone())
         };
-        let body = self.lower_block(&func.item.body, &expected);
+        let mut body = self.lower_block(&func.item.body, &expected);
+        if let TypeElement::Result(result) = &signature.return_type {
+            if result.success.is_void() && body.ty.is_void() {
+                body.statements.push(HirStatement::Expression(
+                    HirExpression::new(
+                        HirExpressionKind::Literal(HirLiteral::Unit),
+                        TypeElement::void(),
+                        Ownership::UniqueOwned,
+                        func.item.body.span,
+                    )
+                    .adjusted(Adjustment::WrapOk),
+                ));
+                body.ty = signature.return_type.clone();
+            }
+        }
 
         self.scopes.pop();
         self.fn_return = TypeElement::void();
@@ -349,10 +363,23 @@ impl<'a> Checker<'a> {
                     span: ret.span,
                 })
             }
-            Statement::Throw(throw) => HirStatement::Throw(HirThrow {
-                expression: self.lower_expression(&throw.expression, &Expected::free()),
-                span: throw.span,
-            }),
+            Statement::Throw(throw) => {
+                let expression = self.lower_expression(&throw.expression, &Expected::free());
+                let expression = match &self.fn_return {
+                    TypeElement::Result(result) if result.error.is_none() => {
+                        self.ensure_owned(expression).adjusted(Adjustment::Into)
+                    }
+                    TypeElement::Result(result) => {
+                        let error = result.error.clone().unwrap_or_else(TypeElement::infer);
+                        self.coerce(expression, &Expected::owned(error))
+                    }
+                    _ => expression,
+                };
+                HirStatement::Throw(HirThrow {
+                    expression,
+                    span: throw.span,
+                })
+            }
             Statement::Break(brk) => HirStatement::Break(brk.span),
             Statement::Continue(cont) => HirStatement::Continue(cont.span),
         }

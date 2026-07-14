@@ -91,6 +91,19 @@ fn struct_fields_inherit_the_type_visibility() {
 }
 
 #[test]
+fn transpiles_flexible_throws_and_bare_result_success() {
+    let output = transpile_source(
+        "type Failure {}
+         fn fail(error: Failure) -> Int! { throw error }
+         fn done() -> ! {}",
+    );
+
+    assert!(output.contains("return Err((error.to_owned()).into())"));
+    assert!(output.contains("fn done() -> ::galvan::std::FlexResult<()>"));
+    assert!(output.contains("Ok(())"));
+}
+
+#[test]
 fn collects_argv_for_main_function_argument() {
     let output = transpile_source("fn main(args: [String]) { print args }");
 

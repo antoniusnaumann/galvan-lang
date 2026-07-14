@@ -547,6 +547,43 @@ fn unlabeled_parameters_cannot_follow_labeled_parameters() {
 }
 
 #[test]
+fn flexible_result_throws_convert_errors() {
+    let module = lower(
+        "type Failure {}
+         fn fail(error: Failure) -> Int! { throw error }",
+    );
+    let fail = function(&module, "fail");
+    let HirStatement::Throw(throw) = &fail.body.statements[0] else {
+        panic!("expected throw statement");
+    };
+
+    assert_eq!(
+        throw.expression.adjustments,
+        vec![Adjustment::ToOwned, Adjustment::Into]
+    );
+}
+
+#[test]
+fn bare_result_functions_return_flexible_void_results() {
+    let module = lower("fn done() -> ! {}");
+    let done = function(&module, "done");
+    let TypeElement::Result(result) = &done.signature.return_type else {
+        panic!("expected result return type");
+    };
+    assert!(result.success.is_void());
+    assert!(result.error.is_none());
+
+    let HirStatement::Expression(success) = &done.body.statements[0] else {
+        panic!("expected implicit success value");
+    };
+    assert!(matches!(
+        success.kind,
+        HirExpressionKind::Literal(HirLiteral::Unit)
+    ));
+    assert_eq!(success.adjustments, vec![Adjustment::WrapOk]);
+}
+
+#[test]
 fn constructor_defaults_are_materialized() {
     let module = lower(
         "type Book { title: String = \"Lorem Ipsum\" }

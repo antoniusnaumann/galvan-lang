@@ -60,10 +60,7 @@ pub(crate) fn __main__() {
 - Functions that specify such a flexible Result type can throw any error; it
   is converted automatically.
 
-> [!WARNING]
-> **Partially implemented.** Typed errors (`T!E`) are solid. Flexible-error
-> results (`T!`, backed by `anyhow`) declare and propagate fine — including
-> from [Rust crates](../interop/liftings.md) — but `throw`ing a value into
-> one currently generates Rust that misses the `anyhow` conversion and does
-> not compile. Bare `-> !` functions additionally miss their implicit `Ok`
-> for the success path.
+> [!NOTE]
+> Flexible errors are backed by `anyhow`; a thrown error is converted through
+> `Into<anyhow::Error>`. The thrown type therefore needs to implement Rust's
+> standard error traits.

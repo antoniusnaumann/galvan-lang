@@ -688,6 +688,7 @@ impl Transpile for HirEnumAccess {
 impl Transpile for HirLiteral {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self {
+            HirLiteral::Unit => "()".to_string(),
             HirLiteral::Boolean(value) => format!("{value}"),
             HirLiteral::Number(value) => value.clone(),
             HirLiteral::Char(value) => format!("'{}'", value.escape_default()),

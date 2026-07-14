@@ -60,6 +60,7 @@ fn apply_adjustments(rendered: String, expression: &HirExpression) -> String {
             Adjustment::WrapSome => format!("Some({result})"),
             Adjustment::WrapOk => format!("Ok({result})"),
             Adjustment::WrapErr => format!("Err({result})"),
+            Adjustment::Into => format!("({result}).into()"),
             Adjustment::LockRef => format!("{result}.lock().unwrap()"),
             Adjustment::ArcClone => format!("::std::sync::Arc::clone(&{result})"),
         };
