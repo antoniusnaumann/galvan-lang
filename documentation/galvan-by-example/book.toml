@@ -5,6 +5,8 @@ description = "Learn Galvan with a collection of small examples that show the la
 src = "src"
 language = "en"
 
+[preprocessor.alerts]
+
 [output.html]
 default-theme = "rust"
 preferred-dark-theme = "navy"
