@@ -1,0 +1,41 @@
+test "while loop works" {
+    mut count = 0
+    while count < 5 {
+        count += 1
+    }
+
+    assert count == 5
+}
+
+test "while true supports break" {
+    mut count = 0
+    while true {
+        count += 1
+        if count == 3 { break }
+    }
+
+    assert count == 3
+}
+
+test "while supports continue" {
+    mut count = 0
+    mut even_total = 0
+    while count < 6 {
+        count += 1
+        if count % 2 == 1 { continue }
+        even_total += count
+    }
+
+    assert even_total == 12
+}
+
+test "while expression collects iteration values" {
+    mut count = 0
+    let evens = while count < 6 {
+        count += 1
+        if count % 2 == 1 { continue }
+        count
+    }
+
+    assert evens == [2, 4, 6]
+}

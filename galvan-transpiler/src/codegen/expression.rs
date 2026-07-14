@@ -23,6 +23,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::ElseUnwrap(unwrap) => unwrap.transpile(ctx, errors),
             HirExpressionKind::Try(try_expr) => try_expr.transpile(ctx, errors),
             HirExpressionKind::For(for_expr) => for_expr.transpile(ctx, errors),
+            HirExpressionKind::While(while_expr) => while_expr.transpile(ctx, errors),
             HirExpressionKind::Match(match_expr) => match_expr.transpile(ctx, errors),
             HirExpressionKind::Assert(assert) => assert.transpile(ctx, errors),
             HirExpressionKind::Print(print) => print.transpile(ctx, errors),
@@ -172,6 +173,36 @@ impl Transpile for HirFor {
                     "{{
                 let mut __result: ::std::vec::Vec<{elem_ty}> = ::std::vec::Vec::new(); 
                 {loop_expr}
+                __result
+            }}"
+                )
+            }
+        }
+    }
+}
+
+impl Transpile for HirWhile {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let condition = self.condition.transpile(ctx, errors);
+        let mut statements = self
+            .body
+            .statements
+            .iter()
+            .map(|statement| statement.transpile(ctx, errors))
+            .collect_vec();
+
+        match &self.collect {
+            None => format!("while {condition} {{ {}; }}", statements.join(";\n")),
+            Some(elem_ty) => {
+                if let Some(last) = statements.last_mut() {
+                    *last = format!("__result.push({last})");
+                }
+                let block = statements.join(";\n");
+                let elem_ty = elem_ty.transpile(ctx, errors);
+                format!(
+                    "{{
+                let mut __result: ::std::vec::Vec<{elem_ty}> = ::std::vec::Vec::new();
+                while {condition} {{ {block} }}
                 __result
             }}"
                 )

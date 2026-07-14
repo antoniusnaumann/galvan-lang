@@ -6,7 +6,14 @@ element, so it doubles as a filter:
 
 ```galvan
 fn main() {
-  // TODO: come up with a compelling example
+    mut candidate = 0
+    let even_squares = while candidate < 6 {
+        candidate += 1
+        if candidate % 2 == 1 { continue }
+        candidate ^ 2
+    }
+
+    assert even_squares == [4, 16, 36]
 }
 ```
 
@@ -15,7 +22,19 @@ fn main() {
 
 ```rust
 pub(crate) fn __main__() {
-  // TODO
+    let mut candidate: _ = 0;
+    let even_squares: ::std::vec::Vec<_> = {
+        let mut __result: ::std::vec::Vec<_> = ::std::vec::Vec::new();
+        while (candidate).lt(&6) {
+            candidate += 1;
+            if (candidate % 2).eq(&1) {
+                continue;
+            };
+            __result.push(candidate.pow(2))
+        }
+        __result
+    };
+    assert_eq!(even_squares, vec![4, 16, 36],);
 }
 ```
 

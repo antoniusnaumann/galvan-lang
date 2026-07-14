@@ -3,7 +3,7 @@
 //! The HIR is produced from the AST by the typechecker in [`crate::typecheck`].
 //! Compared to the AST it:
 //!
-//! - reifies control flow (`if`, `for`, `try`, `else`) into dedicated nodes
+//! - reifies control flow (`if`, `for`, `while`, `try`, `else`) into dedicated nodes
 //!   instead of magic function calls with trailing closures
 //! - resolves names: function calls are split into [`HirFunctionCall`],
 //!   [`HirMethodCall`], builtins ([`HirPrint`], [`HirAssert`]) and constructor
@@ -255,6 +255,7 @@ pub enum HirExpressionKind {
     ElseUnwrap(Box<HirElseUnwrap>),
     Try(Box<HirTry>),
     For(Box<HirFor>),
+    While(Box<HirWhile>),
     Match(Box<HirMatch>),
     Assert(Box<HirAssert>),
     Print(HirPrint),
@@ -374,6 +375,15 @@ pub struct HirFor {
     pub bindings: Vec<HirForBinding>,
     pub iterable_kind: HirForIterableKind,
     pub iterable: HirExpression,
+    pub body: HirBlock,
+    /// `Some(element_type)` when the loop is used as an expression and
+    /// collects the value of each iteration into a vector
+    pub collect: Option<TypeElement>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirWhile {
+    pub condition: HirExpression,
     pub body: HirBlock,
     /// `Some(element_type)` when the loop is used as an expression and
     /// collects the value of each iteration into a vector

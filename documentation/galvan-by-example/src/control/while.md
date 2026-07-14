@@ -4,7 +4,12 @@
 
 ```galvan
 fn main() {
-  // TODO: create a compelling example here
+    mut remaining = 3
+
+    while remaining > 0 {
+        println("Launching in \(remaining)")
+        remaining -= 1
+    }
 }
 ```
 
@@ -12,7 +17,12 @@ fn main() {
 <summary>Generated Rust</summary>
 
 ```rust
-// TODO
+pub(crate) fn __main__() {
+    let mut remaining: _ = 3;
+    while (remaining).gt(&0) {
+        println!("{}", &format!("Launching in {}", remaining));
+        remaining -= 1;
+    };
+}
 ```
 </details>
-

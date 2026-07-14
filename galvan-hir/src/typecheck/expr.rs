@@ -262,6 +262,7 @@ impl Checker<'_> {
                 "debug" => return self.lower_print(PrintKind::Debug, &call.arguments, span),
                 "if" => return self.lower_if(call, expected, None, span),
                 "for" => return self.lower_for(call, expected, span),
+                "while" => return self.lower_while(call, expected, span),
                 "try" => return self.lower_try(call, expected, None, span),
                 "assert" => return self.lower_assert(call, span),
                 name if BORROWED_ITERATOR_FNS.contains(&name) => {
@@ -2045,6 +2046,66 @@ impl Checker<'_> {
                 bindings,
                 iterable_kind: iterable_info.kind,
                 iterable,
+                body: block,
+                collect,
+            })),
+            ty,
+            Ownership::UniqueOwned,
+            span,
+        )
+    }
+
+    fn lower_while(
+        &mut self,
+        call: &FunctionCall,
+        expected: &Expected,
+        span: Span,
+    ) -> HirExpression {
+        if call.arguments.len() != 2 {
+            self.errors.error(TranspilerError::MissingArgument {
+                operation: "while".to_string(),
+                argument_type: "condition and body".to_string(),
+            });
+            return HirExpression::error("invalid while loop", span);
+        }
+        let Some(body) = closure_argument(&call.arguments[1]) else {
+            self.errors.error(TranspilerError::MissingArgument {
+                operation: "while".to_string(),
+                argument_type: "body expression".to_string(),
+            });
+            return HirExpression::error("invalid while body", span);
+        };
+        if !body.parameters.is_empty() {
+            self.errors.error(TranspilerError::InvalidSyntax {
+                message: "while loops do not bind closure parameters".to_string(),
+            });
+        }
+
+        let condition = self.lower_expression(
+            &call.arguments[0].expression,
+            &Expected::owned(TypeElement::bool()),
+        );
+        let collect = if expected.is_void() {
+            None
+        } else {
+            Some(iteration_type(&self.fn_return, &expected.ty))
+        };
+        let body_expected = match &collect {
+            Some(collect_ty) => Expected::owned(collect_ty.clone()),
+            None => Expected::void(),
+        };
+        let block = self.lower_block(&body.block.body, &body_expected);
+        let ty = match &collect {
+            Some(collect_ty) => TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+                elements: collect_ty.clone(),
+                span: Span::default(),
+            })),
+            None => TypeElement::void(),
+        };
+
+        HirExpression::new(
+            HirExpressionKind::While(Box::new(HirWhile {
+                condition,
                 body: block,
                 collect,
             })),
