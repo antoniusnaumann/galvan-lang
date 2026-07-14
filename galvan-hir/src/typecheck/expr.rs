@@ -350,14 +350,28 @@ impl Checker<'_> {
                     span,
                 });
             }
-            if let Some(function) = namespace.segments.first().and_then(|segment| {
-                self.rust_interop.function(
-                    Some(segment.as_str()),
-                    receiver_ident.as_ref(),
+            let namespace_segments = namespace
+                .segments
+                .iter()
+                .map(Ident::as_str)
+                .collect::<Vec<_>>();
+            let function = if receiver_ident.is_none() {
+                self.rust_interop.function_by_qualified_path(
+                    &namespace_segments,
                     ident,
                     &labels_ref,
                 )
-            }) {
+            } else {
+                namespace.segments.first().and_then(|segment| {
+                    self.rust_interop.function(
+                        Some(segment.as_str()),
+                        receiver_ident.as_ref(),
+                        ident,
+                        &labels_ref,
+                    )
+                })
+            };
+            if let Some(function) = function {
                 return self.lower_rust_call(RustCall {
                     function,
                     receiver,

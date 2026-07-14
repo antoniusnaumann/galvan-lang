@@ -931,6 +931,47 @@ fn nested_path_use_declarations_match_complete_rust_paths() {
     );
 }
 
+#[test]
+fn qualified_function_lookup_distinguishes_nested_modules() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item_at_path(
+                "parse",
+                &["demo", "http", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "1",
+            public_item_at_path(
+                "parse",
+                &["demo", "db", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    assert_eq!(
+        interop
+            .function_by_qualified_path(&["demo", "http"], &ident("parse"), &[])
+            .expect("http function should resolve")
+            .rust_path
+            .as_ref(),
+        "::demo::http::parse"
+    );
+    assert_eq!(
+        interop
+            .function_by_qualified_path(&["demo", "db"], &ident("parse"), &[])
+            .expect("db function should resolve")
+            .rust_path
+            .as_ref(),
+        "::demo::db::parse"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Typed-builder tests.
 // ---------------------------------------------------------------------------

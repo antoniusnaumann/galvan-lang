@@ -12,21 +12,20 @@ impl ReadCursor for FunctionCall {
         cursor_expect!(cursor, "function_call");
 
         cursor.child();
-        let first_ident = Ident::read_cursor(cursor, source)?;
+        let mut path = vec![Ident::read_cursor(cursor, source)?];
         cursor.next();
 
-        let (namespace, identifier) = if cursor.kind()? == "double_colon" {
-            let namespace = Some(UsePath {
-                segments: vec![first_ident],
-                span: Span::default(),
-            });
+        while cursor.kind()? == "double_colon" {
             cursor.next();
-            let identifier = Ident::read_cursor(cursor, source)?;
+            path.push(Ident::read_cursor(cursor, source)?);
             cursor.next();
-            (namespace, identifier)
-        } else {
-            (None, first_ident)
-        };
+        }
+
+        let identifier = path.pop().expect("function calls always contain a name");
+        let namespace = (!path.is_empty()).then_some(UsePath {
+            segments: path,
+            span: Span::default(),
+        });
 
         cursor_expect!(cursor, "paren_open");
 

@@ -33,6 +33,9 @@ pub(crate) fn __main__() {
 The call goes straight to the crate — Galvan inserts the borrow (`&scores`)
 that the Rust signature asks for.
 
+Paths can include as many module segments as the Rust API requires, for example
+`std::cmp::max(4, 9)`.
+
 </details>
 
 Because `serde_json::to_string` returns a Rust `Result`, it arrives in Galvan

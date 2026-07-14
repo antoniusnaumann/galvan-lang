@@ -1090,6 +1090,56 @@ fn qualified_rust_functions_are_typechecked_without_imports() {
 }
 
 #[test]
+fn multi_segment_rust_functions_resolve_the_complete_path() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_function_decl(
+        "demo",
+        "answer",
+        "::demo::nested::answer",
+        FnSignature {
+            visibility: Visibility::public(),
+            identifier: Ident::new("answer"),
+            parameters: ParamList {
+                params: Vec::new(),
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("Int"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+
+    let module = lower_with_interop(
+        "fn call() -> Int {
+             demo::nested::answer()
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected function call, got {:?}", tail.kind);
+    };
+
+    assert_eq!(
+        call.namespace.as_ref().map(|path| path
+            .segments
+            .iter()
+            .map(Ident::as_str)
+            .collect::<Vec<_>>()),
+        Some(vec!["demo", "nested"])
+    );
+    assert_eq!(
+        call.rust.as_ref().map(|rust| rust.rust_path.as_ref()),
+        Some("::demo::nested::answer")
+    );
+}
+
+#[test]
 fn imported_rust_functions_are_typechecked_unqualified() {
     let uses = [use_decl(&["serde_json", "to_string"])];
     let rust_interop = serde_json_interop(&uses);
