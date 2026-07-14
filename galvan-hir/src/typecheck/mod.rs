@@ -12,13 +12,14 @@ mod scope;
 
 use galvan_ast::{
     Assignment, AssignmentOperator, BasicTypeItem, Body, DeclModifier, Declaration, FnDecl, Ident,
-    MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement, TypeIdent,
+    MainKind, Ownership, Param, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
+    TypeIdent,
 };
 use galvan_resolver::{LookupContext, LookupError};
 use galvan_rustdoc::RustInterop;
 
 use crate::builtins::{builtin_fns, builtins, predefined_from, CheckBuiltins};
-use crate::error::ErrorCollector;
+use crate::error::{ErrorCollector, TranspilerError};
 use crate::hir::*;
 use crate::mapping::Mapping;
 
@@ -196,6 +197,7 @@ impl<'a> Checker<'a> {
 
     fn lower_function(&mut self, func: &ToplevelItem<FnDecl>) -> HirFunction {
         let signature = func.item.signature.clone();
+        self.validate_parameter_label_order(&signature.parameters.params);
 
         self.scopes.push();
         for param in &signature.parameters.params {
@@ -240,6 +242,26 @@ impl<'a> Checker<'a> {
             body,
             source: func.source.clone(),
             span: func.item.span,
+        }
+    }
+
+    fn validate_parameter_label_order(&mut self, params: &[Param]) {
+        let mut found_label = false;
+
+        for param in params {
+            if param.call_label().is_some() {
+                found_label = true;
+            } else if found_label {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "unlabeled parameter '{}' cannot follow a labeled parameter",
+                            param.identifier
+                        ),
+                    },
+                    Some(param.span.into()),
+                );
+            }
         }
     }
 

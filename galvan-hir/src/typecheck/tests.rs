@@ -530,6 +530,23 @@ fn constructor_arguments_are_owned() {
 }
 
 #[test]
+fn unlabeled_parameters_cannot_follow_labeled_parameters() {
+    let (_module, errors) = lower_with_diagnostics(
+        "fn invalid(a: Int, with b: Int, c: Int) {}
+         fn valid(a: Int, with b: Int, and c: Int) {}",
+    );
+
+    let messages = errors
+        .errors()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        ["Invalid syntax: unlabeled parameter 'c' cannot follow a labeled parameter"]
+    );
+}
+
+#[test]
 fn constructor_defaults_are_materialized() {
     let module = lower(
         "type Book { title: String = \"Lorem Ipsum\" }
