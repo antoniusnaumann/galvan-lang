@@ -540,6 +540,12 @@ fn apply_rust_arg_conversion(rendered: String, conversion: RustArgConversion) ->
     match conversion {
         RustArgConversion::None => rendered,
         RustArgConversion::SharedBorrow => format!("&{rendered}"),
+        RustArgConversion::FixedArrayBorrow => format!(
+            "{rendered}.as_slice().try_into().expect(\"Galvan array length must match Rust array length\")"
+        ),
+        RustArgConversion::FixedArrayMutBorrow => format!(
+            "{rendered}.as_mut_slice().try_into().expect(\"Galvan array length must match Rust array length\")"
+        ),
         RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
         RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
     }
@@ -1303,6 +1309,45 @@ mod tests {
         let mut errors = ErrorCollector::new();
 
         assert_eq!(call.transpile(&ctx, &mut errors), "::demo::takes_ref(&42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_convert_fixed_array_borrows_at_the_boundary() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust: Some(HirRustCall {
+                rust_path: "::demo::reads_arrays".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: vec![
+                    RustArgConversion::FixedArrayBorrow,
+                    RustArgConversion::FixedArrayMutBorrow,
+                ],
+            }),
+            ident: Ident::new("reads_arrays"),
+            labels: Vec::new(),
+            args: vec![
+                HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("values")),
+                    TypeElement::infer(),
+                    Ownership::Borrowed,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("mutable_values")),
+                    TypeElement::infer(),
+                    Ownership::MutBorrowed,
+                    Span::default(),
+                ),
+            ],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::demo::reads_arrays(values.as_slice().try_into().expect(\"Galvan array length must match Rust array length\"), mutable_values.as_mut_slice().try_into().expect(\"Galvan array length must match Rust array length\"))"
+        );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 

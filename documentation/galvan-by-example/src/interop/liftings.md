@@ -18,7 +18,8 @@ trait items all come across. The type translation follows fixed rules:
 
 | Rust | Galvan |
 | --- | --- |
-| `[T]`, `[T; N]`, `Vec<T>` | `[T]` |
+| `[T]`, `Vec<T>` | `[T]` |
+| `&[T; N]`, `&mut [T; N]` parameter | `[T]`, `mut [T]` |
 | `HashSet<T>` | `{T}` |
 | `HashMap<K, V>` | `{K: V}` |
 | `IndexMap<K, V>` | `[K: V]` |
@@ -49,6 +50,10 @@ Two properties keep the rules honest:
 - **Fail-closed:** shapes Galvan cannot represent safely (raw pointers,
   `unsafe` functions, incomplete metadata) are skipped or imported opaquely
   rather than guessed — see [Limits of Interop](limits.md).
+
+Owned fixed-size arrays remain unsupported because Galvan arrays are dynamically
+sized. Borrowed fixed-size array parameters are accepted and checked for the
+required length at the Rust call boundary.
 
 > [!NOTE]
 > Rust shared references lift to plain Galvan types because pass-by-value

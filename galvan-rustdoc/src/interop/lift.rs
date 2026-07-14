@@ -557,6 +557,26 @@ impl RustInterop {
         crate_name: &str,
         ty: &Type,
     ) -> Option<LiftedType> {
+        if let Type::BorrowedRef {
+            is_mutable,
+            type_: borrowed,
+            ..
+        } = ty
+        {
+            if let Type::Array { type_: element, .. } = borrowed.as_ref() {
+                let mut lifted = self
+                    .lift_type_from_json(krate, crate_name, element)
+                    .map(array_type)?;
+                if *is_mutable {
+                    lifted.decl_modifier = Some(galvan_ast::DeclModifier::Mut);
+                    lifted.arg_conversion = RustArgConversion::FixedArrayMutBorrow;
+                } else {
+                    lifted.arg_conversion = RustArgConversion::FixedArrayBorrow;
+                }
+                return Some(lifted);
+            }
+        }
+
         if type_contains_unliftable_type(krate, ty) {
             return None;
         }

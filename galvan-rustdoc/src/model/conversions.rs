@@ -5,6 +5,8 @@ pub enum RustArgConversion {
     #[default]
     None,
     SharedBorrow,
+    FixedArrayBorrow,
+    FixedArrayMutBorrow,
     BoxNew,
     RcNew,
 }

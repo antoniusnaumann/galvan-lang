@@ -1896,6 +1896,54 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
 }
 
 #[test]
+fn rustdoc_lifts_borrowed_fixed_array_parameters() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_function(
+                "reads_array",
+                vec![("values", borrowed(array(primitive("u64"))))],
+                primitive("bool"),
+            ),
+        ),
+        (
+            "1",
+            public_function(
+                "updates_array",
+                vec![("values", mut_borrowed(array(primitive("u64"))))],
+                primitive("bool"),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    let reads = interop
+        .function(Some("demo"), None, &ident("reads_array"), &[])
+        .expect("shared fixed-array parameter should lift");
+    assert_eq!(
+        reads.arg_conversions,
+        vec![RustArgConversion::FixedArrayBorrow]
+    );
+    assert!(matches!(
+        reads.decl.item.signature.parameters.params[0].param_type,
+        TypeElement::Array(_)
+    ));
+
+    let updates = interop
+        .function(Some("demo"), None, &ident("updates_array"), &[])
+        .expect("mutable fixed-array parameter should lift");
+    assert_eq!(
+        updates.arg_conversions,
+        vec![RustArgConversion::FixedArrayMutBorrow]
+    );
+    assert_eq!(
+        updates.decl.item.signature.parameters.params[0].decl_modifier,
+        Some(galvan_ast::DeclModifier::Mut)
+    );
+}
+
+#[test]
 fn rustdoc_does_not_import_unsafe_functions() {
     let krate = crate_(vec![(
         "0",
