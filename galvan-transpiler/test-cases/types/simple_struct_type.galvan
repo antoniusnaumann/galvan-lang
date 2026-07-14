@@ -1,6 +1,6 @@
 //@TRANSPILE
 //"#[derive(Clone, Debug, PartialEq)] pub struct SimpleStruct {
-//    pub(crate) member: String
+//    pub member: String
 //}"
 //@end
 

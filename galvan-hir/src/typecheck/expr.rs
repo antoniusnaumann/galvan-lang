@@ -3125,14 +3125,14 @@ impl Checker<'_> {
                                 is_ref_field,
                                 "constructor arguments",
                             );
+                            let missing_ref_modifier = is_ref_field
+                                && argument.modifier != Some(DeclModifier::Ref)
+                                && value.adjusted_ownership() == Ownership::Ref;
                             if !is_ref_field || argument.modifier != Some(DeclModifier::Ref) {
                                 let expected = Expected::owned(member.r#type.clone());
                                 value = self.coerce(value, &expected);
                             }
-                            (
-                                value,
-                                is_ref_field && argument.modifier != Some(DeclModifier::Ref),
-                            )
+                            (value, missing_ref_modifier)
                         }
                         None => match &member.default_value {
                             Some(default) => {
