@@ -286,6 +286,7 @@ impl ReadCursor for RangeOperator {
             "exclusive_range" => Self::Exclusive,
             "tolerance_range" => Self::Tolerance,
             "interval_range" => Self::Interval,
+            "descending_range" => Self::Descending,
             unknown => unreachable!("Unknown range operator: {unknown}"),
         };
 

@@ -209,6 +209,7 @@ pub enum RangeOperator {
     Exclusive,
     Tolerance,
     Interval,
+    Descending,
 }
 
 impl InfixOperator for RangeOperator {
@@ -218,6 +219,7 @@ impl InfixOperator for RangeOperator {
             RangeOperator::Exclusive => "..<",
             RangeOperator::Tolerance => "±",
             RangeOperator::Interval => "..+",
+            RangeOperator::Descending => "..-",
         }
     }
 }

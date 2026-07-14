@@ -44,3 +44,14 @@ test "Iterate over interval range" {
     assert last == 12
 }
 
+test "Iterate over descending range" {
+    mut last = 0
+    for 7..-3 |i| {
+        last = i
+
+        assert i <= 7
+        assert i >= 4
+    }
+
+    assert last == 4
+}

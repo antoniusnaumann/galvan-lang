@@ -876,6 +876,16 @@ impl Transpile for HirBinary<RangeOperator> {
                 // start ..+ interval => start..=(start + interval)
                 transpile!(ctx, errors, "{}..=({} + {})", self.lhs, self.lhs, self.rhs)
             }
+            RangeOperator::Descending => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "(({} - {})..=({})).rev()",
+                    self.lhs,
+                    self.rhs,
+                    self.lhs
+                )
+            }
         }
     }
 }

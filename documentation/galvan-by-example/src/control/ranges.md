@@ -1,9 +1,9 @@
 # Ranges
 
 Galvan makes the upper bound explicit: `..<` excludes it, `..=` includes it.
-Two more range operators cover common numeric patterns — `a ..+ n` starts at
+Three more range operators cover common numeric patterns — `a ..+ n` starts at
 `a` and goes to `a + n` inclusively, and `m ± d` is the inclusive tolerance range around
-`m`:
+`m`. `a ..- n` starts at `a` and descends through `a - n`:
 
 ```galvan
 fn main() {
@@ -49,12 +49,14 @@ pub(crate) fn __main__() {
     for i in 7..=(7 + 3) {
         sum += i;
     }
-    // TODO
+    for i in ((7 - 3)..=(7)).rev() {
+        sum += i;
+    }
 }
 ```
 
-All four forms lower to Rust's two range types; `±` and `..+` are computed
-bounds, not new runtime types.
+All five forms use Rust ranges; `±` and `..+` compute bounds, while `..-`
+reverses an inclusive range.
 
 </details>
 
