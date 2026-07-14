@@ -451,6 +451,17 @@ impl Transpile for HirMethodCall {
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
 
         if let Some(rust) = &self.rust {
+            if let Some(extension_trait) = &rust.extension_trait {
+                let args = transpile_rust_arguments_vec(
+                    &self.args,
+                    rust.arg_conversions.as_slice(),
+                    ctx,
+                    errors,
+                )
+                .join(", ");
+                let call = format!("{{ use {extension_trait}; {receiver}.{ident}({args}) }}");
+                return transpile_rust_return(call, rust.return_conversion);
+            }
             let receiver =
                 transpile_rust_argument(&self.receiver, rust.receiver_conversion, ctx, errors);
             let args = std::iter::once(receiver)
@@ -466,13 +477,9 @@ impl Transpile for HirMethodCall {
         }
 
         if let Some(namespace) = &self.namespace {
-            return format!(
-                "{{ use {}::*; {}.{}({}) }}",
-                sanitize_path(namespace),
-                receiver,
-                ident,
-                args,
-            );
+            let import = scoped_extension_import(namespace, &self.receiver.ty)
+                .unwrap_or_else(|| format!("{}::*", sanitize_path(namespace)));
+            return format!("{{ use {}; {}.{}({}) }}", import, receiver, ident, args,);
         }
 
         if self.receiver_modifier == Some(galvan_ast::DeclModifier::Ref) {
@@ -595,7 +602,11 @@ impl Transpile for HirSafeAccess {
                     args
                 );
                 match namespace {
-                    Some(namespace) => format!("{{ use {}::*; {call} }}", sanitize_path(namespace)),
+                    Some(namespace) => {
+                        let import = scoped_extension_import(namespace, &self.receiver.ty)
+                            .unwrap_or_else(|| format!("{}::*", sanitize_path(namespace)));
+                        format!("{{ use {import}; {call} }}")
+                    }
                     None => call,
                 }
             }
@@ -611,6 +622,22 @@ impl Transpile for HirSafeAccess {
             SafeAccessStyle::Move => format!("{receiver}.map(|__elem__| {{ {access} }})"),
         }
     }
+}
+
+fn scoped_extension_import(namespace: &UsePath, receiver: &TypeElement) -> Option<String> {
+    let receiver = match receiver {
+        TypeElement::Plain(receiver) => receiver.ident.as_str(),
+        TypeElement::Parametric(receiver) => receiver.base_type.as_str(),
+        TypeElement::Optional(receiver) => {
+            return scoped_extension_import(namespace, &receiver.inner)
+        }
+        _ => return None,
+    };
+    Some(format!(
+        "{}::{}_Ext",
+        sanitize_path(namespace),
+        sanitize_name(receiver)
+    ))
 }
 
 impl Transpile for HirConstructorCall {
@@ -1058,6 +1085,43 @@ mod tests {
 
         assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn resolved_extension_methods_import_the_specific_trait() {
+        let method = HirMethodCall {
+            receiver: HirExpression::new(
+                HirExpressionKind::Variable(Ident::new("book")),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("String"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+            receiver_modifier: None,
+            namespace: Some(UsePath {
+                segments: vec![Ident::new("reader")],
+                span: Span::default(),
+            }),
+            rust: Some(HirRustMethodCall {
+                rust_path: "<::std::string::String as ::reader::String_Ext>::read_and_judge".into(),
+                extension_trait: Some("::reader::String_Ext".into()),
+                return_conversion: RustReturnConversion::None,
+                receiver_conversion: RustArgConversion::SharedBorrow,
+                arg_conversions: Vec::new(),
+            }),
+            ident: Ident::new("read_and_judge"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            method.transpile(&ctx, &mut errors),
+            "{ use ::reader::String_Ext; book.read_and_judge() }"
+        );
     }
 
     #[test]

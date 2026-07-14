@@ -22,16 +22,17 @@ fn main() {
 pub(crate) fn __main__() {
     let book: String = format!("content");
     let score: _ = {
-        use reader::*;
+        use reader::String_Ext;
         book.read_and_judge()
     };
 }
 ```
 
-A namespace-qualified method call becomes a block that imports the crate's
-extension traits locally — scoping the import to exactly one call.
-
-`// TODO: Galvan should specifically recognize traits of the form {TYPENAME}_Ext as extension traits, i.e., the form that Galvan extension methods lower to and specifically import those (and look at those for type checking) other trait implementations should not result in extension methods.`
+A namespace-qualified method call becomes a block that imports the matching
+`{TypeName}_Ext` trait locally — the same trait shape generated for Galvan
+extension methods. These recognized extension traits participate in
+typechecking; methods from unrelated trait implementations are not exposed as
+extension methods.
 
 </details>
 
@@ -49,8 +50,6 @@ let router = Router.new()
 ```
 
 > [!WARNING]
-> **Partially implemented.** Namespaced method calls parse and generate code,
-> but are not yet typechecked against the imported signature. Associated
-> items with `Type.item` syntax are the design target (they already drive the
-> rustdoc lifting of inherent and trait items), but the
-> `TypeName.associated_function()` receiver position does not parse yet.
+> Associated functions and constants parse and typecheck when rustdoc metadata
+> identifies their receiver. Generic builder APIs can still require type
+> information that the interop layer does not yet propagate through a chain.

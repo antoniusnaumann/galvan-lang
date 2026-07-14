@@ -3748,12 +3748,12 @@ fn rustdoc_does_not_import_unsafe_associated_functions() {
 fn rustdoc_imports_trait_impl_methods() {
     let krate = crate_(vec![
         ("0", public_item("Ticket", struct_plain(&[]))),
-        ("1", public_item("DisplayName", trait_(&[]))),
+        ("1", public_item("Ticket_Ext", trait_(&[]))),
         (
             "2",
             public_impl(
                 resolved_with_string_path("crate::Ticket", vec![]),
-                Some(resolved_with_string_path("$crate::DisplayName", vec![])),
+                Some(resolved_with_string_path("$crate::Ticket_Ext", vec![])),
                 &["3"],
             ),
         ),
@@ -3785,10 +3785,55 @@ fn rustdoc_imports_trait_impl_methods() {
         .expect("expected imported trait method");
     assert_eq!(
         function.rust_path.as_ref(),
-        "<::demo::Ticket as ::demo::DisplayName>::display_name"
+        "<::demo::Ticket as ::demo::Ticket_Ext>::display_name"
+    );
+    assert_eq!(
+        function.extension_trait.as_deref(),
+        Some("::demo::Ticket_Ext")
     );
     let receiver = function.decl.item.signature.receiver().unwrap();
     assert_eq!(receiver.decl_modifier, None);
     assert_eq!(receiver.param_type, plain_type(TypeIdent::new("Ticket")));
     assert_eq!(function.decl.item.signature.return_type, string_type());
+}
+
+#[test]
+fn rustdoc_does_not_surface_other_trait_impls_as_extension_methods() {
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_item("DisplayName", trait_(&[]))),
+        (
+            "2",
+            public_impl(
+                resolved_with_string_path("crate::Ticket", vec![]),
+                Some(resolved_with_string_path("$crate::DisplayName", vec![])),
+                &["3"],
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path(
+                "display_name",
+                &["demo", "DisplayName"],
+                function_item(
+                    vec![(
+                        "self",
+                        borrowed(resolved_with_string_path("crate::Ticket", vec![])),
+                    )],
+                    Some(primitive("str")),
+                ),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    assert!(interop
+        .function(
+            Some("demo"),
+            Some(&TypeIdent::new("Ticket")),
+            &ident("display_name"),
+            &[],
+        )
+        .is_none());
 }

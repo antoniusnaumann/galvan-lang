@@ -11,7 +11,9 @@ use super::rustdoc_json::{
     public_type_name, receiver_type_ident, return_is_borrowed, trait_constant_ids,
     trait_function_ids, type_contains_unliftable_type,
 };
-use super::rustdoc_path::{callable_rust_path, impl_constant_rust_path, impl_function_rust_path};
+use super::rustdoc_path::{
+    callable_rust_path, extension_trait_rust_path, impl_constant_rust_path, impl_function_rust_path,
+};
 use super::RustInterop;
 
 struct ReexportedImplImport<'a> {
@@ -99,6 +101,17 @@ impl RustInterop {
                 continue;
             };
             self.import_impl_constants(krate, crate_name, impl_, &associated_receiver);
+            let extension_trait = match &impl_.trait_ {
+                Some(_) => {
+                    let Some(extension_trait) =
+                        extension_trait_rust_path(krate, crate_name, impl_, &associated_receiver)
+                    else {
+                        continue;
+                    };
+                    Some(extension_trait)
+                }
+                None => None,
+            };
 
             for id in &impl_.items {
                 let Some(item) = krate.index.get(id) else {
@@ -131,6 +144,7 @@ impl RustInterop {
                     imported.decl,
                     borrowed_return,
                     Some(associated_receiver.clone()),
+                    extension_trait.clone(),
                     imported.return_conversion,
                     imported.arg_conversions,
                 );
@@ -184,6 +198,7 @@ impl RustInterop {
                         imported.decl,
                         borrowed_return,
                         Some(receiver.clone()),
+                        None,
                         imported.return_conversion,
                         imported.arg_conversions,
                     );
@@ -425,6 +440,21 @@ impl RustInterop {
     }
 
     fn import_reexported_impl_functions(&mut self, import: &ReexportedImplImport<'_>) {
+        let extension_trait = match &import.impl_.trait_ {
+            Some(_) => {
+                let Some(extension_trait) = extension_trait_rust_path(
+                    import.krate,
+                    import.crate_name,
+                    import.impl_,
+                    import.original_receiver,
+                ) else {
+                    return;
+                };
+                Some(extension_trait)
+            }
+            None => None,
+        };
+
         for id in &import.impl_.items {
             let Some(item) = import.krate.index.get(id) else {
                 continue;
@@ -464,6 +494,7 @@ impl RustInterop {
                 imported.decl,
                 borrowed_return,
                 Some(import.exported_receiver.clone()),
+                extension_trait.clone(),
                 imported.return_conversion,
                 imported.arg_conversions,
             );

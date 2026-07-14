@@ -224,6 +224,7 @@ impl RustInterop {
             decl,
             borrowed_return,
             None,
+            None,
             return_conversion,
             arg_conversions,
         );
@@ -270,6 +271,7 @@ impl RustInterop {
         decl: FnDecl,
         borrowed_return: bool,
         associated_receiver: Option<TypeIdent>,
+        extension_trait: Option<Box<str>>,
         return_conversion: RustReturnConversion,
         arg_conversions: Vec<RustArgConversion>,
     ) {
@@ -295,6 +297,7 @@ impl RustInterop {
         self.functions.push(RustFunctionDecl {
             namespace: crate_name.into(),
             rust_path,
+            extension_trait,
             borrowed_return,
             return_conversion,
             arg_conversions,

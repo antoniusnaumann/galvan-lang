@@ -19,6 +19,7 @@ pub struct RustTypeDecl {
 pub struct RustFunctionDecl {
     pub namespace: Box<str>,
     pub rust_path: Box<str>,
+    pub extension_trait: Option<Box<str>>,
     pub borrowed_return: bool,
     pub return_conversion: RustReturnConversion,
     pub arg_conversions: Vec<RustArgConversion>,

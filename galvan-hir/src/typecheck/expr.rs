@@ -628,6 +628,7 @@ impl Checker<'_> {
                     namespace: call.namespace,
                     rust: Some(HirRustMethodCall {
                         rust_path: call.function.rust_path.clone(),
+                        extension_trait: call.function.extension_trait.clone(),
                         return_conversion: call.function.return_conversion,
                         receiver_conversion,
                         arg_conversions,

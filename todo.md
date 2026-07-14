@@ -91,7 +91,6 @@ commands remain subcommands.
   - Evaluate auto-detecting compatible installed nightly toolchains now that
     the golden rustdoc fixture guards schema compatibility.
 - Extend Rust interop beyond rustdoc-backed free functions:
-  - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve external-target function and constant re-exports from rustdoc JSON;
     external type re-exports without target metadata are imported as empty types
   - Support qualified external Rust constant paths

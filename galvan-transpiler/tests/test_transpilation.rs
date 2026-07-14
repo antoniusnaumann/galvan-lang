@@ -214,8 +214,8 @@ fn transpiles_namespaced_method_calls_as_scoped_imports() {
          }",
     );
 
-    assert!(output.contains("{ use reader::*; book.read_and_judge() }"));
-    assert!(output.contains("{ use reader::*; book.score__with(5) }"));
+    assert!(output.contains("{ use reader::Book_Ext; book.read_and_judge() }"));
+    assert!(output.contains("{ use reader::Book_Ext; book.score__with(5) }"));
 }
 
 #[test]

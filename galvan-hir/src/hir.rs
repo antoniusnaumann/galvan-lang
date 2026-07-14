@@ -517,6 +517,7 @@ pub struct HirRustCall {
 #[derive(Clone, Debug)]
 pub struct HirRustMethodCall {
     pub rust_path: Box<str>,
+    pub extension_trait: Option<Box<str>>,
     pub return_conversion: galvan_rustdoc::RustReturnConversion,
     pub receiver_conversion: galvan_rustdoc::RustArgConversion,
     pub arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
