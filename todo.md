@@ -42,6 +42,8 @@ commands remain subcommands.
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
   - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
     does not implement `PartialEq`)
+  - Preserve `ref` ownership for struct fields so chained access locks the
+    field before reading its members (typecheck/expr.rs `lower_member`)
 
 - **Tuples**
   - Tuple member access (typecheck/expr.rs `field_type`)
@@ -149,5 +151,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-14*
+*Last updated: 2026-07-23*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

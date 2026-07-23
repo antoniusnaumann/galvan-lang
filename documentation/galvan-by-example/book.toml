@@ -5,11 +5,9 @@ description = "Learn Galvan with a collection of small examples that show the la
 src = "src"
 language = "en"
 
-[preprocessor.alerts]
-
 [output.html]
-default-theme = "rust"
-preferred-dark-theme = "navy"
+default-theme = "light"
+preferred-dark-theme = "coal"
 git-repository-url = "https://github.com/antoniusnaumann/galvan-lang"
 additional-js = ["theme/galvan-highlight.js"]
 

@@ -9,6 +9,11 @@ type Color { r: Int, g: Int, b: Int }   // struct
 type Wrapper(String)                    // tuple struct
 type Human = Person                     // alias
 type Direction { North South East West } // enum (variants, no fields)
+type Theme { // enum with associated fields
+  Gray(U8)
+  Rgb(r: U8, g: U8, b: U8)
+  Plain
+}
 ```
 
 Types starting with a lowercase letter are *type parameters* — see

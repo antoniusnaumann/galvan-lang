@@ -11,11 +11,13 @@ explicit `[!WARNING]` alerts.
 The book uses [mdBook](https://rust-lang.github.io/mdBook/):
 
 ```sh
-cargo install mdbook --version 0.4.51 --locked
-cargo install mdbook-alerts --version 0.8.0 --locked
+cargo install mdbook --version 0.5.4 --locked
 mdbook serve           # live-reloading local preview
 mdbook build           # writes static HTML to book/
 ```
+
+mdBook 0.5 renders the `[!NOTE]`, `[!WARNING]`, and related admonitions
+natively, so no alert preprocessor is required.
 
 ## Conventions for contributors
 

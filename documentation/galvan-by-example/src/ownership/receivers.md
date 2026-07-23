@@ -8,6 +8,11 @@ type Dog {
     name: String
 }
 
+type Human {
+    name: String
+    ref dog: Dog
+}
+
 fn rename(mut self: Dog, name: String) {
     self.name = name
 }
@@ -16,12 +21,19 @@ fn replace(ref self: Dog, replacement: Dog) {
     self = replacement
 }
 
+fn share(ref self: Dog, with co_owner_name: String) -> Human {
+    Human(name: co_owner_name, dog: ref self)
+}
+
 fn main() {
     mut dog = Dog(name: "Milo")
     dog.mut.rename("Scout")
 
     ref shared_dog = Dog(name: "Rex")
-    shared_dog.ref.replace(Dog(name: "Lassie"))
+    let human = shared_dog.ref.share(with: "George")
+    shared_dog.name = "Lassie"
+
+    assert human.dog.name == "Lassie"
 }
 ```
 
@@ -46,6 +58,22 @@ impl Dog {
             *__self.lock().unwrap() = replacement.to_owned();
         };
     }
+
+    pub(crate) fn share__with(
+        __self: std::sync::Arc<std::sync::Mutex<Self>>,
+        co_owner_name: &str,
+    ) -> Human {
+        Human {
+            name: co_owner_name.to_owned(),
+            dog: ::std::sync::Arc::clone(&__self),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Human {
+    pub(crate) name: String,
+    pub(crate) dog: std::sync::Arc<std::sync::Mutex<Dog>>,
 }
 
 pub(crate) fn __main__() {
@@ -57,12 +85,9 @@ pub(crate) fn __main__() {
         name: format!("Rex"),
     }))
         .__to_ref();
-    Dog::replace(
-        (::std::sync::Arc::clone(&shared_dog)),
-        &Dog {
-            name: format!("Lassie"),
-        },
-    );
+    let human: Human = Dog::share__with((::std::sync::Arc::clone(&shared_dog)), &format!("George"));
+    shared_dog.lock().unwrap().name = format!("Lassie");
+    assert_eq!(human.dog.name, format!("Lassie"),);
 }
 ```
 

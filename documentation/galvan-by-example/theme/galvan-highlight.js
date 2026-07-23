@@ -9,7 +9,7 @@
   hljs.registerLanguage("galvan", function (hljs) {
     var KEYWORDS = {
       keyword:
-        "fn type let mut ref pub test cmd try else if for match throw " +
+        "fn type let mut ref pub test cmd try else if for while match throw " +
         "return use async auto trait where in and or xor not break " +
         "continue loop self it",
       literal: "true false none",
