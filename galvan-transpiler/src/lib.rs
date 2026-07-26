@@ -375,7 +375,8 @@ fn transpile_segmented_asts(
     segmented: SegmentedAsts,
     rust_interop: RustInterop,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
-    let (module, mut errors) = typecheck_with_interop(segmented, &rust_interop)?;
+    let checked = typecheck_with_interop(segmented, &rust_interop);
+    let (module, mut errors) = (checked.module, checked.errors);
     let rust_types = codegen_rust_types(&rust_interop);
 
     let mut builtins = builtins();
@@ -392,7 +393,7 @@ fn transpile_segmented_asts(
     }
     let predefined = predefined_from(&builtins, builtin_fns());
     let mut ctx = Context::new(builtins);
-    ctx = ctx.with(&predefined)?;
+    ctx = ctx.with(&predefined);
     for ty in &module.types {
         ctx.lookup.types.insert(ty.item.ident().clone(), ty);
     }
@@ -1007,6 +1008,7 @@ fn transpile_extension_functions(
         .iter()
         .map(|f| FnSignature {
             visibility: Visibility::private(),
+            is_async: false,
             ..f.signature.clone()
         })
         .map(|s| transpile_signature(&s, ctx, errors, &no_generics))

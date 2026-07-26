@@ -11,6 +11,7 @@ use super::rustdoc_json::{
     public_type_name, receiver_type_ident, return_is_borrowed, trait_constant_ids,
     trait_function_ids, type_contains_unliftable_type,
 };
+use super::registry::item_source_span;
 use super::rustdoc_path::{
     callable_rust_path, extension_trait_rust_path, impl_constant_rust_path, impl_function_rust_path,
 };
@@ -26,6 +27,36 @@ struct ReexportedImplImport<'a> {
 }
 
 impl RustInterop {
+    /// Resolve the relative source-span paths of `crate_name`'s lifted items
+    /// against the crate's source directory. rustdoc emits span filenames
+    /// relative to the documented crate, not the consumer project.
+    pub fn resolve_source_spans(&mut self, crate_name: &str, dependency_root: &std::path::Path) {
+        let resolve = |span: &mut Option<crate::model::RustSourceSpan>| {
+            if let Some(span) = span {
+                if span.path.is_relative() {
+                    span.path = dependency_root.join(&span.path);
+                }
+            }
+        };
+        for ty in self.types.iter_mut().filter(|ty| ty.namespace.as_ref() == crate_name) {
+            resolve(&mut ty.source_span);
+        }
+        for function in self
+            .functions
+            .iter_mut()
+            .filter(|function| function.namespace.as_ref() == crate_name)
+        {
+            resolve(&mut function.source_span);
+        }
+        for constant in self
+            .constants
+            .iter_mut()
+            .filter(|constant| constant.namespace.as_ref() == crate_name)
+        {
+            resolve(&mut constant.source_span);
+        }
+    }
+
     pub fn add_crate(&mut self, crate_name: &str, krate: &Crate) -> RustdocCrateLiftSummary {
         let before = LiftCounts::from(&*self);
 
@@ -73,6 +104,7 @@ impl RustInterop {
                 borrowed_return,
                 imported.return_conversion,
                 imported.arg_conversions,
+                item_source_span(item),
             );
         }
         self.import_top_level_constants(krate, crate_name, &impl_constant_ids, &trait_constant_ids);
@@ -147,6 +179,7 @@ impl RustInterop {
                     extension_trait.clone(),
                     imported.return_conversion,
                     imported.arg_conversions,
+                    item_source_span(item),
                 );
             }
         }
@@ -201,6 +234,7 @@ impl RustInterop {
                         None,
                         imported.return_conversion,
                         imported.arg_conversions,
+                        item_source_span(item),
                     );
                     continue;
                 }
@@ -301,6 +335,7 @@ impl RustInterop {
                 borrowed_return,
                 imported.return_conversion,
                 imported.arg_conversions,
+                item_source_span(target),
             );
             return;
         }
@@ -369,7 +404,14 @@ impl RustInterop {
         let Some(ty) = self.type_from_json(krate, crate_name, constant_ty) else {
             return;
         };
-        self.push_constant(crate_name, None, exported_name, rust_path, ty);
+        self.push_constant(
+            crate_name,
+            None,
+            exported_name,
+            rust_path,
+            ty,
+            item_source_span(constant),
+        );
     }
 
     fn import_reexported_impl_items(
@@ -435,6 +477,7 @@ impl RustInterop {
                 name,
                 format!("{}::{name}", import.receiver_rust_path).into_boxed_str(),
                 ty,
+                item_source_span(item),
             );
         }
     }
@@ -497,6 +540,7 @@ impl RustInterop {
                 extension_trait.clone(),
                 imported.return_conversion,
                 imported.arg_conversions,
+                item_source_span(item),
             );
         }
     }
@@ -519,7 +563,14 @@ impl RustInterop {
         let Some(ty) = self.type_from_json(krate, crate_name, constant_ty) else {
             return;
         };
-        self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
+        self.push_constant(
+            crate_name,
+            Some(receiver.clone()),
+            name,
+            rust_path,
+            ty,
+            item_source_span(constant),
+        );
     }
 
     fn import_top_level_constants(
@@ -554,6 +605,7 @@ impl RustInterop {
                 name,
                 callable_rust_path(krate, crate_name, name, item),
                 ty,
+                item_source_span(item),
             );
         }
     }
@@ -585,7 +637,14 @@ impl RustInterop {
                 continue;
             };
             let rust_path = impl_constant_rust_path(krate, crate_name, name, item, impl_);
-            self.push_constant(crate_name, Some(receiver.clone()), name, rust_path, ty);
+            self.push_constant(
+                crate_name,
+                Some(receiver.clone()),
+                name,
+                rust_path,
+                ty,
+                item_source_span(item),
+            );
         }
     }
 

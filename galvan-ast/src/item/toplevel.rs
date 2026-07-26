@@ -7,6 +7,7 @@ use crate::{AstNode, PrintAst, Span};
 #[derive(Debug, PartialEq, Eq)]
 pub struct MainDecl {
     pub kind: MainKind,
+    pub is_async: bool,
     pub body: Body,
     pub span: Span,
 }

@@ -10,12 +10,8 @@ fn serialize_value(value: Value) -> String!Error {
 }
 
 fn main() {
-    let label = parse_label() else |error| {
-        "scores"
-    }
+    let label = parse_label() else |error| { "scores" }
     let scores = [32, 48, 64]
-    let payload = serde_json::to_string(scores) else |error| {
-        "encoding failed"
-    }
+    let payload = serde_json::to_string(scores) else |error| { "encoding failed" }
     println "\(label) as json: \(payload)"
 }

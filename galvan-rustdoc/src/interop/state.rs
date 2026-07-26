@@ -7,7 +7,7 @@ use serde_json::Value;
 use galvan_ast::{FnDecl, Ident, ToplevelItem, TypeDecl, TypeElement, TypeIdent, UseDecl};
 use galvan_files::Source;
 
-use crate::cache::RustdocCache;
+use crate::cache::{env_manifest_dir, RustdocCache};
 use crate::model::{
     RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl, RustdocCrateLiftSummary,
 };
@@ -74,6 +74,26 @@ impl RustInterop {
         Self::from_crates_and_uses(imported_crates(uses), uses)
     }
 
+    /// Like [`Self::from_uses`], but resolving dependencies against an explicit
+    /// consumer project directory (the directory containing its `Cargo.toml`)
+    /// instead of `CARGO_MANIFEST_DIR`/cwd. For callers not run by cargo, most
+    /// importantly the language server. Soft cache errors (missing dependency,
+    /// missing toolchain) degrade to an interop without that crate's items.
+    pub fn from_uses_in(
+        manifest_dir: &Path,
+        uses: &[ToplevelItem<UseDecl>],
+        warn: impl FnMut(&RustdocError),
+    ) -> Result<Self, RustdocError> {
+        Self::from_crates_and_uses_with_options_in(
+            manifest_dir,
+            imported_crates(uses),
+            uses,
+            warn,
+            false,
+            false,
+        )
+    }
+
     pub fn from_crates_and_uses(
         crate_names: impl IntoIterator<Item = String>,
         uses: &[ToplevelItem<UseDecl>],
@@ -98,6 +118,24 @@ impl RustInterop {
     fn from_crates_and_uses_with_options(
         crate_names: impl IntoIterator<Item = String>,
         uses: &[ToplevelItem<UseDecl>],
+        warn: impl FnMut(&RustdocError),
+        require_lift: bool,
+        strict_setup: bool,
+    ) -> Result<Self, RustdocError> {
+        Self::from_crates_and_uses_with_options_in(
+            &env_manifest_dir(),
+            crate_names,
+            uses,
+            warn,
+            require_lift,
+            strict_setup,
+        )
+    }
+
+    fn from_crates_and_uses_with_options_in(
+        manifest_dir: &Path,
+        crate_names: impl IntoIterator<Item = String>,
+        uses: &[ToplevelItem<UseDecl>],
         mut warn: impl FnMut(&RustdocError),
         require_lift: bool,
         strict_setup: bool,
@@ -111,7 +149,7 @@ impl RustInterop {
         let mut warned = HashSet::new();
 
         for crate_name in crate_names {
-            let cache = RustdocCache::new(&crate_name);
+            let cache = RustdocCache::new_in(&crate_name, manifest_dir);
             match cache.update_if_needed() {
                 Ok(()) => {}
                 Err(error) if is_soft_cache_error(&error) => {
@@ -137,6 +175,9 @@ impl RustInterop {
                 let krate: rustdoc_types::Crate = serde_json::from_value(json)
                     .map_err(|error| RustdocError::ParseCache(path.clone(), error))?;
                 let summary = interop.add_crate(&crate_name, &krate);
+                if let Some(root) = cache.dependency_root() {
+                    interop.resolve_source_spans(&crate_name, &root);
+                }
                 if require_lift && summary.total_items() == 0 {
                     return Err(RustdocError::RequiredLiftEmpty(summary.crate_name));
                 }
@@ -165,6 +206,7 @@ impl RustInterop {
             borrowed_return,
             RustReturnConversion::None,
             Vec::new(),
+            None,
         );
     }
 
@@ -187,6 +229,7 @@ impl RustInterop {
                 item: decl,
                 source: Source::Builtin,
             },
+            source_span: None,
         };
         if let Some(existing) = self
             .types
@@ -206,7 +249,7 @@ impl RustInterop {
         rust_path: impl Into<Box<str>>,
         ty: TypeElement,
     ) {
-        self.push_constant(namespace, None, name, rust_path.into(), ty);
+        self.push_constant(namespace, None, name, rust_path.into(), ty, None);
     }
 
     pub fn add_associated_constant_decl(
@@ -217,7 +260,7 @@ impl RustInterop {
         rust_path: impl Into<Box<str>>,
         ty: TypeElement,
     ) {
-        self.push_constant(namespace, Some(receiver), name, rust_path.into(), ty);
+        self.push_constant(namespace, Some(receiver), name, rust_path.into(), ty, None);
     }
 
     pub fn add_associated_function_decl(
@@ -239,6 +282,7 @@ impl RustInterop {
             None,
             RustReturnConversion::None,
             Vec::new(),
+            None,
         );
     }
 

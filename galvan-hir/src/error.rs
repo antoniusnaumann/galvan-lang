@@ -16,7 +16,22 @@ pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub message: String,
     pub span: Option<Span>,
+    /// Human-readable help text, shown alongside the message.
     pub suggestion: Option<String>,
+    /// Stable machine-readable code identifying the kind of diagnostic
+    /// (see [`TranspilerError::code`]). Lets tooling react to specific
+    /// errors without parsing the message.
+    pub code: Option<String>,
+    /// A machine-applicable fix, when one is known.
+    pub fix: Option<Fix>,
+}
+
+/// A machine-applicable fix for a diagnostic: replace the text at `span`
+/// with `replacement`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fix {
+    pub span: Span,
+    pub replacement: String,
 }
 
 /// Span information for error reporting
@@ -114,6 +129,38 @@ pub enum TranspilerError {
         operation: String,
         type_name: String,
     },
+
+    #[error("Duplicate {kind} declaration: {name} is already declared")]
+    DuplicateDeclaration { kind: String, name: String },
+}
+
+impl TranspilerError {
+    /// Stable machine-readable code for this kind of error, stamped onto the
+    /// diagnostics it produces. Tooling (e.g. the language server) keys
+    /// behavior on these, so they must not change once published.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::TypeMismatch { .. } => "type_mismatch",
+            Self::UnknownIdentifier { .. } => "unknown_identifier",
+            Self::UnknownType { .. } => "unknown_type",
+            Self::ImmutableAssignment { .. } => "immutable_assignment",
+            Self::InvalidOperation { .. } => "invalid_operation",
+            Self::ArgumentCountMismatch { .. } => "argument_count_mismatch",
+            Self::ArgumentPassingMode { .. } => "argument_passing_mode",
+            Self::TypeInferenceFailure => "type_inference_failure",
+            Self::Unimplemented { .. } => "unimplemented",
+            Self::InvalidSyntax { .. } => "invalid_syntax",
+            Self::CircularDependency => "circular_dependency",
+            Self::InvalidModifier { .. } => "invalid_modifier",
+            Self::MissingArgument { .. } => "missing_argument",
+            Self::InvalidOperationOnType { .. } => "invalid_operation_on_type",
+            Self::EnumAccessError { .. } => "enum_access_error",
+            Self::MemberAccessError { .. } => "member_access_error",
+            Self::IncompatibleOwnership { .. } => "incompatible_ownership",
+            Self::UnsupportedDictSetAssignment { .. } => "unsupported_dict_set_assignment",
+            Self::DuplicateDeclaration { .. } => "duplicate_declaration",
+        }
+    }
 }
 
 /// Collects errors and warnings during compilation
@@ -122,11 +169,44 @@ pub struct ErrorCollector {
     diagnostics: Vec<Diagnostic>,
     error_count: usize,
     warning_count: usize,
+    /// File that subsequently reported diagnostics belong to.
+    ///
+    /// AST spans only carry byte offsets, not the file they originate from. When
+    /// several files are checked together (e.g. a whole crate), callers set this
+    /// before processing each file so that diagnostics can be attributed back to
+    /// the right source. It is stamped onto any span whose `file` is still empty.
+    current_file: String,
 }
 
 impl ErrorCollector {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the file that subsequently added diagnostics belong to.
+    pub fn set_current_file(&mut self, file: impl Into<String>) {
+        self.current_file = file.into();
+    }
+
+    /// Push a diagnostic, stamping the current file onto its span (when not
+    /// already set) and updating the severity counters.
+    fn push(&mut self, mut diagnostic: Diagnostic) {
+        let spans = diagnostic
+            .span
+            .as_mut()
+            .into_iter()
+            .chain(diagnostic.fix.as_mut().map(|fix| &mut fix.span));
+        for span in spans {
+            if span.file.is_empty() {
+                span.file = self.current_file.clone();
+            }
+        }
+        match diagnostic.severity {
+            DiagnosticSeverity::Error => self.error_count += 1,
+            DiagnosticSeverity::Warning => self.warning_count += 1,
+            DiagnosticSeverity::Info => {}
+        }
+        self.diagnostics.push(diagnostic);
     }
 
     /// Add an error to the collector
@@ -136,13 +216,14 @@ impl ErrorCollector {
 
     /// Add an error with span information
     pub fn error_with_span(&mut self, error: TranspilerError, span: Option<Span>) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Error,
+            code: Some(error.code().to_string()),
             message: error.to_string(),
             span,
             suggestion: None,
+            fix: None,
         });
-        self.error_count += 1;
     }
 
     /// Add an error with a suggestion
@@ -152,33 +233,55 @@ impl ErrorCollector {
         span: Option<Span>,
         suggestion: String,
     ) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Error,
+            code: Some(error.code().to_string()),
             message: error.to_string(),
             span,
             suggestion: Some(suggestion),
+            fix: None,
         });
-        self.error_count += 1;
+    }
+
+    /// Add an error with a suggestion and a machine-applicable fix.
+    pub fn error_with_fix(
+        &mut self,
+        error: TranspilerError,
+        span: Option<Span>,
+        suggestion: String,
+        fix: Fix,
+    ) {
+        self.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: Some(error.code().to_string()),
+            message: error.to_string(),
+            span,
+            suggestion: Some(suggestion),
+            fix: Some(fix),
+        });
     }
 
     /// Add a warning
     pub fn warning(&mut self, message: String, span: Option<Span>) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Warning,
+            code: None,
             message,
             span,
             suggestion: None,
+            fix: None,
         });
-        self.warning_count += 1;
     }
 
     /// Add an info message
     pub fn info(&mut self, message: String, span: Option<Span>) {
-        self.diagnostics.push(Diagnostic {
+        self.push(Diagnostic {
             severity: DiagnosticSeverity::Info,
+            code: None,
             message,
             span,
             suggestion: None,
+            fix: None,
         });
     }
 
@@ -239,22 +342,14 @@ impl ErrorCollector {
         available: &[String],
         span: Option<Span>,
     ) {
-        if let Some(suggestion) = find_closest_match(unknown, available) {
-            self.error_with_suggestion(
-                TranspilerError::UnknownIdentifier {
-                    name: unknown.to_string(),
-                },
-                span,
-                format!("Did you mean '{}'?", suggestion),
-            );
-        } else {
-            self.error_with_span(
-                TranspilerError::UnknownIdentifier {
-                    name: unknown.to_string(),
-                },
-                span,
-            );
-        }
+        self.suggest_closest(
+            TranspilerError::UnknownIdentifier {
+                name: unknown.to_string(),
+            },
+            unknown,
+            available,
+            span,
+        );
     }
 
     /// Suggest similar types
@@ -264,21 +359,40 @@ impl ErrorCollector {
         available: &[String],
         span: Option<Span>,
     ) {
-        if let Some(suggestion) = find_closest_match(unknown, available) {
-            self.error_with_suggestion(
-                TranspilerError::UnknownType {
-                    name: unknown.to_string(),
-                },
-                span,
-                format!("Did you mean '{}'?", suggestion),
-            );
-        } else {
-            self.error_with_span(
-                TranspilerError::UnknownType {
-                    name: unknown.to_string(),
-                },
-                span,
-            );
+        self.suggest_closest(
+            TranspilerError::UnknownType {
+                name: unknown.to_string(),
+            },
+            unknown,
+            available,
+            span,
+        );
+    }
+
+    /// Report `error`, suggesting the closest match to `unknown` from
+    /// `available`. When both a match and a span are known, the suggestion
+    /// carries a machine-applicable fix replacing the unknown name.
+    fn suggest_closest(
+        &mut self,
+        error: TranspilerError,
+        unknown: &str,
+        available: &[String],
+        span: Option<Span>,
+    ) {
+        let Some(closest) = find_closest_match(unknown, available) else {
+            self.error_with_span(error, span);
+            return;
+        };
+        let suggestion = format!("Did you mean '{}'?", closest);
+        match &span {
+            Some(span_ref) => {
+                let fix = Fix {
+                    span: span_ref.clone(),
+                    replacement: closest,
+                };
+                self.error_with_fix(error, span, suggestion, fix);
+            }
+            None => self.error_with_suggestion(error, span, suggestion),
         }
     }
 }
@@ -386,6 +500,29 @@ mod tests {
         assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
         assert_eq!(levenshtein_distance("", "test"), 4);
         assert_eq!(levenshtein_distance("test", ""), 4);
+    }
+
+    #[test]
+    fn suggestions_with_spans_carry_a_machine_applicable_fix() {
+        let mut collector = ErrorCollector::new();
+        collector.set_current_file("src/main.galvan");
+        let span = Span {
+            start: 10,
+            end: 17,
+            file: String::new(),
+        };
+        collector.suggest_similar_identifier(
+            "variabe",
+            &["variable".to_string()],
+            Some(span),
+        );
+
+        let diagnostic = &collector.diagnostics()[0];
+        assert_eq!(diagnostic.code.as_deref(), Some("unknown_identifier"));
+        let fix = diagnostic.fix.as_ref().expect("fix attached");
+        assert_eq!(fix.replacement, "variable");
+        assert_eq!((fix.span.start, fix.span.end), (10, 17));
+        assert_eq!(fix.span.file, "src/main.galvan");
     }
 
     #[test]

@@ -1059,10 +1059,13 @@ impl Transpile for HirIndex {
                 transpile!(ctx, errors, "{}[&{}]", self.base, self.index)
             }
             _ => {
-                errors.error(crate::TranspilerError::InvalidOperationOnType {
-                    operation: "index access".into(),
-                    allowed_types: "collection types".into(),
-                });
+                errors.error_with_span(
+                    crate::TranspilerError::InvalidOperationOnType {
+                        operation: "index access".into(),
+                        allowed_types: "collection types".into(),
+                    },
+                    Some(self.base.span.into()),
+                );
                 "/* invalid index access */".to_string()
             }
         }

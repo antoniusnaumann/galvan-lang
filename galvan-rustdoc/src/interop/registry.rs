@@ -6,8 +6,14 @@ use galvan_ast::{
 use galvan_files::Source;
 
 use crate::model::{
-    RustArgConversion, RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustTypeDecl,
+    RustArgConversion, RustConstantDecl, RustFunctionDecl, RustReturnConversion, RustSourceSpan,
+    RustTypeDecl,
 };
+
+/// The source location of a rustdoc item, if rustdoc recorded one.
+pub(super) fn item_source_span(item: &Item) -> Option<RustSourceSpan> {
+    item.span.as_ref().map(RustSourceSpan::from_rustdoc)
+}
 
 use super::function_id::RustFunctionId;
 use super::lift_model::ImportedTypeDecl;
@@ -69,6 +75,7 @@ impl RustInterop {
                 }),
                 source: Source::Builtin,
             },
+            source_span: None,
         });
     }
 
@@ -110,6 +117,7 @@ impl RustInterop {
                 item: imported.decl,
                 source: Source::Builtin,
             },
+            source_span: item_source_span(item),
         };
 
         if let Some(existing) = self
@@ -160,6 +168,9 @@ impl RustInterop {
                 existing.decl.item = imported.decl;
             }
             existing.name = TypeIdent::new(exported_name);
+            if existing.source_span.is_none() {
+                existing.source_span = item_source_span(item);
+            }
             return;
         }
 
@@ -174,6 +185,7 @@ impl RustInterop {
                 item: imported.decl,
                 source: Source::Builtin,
             },
+            source_span: item_source_span(item),
         });
     }
 
@@ -204,9 +216,11 @@ impl RustInterop {
                 item: imported.decl,
                 source: Source::Builtin,
             },
+            source_span: None,
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push_function(
         &mut self,
         crate_name: &str,
@@ -216,6 +230,7 @@ impl RustInterop {
         borrowed_return: bool,
         return_conversion: RustReturnConversion,
         arg_conversions: Vec<RustArgConversion>,
+        source_span: Option<RustSourceSpan>,
     ) {
         self.push_function_with_associated_receiver(
             crate_name,
@@ -227,6 +242,7 @@ impl RustInterop {
             None,
             return_conversion,
             arg_conversions,
+            source_span,
         );
     }
 
@@ -237,6 +253,7 @@ impl RustInterop {
         name: &str,
         rust_path: Box<str>,
         ty: TypeElement,
+        source_span: Option<RustSourceSpan>,
     ) {
         let idx = self.constants.len();
         let ident = Ident::new(name);
@@ -246,6 +263,7 @@ impl RustInterop {
             name: ident.clone(),
             rust_path,
             ty,
+            source_span,
         });
 
         if let Some(receiver) = associated_receiver {
@@ -263,6 +281,7 @@ impl RustInterop {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push_function_with_associated_receiver(
         &mut self,
         crate_name: &str,
@@ -274,6 +293,7 @@ impl RustInterop {
         extension_trait: Option<Box<str>>,
         return_conversion: RustReturnConversion,
         arg_conversions: Vec<RustArgConversion>,
+        source_span: Option<RustSourceSpan>,
     ) {
         let labels = decl.signature.overload_labels();
         let labels = labels
@@ -296,6 +316,7 @@ impl RustInterop {
         let idx = self.functions.len();
         self.functions.push(RustFunctionDecl {
             namespace: crate_name.into(),
+            associated_receiver: associated_receiver.clone(),
             rust_path,
             extension_trait,
             borrowed_return,
@@ -305,6 +326,7 @@ impl RustInterop {
                 item: decl,
                 source: Source::Builtin,
             },
+            source_span,
         });
         let has_associated_receiver = associated_receiver.is_some();
         if let Some(associated_receiver) = associated_receiver {

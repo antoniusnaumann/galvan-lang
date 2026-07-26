@@ -207,8 +207,14 @@ impl ReadCursor for FnSignature {
         let signature = cursor_expect!(cursor, "fn_signature");
         let span = Span::from_node(signature);
         cursor.child();
-
         let visibility = Visibility::read_cursor(cursor, source)?;
+
+        let is_async = if cursor.kind()? == "async_keyword" {
+            cursor.next();
+            true
+        } else {
+            false
+        };
 
         cursor_expect!(cursor, "fn_keyword");
 
@@ -241,6 +247,7 @@ impl ReadCursor for FnSignature {
 
         Ok(FnSignature {
             visibility,
+            is_async,
             identifier,
             parameters,
             return_type,

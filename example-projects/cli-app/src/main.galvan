@@ -1,7 +1,7 @@
 // A command named main defines top-level flags instead of a subcommand.
 cmd main(
     /// Optional name to greet when no subcommand is selected
-    n name: String?
+    n name: String?,
 ) {
     try name |name| {
         println "Hello \(name)!"
@@ -19,7 +19,7 @@ cmd greet(
     n name: String,
     // optional args can be left out
     /// Surname of the person that should be greeted
-    s surname: String?
+    s surname: String?,
 ) {
     try surname |surname| {
         println "Hello \(name) \(surname)!"

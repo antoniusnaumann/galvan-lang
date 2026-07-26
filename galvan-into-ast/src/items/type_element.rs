@@ -198,8 +198,26 @@ impl ReadCursor for SetTypeItem {
 }
 
 impl ReadCursor for TupleTypeItem {
-    fn read_cursor(_cursor: &mut TreeCursor<'_>, _source: &str) -> Result<Self, AstError> {
-        todo!()
+    fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
+        let tuple = cursor_expect!(cursor, "tuple_type");
+        let span = Span::from_node(tuple);
+
+        cursor.child();
+        cursor_expect!(cursor, "paren_open");
+
+        let mut elements = Vec::new();
+        cursor.next();
+        while cursor.kind()? != "paren_close" {
+            if cursor.kind()? == "," {
+                cursor.next();
+                continue;
+            }
+            elements.push(TypeElement::read_cursor(cursor, source)?);
+            cursor.next();
+        }
+
+        cursor.goto_parent();
+        Ok(Self { elements, span })
     }
 }
 
@@ -222,7 +240,7 @@ impl ReadCursor for ParametricTypeItem {
             if cursor.kind()? == "angle_bracket_close" {
                 break;
             }
-            if cursor.kind()? == "_comma" {
+            if cursor.kind()? == "," {
                 cursor.goto_next_sibling();
                 continue;
             }
@@ -269,7 +287,7 @@ impl ReadCursor for ClosureTypeItem {
             if cursor.kind()? == "pipe" {
                 break;
             }
-            if cursor.kind()? == "_comma" {
+            if cursor.kind()? == "," {
                 cursor.goto_next_sibling();
                 continue;
             }
@@ -315,7 +333,7 @@ impl ReadCursor for TypeIdent {
             return Err(AstError::InvalidIdentifier(inner.to_owned()));
         }
 
-        Ok(Self::new(inner))
+        Ok(Self::spanned(inner, Span::from_node(ident)))
     }
 }
 
@@ -327,6 +345,6 @@ impl ReadCursor for Ident {
             return Err(AstError::InvalidIdentifier(inner.to_owned()));
         }
 
-        Ok(Self::new(inner))
+        Ok(Self::spanned(inner, Span::from_node(ident)))
     }
 }

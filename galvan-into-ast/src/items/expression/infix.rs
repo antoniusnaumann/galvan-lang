@@ -2,11 +2,34 @@ use galvan_ast::{
     ArithmeticOperator, AssociatedConstant, AssociatedFunctionCall, BitwiseOperator,
     CollectionOperator, ComparisonOperator, CustomInfix, DeclModifier, EnumAccess, Expression,
     FunctionCall, Group, Ident, InfixExpression, InfixOperation, InfixOperator, LogicalOperator,
-    MemberOperator, ModifiedExpression, RangeOperator, Span, TypeIdent,
+    MemberOperator, ModifiedExpression, RangeOperator, Span, TypeIdent, UsePath,
 };
 use galvan_parse::TreeCursor;
 
 use crate::{cursor_expect, result::CursorUtil, AstError, ReadCursor, SpanExt};
+
+/// Reads a `(ident ::)*` namespace prefix, leaving the cursor on the node
+/// that follows it (the receiver type for associated items).
+fn read_namespace_prefix(
+    cursor: &mut TreeCursor<'_>,
+    source: &str,
+) -> Result<Option<UsePath>, AstError> {
+    let mut segments = Vec::new();
+    while cursor.kind()? == "ident" {
+        segments.push(Ident::read_cursor(cursor, source)?);
+        cursor.next();
+        cursor_expect!(cursor, "double_colon");
+        cursor.next();
+    }
+    Ok(if segments.is_empty() {
+        None
+    } else {
+        Some(UsePath {
+            segments,
+            span: Span::default(),
+        })
+    })
+}
 
 impl ReadCursor for Group {
     fn read_cursor(cursor: &mut TreeCursor<'_>, source: &str) -> Result<Self, AstError> {
@@ -64,6 +87,7 @@ impl ReadCursor for AssociatedFunctionCall {
 
         cursor.goto_first_child();
 
+        let namespace = read_namespace_prefix(cursor, source)?;
         let receiver = TypeIdent::read_cursor(cursor, source)?;
         cursor.next();
         cursor_expect!(cursor, "member_call_operator");
@@ -73,6 +97,7 @@ impl ReadCursor for AssociatedFunctionCall {
         cursor.goto_parent();
 
         Ok(AssociatedFunctionCall {
+            namespace,
             receiver,
             call,
             span,
@@ -87,6 +112,7 @@ impl ReadCursor for AssociatedConstant {
 
         cursor.goto_first_child();
 
+        let namespace = read_namespace_prefix(cursor, source)?;
         let receiver = TypeIdent::read_cursor(cursor, source)?;
         cursor.next();
         cursor_expect!(cursor, "member_call_operator");
@@ -96,6 +122,7 @@ impl ReadCursor for AssociatedConstant {
         cursor.goto_parent();
 
         Ok(AssociatedConstant {
+            namespace,
             receiver,
             name: Ident::new(name.as_str()),
             span,

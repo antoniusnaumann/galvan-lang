@@ -36,6 +36,15 @@ pub struct ToplevelItem<R: RootItemMarker> {
     // pub span: Span,
 }
 
+impl<R: RootItemMarker + Clone> Clone for ToplevelItem<R> {
+    fn clone(&self) -> Self {
+        Self {
+            item: self.item.clone(),
+            source: self.source.clone(),
+        }
+    }
+}
+
 impl<R> Deref for ToplevelItem<R>
 where
     R: RootItemMarker,

@@ -56,7 +56,7 @@ pub type Waypoints = ::std::vec::Vec<Point>;
 </details>
 
 > [!WARNING]
-> **Partially implemented.** Tuple types and their fields *declare*
-> correctly, but constructing them positionally (`Meters(1.87)`) does not
-> typecheck yet, and tuple member access (`.0`) is still missing. Named tuple
-> fields (`type Person(name: String, age: Int)`) do not parse yet either.
+> **Partially implemented.** Tuple types declare correctly and can be
+> constructed positionally (`Meters(1.87)`), but tuple member access (`.0`)
+> is still missing. Named tuple fields
+> (`type Person(name: String, age: Int)`) do not parse yet either.

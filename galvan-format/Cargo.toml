@@ -1,0 +1,17 @@
+[package]
+name = "galvan-format"
+description = "Source-code formatter for the Galvan programming language"
+
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+galvan-parse.workspace = true
+galvan-files.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "galvan-format"
+path = "src/main.rs"

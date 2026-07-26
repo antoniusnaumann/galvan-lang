@@ -47,10 +47,7 @@ type ApiState {
 // default Tokio runtime without requiring a #[tokio::main] or @tokio::main
 // annotation in user code.
 async fn main() {
-    let state = ApiState(
-        next_ticket_id: 1,
-        tickets: [],
-    )
+    let state = ApiState(next_ticket_id: 1, tickets: [])
 
     let app = Router.new()
         .route("/health", get(health))
@@ -70,10 +67,7 @@ async fn main() {
 
 // TODO(async): Allow async handler functions.
 async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse(
-        service: "galvan-axum-api",
-        status: "ok",
-    ))
+    Json(HealthResponse(service: "galvan-axum-api", status: "ok"))
 }
 
 async fn list_tickets(state: State<ApiState>) -> Json<[TicketResponse]> {
@@ -81,10 +75,10 @@ async fn list_tickets(state: State<ApiState>) -> Json<[TicketResponse]> {
     Json(state.tickets)
 }
 
-async fn create_ticket(
-    state: State<ApiState>,
-    request: Json<CreateTicketRequest>,
-) -> (StatusCode, Json<TicketResponse>) {
+async fn create_ticket(state: State<ApiState>, request: Json<CreateTicketRequest>) -> (
+    StatusCode,
+    Json<TicketResponse>,
+) {
     let state = state.into_inner()
     let request = request.into_inner()
 
@@ -108,10 +102,10 @@ async fn create_ticket(
     (StatusCode.CREATED, Json(response))
 }
 
-async fn get_ticket(
-    state: State<ApiState>,
-    id: Path<U64>,
-) -> Result<Json<TicketResponse>, (StatusCode, Json<ErrorResponse>)> {
+async fn get_ticket(state: State<ApiState>, id: Path<U64>) -> Result<
+    Json<TicketResponse>,
+    (StatusCode, Json<ErrorResponse>),
+> {
     let state = state.into_inner()
     let id = id.into_inner()
 
@@ -124,10 +118,10 @@ async fn get_ticket(
     throw not_found(id)
 }
 
-async fn close_ticket(
-    state: State<ApiState>,
-    id: Path<U64>,
-) -> Result<Json<TicketResponse>, (StatusCode, Json<ErrorResponse>)> {
+async fn close_ticket(state: State<ApiState>, id: Path<U64>) -> Result<
+    Json<TicketResponse>,
+    (StatusCode, Json<ErrorResponse>),
+> {
     let state = state.into_inner()
     let id = id.into_inner()
 
@@ -137,12 +131,7 @@ async fn close_ticket(
     for state.tickets |mut ticket| {
         if ticket.id == id {
             ticket.status = "closed"
-            ticket.summary = ticket_summary(
-                ticket.id,
-                ticket.title,
-                ticket.priority,
-                ticket.status,
-            )
+            ticket.summary = ticket_summary(ticket.id, ticket.title, ticket.priority, ticket.status)
 
             return Json(ticket)
         }
@@ -164,8 +153,5 @@ fn ticket_summary(id: U64, title: String, priority: String, status: String) -> S
 }
 
 fn not_found(id: U64) -> (StatusCode, Json<ErrorResponse>) {
-    (
-        StatusCode.NOT_FOUND,
-        Json(ErrorResponse(error: "ticket \(id) was not found")),
-    )
+    (StatusCode.NOT_FOUND, Json(ErrorResponse(error: "ticket \(id) was not found")),)
 }

@@ -12,20 +12,24 @@ impl ReadCursor for FunctionCall {
         cursor_expect!(cursor, "function_call");
 
         cursor.child();
-        let mut path = vec![Ident::read_cursor(cursor, source)?];
+        let mut identifier = Ident::read_cursor(cursor, source)?;
         cursor.next();
 
+        let mut segments = Vec::new();
         while cursor.kind()? == "double_colon" {
             cursor.next();
-            path.push(Ident::read_cursor(cursor, source)?);
+            let next_ident = Ident::read_cursor(cursor, source)?;
+            segments.push(std::mem::replace(&mut identifier, next_ident));
             cursor.next();
         }
-
-        let identifier = path.pop().expect("function calls always contain a name");
-        let namespace = (!path.is_empty()).then_some(UsePath {
-            segments: path,
-            span: Span::default(),
-        });
+        let namespace = if segments.is_empty() {
+            None
+        } else {
+            Some(UsePath {
+                segments,
+                span: Span::default(),
+            })
+        };
 
         cursor_expect!(cursor, "paren_open");
 
@@ -252,6 +256,13 @@ impl ReadCursor for ClosureParameter {
         cursor_expect!(cursor, "closure_argument");
 
         cursor.child();
+        let modifier = if cursor.kind()? == "declaration_modifier" {
+            let modifier = DeclModifier::read_cursor(cursor, source)?;
+            cursor.next();
+            Some(modifier)
+        } else {
+            None
+        };
         let ident = Ident::read_cursor(cursor, source)?;
         cursor.next();
 
@@ -263,7 +274,11 @@ impl ReadCursor for ClosureParameter {
         };
 
         cursor.goto_parent();
-        Ok(ClosureParameter { ident, ty })
+        Ok(ClosureParameter {
+            modifier,
+            ident,
+            ty,
+        })
     }
 }
 

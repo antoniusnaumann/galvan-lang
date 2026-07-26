@@ -297,14 +297,13 @@ mod tests {
             cmds: Vec::new(),
         }));
 
-        Context::new(mapping)
-            .with(segmented)
-            .expect("test context should resolve")
+        Context::new(mapping).with(segmented)
     }
 
     fn signature_with_return(return_type: TypeElement) -> FnSignature {
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("health"),
             parameters: ParamList {
                 params: Vec::new(),

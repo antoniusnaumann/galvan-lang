@@ -8,8 +8,8 @@ precisely where the language still falls short of its target.
 > [!WARNING]
 > **Aspirational.** The source below is the design target for the features
 > annotated throughout this page. It does not fully transpile yet — the gaps
-> are async functions, `Type.new()`/`Type.CONSTANT` associated-item syntax,
-> and async-grade `ref` codegen.
+> are async functions, generic builder type propagation, and async-grade
+> `ref` codegen.
 
 Shared state is two `ref` fields; handlers are plain functions:
 
@@ -128,7 +128,7 @@ What this example demands from the language — and the state of each piece:
 | structs, optionals, interpolation | [Types](../types/index.md), [Errors](../errors/index.md) | ✅ implemented |
 | `ref` fields for shared state | [Ownership](../ownership/ref_fields.md) | ⚠️ works, async-grade codegen missing |
 | lifted axum/tokio APIs | [Interop](../interop/liftings.md) | ⚠️ functions/types lift; generic builder APIs not typechecked |
-| `Router.new()`, `StatusCode.CREATED` | [Interop](../interop/methods.md) | ❌ syntax does not parse yet |
+| `Router.new()`, `StatusCode.CREATED` | [Interop](../interop/methods.md) | ⚠️ syntax works; generic builder chains remain incomplete |
 | `async fn`, `.await!` | [Async](async.md) | ❌ not implemented |
 
 When this file transpiles and serves requests, Galvan 1.0 is close.
