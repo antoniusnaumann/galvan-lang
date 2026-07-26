@@ -1,4 +1,3 @@
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,10 +28,8 @@ const LIBRARY_KINDS: &[&str] = &["lib", "rlib", "dylib", "cdylib", "staticlib", 
 
 pub(super) fn dependency_manifest_path(
     crate_name: &str,
+    manifest_dir: &Path,
 ) -> Result<Option<ResolvedDependency>, RustdocError> {
-    let manifest_dir = env::var_os("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
     let manifest_path = manifest_dir.join("Cargo.toml");
     let output = Command::new("cargo")
         .arg("metadata")
@@ -614,7 +611,7 @@ checksum = "abc"
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
-        let mut path = env::temp_dir();
+        let mut path = std::env::temp_dir();
         path.push(format!(
             "galvan-rustdoc-{name}-{}-{:?}",
             std::process::id(),

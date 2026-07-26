@@ -12,14 +12,19 @@ use galvan_rustdoc::RustInterop;
 use crate::builtins::CheckBuiltins;
 use crate::error::ErrorCollector;
 use crate::hir::*;
-use crate::typecheck::{typecheck, typecheck_with_interop};
+use crate::typecheck::{typecheck, typecheck_with_interop, Typechecked};
 
-fn lower_with_diagnostics(code: &str) -> (HirModule, ErrorCollector) {
+fn check(code: &str) -> Typechecked {
     let ast = Source::from_string(code)
         .try_into_ast()
         .expect("test code should parse");
     let segmented = vec![ast].segmented().expect("test code should segment");
-    typecheck(segmented).expect("test code should typecheck")
+    typecheck(segmented)
+}
+
+fn lower_with_diagnostics(code: &str) -> (HirModule, ErrorCollector) {
+    let checked = check(code);
+    (checked.module, checked.errors)
 }
 
 fn lower(code: &str) -> HirModule {
@@ -36,13 +41,13 @@ fn lower_with_interop(code: &str, rust_interop: &RustInterop) -> HirModule {
         .try_into_ast()
         .expect("test code should parse");
     let segmented = vec![ast].segmented().expect("test code should segment");
-    let (module, errors) =
-        typecheck_with_interop(segmented, rust_interop).expect("test code should typecheck");
+    let checked = typecheck_with_interop(segmented, rust_interop);
     assert!(
-        !errors.has_errors(),
-        "expected no type errors, got: {errors}"
+        !checked.errors.has_errors(),
+        "expected no type errors, got: {}",
+        checked.errors
     );
-    module
+    checked.module
 }
 
 fn use_decl(segments: &[&str]) -> ToplevelItem<UseDecl> {
@@ -80,6 +85,7 @@ fn serde_json_interop(uses: &[ToplevelItem<UseDecl>]) -> RustInterop {
         "::serde_json::to_string",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("to_string"),
             parameters: ParamList {
                 params: vec![Param {
@@ -960,6 +966,7 @@ fn borrowed_rust_returns_are_cloned_in_hir() {
         "::borrowed::name",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("name"),
             parameters: ParamList {
                 params: Vec::new(),
@@ -1061,6 +1068,7 @@ fn qualified_rust_methods_are_typechecked_with_receivers() {
         "::external::nickname",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("nickname"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1117,6 +1125,7 @@ fn rust_associated_functions_are_typechecked_as_type_member_calls() {
         "::external::Dog::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1184,6 +1193,7 @@ fn generic_rust_associated_constructors_instantiate_receiver_generics() {
         "::external::Router::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![],
@@ -1244,6 +1254,7 @@ fn rust_associated_constructor_lowers_tuple_argument_literals() {
         "::std::net::SocketAddr::from",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("from"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1344,6 +1355,7 @@ fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
         "::external::Router::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![],
@@ -1370,6 +1382,7 @@ fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
         "::external::Router::route",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("route"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1409,6 +1422,7 @@ fn generic_rust_instance_methods_thread_receiver_and_argument_generics() {
         "::external::Router::with_state",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("with_state"),
             parameters: ParamList {
                 params: vec![
@@ -1525,6 +1539,7 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
         "::external::State::into_inner",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("into_inner"),
             parameters: ParamList {
                 params: vec![Param {
@@ -1577,6 +1592,7 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
         item: FnDecl {
             signature: FnSignature {
                 visibility: Visibility::public(),
+                is_async: false,
                 identifier: Ident::new("read"),
                 parameters: ParamList {
                     params: vec![Param {
@@ -1624,7 +1640,7 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
         }),
         source: Source::Builtin,
     };
-    let (module, errors) = typecheck_with_interop(
+    let checked = typecheck_with_interop(
         SegmentedAsts {
             uses: vec![use_decl(&["external", "State"])],
             types: vec![api_state_type],
@@ -1634,8 +1650,8 @@ fn generic_rust_instance_methods_return_threaded_inner_type() {
             cmds: vec![],
         },
         &rust_interop,
-    )
-    .expect("test AST should typecheck");
+    );
+    let (module, errors) = (checked.module, checked.errors);
     assert!(
         !errors.has_errors(),
         "expected no type errors, got: {errors}"
@@ -1674,6 +1690,7 @@ fn conflicting_rust_generic_bindings_are_reported_directly() {
         "::external::State::replace",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("replace"),
             parameters: ParamList {
                 params: vec![
@@ -1742,6 +1759,7 @@ fn conflicting_rust_generic_bindings_are_reported_directly() {
         item: FnDecl {
             signature: FnSignature {
                 visibility: Visibility::public(),
+                is_async: false,
                 identifier: Ident::new("update"),
                 parameters: ParamList {
                     params: vec![
@@ -1784,7 +1802,7 @@ fn conflicting_rust_generic_bindings_are_reported_directly() {
         },
         source: Source::Builtin,
     };
-    let (_, errors) = typecheck_with_interop(
+    let errors = typecheck_with_interop(
         SegmentedAsts {
             uses: vec![use_decl(&["external", "State"])],
             types: Vec::new(),
@@ -1795,7 +1813,7 @@ fn conflicting_rust_generic_bindings_are_reported_directly() {
         },
         &rust_interop,
     )
-    .expect("test AST should typecheck");
+    .errors;
 
     assert!(
         errors.diagnostics().iter().any(|diagnostic| diagnostic
@@ -1826,6 +1844,7 @@ fn imported_rust_types_are_available_to_typecheck_after_use() {
         "::external::Dog::new",
         FnSignature {
             visibility: Visibility::public(),
+            is_async: false,
             identifier: Ident::new("new"),
             parameters: ParamList {
                 params: vec![],
@@ -2083,6 +2102,7 @@ fn imported_rust_constants_are_typechecked_as_identifiers() {
         item: FnDecl {
             signature: FnSignature {
                 visibility: Visibility::public(),
+                is_async: false,
                 identifier: Ident::new("limit"),
                 parameters: ParamList {
                     params: vec![],
@@ -2107,7 +2127,7 @@ fn imported_rust_constants_are_typechecked_as_identifiers() {
         },
         source: Source::Builtin,
     };
-    let (module, errors) = typecheck_with_interop(
+    let checked = typecheck_with_interop(
         SegmentedAsts {
             uses: vec![use_decl(&["external", "DEFAULT_LIMIT"])],
             types: vec![],
@@ -2117,8 +2137,8 @@ fn imported_rust_constants_are_typechecked_as_identifiers() {
             cmds: vec![],
         },
         &rust_interop,
-    )
-    .expect("test AST should typecheck");
+    );
+    let (module, errors) = (checked.module, checked.errors);
     assert!(
         !errors.has_errors(),
         "expected no type errors, got: {errors}"
@@ -2180,4 +2200,419 @@ fn rust_associated_constants_are_typechecked_as_type_member_access() {
         panic!("expected StatusCode result, got {:?}", tail.ty);
     };
     assert_eq!(ty.ident.as_str(), "StatusCode");
+}
+
+// ----------------------------------------------------------------------
+// Error reporting: Galvan code that must produce diagnostics
+// ----------------------------------------------------------------------
+
+/// Byte offset of the `nth` (0-based) occurrence of `needle` in `code`.
+fn offset_of(code: &str, needle: &str, nth: usize) -> usize {
+    code.match_indices(needle)
+        .nth(nth)
+        .unwrap_or_else(|| panic!("occurrence {nth} of {needle:?} not found"))
+        .0
+}
+
+/// Assert that an error diagnostic matching `message` was reported and that
+/// its span covers the `nth` occurrence of `at` in `code`. Returns the
+/// diagnostic for further inspection.
+#[track_caller]
+fn assert_error_at(code: &str, message: &str, at: &str, nth: usize) -> crate::error::Diagnostic {
+    let checked = check(code);
+    let diagnostic = checked
+        .errors
+        .errors()
+        .find(|diagnostic| diagnostic.message.contains(message))
+        .unwrap_or_else(|| {
+            panic!(
+                "expected error containing {message:?}, got: {}",
+                checked.errors
+            )
+        })
+        .clone();
+
+    let span = diagnostic
+        .span
+        .as_ref()
+        .unwrap_or_else(|| panic!("error {message:?} should carry a span"));
+    let expected = offset_of(code, at, nth);
+    assert!(
+        span.start <= expected && expected < span.end,
+        "span {}..{} of {message:?} does not cover occurrence {nth} of {at:?} at {expected}",
+        span.start,
+        span.end,
+    );
+    diagnostic
+}
+
+#[test]
+fn reports_unknown_identifier_with_suggestion_and_span() {
+    let code = "fn f() {\n    let doggo = 1\n    print(dogo)\n}";
+    let diagnostic = assert_error_at(code, "Unknown identifier: dogo", "dogo", 0);
+    assert_eq!(
+        diagnostic.suggestion.as_deref(),
+        Some("Did you mean 'doggo'?")
+    );
+}
+
+#[test]
+fn reports_duplicate_type_declaration_at_the_second_declaration() {
+    let code = "type Dog { name: String }\ntype Dog { age: Int }";
+    assert_error_at(code, "Duplicate type declaration: Dog", "Dog", 1);
+}
+
+#[test]
+fn reports_duplicate_function_declaration_at_the_second_declaration() {
+    let code = "fn f() {}\nfn f() {}";
+    assert_error_at(code, "Duplicate function declaration: f", "f()", 1);
+}
+
+#[test]
+fn duplicate_declarations_do_not_abort_typechecking() {
+    // The body of the *first* declaration still typechecks and reports its
+    // own errors.
+    let code = "fn f() {\n    print(missing)\n}\nfn f() {}";
+    let checked = check(code);
+    assert!(
+        checked
+            .errors
+            .errors()
+            .any(|diagnostic| diagnostic.message.contains("Unknown identifier: missing")),
+        "got: {}",
+        checked.errors
+    );
+}
+
+#[test]
+fn reports_missing_constructor_field() {
+    let code = "type Dog { name: String }\nfn f() -> Dog {\n    Dog()\n}";
+    assert_error_at(code, "expects 1 arguments, found 0", "Dog()", 0);
+}
+
+#[test]
+fn reports_unknown_struct_field_at_the_field_token() {
+    let code =
+        "type Dog { name: String }\nfn f(dog: Dog) -> String {\n    dog.nam\n}";
+    assert_error_at(code, "does not have field: nam", "nam\n", 0);
+}
+
+#[test]
+fn reports_enum_case_access_with_dot() {
+    let code = "type Color {\n    Red\n    Green\n}\nfn f(color: Color) {\n    print(color.red)\n}";
+    let checked = check(code);
+    assert!(
+        checked
+            .errors
+            .errors()
+            .any(|diagnostic| diagnostic.message.contains("accessed with ::")),
+        "got: {}",
+        checked.errors
+    );
+}
+
+#[test]
+fn reports_index_access_on_non_collection() {
+    let code = "fn f(a: Int) -> Int {\n    a[0]\n}";
+    assert_error_at(
+        code,
+        "index access can only be used on collection types",
+        "a[0]",
+        0,
+    );
+}
+
+#[test]
+fn reports_mismatching_collection_literal_elements() {
+    let code = "fn f() {\n    let items = [true, \"two\"]\n}";
+    assert_error_at(code, "Type mismatch", "\"two\"", 0);
+}
+
+#[test]
+fn reports_wrong_argument_count_at_the_arguments() {
+    let code = "fn one(a: Int) {}\nfn f() {\n    one(1, 2)\n}";
+    assert_error_at(code, "expected 1 arguments but found 2", "1, 2", 0);
+}
+
+#[test]
+fn diagnostics_are_attributed_to_their_source_file() {
+    let source = Source::from_string("fn f() {\n    print(missing)\n}");
+    let ast = source.clone().try_into_ast().expect("should parse");
+    let segmented = vec![ast].segmented().expect("should segment");
+    let checked = typecheck(segmented);
+    let diagnostic = checked
+        .errors
+        .errors()
+        .next()
+        .expect("expected an error");
+    // In-memory sources have no path; the file attribution stays empty but
+    // the span is still present.
+    assert!(diagnostic.span.is_some());
+}
+
+// ----------------------------------------------------------------------
+// Symbol index: definitions, references and scopes recorded during checking
+// ----------------------------------------------------------------------
+
+use crate::index::DefinitionKind;
+
+const INDEX_SOURCE: &str = "\
+type Dog {
+    name: String
+}
+
+fn walk(self: Dog, distance: Int) {
+}
+
+fn main_fn() {
+    let dog = Dog(name: \"Rex\")
+    dog.walk(5)
+    print(dog.name)
+}
+";
+
+fn checked_index(code: &str) -> Typechecked {
+    // The index queries need a file-backed source.
+    let source = Source::File {
+        path: std::sync::Arc::from(std::path::PathBuf::from("/index_test/src/main.galvan")),
+        content: std::sync::Arc::from(code),
+        canonical_name: std::sync::Arc::from("main"),
+    };
+    let ast = source.try_into_ast().expect("test code should parse");
+    let segmented = vec![ast].segmented().expect("test code should segment");
+    typecheck(segmented)
+}
+
+fn index_file() -> std::path::PathBuf {
+    std::path::PathBuf::from("/index_test/src/main.galvan")
+}
+
+#[test]
+fn index_resolves_local_variable_uses_to_their_declaration() {
+    let checked = checked_index(INDEX_SOURCE);
+    let file = index_file();
+    let use_offset = offset_of(INDEX_SOURCE, "dog.walk", 0);
+
+    let id = checked
+        .index
+        .symbol_at(&file, use_offset)
+        .expect("use of `dog` should resolve");
+    let definition = checked.index.definition(id);
+    assert_eq!(definition.name, "dog");
+    assert!(matches!(definition.kind, DefinitionKind::Local { .. }));
+    assert_eq!(definition.span.range.0, offset_of(INDEX_SOURCE, "dog", 0));
+
+    // Both uses are recorded as references.
+    assert_eq!(checked.index.references(id).count(), 2);
+}
+
+#[test]
+fn index_resolves_method_calls_to_the_function_declaration() {
+    let checked = checked_index(INDEX_SOURCE);
+    let file = index_file();
+    let call_offset = offset_of(INDEX_SOURCE, "walk(5)", 0);
+
+    let id = checked
+        .index
+        .symbol_at(&file, call_offset)
+        .expect("method call should resolve");
+    let definition = checked.index.definition(id);
+    assert_eq!(definition.name, "walk");
+    let DefinitionKind::Function { receiver: Some(receiver) } = &definition.kind else {
+        panic!("expected method definition, got {:?}", definition.kind);
+    };
+    assert_eq!(receiver.as_str(), "Dog");
+    assert_eq!(definition.span.range.0, offset_of(INDEX_SOURCE, "walk", 0));
+}
+
+#[test]
+fn index_resolves_types_in_annotations_and_constructors() {
+    let checked = checked_index(INDEX_SOURCE);
+    let file = index_file();
+
+    // `Dog` in the annotation `self: Dog`.
+    let annotation = offset_of(INDEX_SOURCE, "Dog", 1);
+    let id = checked
+        .index
+        .symbol_at(&file, annotation)
+        .expect("type annotation should resolve");
+    assert!(matches!(
+        checked.index.definition(id).kind,
+        DefinitionKind::Type
+    ));
+
+    // `Dog(...)` constructor call resolves to the same definition.
+    let constructor = offset_of(INDEX_SOURCE, "Dog(name:", 0);
+    assert_eq!(checked.index.symbol_at(&file, constructor), Some(id));
+
+    // Declaration + annotation + constructor.
+    assert_eq!(checked.index.references(id).count(), 2);
+}
+
+#[test]
+fn index_resolves_field_uses_to_the_struct_member() {
+    let checked = checked_index(INDEX_SOURCE);
+    let file = index_file();
+    let access = offset_of(INDEX_SOURCE, "name)", 0);
+
+    let id = checked
+        .index
+        .symbol_at(&file, access)
+        .expect("field access should resolve");
+    let definition = checked.index.definition(id);
+    let DefinitionKind::Field { owner, ty } = &definition.kind else {
+        panic!("expected field definition, got {:?}", definition.kind);
+    };
+    assert_eq!(owner.as_str(), "Dog");
+    assert_eq!(ty.to_string(), "String");
+    assert_eq!(definition.span.range.0, offset_of(INDEX_SOURCE, "name", 0));
+}
+
+#[test]
+fn index_lists_locals_visible_at_a_position() {
+    let checked = checked_index(INDEX_SOURCE);
+    let file = index_file();
+
+    // Inside main_fn after the declaration: `dog` is visible.
+    let inside_main = offset_of(INDEX_SOURCE, "dog.walk", 0);
+    let visible: Vec<String> = checked
+        .index
+        .visible_locals(&file, inside_main)
+        .map(|(_, definition)| definition.name.clone())
+        .collect();
+    assert!(visible.contains(&"dog".to_string()), "visible: {visible:?}");
+
+    // Inside walk: parameters visible, `dog` not.
+    let inside_walk = offset_of(INDEX_SOURCE, "{\n}", 0);
+    let visible: Vec<String> = checked
+        .index
+        .visible_locals(&file, inside_walk + 1)
+        .map(|(_, definition)| definition.name.clone())
+        .collect();
+    assert!(
+        visible.contains(&"distance".to_string()),
+        "visible: {visible:?}"
+    );
+    assert!(!visible.contains(&"dog".to_string()), "visible: {visible:?}");
+}
+
+#[test]
+fn query_returns_the_inferred_type_of_the_expression_at_a_position() {
+    let checked = checked_index(INDEX_SOURCE);
+    let file = index_file();
+
+    // The receiver `dog` in `dog.walk(5)` has type Dog.
+    let receiver = offset_of(INDEX_SOURCE, "dog.walk", 0);
+    let expression = crate::query::expression_at(&checked.module, &file, receiver)
+        .expect("expression should be found");
+    assert_eq!(expression.ty.to_string(), "Dog");
+
+    // The literal `5` is a number.
+    let literal = offset_of(INDEX_SOURCE, "5", 0);
+    let expression = crate::query::expression_at(&checked.module, &file, literal)
+        .expect("literal should be found");
+    assert!(matches!(
+        expression.kind,
+        HirExpressionKind::Literal(HirLiteral::Number(_))
+    ));
+}
+
+#[test]
+fn async_functions_parse_but_are_unimplemented() {
+    let (_, errors) = lower_with_diagnostics(
+        "async fn fetch() {
+             println \"fetching\"
+         }",
+    );
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("unimplemented")
+                && diagnostic.message.contains("async function 'fetch'")
+        }),
+        "expected an unimplemented diagnostic for the async fn, got: {errors}"
+    );
+}
+
+#[test]
+fn async_main_parses_but_is_unimplemented() {
+    let (_, errors) = lower_with_diagnostics(
+        "async fn main() {
+             println \"serving\"
+         }",
+    );
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("unimplemented")
+                && diagnostic.message.contains("async function 'main'")
+        }),
+        "expected an unimplemented diagnostic for async main, got: {errors}"
+    );
+}
+
+#[test]
+fn closure_parameter_modifiers_parse_but_are_unimplemented() {
+    let (_, errors) = lower_with_diagnostics(
+        "fn update(tickets: [Int]) {
+             for tickets |mut ticket| {
+                 ticket = 1
+             }
+         }",
+    );
+    assert!(
+        errors.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("unimplemented")
+                && diagnostic.message.contains("modifier on closure parameter 'ticket'")
+        }),
+        "expected an unimplemented diagnostic for the mut closure param, got: {errors}"
+    );
+}
+
+#[test]
+fn namespaced_associated_calls_lower_without_parse_errors() {
+    // `tokio::net::TcpListener.bind(addr)` must parse; without interop data
+    // for the namespace the receiver is reported as an unknown type instead
+    // of a syntax error.
+    let (_, errors) = lower_with_diagnostics(
+        "fn listen() {
+             let listener = tokio::net::TcpListener.bind(\"addr\")
+         }",
+    );
+    assert!(
+        !errors.diagnostics().is_empty(),
+        "expected a semantic diagnostic for the unresolved namespaced receiver"
+    );
+}
+
+#[test]
+fn tuple_type_annotations_parse_and_lower() {
+    let module = lower(
+        "fn pair() -> (Int, String) {
+             (1, \"a\")
+         }",
+    );
+    let pair = function(&module, "pair");
+    assert!(
+        matches!(pair.signature.return_type, TypeElement::Tuple(_)),
+        "expected a tuple return type, got: {:?}",
+        pair.signature.return_type
+    );
+}
+
+#[test]
+fn multi_argument_parametric_types_parse() {
+    // `Result<Json, (Int, String)>` style annotations: multiple generic
+    // arguments separated by commas (previously only single-arg generics
+    // converted).
+    let (_, errors) = lower_with_diagnostics(
+        "fn handler() -> Result<Int, (Int, String)> {
+             Result::Ok(1)
+         }",
+    );
+    assert!(
+        errors
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| !diagnostic.message.contains("syntax")),
+        "expected the annotation to convert, got: {errors}"
+    );
 }

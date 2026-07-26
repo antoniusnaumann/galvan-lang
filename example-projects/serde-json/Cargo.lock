@@ -248,6 +248,7 @@ name = "galvan-resolver"
 version = "0.0.3"
 dependencies = [
  "galvan-ast",
+ "galvan-files",
  "thiserror",
 ]
 

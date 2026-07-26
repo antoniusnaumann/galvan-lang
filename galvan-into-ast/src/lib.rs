@@ -107,6 +107,7 @@ impl SegmentAst for Ast {
                     main = Some(ToplevelItem {
                         item: MainDecl {
                             kind: MainKind::Command(item.signature),
+                            is_async: false,
                             body: item.body,
                             span: item.span,
                         },
@@ -164,6 +165,7 @@ fn main_decl(function: FnDecl) -> Result<MainDecl, AstError> {
 
     Ok(MainDecl {
         kind: MainKind::Function { argument },
+        is_async: signature.is_async,
         body,
         span,
     })

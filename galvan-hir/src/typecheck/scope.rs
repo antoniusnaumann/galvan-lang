@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use galvan_ast::{DeclModifier, Ident, Ownership, TypeElement};
 
+use crate::index::DefinitionId;
+
 /// A variable visible to the typechecker.
 ///
 /// `ownership` describes how the variable is represented in the generated
@@ -15,10 +17,19 @@ pub struct Variable {
     pub ownership: Ownership,
 }
 
+/// A declared variable together with its entry in the
+/// [`SymbolIndex`](crate::index::SymbolIndex) (absent for synthetic,
+/// desugared bindings).
+#[derive(Clone, Debug)]
+pub(crate) struct ScopeEntry {
+    pub variable: Variable,
+    pub definition: Option<DefinitionId>,
+}
+
 /// Stack of lexical scopes used while lowering a function body
 #[derive(Debug, Default)]
 pub(crate) struct ScopeStack {
-    scopes: Vec<HashMap<Ident, Variable>>,
+    scopes: Vec<HashMap<Ident, ScopeEntry>>,
 }
 
 impl ScopeStack {
@@ -37,14 +48,20 @@ impl ScopeStack {
         self.scopes.pop();
     }
 
-    pub fn declare(&mut self, variable: Variable) {
+    pub fn declare(&mut self, variable: Variable, definition: Option<DefinitionId>) {
         self.scopes
             .last_mut()
             .expect("scope stack is never empty")
-            .insert(variable.ident.clone(), variable);
+            .insert(
+                variable.ident.clone(),
+                ScopeEntry {
+                    variable,
+                    definition,
+                },
+            );
     }
 
-    pub fn get(&self, ident: &Ident) -> Option<&Variable> {
+    pub fn get(&self, ident: &Ident) -> Option<&ScopeEntry> {
         self.scopes.iter().rev().find_map(|scope| scope.get(ident))
     }
 

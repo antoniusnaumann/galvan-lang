@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use galvan_ast::{
-    AssociatedConstant, AssociatedFunctionCall, BasicTypeItem, Closure, ClosureParameter,
+    AssociatedConstant, AssociatedFunctionCall, AstNode, BasicTypeItem, Closure, ClosureParameter,
     ClosureTypeItem, CollectionLiteral, ComparisonOperator, ConstructorCall, ConstructorCallArg,
     DeclModifier, DictLiteralElement, ElseExpression, EnumConstructor, Expression, ExpressionKind,
     FnSignature, FunctionCall, FunctionCallArg, Ident, InfixExpression, InfixOperation, Literal,
@@ -85,15 +85,20 @@ impl Checker<'_> {
             ExpressionKind::EnumConstructor(constructor) => {
                 self.lower_enum_constructor(constructor, span)
             }
-            ExpressionKind::EnumAccess(access) => HirExpression::new(
-                HirExpressionKind::EnumAccess(HirEnumAccess {
-                    target: access.target.clone(),
-                    case: access.case.clone(),
-                }),
-                plain_type(access.target.clone()),
-                Ownership::UniqueOwned,
-                span,
-            ),
+            ExpressionKind::EnumAccess(access) => {
+                self.index.reference_type(&access.target);
+                self.index
+                    .reference_member(&access.target, access.case.as_str(), access.case.span());
+                HirExpression::new(
+                    HirExpressionKind::EnumAccess(HirEnumAccess {
+                        target: access.target.clone(),
+                        case: access.case.clone(),
+                    }),
+                    plain_type(access.target.clone()),
+                    Ownership::UniqueOwned,
+                    span,
+                )
+            }
             ExpressionKind::Literal(literal) => self.lower_literal(literal, span),
             ExpressionKind::Ident(ident) => self.lower_variable_expression(ident, span),
             ExpressionKind::Closure(closure) => self.lower_closure(closure, expected, false, span),
@@ -164,7 +169,11 @@ impl Checker<'_> {
 
     fn lower_variable_expression(&mut self, ident: &Ident, span: Span) -> HirExpression {
         match self.scopes.get(ident).cloned() {
-            Some(variable) => {
+            Some(entry) => {
+                if let Some(definition) = entry.definition {
+                    self.index.reference(ident.span(), definition);
+                }
+                let variable = entry.variable;
                 let ident = if ident.is_self() && self.ref_self {
                     Ident::new("__self")
                 } else {
@@ -179,6 +188,7 @@ impl Checker<'_> {
             }
             None => {
                 if let Some(constant) = self.rust_interop.constant(None, ident) {
+                    self.index.reference_rust_item(span, &constant.rust_path);
                     return HirExpression::new(
                         HirExpressionKind::RustConstant(HirRustConstant {
                             rust_path: constant.rust_path.clone(),
@@ -401,8 +411,11 @@ impl Checker<'_> {
         }
 
         if receiver.is_none() {
-            if let Some(variable) = self.scopes.get(ident).cloned() {
-                if let TypeElement::Closure(closure) = variable.ty {
+            if let Some(entry) = self.scopes.get(ident).cloned() {
+                if let TypeElement::Closure(closure) = entry.variable.ty {
+                    if let Some(definition) = entry.definition {
+                        self.index.reference(ident.span(), definition);
+                    }
                     self.validate_no_argument_labels(arguments, "closure calls");
                     let args = self.lower_closure_call_args(&closure.parameters, arguments);
                     return HirExpression::new(
@@ -488,6 +501,7 @@ impl Checker<'_> {
                 if let Some(function) = receiver_ident.as_ref().and_then(|receiver| {
                     lookup.resolve_function(Some(receiver), ident, &receiver_label_refs)
                 }) {
+                    self.index.reference_function(ident.span(), function);
                     let signature = function.item.signature.clone();
                     let receiver = self.lower_known_receiver(
                         lowered_receiver,
@@ -518,6 +532,7 @@ impl Checker<'_> {
 
         match function {
             Some(function) => {
+                self.index.reference_function(ident.span(), function);
                 let signature = function.item.signature.clone();
                 let args = self.lower_call_args(&signature.parameters.params, arguments);
                 let ty = signature.return_type.clone();
@@ -583,6 +598,8 @@ impl Checker<'_> {
     }
 
     fn lower_rust_call(&mut self, call: RustCall<'_>) -> HirExpression {
+        self.index
+            .reference_rust_item(call.ident.span(), &call.function.rust_path);
         let mut signature = call.function.decl.item.signature.clone();
         let binding_signature = signature.clone();
         let mut generic_substitutions = self.rust_call_generic_substitutions(
@@ -826,13 +843,26 @@ impl Checker<'_> {
         let params = call_params(params);
 
         if params.len() != arguments.len() {
-            self.errors.error(TranspilerError::InvalidSyntax {
-                message: format!(
-                    "function expected {} arguments but found {}",
-                    params.len(),
-                    arguments.len()
-                ),
-            });
+            // Point at the arguments when there are any; the caller's span is
+            // not available here.
+            let span = arguments
+                .first()
+                .zip(arguments.last())
+                .map(|(first, last)| Span {
+                    range: (first.expression.span.range.0, last.expression.span.range.1),
+                    start: first.expression.span.start,
+                    end: last.expression.span.end,
+                });
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: format!(
+                        "function expected {} arguments but found {}",
+                        params.len(),
+                        arguments.len()
+                    ),
+                },
+                span.map(Into::into),
+            );
         }
 
         params
@@ -1088,10 +1118,13 @@ impl Checker<'_> {
             Some(DeclModifier::Ref) => self.lower_ref_value(lowered, argument.expression.span),
             Some(DeclModifier::Move) => self.adjust_ownership(lowered, Ownership::UniqueOwned),
             Some(DeclModifier::Let) => {
-                self.errors.error(TranspilerError::InvalidModifier {
-                    modifier: "let".to_string(),
-                    context: "function arguments".to_string(),
-                });
+                self.errors.error_with_span(
+                    TranspilerError::InvalidModifier {
+                        modifier: "let".to_string(),
+                        context: "function arguments".to_string(),
+                    },
+                    Some(argument.expression.span.into()),
+                );
                 HirExpression::error("invalid let modifier on argument", argument.expression.span)
             }
             None => self.coerce_unknown_argument(lowered),
@@ -1108,10 +1141,13 @@ impl Checker<'_> {
             .map(|argument| match &argument.expression.kind {
                 ExpressionKind::Closure(closure) => {
                     if argument.modifier.is_some() {
-                        self.errors.error(TranspilerError::InvalidModifier {
-                            modifier: "closure".to_string(),
-                            context: "borrowed iterator functions".to_string(),
-                        });
+                        self.errors.error_with_span(
+                            TranspilerError::InvalidModifier {
+                                modifier: "closure".to_string(),
+                                context: "borrowed iterator functions".to_string(),
+                            },
+                            Some(argument.expression.span.into()),
+                        );
                         return HirExpression::error(
                             "invalid closure modifier",
                             argument.expression.span,
@@ -1192,12 +1228,12 @@ impl Checker<'_> {
         let (pattern, bindings, binding_conversions) =
             self.lower_match_pattern(&arm.pattern, target);
 
-        self.scopes.push();
+        self.push_scope(arm.body.body.span);
         for binding in bindings {
-            self.scopes.declare(binding);
+            self.declare_local(binding);
         }
         let body = self.lower_block(&arm.body.body, expected);
-        self.scopes.pop();
+        self.pop_scope();
 
         HirMatchArm {
             pattern,
@@ -1221,6 +1257,8 @@ impl Checker<'_> {
                 let target = target
                     .cloned()
                     .unwrap_or_else(|| TypeIdent::new("__UnknownMatchTarget"));
+                self.index
+                    .reference_member(&target, pattern.case.as_str(), pattern.case.span());
                 let fields = self
                     .resolve_match_variant_fields(&target, &pattern.case, pattern.span)
                     .unwrap_or_default();
@@ -1588,6 +1626,7 @@ impl Checker<'_> {
         expected: &Expected,
         span: Span,
     ) -> HirExpression {
+        self.reject_closure_param_modifiers(&else_expression.parameters);
         match &else_expression.receiver.kind {
             ExpressionKind::FunctionCall(call) if call.identifier.as_str() == "if" => {
                 self.lower_if(call, expected, Some(else_expression), span)
@@ -1633,8 +1672,8 @@ impl Checker<'_> {
             _ => Ownership::Borrowed,
         };
 
-        self.scopes.push();
-        self.scopes.declare(let_variable(
+        self.push_scope(span);
+        self.declare_local(let_variable(
             Ident::new("__value"),
             inner_ty.clone(),
             value_ownership,
@@ -1646,17 +1685,16 @@ impl Checker<'_> {
             span,
         );
         let value = self.coerce(value, &value_expected);
-        self.scopes.pop();
+        self.pop_scope();
 
-        self.scopes.push();
+        self.push_scope(span);
         let err_binding = fallback_parameter(else_expression, err_ty.as_ref());
         if let Some((ident, ty)) = &err_binding {
             let ownership = value_argument_ownership(self.is_copy(ty));
-            self.scopes
-                .declare(let_variable(ident.clone(), ty.clone(), ownership));
+            self.declare_local(let_variable(ident.clone(), ty.clone(), ownership));
         }
         let else_block = self.lower_block(&else_expression.block.body, &value_expected);
-        self.scopes.pop();
+        self.pop_scope();
 
         let ty = if value_expected.is_free() {
             inner_ty
@@ -1687,19 +1725,26 @@ impl Checker<'_> {
         span: Span,
     ) -> HirExpression {
         if call.arguments.len() != 2 {
-            self.errors.error(TranspilerError::MissingArgument {
-                operation: "if".to_string(),
-                argument_type: "condition and body".to_string(),
-            });
+            self.errors.error_with_span(
+                TranspilerError::MissingArgument {
+                    operation: "if".to_string(),
+                    argument_type: "condition and body".to_string(),
+                },
+                Some(span.into()),
+            );
             return HirExpression::error("invalid if", span);
         }
         let Some(body) = closure_argument(&call.arguments[1]) else {
-            self.errors.error(TranspilerError::MissingArgument {
-                operation: "if".to_string(),
-                argument_type: "body expression".to_string(),
-            });
+            self.errors.error_with_span(
+                TranspilerError::MissingArgument {
+                    operation: "if".to_string(),
+                    argument_type: "body expression".to_string(),
+                },
+                Some(span.into()),
+            );
             return HirExpression::error("invalid if body", span);
         };
+        self.reject_closure_param_modifiers(&body.parameters);
 
         let condition = self.lower_expression(
             &call.arguments[0].expression,
@@ -1800,19 +1845,26 @@ impl Checker<'_> {
         span: Span,
     ) -> HirExpression {
         if call.arguments.len() != 2 {
-            self.errors.error(TranspilerError::MissingArgument {
-                operation: "try".to_string(),
-                argument_type: "condition and body".to_string(),
-            });
+            self.errors.error_with_span(
+                TranspilerError::MissingArgument {
+                    operation: "try".to_string(),
+                    argument_type: "condition and body".to_string(),
+                },
+                Some(span.into()),
+            );
             return HirExpression::error("invalid try", span);
         }
         let Some(body) = closure_argument(&call.arguments[1]) else {
-            self.errors.error(TranspilerError::MissingArgument {
-                operation: "try".to_string(),
-                argument_type: "body expression".to_string(),
-            });
+            self.errors.error_with_span(
+                TranspilerError::MissingArgument {
+                    operation: "try".to_string(),
+                    argument_type: "body expression".to_string(),
+                },
+                Some(span.into()),
+            );
             return HirExpression::error("invalid try body", span);
         };
+        self.reject_closure_param_modifiers(&body.parameters);
 
         let condition = self.lower_expression(&call.arguments[0].expression, &Expected::free());
 
@@ -1842,18 +1894,17 @@ impl Checker<'_> {
                 // function `r#try(condition, |binding| body)`
                 let condition = self.coerce_unknown_argument(condition);
 
-                self.scopes.push();
+                self.push_scope(span);
                 let ok_parameters = try_ok_parameters(body, &ok_ty);
                 let ok_bindings = ok_parameters
                     .into_iter()
                     .map(|(ident, ty)| {
-                        self.scopes
-                            .declare(let_variable(ident.clone(), ty, Ownership::Borrowed));
+                        self.declare_local(let_variable(ident.clone(), ty, Ownership::Borrowed));
                         ident
                     })
                     .collect();
                 let block = self.lower_block(&body.block.body, &Expected::free());
-                self.scopes.pop();
+                self.pop_scope();
 
                 HirExpression::new(
                     HirExpressionKind::Try(Box::new(HirTry {
@@ -1907,30 +1958,28 @@ impl Checker<'_> {
 
         let scrutinee_ownership = condition.adjusted_ownership();
 
-        self.scopes.push();
+        self.push_scope(span);
         let ok_ownership = self.unwrap_binding_ownership(&ok_ty, scrutinee_ownership);
         let ok_parameters = try_ok_parameters(body, &ok_ty);
         let ok_bindings: Vec<Ident> = ok_parameters
             .into_iter()
             .map(|(ident, ty)| {
-                self.scopes
-                    .declare(let_variable(ident.clone(), ty, ok_ownership));
+                self.declare_local(let_variable(ident.clone(), ty, ok_ownership));
                 ident
             })
             .collect();
         let block = self.lower_block(&body.block.body, &branch_expected);
-        self.scopes.pop();
+        self.pop_scope();
 
-        self.scopes.push();
+        self.push_scope(span);
         let err_binding =
             fallback_parameter(else_expression, err_ty.as_ref()).map(|(ident, ty)| {
                 let err_ownership = self.unwrap_binding_ownership(&ty, scrutinee_ownership);
-                self.scopes
-                    .declare(let_variable(ident.clone(), ty, err_ownership));
+                self.declare_local(let_variable(ident.clone(), ty, err_ownership));
                 ident
             });
         let else_block = self.lower_block(&else_expression.block.body, &branch_expected);
-        self.scopes.pop();
+        self.pop_scope();
 
         let ty = if branch_expected.is_free() {
             unify_types(&block.ty, &else_block.ty).unwrap_or_else(TypeElement::infer)
@@ -1955,22 +2004,29 @@ impl Checker<'_> {
 
     fn lower_for(&mut self, call: &FunctionCall, expected: &Expected, span: Span) -> HirExpression {
         if call.arguments.len() != 2 {
-            self.errors.error(TranspilerError::MissingArgument {
-                operation: "for".to_string(),
-                argument_type: "iterable and body".to_string(),
-            });
+            self.errors.error_with_span(
+                TranspilerError::MissingArgument {
+                    operation: "for".to_string(),
+                    argument_type: "iterable and body".to_string(),
+                },
+                Some(span.into()),
+            );
             return HirExpression::error("invalid for loop", span);
         }
         let Some(body) = closure_argument(&call.arguments[1]) else {
-            self.errors.error(TranspilerError::MissingArgument {
-                operation: "for".to_string(),
-                argument_type: "body expression".to_string(),
-            });
+            self.errors.error_with_span(
+                TranspilerError::MissingArgument {
+                    operation: "for".to_string(),
+                    argument_type: "body expression".to_string(),
+                },
+                Some(span.into()),
+            );
             return HirExpression::error("invalid for body", span);
         };
+        self.reject_closure_param_modifiers(&body.parameters);
 
         let iterable = self.lower_expression(&call.arguments[0].expression, &Expected::free());
-        let iterable_info = self.for_iterable_info(&iterable.ty);
+        let iterable_info = self.for_iterable_info(&iterable.ty, iterable.span);
 
         // Borrow iterated locals so the loop does not consume them
         let iterable = match (&iterable.kind, iterable.adjusted_ownership()) {
@@ -1994,7 +2050,7 @@ impl Checker<'_> {
             Some(iteration_type(&self.fn_return, &expected.ty))
         };
 
-        self.scopes.push();
+        self.push_scope(span);
         let bindings: Vec<HirForBinding> = if body.parameters.is_empty() {
             // Implicit `it` parameter
             vec![self.lower_for_binding(
@@ -2030,7 +2086,7 @@ impl Checker<'_> {
             None => Expected::void(),
         };
         let block = self.lower_block(&body.block.body, &body_expected);
-        self.scopes.pop();
+        self.pop_scope();
 
         let ty = match &collect {
             Some(collect_ty) => TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
@@ -2054,7 +2110,7 @@ impl Checker<'_> {
         )
     }
 
-    fn for_iterable_info(&mut self, iterable_ty: &TypeElement) -> ForIterableInfo {
+    fn for_iterable_info(&mut self, iterable_ty: &TypeElement, span: Span) -> ForIterableInfo {
         match iterable_ty {
             TypeElement::Array(array) => ForIterableInfo::single(array.elements.clone()),
             TypeElement::Set(set) => ForIterableInfo::single(set.elements.clone()),
@@ -2084,8 +2140,10 @@ impl Checker<'_> {
                 ForIterableInfo::single(TypeElement::infer())
             }
             _ => {
-                self.errors
-                    .warning("For loop on type that is not an iterator".to_string(), None);
+                self.errors.warning(
+                    format!("For loop on type `{iterable_ty}` that is not an iterator"),
+                    Some(span.into()),
+                );
                 ForIterableInfo::single(TypeElement::infer())
             }
         }
@@ -2111,7 +2169,7 @@ impl Checker<'_> {
         iterable_info: &ForIterableInfo,
     ) -> HirForBinding {
         let deref = self.for_binding_deref(&binding_ty, borrows_iterable, iterable_info);
-        self.scopes.declare(let_variable(
+        self.declare_local(let_variable(
             ident.clone(),
             binding_ty,
             for_binding_ownership(deref),
@@ -2149,16 +2207,22 @@ impl Checker<'_> {
                     },
             }) if infix.is_comparison() => {
                 if let Some(label) = label {
-                    self.errors.error(TranspilerError::InvalidSyntax {
-                        message: format!("argument label '{label}' is not valid in assert"),
-                    });
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!("argument label '{label}' is not valid in assert"),
+                        },
+                        Some(span.into()),
+                    );
                     return HirExpression::error("invalid assert label", span);
                 }
                 if modifier.is_some() {
-                    self.errors.error(TranspilerError::InvalidModifier {
-                        modifier: "assert".to_string(),
-                        context: "comparison expressions".to_string(),
-                    });
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidModifier {
+                            modifier: "assert".to_string(),
+                            context: "comparison expressions".to_string(),
+                        },
+                        Some(span.into()),
+                    );
                     return HirExpression::error("invalid assert modifier", span);
                 }
                 let InfixExpression::Comparison(comparison) = infix.as_ref() else {
@@ -2198,9 +2262,12 @@ impl Checker<'_> {
                     .collect(),
             ),
             None => {
-                self.errors.error(TranspilerError::InvalidSyntax {
-                    message: "Assert requires a condition or comparison expression".to_string(),
-                });
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: "Assert requires a condition or comparison expression".to_string(),
+                    },
+                    Some(span.into()),
+                );
                 return HirExpression::error("invalid assert arguments", span);
             }
         };
@@ -2456,6 +2523,10 @@ impl Checker<'_> {
                 ExpressionKind::Ident(field) => {
                     let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
                     let field_ty = self.field_type(&receiver.ty, field, span);
+                    if let Some(owner) = receiver_type_ident(&receiver.ty) {
+                        self.index
+                            .reference_member(&owner, field.as_str(), field.span());
+                    }
                     let rust_return_conversion = receiver_type_ident(&receiver.ty)
                         .map(|receiver| self.rust_interop.field_return_conversion(&receiver, field))
                         .unwrap_or_default();
@@ -2478,10 +2549,14 @@ impl Checker<'_> {
                     )
                 }
                 _ => {
-                    self.errors.error(TranspilerError::MemberAccessError {
-                        message: "Member operator can only be used with fields or function calls"
-                            .to_string(),
-                    });
+                    self.errors.error_with_span(
+                        TranspilerError::MemberAccessError {
+                            message:
+                                "Member operator can only be used with fields or function calls"
+                                    .to_string(),
+                        },
+                        Some(span.into()),
+                    );
                     HirExpression::error("invalid member access", span)
                 }
             },
@@ -2494,6 +2569,7 @@ impl Checker<'_> {
         constant: &AssociatedConstant,
         span: Span,
     ) -> HirExpression {
+        self.index.reference_type(&constant.receiver);
         if self.lookup.resolve_type(&constant.receiver).is_none() {
             self.errors.error_with_span(
                 TranspilerError::UnknownType {
@@ -2517,6 +2593,8 @@ impl Checker<'_> {
             return HirExpression::error("unknown associated constant", span);
         };
 
+        self.index
+            .reference_rust_item(constant.name.span(), &decl.rust_path);
         HirExpression::new(
             HirExpressionKind::RustConstant(HirRustConstant {
                 rust_path: decl.rust_path.clone(),
@@ -2533,6 +2611,7 @@ impl Checker<'_> {
         expected: &Expected,
         span: Span,
     ) -> HirExpression {
+        self.index.reference_type(&associated.receiver);
         if self.lookup.resolve_type(&associated.receiver).is_none() {
             self.errors.error_with_span(
                 TranspilerError::UnknownType {
@@ -2602,11 +2681,14 @@ impl Checker<'_> {
             TypeElement::Plain(basic) => basic.ident.clone(),
             TypeElement::Parametric(parametric) => parametric.base_type.clone(),
             TypeElement::Optional(_) | TypeElement::Result(_) => {
-                self.errors.error(TranspilerError::MemberAccessError {
-                    message:
-                        "Should use safe-call operator '?.' or error forwarding '!' on optional and result types"
-                            .to_string(),
-                });
+                self.errors.error_with_span(
+                    TranspilerError::MemberAccessError {
+                        message:
+                            "Should use safe-call operator '?.' or error forwarding '!' on optional and result types"
+                                .to_string(),
+                    },
+                    Some(span.into()),
+                );
                 return TypeElement::infer();
             }
             _ => return TypeElement::infer(),
@@ -2624,9 +2706,14 @@ impl Checker<'_> {
                 .find(|member| member.ident == *field)
                 .map(|member| member.r#type.clone())
                 .unwrap_or_else(|| {
-                    self.errors.error(TranspilerError::MemberAccessError {
-                        message: format!("struct does not have field: {field}"),
-                    });
+                    self.errors.error_with_span(
+                        TranspilerError::MemberAccessError {
+                            message: format!(
+                                "struct `{type_ident}` does not have field: {field}"
+                            ),
+                        },
+                        Some(field.span().into()),
+                    );
                     TypeElement::infer()
                 }),
             TypeDecl::Tuple(_) => {
@@ -2637,17 +2724,23 @@ impl Checker<'_> {
                 TypeElement::infer()
             }
             TypeDecl::Enum(_) => {
-                self.errors.error(TranspilerError::EnumAccessError {
-                    message: "Enum cases are accessed with ::".to_string(),
-                });
+                self.errors.error_with_span(
+                    TranspilerError::EnumAccessError {
+                        message: "Enum cases are accessed with ::".to_string(),
+                    },
+                    Some(field.span().into()),
+                );
                 TypeElement::infer()
             }
             // TODO: Handle inference for alias types
             TypeDecl::Alias(_) => TypeElement::infer(),
             TypeDecl::Empty(_) => {
-                self.errors.error(TranspilerError::MemberAccessError {
-                    message: "Cannot access member of empty type".to_string(),
-                });
+                self.errors.error_with_span(
+                    TranspilerError::MemberAccessError {
+                        message: "Cannot access member of empty type".to_string(),
+                    },
+                    Some(field.span().into()),
+                );
                 TypeElement::infer()
             }
         }
@@ -2669,6 +2762,10 @@ impl Checker<'_> {
         let (access, access_ty) = match &operation.rhs.kind {
             ExpressionKind::Ident(field) => {
                 let field_ty = self.field_type(&inner_ty, field, span);
+                if let Some(owner) = receiver_type_ident(&inner_ty) {
+                    self.index
+                        .reference_member(&owner, field.as_str(), field.span());
+                }
                 (SafeAccessKind::Field(field.clone()), field_ty)
             }
             ExpressionKind::FunctionCall(call) => {
@@ -2701,6 +2798,8 @@ impl Checker<'_> {
                         .or_else(|| lookup.resolve_function(None, &call.identifier, &label_refs));
                     match function {
                         Some(function) => {
+                            self.index
+                                .reference_function(call.identifier.span(), function);
                             let signature = function.item.signature.clone();
                             let args =
                                 self.lower_call_args(&signature.parameters.params, &call.arguments);
@@ -2724,10 +2823,14 @@ impl Checker<'_> {
                 }
             }
             _ => {
-                self.errors.error(TranspilerError::MemberAccessError {
-                    message: "Safe-call operator can only be used with fields or function calls"
-                        .to_string(),
-                });
+                self.errors.error_with_span(
+                    TranspilerError::MemberAccessError {
+                        message:
+                            "Safe-call operator can only be used with fields or function calls"
+                                .to_string(),
+                    },
+                    Some(span.into()),
+                );
                 return HirExpression::error("invalid safe call", span);
             }
         };
@@ -2779,19 +2882,22 @@ impl Checker<'_> {
                 let inner = self.lower_expression(&yeet.inner, &Expected::free());
                 let ty = match &inner.ty {
                     TypeElement::Optional(optional) => {
-                        self.validate_yeet_return_type(&inner.ty);
+                        self.validate_yeet_return_type(&inner.ty, span);
                         optional.inner.clone()
                     }
                     TypeElement::Result(result) => {
-                        self.validate_yeet_return_type(&inner.ty);
+                        self.validate_yeet_return_type(&inner.ty, span);
                         result.success.clone()
                     }
                     TypeElement::Infer(_) => TypeElement::infer(),
                     _ => {
-                        self.errors.error(TranspilerError::InvalidOperationOnType {
-                            operation: "Yeet operator".to_string(),
-                            allowed_types: "result or optional types".to_string(),
-                        });
+                        self.errors.error_with_span(
+                            TranspilerError::InvalidOperationOnType {
+                                operation: "Yeet operator".to_string(),
+                                allowed_types: "result or optional types".to_string(),
+                            },
+                            Some(span.into()),
+                        );
                         TypeElement::infer()
                     }
                 };
@@ -2813,10 +2919,13 @@ impl Checker<'_> {
                     TypeElement::Set(set) => set.elements.clone(),
                     TypeElement::Infer(_) => TypeElement::infer(),
                     _ => {
-                        self.errors.error(TranspilerError::InvalidOperationOnType {
-                            operation: "index access".to_string(),
-                            allowed_types: "collection types".to_string(),
-                        });
+                        self.errors.error_with_span(
+                            TranspilerError::InvalidOperationOnType {
+                                operation: "index access".to_string(),
+                                allowed_types: "collection types".to_string(),
+                            },
+                            Some(span.into()),
+                        );
                         TypeElement::infer()
                     }
                 };
@@ -2839,7 +2948,7 @@ impl Checker<'_> {
 
     /// Validates that a yeeted (`!`) error type is compatible with the
     /// current function's return type
-    fn validate_yeet_return_type(&mut self, yeet_ty: &TypeElement) {
+    fn validate_yeet_return_type(&mut self, yeet_ty: &TypeElement, span: Span) {
         let fn_return = &self.fn_return;
         if fn_return.is_infer() || fn_return.is_void() {
             return;
@@ -2853,7 +2962,7 @@ impl Checker<'_> {
                             "Yeet operator type mismatch: yielding {} but function returns {}",
                             yeet.inner, ret.inner
                         ),
-                        None,
+                        Some(span.into()),
                     );
                 }
             }
@@ -2864,7 +2973,7 @@ impl Checker<'_> {
                             "Yeet operator success type mismatch: yielding {} but function returns {}",
                             yeet.success, ret.success
                         ),
-                        None,
+                        Some(span.into()),
                     );
                 }
                 if let (Some(yeet_err), Some(ret_err)) = (&yeet.error, &ret.error) {
@@ -2874,7 +2983,7 @@ impl Checker<'_> {
                                 "Yeet operator error type mismatch: yielding {} but function expects {}",
                                 yeet_err, ret_err
                             ),
-                            None,
+                            Some(span.into()),
                         );
                     }
                 }
@@ -2886,7 +2995,7 @@ impl Checker<'_> {
                         "Yeet operator type incompatibility: yielding {} but function returns {}",
                         yeet_ty, fn_return
                     ),
-                    None,
+                    Some(span.into()),
                 );
             }
             _ => {}
@@ -2976,7 +3085,7 @@ impl Checker<'_> {
             .iter()
             .map(|element| self.lower_expression(element, &Expected::free()))
             .collect();
-        let ty = self.unify_element_types(lowered.iter().map(|element| &element.ty));
+        let ty = self.unify_element_types(lowered.iter().map(|element| (&element.ty, element.span)));
         (lowered, ty)
     }
 
@@ -2991,28 +3100,41 @@ impl Checker<'_> {
                 value: self.lower_expression(&element.value, &Expected::free()),
             })
             .collect();
-        let key_ty = self.unify_element_types(lowered.iter().map(|element| &element.key.ty));
-        let value_ty = self.unify_element_types(lowered.iter().map(|element| &element.value.ty));
+        let key_ty = self.unify_element_types(
+            lowered
+                .iter()
+                .map(|element| (&element.key.ty, element.key.span)),
+        );
+        let value_ty = self.unify_element_types(
+            lowered
+                .iter()
+                .map(|element| (&element.value.ty, element.value.span)),
+        );
         (lowered, key_ty, value_ty)
     }
 
+    /// Unifies collection element types, reporting a mismatch at the span of
+    /// the first element that disagrees with the preceding ones.
     fn unify_element_types<'t>(
         &mut self,
-        types: impl Iterator<Item = &'t TypeElement>,
+        types: impl Iterator<Item = (&'t TypeElement, Span)>,
     ) -> TypeElement {
         let mut unified: Option<TypeElement> = None;
-        for ty in types {
+        for (ty, span) in types {
             if ty.is_infer() || ty.is_number() {
                 continue;
             }
             match &unified {
                 None => unified = Some(ty.clone()),
                 Some(current) if types_compatible(current, ty) => {}
-                Some(_) => {
-                    self.errors.error(TranspilerError::TypeMismatch {
-                        expected: "matching types in literal".to_string(),
-                        found: "multiple different types".to_string(),
-                    });
+                Some(current) => {
+                    self.errors.error_with_span(
+                        TranspilerError::TypeMismatch {
+                            expected: current.to_string(),
+                            found: ty.to_string(),
+                        },
+                        Some(span.into()),
+                    );
                     return TypeElement::infer();
                 }
             }
@@ -3028,6 +3150,7 @@ impl Checker<'_> {
     ) -> HirExpression {
         let lookup = self.lookup;
         let type_decl = lookup.resolve_type(&constructor.identifier);
+        self.index.reference_type(&constructor.identifier);
         let mut kind = HirConstructorKind::Struct;
         let mut inferred_type_args = Vec::new();
 
@@ -3041,6 +3164,13 @@ impl Checker<'_> {
                         .arguments
                         .iter()
                         .find(|argument| argument.field_name.as_ref() == Some(&member.ident));
+                    if let Some(name) = provided.and_then(|argument| argument.field_name.as_ref()) {
+                        self.index.reference_member(
+                            &constructor.identifier,
+                            name.as_str(),
+                            name.span(),
+                        );
+                    }
                     let value = match provided {
                         Some(argument) => {
                             let mut value = self.lower_modified_value(
@@ -3062,11 +3192,14 @@ impl Checker<'_> {
                                 self.coerce(value, &expected)
                             }
                             None => {
-                                self.errors.error(TranspilerError::ArgumentCountMismatch {
-                                    name: format!("{}()", constructor.identifier.as_str()),
-                                    expected: decl.members.len(),
-                                    found: constructor.arguments.len(),
-                                });
+                                self.errors.error_with_span(
+                                    TranspilerError::ArgumentCountMismatch {
+                                        name: format!("{}()", constructor.identifier.as_str()),
+                                        expected: decl.members.len(),
+                                        found: constructor.arguments.len(),
+                                    },
+                                    Some(span.into()),
+                                );
                                 HirExpression::error("missing field", span)
                             }
                         },
@@ -3085,11 +3218,14 @@ impl Checker<'_> {
             Some(TypeDecl::Tuple(decl)) => {
                 kind = HirConstructorKind::Tuple;
                 if constructor.arguments.len() != decl.members.len() {
-                    self.errors.error(TranspilerError::ArgumentCountMismatch {
-                        name: format!("{}()", constructor.identifier.as_str()),
-                        expected: decl.members.len(),
-                        found: constructor.arguments.len(),
-                    });
+                    self.errors.error_with_span(
+                        TranspilerError::ArgumentCountMismatch {
+                            name: format!("{}()", constructor.identifier.as_str()),
+                            expected: decl.members.len(),
+                            found: constructor.arguments.len(),
+                        },
+                        Some(span.into()),
+                    );
                 }
 
                 let rust_arg_conversions = self
@@ -3187,6 +3323,12 @@ impl Checker<'_> {
         constructor: &EnumConstructor,
         span: Span,
     ) -> HirExpression {
+        self.index.reference_type(&constructor.enum_access.target);
+        self.index.reference_member(
+            &constructor.enum_access.target,
+            constructor.enum_access.case.as_str(),
+            constructor.enum_access.case.span(),
+        );
         let args = constructor
             .arguments
             .iter()
@@ -3225,6 +3367,24 @@ impl Checker<'_> {
         )
     }
 
+    /// Closure parameter modifiers (`|mut ticket|`) parse but are not
+    /// lowered yet; reject them until ref-aware closure bindings exist.
+    fn reject_closure_param_modifiers(&mut self, parameters: &[ClosureParameter]) {
+        for parameter in parameters {
+            if parameter.modifier.is_some() {
+                self.errors.error_with_span(
+                    TranspilerError::Unimplemented {
+                        feature: format!(
+                            "modifier on closure parameter '{}'",
+                            parameter.ident.as_str()
+                        ),
+                    },
+                    Some(parameter.ident.span().into()),
+                );
+            }
+        }
+    }
+
     fn lower_closure(
         &mut self,
         closure: &Closure,
@@ -3232,12 +3392,13 @@ impl Checker<'_> {
         deref_params: bool,
         span: Span,
     ) -> HirExpression {
+        self.reject_closure_param_modifiers(&closure.parameters);
         let expected_closure = match &expected.ty {
             TypeElement::Closure(closure_ty) => Some(closure_ty.as_ref()),
             _ => None,
         };
 
-        self.scopes.push();
+        self.push_scope(span);
         let parameters: Vec<HirClosureParam> = closure
             .parameters
             .iter()
@@ -3256,7 +3417,7 @@ impl Checker<'_> {
                 } else {
                     Ownership::Borrowed
                 };
-                self.scopes.declare(Variable {
+                self.declare_parameter(Variable {
                     ident: parameter.ident.clone(),
                     modifier: DeclModifier::Let,
                     ty: ty.clone(),
@@ -3279,7 +3440,7 @@ impl Checker<'_> {
             _ => Expected::free(),
         };
         let body = self.lower_block(&closure.block.body, &body_expected);
-        self.scopes.pop();
+        self.pop_scope();
 
         let ty = TypeElement::Closure(Box::new(ClosureTypeItem {
             parameters: parameters
