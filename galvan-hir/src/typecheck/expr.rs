@@ -1,6 +1,6 @@
 //! Expression lowering: turns AST expressions into typed [`HirExpression`]s.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use galvan_ast::{
     AssociatedConstant, AssociatedFunctionCall, AstNode, BasicTypeItem, Closure, ClosureParameter,
@@ -109,7 +109,7 @@ impl Checker<'_> {
                 self.lower_constructor(constructor, expected, span)
             }
             ExpressionKind::EnumConstructor(constructor) => {
-                self.lower_enum_constructor(constructor, span)
+                self.lower_enum_constructor(constructor, expected, span)
             }
             ExpressionKind::EnumAccess(access) => {
                 self.index.reference_type(&access.target);
@@ -118,6 +118,17 @@ impl Checker<'_> {
                     access.case.as_str(),
                     access.case.span(),
                 );
+                if self.enum_has_common_fields(&access.target) {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!(
+                                "enum variant `{}::{}` requires common field arguments",
+                                access.target, access.case
+                            ),
+                        },
+                        Some(span.into()),
+                    );
+                }
                 HirExpression::new(
                     HirExpressionKind::EnumAccess(HirEnumAccess {
                         target: access.target.clone(),
@@ -1244,6 +1255,9 @@ impl Checker<'_> {
         let scrutinee = self.lower_expression(&match_expression.scrutinee, &Expected::free());
         let scrutinee_ty = scrutinee.ty.clone();
         let target = self.match_target_type(&scrutinee_ty, span);
+        let uses_variant_tag = target
+            .as_ref()
+            .is_some_and(|target| self.enum_has_common_fields(target));
         let scrutinee = self.coerce(scrutinee, &Expected::owned(scrutinee_ty.clone()));
 
         let branch_expected = if expected.is_void() {
@@ -1270,7 +1284,11 @@ impl Checker<'_> {
         };
 
         HirExpression::new(
-            HirExpressionKind::Match(Box::new(HirMatch { scrutinee, arms })),
+            HirExpressionKind::Match(Box::new(HirMatch {
+                scrutinee,
+                arms,
+                uses_variant_tag,
+            })),
             ty,
             Ownership::UniqueOwned,
             span,
@@ -1595,6 +1613,16 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    fn enum_has_common_fields(&self, target: &TypeIdent) -> bool {
+        self.lookup
+            .resolve_type(target)
+            .and_then(|decl| match &decl.item {
+                TypeDecl::Enum(decl) => Some(!decl.common_fields.is_empty()),
+                _ => None,
+            })
+            .unwrap_or(false)
     }
 
     fn resolve_match_variant_fields(
@@ -2935,14 +2963,32 @@ impl Checker<'_> {
                     .collect::<Vec<_>>();
                 self.tuple_field_type(&elements, field, span)
             }
-            TypeDecl::Enum(_) => {
-                self.errors.error_with_span(
-                    TranspilerError::EnumAccessError {
-                        message: "Enum cases are accessed with ::".to_string(),
-                    },
-                    Some(field.span().into()),
-                );
-                TypeElement::infer()
+            TypeDecl::Enum(decl) => {
+                if decl.common_fields.is_empty() {
+                    self.errors.error_with_span(
+                        TranspilerError::EnumAccessError {
+                            message: "Enum cases are accessed with ::".to_string(),
+                        },
+                        Some(field.span().into()),
+                    );
+                    TypeElement::infer()
+                } else {
+                    decl.common_fields
+                        .iter()
+                        .find(|member| member.ident == *field)
+                        .map(|member| member.r#type.clone())
+                        .unwrap_or_else(|| {
+                            self.errors.error_with_span(
+                                TranspilerError::MemberAccessError {
+                                    message: format!(
+                                        "enum `{type_ident}` does not have common field: {field}"
+                                    ),
+                                },
+                                Some(field.span().into()),
+                            );
+                            TypeElement::infer()
+                        })
+                }
             }
             // TODO: Handle inference for alias types
             TypeDecl::Alias(_) => TypeElement::infer(),
@@ -2996,10 +3042,12 @@ impl Checker<'_> {
         let Some(decl) = self.lookup.resolve_type(type_ident) else {
             return false;
         };
-        let TypeDecl::Struct(decl) = &decl.item else {
-            return false;
+        let members = match &decl.item {
+            TypeDecl::Struct(decl) => &decl.members,
+            TypeDecl::Enum(decl) => &decl.common_fields,
+            TypeDecl::Tuple(_) | TypeDecl::Alias(_) | TypeDecl::Empty(_) => return false,
         };
-        decl.members
+        members
             .iter()
             .any(|member| member.ident == *field && member.decl_modifier == Some(DeclModifier::Ref))
     }
@@ -3595,6 +3643,7 @@ impl Checker<'_> {
     fn lower_enum_constructor(
         &mut self,
         constructor: &EnumConstructor,
+        expected: &Expected,
         span: Span,
     ) -> HirExpression {
         self.index.reference_type(&constructor.enum_access.target);
@@ -3603,39 +3652,311 @@ impl Checker<'_> {
             constructor.enum_access.case.as_str(),
             constructor.enum_access.case.span(),
         );
-        let args = constructor
+        let Some(type_decl) = self.lookup.resolve_type(&constructor.enum_access.target) else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: constructor.enum_access.target.to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown enum type", span);
+        };
+        let TypeDecl::Enum(enum_decl) = &type_decl.item else {
+            self.errors.error_with_span(
+                TranspilerError::InvalidOperationOnType {
+                    operation: "enum construction".to_string(),
+                    allowed_types: "enum types".to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("not an enum type", span);
+        };
+        let Some(variant) = enum_decl
+            .members
+            .iter()
+            .find(|member| member.ident == constructor.enum_access.case)
+        else {
+            self.errors.error_with_span(
+                TranspilerError::EnumAccessError {
+                    message: format!(
+                        "Enum `{}` does not have variant `{}`",
+                        constructor.enum_access.target, constructor.enum_access.case
+                    ),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown enum variant", span);
+        };
+
+        let common_names = enum_decl
+            .common_fields
+            .iter()
+            .map(|field| field.ident.as_str())
+            .collect::<HashSet<_>>();
+        for field in &variant.fields {
+            if field
+                .name
+                .as_ref()
+                .is_some_and(|name| common_names.contains(name.as_str()))
+            {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "enum variant field `{}` conflicts with a common field",
+                            field.name.as_ref().expect("checked above")
+                        ),
+                    },
+                    Some(field.span.into()),
+                );
+            }
+        }
+
+        let mut inferred_type_args = Vec::new();
+        let mut common_args = Vec::with_capacity(enum_decl.common_fields.len());
+        for field in &enum_decl.common_fields {
+            let matching = constructor
+                .arguments
+                .iter()
+                .filter(|argument| argument.field_name.as_ref() == Some(&field.ident))
+                .collect::<Vec<_>>();
+            if matching.len() > 1 {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!("duplicate enum constructor field `{}`", field.ident),
+                    },
+                    Some(span.into()),
+                );
+            }
+            let is_ref_field = field.decl_modifier == Some(DeclModifier::Ref);
+            let (value, missing_ref_modifier) = match matching.first().copied() {
+                Some(argument) => {
+                    self.index.reference_member(
+                        &constructor.enum_access.target,
+                        field.ident.as_str(),
+                        field.ident.span(),
+                    );
+                    let mut value = self.lower_modified_value(
+                        &argument.expression,
+                        argument.modifier,
+                        is_ref_field,
+                        "enum common field arguments",
+                    );
+                    let missing_ref_modifier = is_ref_field
+                        && argument.modifier != Some(DeclModifier::Ref)
+                        && value.adjusted_ownership() == Ownership::Ref;
+                    if !is_ref_field || argument.modifier != Some(DeclModifier::Ref) {
+                        value = self.coerce(value, &Expected::owned(field.r#type.clone()));
+                    }
+                    collect_generic_constructor_arg_types(
+                        &field.r#type,
+                        &value.ty,
+                        &mut inferred_type_args,
+                    );
+                    (value, missing_ref_modifier)
+                }
+                None => match &field.default_value {
+                    Some(default) => {
+                        let value = self.lower_expression(default, &Expected::free());
+                        (
+                            self.coerce(value, &Expected::owned(field.r#type.clone())),
+                            false,
+                        )
+                    }
+                    None => {
+                        self.errors.error_with_span(
+                            TranspilerError::InvalidSyntax {
+                                message: format!(
+                                    "missing common field `{}` in `{}::{}` constructor",
+                                    field.ident,
+                                    constructor.enum_access.target,
+                                    constructor.enum_access.case
+                                ),
+                            },
+                            Some(span.into()),
+                        );
+                        (HirExpression::error("missing common field", span), false)
+                    }
+                },
+            };
+            common_args.push(HirConstructorArg {
+                field: field.ident.clone(),
+                value,
+                store_as_ref: is_ref_field,
+                missing_ref_modifier,
+                rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
+            });
+        }
+
+        let named_variant = variant.fields.iter().all(|field| field.name.is_some());
+        let tuple_variant = variant.fields.iter().all(|field| field.name.is_none());
+        if !named_variant && !tuple_variant {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: "Cannot mix named and unnamed fields in enum variant".to_string(),
+                },
+                Some(variant.span.into()),
+            );
+        }
+
+        let variant_arguments = constructor
             .arguments
             .iter()
-            .enumerate()
-            .map(|(idx, argument)| {
-                let value = self.lower_expression(&argument.expression, &Expected::free());
-                let value = match (&argument.field_name, &argument.modifier) {
-                    (None, Some(DeclModifier::Mut)) => value.adjusted(Adjustment::MutBorrow),
-                    (None, Some(DeclModifier::Ref)) => {
-                        self.lower_ref_value(value, argument.expression.span)
-                    }
-                    _ => value,
+            .filter(|argument| {
+                !argument
+                    .field_name
+                    .as_ref()
+                    .is_some_and(|name| common_names.contains(name.as_str()))
+            })
+            .collect::<Vec<_>>();
+
+        let mut args = Vec::with_capacity(variant.fields.len());
+        if named_variant {
+            for (idx, field) in variant.fields.iter().enumerate() {
+                let field_name = field.name.as_ref().expect("named variant");
+                let matching = variant_arguments
+                    .iter()
+                    .copied()
+                    .filter(|argument| argument.field_name.as_ref() == Some(field_name))
+                    .collect::<Vec<_>>();
+                if matching.len() > 1 {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!(
+                                "duplicate enum constructor field `{field_name}`"
+                            ),
+                        },
+                        Some(span.into()),
+                    );
+                }
+                let value = if let Some(argument) = matching.first().copied() {
+                    let value = self.lower_modified_value(
+                        &argument.expression,
+                        argument.modifier,
+                        false,
+                        "enum variant arguments",
+                    );
+                    self.coerce(value, &Expected::owned(field.r#type.clone()))
+                } else {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!(
+                                "missing variant field `{field_name}` in `{}::{}` constructor",
+                                constructor.enum_access.target, constructor.enum_access.case
+                            ),
+                        },
+                        Some(span.into()),
+                    );
+                    HirExpression::error("missing variant field", span)
                 };
-                HirEnumConstructorArg {
-                    field: argument.field_name.clone(),
+                collect_generic_constructor_arg_types(
+                    &field.r#type,
+                    &value.ty,
+                    &mut inferred_type_args,
+                );
+                args.push(HirEnumConstructorArg {
+                    field: Some(field_name.clone()),
                     value,
                     rust_arg_conversion: self.rust_interop.enum_variant_arg_conversion(
                         &constructor.enum_access.target,
                         &constructor.enum_access.case,
                         idx,
-                        argument.field_name.as_ref(),
+                        Some(field_name),
                     ),
+                });
+            }
+        } else {
+            let positional = variant_arguments
+                .iter()
+                .copied()
+                .filter(|argument| argument.field_name.is_none())
+                .collect::<Vec<_>>();
+            if positional.len() != variant.fields.len() {
+                self.errors.error_with_span(
+                    TranspilerError::ArgumentCountMismatch {
+                        name: format!(
+                            "{}::{}()",
+                            constructor.enum_access.target, constructor.enum_access.case
+                        ),
+                        expected: variant.fields.len() + enum_decl.common_fields.len(),
+                        found: constructor.arguments.len(),
+                    },
+                    Some(span.into()),
+                );
+            }
+            for (idx, field) in variant.fields.iter().enumerate() {
+                let value = positional.get(idx).map_or_else(
+                    || HirExpression::error("missing variant argument", span),
+                    |argument| {
+                        let value = self.lower_modified_value(
+                            &argument.expression,
+                            argument.modifier,
+                            false,
+                            "enum variant arguments",
+                        );
+                        self.coerce(value, &Expected::owned(field.r#type.clone()))
+                    },
+                );
+                collect_generic_constructor_arg_types(
+                    &field.r#type,
+                    &value.ty,
+                    &mut inferred_type_args,
+                );
+                args.push(HirEnumConstructorArg {
+                    field: None,
+                    value,
+                    rust_arg_conversion: self.rust_interop.enum_variant_arg_conversion(
+                        &constructor.enum_access.target,
+                        &constructor.enum_access.case,
+                        idx,
+                        None,
+                    ),
+                });
+            }
+        }
+
+        let known_names = enum_decl
+            .common_fields
+            .iter()
+            .map(|field| field.ident.as_str())
+            .chain(
+                variant
+                    .fields
+                    .iter()
+                    .filter_map(|field| field.name.as_ref().map(Ident::as_str)),
+            )
+            .collect::<HashSet<_>>();
+        for argument in &constructor.arguments {
+            if let Some(name) = &argument.field_name {
+                if !known_names.contains(name.as_str()) {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!("unknown enum constructor field `{name}`"),
+                        },
+                        Some(argument.expression.span.into()),
+                    );
                 }
-            })
-            .collect();
+            } else if named_variant {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: "named enum variants require named arguments".to_string(),
+                    },
+                    Some(argument.expression.span.into()),
+                );
+            }
+        }
 
         HirExpression::new(
             HirExpressionKind::EnumConstructor(HirEnumConstructor {
                 target: constructor.enum_access.target.clone(),
                 case: constructor.enum_access.case.clone(),
+                common_args,
                 args,
             }),
-            plain_type(constructor.enum_access.target.clone()),
+            constructor_result_type(
+                &constructor.enum_access.target,
+                expected,
+                inferred_type_args,
+            ),
             Ownership::UniqueOwned,
             span,
         )

@@ -239,6 +239,7 @@ impl RustInterop {
                 visibility: Visibility::public(),
                 ident: TypeIdent::new(name),
                 generic_params: generic_type_params(&enum_.generics),
+                common_fields: Vec::new(),
                 members,
                 span: Span::default(),
             }),

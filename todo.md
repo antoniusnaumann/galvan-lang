@@ -42,6 +42,8 @@ commands remain subcommands.
 ## Medium Priority - Error Handling & Validation
 
 - Validate struct field modifier validity (transpile_item/struct.rs)
+- Report duplicate common/variant enum field names at the declaration even
+  when no constructor references the conflicting variant
 - Add proper error handling for invalid member function visibility
   (galvan-transpiler/src/lib.rs `transpile_member_functions`)
 - Group extension impl blocks by where-clause constraints instead of taking
@@ -135,5 +137,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-26*
+*Last updated: 2026-07-27*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*

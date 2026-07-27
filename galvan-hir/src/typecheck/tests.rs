@@ -2469,6 +2469,69 @@ fn reports_enum_case_access_with_dot() {
 }
 
 #[test]
+fn lowers_common_enum_fields_without_diagnostics() {
+    let code = r#"
+        pub type Message(name: String) {
+            Empty
+            Text(String)
+        }
+
+        fn name(message: Message) -> String {
+            message.name
+        }
+
+        fn make() -> Message {
+            Message::Text(name: "Greeting", "hello")
+        }
+    "#;
+    let (_, errors) = lower_with_diagnostics(code);
+    assert!(
+        errors.diagnostics().is_empty(),
+        "expected no diagnostics, got: {errors}"
+    );
+}
+
+#[test]
+fn reports_missing_common_enum_constructor_field() {
+    let code = r#"
+        type Message(name: String) {
+            Empty
+        }
+
+        fn make() -> Message {
+            Message::Empty()
+        }
+    "#;
+    let (_, errors) = lower_with_diagnostics(code);
+    assert!(
+        errors.errors().any(|diagnostic| diagnostic
+            .message
+            .contains("missing common field `name`")),
+        "got: {errors}"
+    );
+}
+
+#[test]
+fn reports_bare_variant_access_for_enum_with_common_fields() {
+    let code = r#"
+        type Message(name: String) {
+            Empty
+        }
+
+        fn make() -> Message {
+            Message::Empty
+        }
+    "#;
+    let (_, errors) = lower_with_diagnostics(code);
+    assert!(
+        errors.errors().any(|diagnostic| diagnostic
+            .message
+            .contains("requires common field arguments")),
+        "got: {errors}"
+    );
+}
+
+#[test]
 fn reports_index_access_on_non_collection() {
     let code = "fn f(a: Int) -> Int {\n    a[0]\n}";
     assert_error_at(

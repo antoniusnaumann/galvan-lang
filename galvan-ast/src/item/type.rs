@@ -57,6 +57,9 @@ impl TypeDecl {
             }
             TypeDecl::Enum(e) => {
                 generics.extend(e.generic_params.iter().cloned());
+                for field in &e.common_fields {
+                    field.r#type.collect_generics_recursive(&mut generics);
+                }
                 for member in &e.members {
                     for field in &member.fields {
                         field.r#type.collect_generics_recursive(&mut generics);
@@ -120,6 +123,7 @@ pub struct EnumTypeDecl {
     pub visibility: Visibility,
     pub ident: TypeIdent,
     pub generic_params: Vec<Ident>,
+    pub common_fields: Vec<StructTypeMember>,
     pub members: Vec<EnumTypeMember>,
     pub span: Span,
 }

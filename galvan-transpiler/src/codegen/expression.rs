@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
-    RangeOperator, TypeElement, UsePath,
+    RangeOperator, TypeElement, TypeIdent, UsePath,
 };
 use galvan_hir::builtins::CheckBuiltins;
 use galvan_hir::hir::*;
@@ -246,6 +246,11 @@ fn for_pattern(bindings: &[HirForBinding]) -> String {
 impl Transpile for HirMatch {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let scrutinee = self.scrutinee.transpile(ctx, errors);
+        let scrutinee = if self.uses_variant_tag {
+            format!("({scrutinee}).__variant")
+        } else {
+            scrutinee
+        };
         let arms = self
             .arms
             .iter()
@@ -288,9 +293,15 @@ impl Transpile for HirMatchPattern {
 
 impl Transpile for HirEnumMatchPattern {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let target = self.target.transpile(ctx, errors);
+        let target = if enum_has_common_fields(ctx, &self.target) {
+            crate::transpile_item::r#struct::enum_tag_name(&target)
+        } else {
+            target
+        };
         let access = format!(
             "{}::{}",
-            self.target.transpile(ctx, errors),
+            target,
             self.case.as_str()
         );
 
@@ -725,13 +736,19 @@ fn constructor_field_type<'a>(
 
 impl Transpile for HirEnumConstructor {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let target = self.target.transpile(ctx, errors);
+        let variant_target = if self.common_args.is_empty() {
+            target.clone()
+        } else {
+            crate::transpile_item::r#struct::enum_tag_name(&target)
+        };
         let access = format!(
             "{}::{}",
-            self.target.transpile(ctx, errors),
+            variant_target,
             self.case.as_str()
         );
 
-        if self.args.is_empty() {
+        let variant = if self.args.is_empty() {
             access
         } else if self.args.iter().all(|argument| argument.field.is_none()) {
             let args = self
@@ -760,8 +777,63 @@ impl Transpile for HirEnumConstructor {
                 })
                 .join(", ");
             format!("{access} {{ {args} }}")
+        };
+
+        if self.common_args.is_empty() {
+            return variant;
         }
+
+        let common_args = self
+            .common_args
+            .iter()
+            .map(|argument| {
+                if argument.missing_ref_modifier {
+                    errors.error(TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "ref field '{}' requires the `ref` modifier during construction",
+                            argument.field
+                        ),
+                    });
+                }
+                let value = argument.value.transpile(ctx, errors);
+                let value = if argument.store_as_ref {
+                    let field_ty = enum_common_field_type(self, &argument.field, ctx)
+                        .unwrap_or(&argument.value.ty);
+                    wrap_ref_storage_value(value, &argument.value, field_ty)
+                } else {
+                    value
+                };
+                format!("{}: {value}", sanitize_name(argument.field.as_str()))
+            })
+            .chain(std::iter::once(format!("__variant: {variant}")))
+            .join(", ");
+        format!("{target} {{ {common_args} }}")
     }
+}
+
+fn enum_common_field_type<'a>(
+    constructor: &HirEnumConstructor,
+    field: &Ident,
+    ctx: &'a Context<'_>,
+) -> Option<&'a TypeElement> {
+    let ty = ctx.lookup.resolve_type(&constructor.target)?;
+    let galvan_ast::TypeDecl::Enum(decl) = &ty.item else {
+        return None;
+    };
+    decl.common_fields
+        .iter()
+        .find(|member| member.ident == *field)
+        .map(|member| &member.r#type)
+}
+
+fn enum_has_common_fields(ctx: &Context<'_>, target: &TypeIdent) -> bool {
+    ctx.lookup
+        .resolve_type(target)
+        .and_then(|ty| match &ty.item {
+            galvan_ast::TypeDecl::Enum(decl) => Some(!decl.common_fields.is_empty()),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 impl Transpile for HirEnumAccess {
@@ -1354,6 +1426,7 @@ mod tests {
         let constructor = HirEnumConstructor {
             target: TypeIdent::new("TicketEvent"),
             case: TypeIdent::new("Assigned"),
+            common_args: Vec::new(),
             args: vec![HirEnumConstructorArg {
                 field: None,
                 value: HirExpression::new(
@@ -1380,6 +1453,7 @@ mod tests {
         let constructor = HirEnumConstructor {
             target: TypeIdent::new("TicketEvent"),
             case: TypeIdent::new("Moved"),
+            common_args: Vec::new(),
             args: vec![HirEnumConstructorArg {
                 field: Some(Ident::new("owner")),
                 value: HirExpression::new(

@@ -57,11 +57,49 @@ impl Transpile for TypeDecl {
                 }
             }
             TypeDecl::Enum(def) => {
-                let generic_params = generic_params(self.collect_generics());
                 let visibility = def.visibility.transpile(ctx, errors);
                 let ident = def.ident.transpile(ctx, errors);
                 let members = def.members.transpile(ctx, errors);
-                format!("{DERIVE} {visibility} enum {ident}{generic_params} {{\n{members}\n}}")
+                if def.common_fields.is_empty() {
+                    let generic_params = generic_params(self.collect_generics());
+                    format!("{DERIVE} {visibility} enum {ident}{generic_params} {{\n{members}\n}}")
+                } else {
+                    let generics = self.collect_generics();
+                    let all_generic_params = generic_params(generics.clone());
+                    let tag_ident = enum_tag_name(&ident);
+                    let tag_generics = enum_variant_generics(def);
+                    let tag_generic_params = generic_params(tag_generics.clone());
+                    let tag_arguments = generic_arguments(tag_generics);
+                    let common_fields = def
+                        .common_fields
+                        .iter()
+                        .map(|field| transpile_struct_member(field, &visibility, ctx, errors))
+                        .chain(std::iter::once(format!(
+                            "pub(crate) __variant: {tag_ident}{tag_arguments}"
+                        )))
+                        .collect::<Vec<_>>()
+                        .join(",\n");
+                    let has_ref_fields = def
+                        .common_fields
+                        .iter()
+                        .any(|field| field.decl_modifier == Some(DeclModifier::Ref));
+                    let outer_derive = if has_ref_fields { REF_DERIVE } else { DERIVE };
+                    let partial_eq = if has_ref_fields {
+                        format!(
+                            "\n\n{}",
+                            transpile_enum_ref_partial_eq(
+                                def, &ident, generics, ctx, errors
+                            )
+                        )
+                    } else {
+                        String::new()
+                    };
+                    format!(
+                        "{DERIVE} pub(crate) enum {tag_ident}{tag_generic_params} {{\n{members}\n}}\n\n\
+                         {outer_derive} {visibility} struct {ident}{all_generic_params} {{\n\
+                         {common_fields}\n}}{partial_eq}"
+                    )
+                }
             }
             TypeDecl::Alias(def) => {
                 let generic_params = generic_params(self.collect_generics());
@@ -119,6 +157,51 @@ fn transpile_ref_partial_eq(
     format!(
         "impl{impl_generics} PartialEq for {ident}{type_generics} {{\n    fn eq(&self, other: &Self) -> bool {{\n        {comparisons}\n    }}\n}}"
     )
+}
+
+fn transpile_enum_ref_partial_eq(
+    def: &galvan_ast::EnumTypeDecl,
+    ident: &str,
+    generics: HashSet<Ident>,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let impl_generics = generic_params_with_bound(generics.clone(), "PartialEq");
+    let type_generics = generic_arguments(generics);
+    let comparisons = def
+        .common_fields
+        .iter()
+        .map(|field| {
+            let name = field.ident.transpile(ctx, errors);
+            if field.decl_modifier == Some(DeclModifier::Ref) {
+                format!("::galvan::std::__ref_value_eq(&self.{name}, &other.{name})")
+            } else {
+                format!("self.{name} == other.{name}")
+            }
+        })
+        .chain(std::iter::once(
+            "self.__variant == other.__variant".to_string(),
+        ))
+        .collect::<Vec<_>>()
+        .join(" && ");
+
+    format!(
+        "impl{impl_generics} PartialEq for {ident}{type_generics} {{\n    fn eq(&self, other: &Self) -> bool {{\n        {comparisons}\n    }}\n}}"
+    )
+}
+
+fn enum_variant_generics(def: &galvan_ast::EnumTypeDecl) -> HashSet<Ident> {
+    let mut generics = HashSet::new();
+    for member in &def.members {
+        for field in &member.fields {
+            field.r#type.collect_generics_recursive(&mut generics);
+        }
+    }
+    generics
+}
+
+pub(crate) fn enum_tag_name(enum_ident: &str) -> String {
+    format!("{enum_ident}VariantTag")
 }
 
 fn generic_params(generics: HashSet<Ident>) -> String {

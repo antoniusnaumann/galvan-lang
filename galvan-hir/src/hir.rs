@@ -429,6 +429,7 @@ pub enum HirForIterableKind {
 pub struct HirMatch {
     pub scrutinee: HirExpression,
     pub arms: Vec<HirMatchArm>,
+    pub uses_variant_tag: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -608,6 +609,7 @@ pub struct HirConstructorArg {
 pub struct HirEnumConstructor {
     pub target: TypeIdent,
     pub case: TypeIdent,
+    pub common_args: Vec<HirConstructorArg>,
     pub args: Vec<HirEnumConstructorArg>,
 }
 
