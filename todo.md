@@ -26,7 +26,7 @@ commands remain subcommands.
 
 - **Missing operator implementations**
   - Custom infix operators (typecheck/expr.rs `lower_infix`)
-  - Add unary expression support for logical and bitwise not
+  - Add unary bitwise not
 
 - **Parameter modifiers in calls** (galvan-hir/src/typecheck/expr.rs `lower_call_args`)
   - Arguments for `let`-modified parameters are not implemented
@@ -66,9 +66,9 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
-  - Disambiguate a paren-free call whose first argument starts with `[` from
-    index access; for example, `assert [1] == [1]` currently requires
-    `assert([1] == [1])`
+  - Disambiguate paren-free calls whose first argument starts with `[` or `!`
+    from index access or postfix error propagation; for example,
+    `assert [1] == [1]` and `assert !false` currently require parentheses
 
 ## Future Enhancements
 

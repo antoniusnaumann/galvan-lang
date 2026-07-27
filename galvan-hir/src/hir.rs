@@ -278,6 +278,7 @@ pub enum HirExpressionKind {
     Variable(Ident),
     Collection(HirCollection),
     Closure(Box<HirClosure>),
+    Unary(Box<HirUnary>),
     Logical(Box<HirBinary<LogicalOperator>>),
     Arithmetic(Box<HirBinary<ArithmeticOperator>>),
     Bitwise(Box<HirBinary<BitwiseOperator>>),
@@ -677,6 +678,12 @@ pub struct HirBinary<Op> {
     pub operator: Op,
     pub rhs: HirExpression,
     pub result_ty: TypeElement,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirUnary {
+    pub operator: galvan_ast::UnaryOperator,
+    pub operand: HirExpression,
 }
 
 /// Index or slice access `base[index]`.

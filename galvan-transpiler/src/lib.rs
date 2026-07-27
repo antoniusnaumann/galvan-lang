@@ -509,6 +509,9 @@ fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashS
             }
         }
         ExpressionKind::Infix(infix) => collect_infix_namespaces(infix, namespaces),
+        ExpressionKind::Unary(unary) => {
+            collect_expression_namespaces(&unary.operand, namespaces);
+        }
         ExpressionKind::Postfix(postfix) => match postfix.as_ref() {
             PostfixExpression::AccessExpression(access) => {
                 collect_expression_namespaces(&access.base, namespaces);

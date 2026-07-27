@@ -58,6 +58,7 @@ type Infix = Box<InfixExpression>;
 type Match = Box<MatchExpression>;
 type Postfix = Box<PostfixExpression>;
 type Modified = Box<ModifiedExpression>;
+type Unary = Box<UnaryExpression>;
 
 #[derive(Clone, Debug, PartialEq, Eq, PrintAst)]
 pub struct Group {
@@ -79,6 +80,7 @@ pub type ExpressionKind = ElseExpression
     + AssociatedConstant
     + FunctionCall
     + Infix
+    + Unary
     + Postfix
     + Modified
     + CollectionLiteral

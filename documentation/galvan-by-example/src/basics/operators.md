@@ -14,6 +14,8 @@ fn main() {
     let both = true and false
     let either = true or false
     let one_of = true xor false
+    let inverted = not true
+    let also_inverted = !true
 
     let bits_or = 5 | 3
     let bits_and = 6 & 3
@@ -38,6 +40,8 @@ pub(crate) fn __main__() {
     let both: bool = true && false;
     let either: bool = true || false;
     let one_of: bool = true ^ false;
+    let inverted: bool = !(true);
+    let also_inverted: bool = !(true);
     let bits_or: _ = 5 | 3;
     let bits_and: _ = 6 & 3;
     let bits_xor: _ = 5 ^ 3;
@@ -57,7 +61,7 @@ without explicit dereferencing.
 </details>
 
 - **Arithmetic**: `+`, `-`, `*`, `/`, `%`, and `^` for exponentiation.
-- **Logical**: `and`/`&&`, `or`/`||`, `xor`.
+- **Logical**: `and`/`&&`, `or`/`||`, `xor`, and `not`/`!`.
 - **Bitwise**: `|`, `&`, `~` (xor), `<<`, `>>`.
 - **Comparison**: `==`, `!=`/`≠`, `<`, `<=`/`≤`, `>`, `>=`/`≥`. The Unicode
   spellings are interchangeable with their ASCII forms.
@@ -70,5 +74,5 @@ without explicit dereferencing.
   [Ranges](../control/ranges.md).
 
 > [!WARNING]
-> **Not implemented yet:** unary logical `not` and user-defined custom
-> operators are part of the operator design but do not transpile yet.
+> **Not implemented yet:** user-defined custom operators are part of the
+> operator design but do not transpile yet.

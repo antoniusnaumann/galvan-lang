@@ -3,6 +3,7 @@ use galvan_ast::{
     CollectionLiteral, ConstructorCall, DeclModifier, Declaration, ElseExpression, EnumAccess,
     EnumConstructor, Expression, ExpressionKind, FunctionCall, Group, Ident, InfixExpression,
     Literal, MatchExpression, ModifiedExpression, PostfixExpression, Span, Statement, TypeElement,
+    UnaryExpression,
 };
 use galvan_parse::TreeCursor;
 
@@ -150,6 +151,9 @@ impl ReadCursor for Expression {
             }
             "associated_constant" => AssociatedConstant::read_cursor(cursor, source)?.into(),
             "function_call" => FunctionCall::read_cursor(cursor, source)?.into(),
+            "unary_expression" => {
+                ExpressionKind::Unary(UnaryExpression::read_cursor(cursor, source)?.into())
+            }
             "postfix_expression" => {
                 ExpressionKind::Postfix(PostfixExpression::read_cursor(cursor, source)?.into())
             }

@@ -203,6 +203,7 @@ fn visit_expression<'m>(expression: &'m HirExpression, visit: &mut impl FnMut(&'
             }
         },
         HirExpressionKind::Closure(closure) => visit_block(&closure.body, visit),
+        HirExpressionKind::Unary(unary) => visit_expression(&unary.operand, visit),
         HirExpressionKind::Logical(binary) => visit_binary(binary, visit),
         HirExpressionKind::Arithmetic(binary) => visit_binary(binary, visit),
         HirExpressionKind::Bitwise(binary) => visit_binary(binary, visit),

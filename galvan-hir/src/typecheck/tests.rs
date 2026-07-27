@@ -155,6 +155,31 @@ fn infers_arithmetic_types_and_ownership() {
 }
 
 #[test]
+fn unary_logical_negation_lowers_to_bool() {
+    let module = lower("fn invert(value: Bool) -> Bool { !value }");
+    let tail = trailing(function(&module, "invert"));
+
+    let HirExpressionKind::Unary(unary) = &tail.kind else {
+        panic!("expected unary expression, got {:?}", tail.kind);
+    };
+    assert_eq!(unary.operator, galvan_ast::UnaryOperator::LogicalNot);
+    assert_eq!(tail.ty, TypeElement::bool());
+}
+
+#[test]
+fn unary_logical_negation_rejects_non_booleans() {
+    let (_module, errors) = lower_with_diagnostics("fn invalid() -> Bool { not 1 }");
+
+    assert!(
+        errors
+            .errors()
+            .any(|diagnostic| diagnostic.message
+                == "Invalid operation: logical negation can only be used on Bool"),
+        "expected logical-negation type error, got: {errors}"
+    );
+}
+
+#[test]
 fn copy_parameters_are_owned_and_passed_by_value() {
     let module = lower(
         "fn multiply(a: Int, b: Int) -> Int { a * b }

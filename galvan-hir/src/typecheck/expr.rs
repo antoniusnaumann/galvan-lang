@@ -66,6 +66,32 @@ impl Checker<'_> {
                 self.lower_associated_rust_constant(constant, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
+            ExpressionKind::Unary(unary) => {
+                let operand =
+                    self.lower_expression(&unary.operand, &Expected::owned(TypeElement::bool()));
+                if !matches!(
+                    &operand.ty,
+                    TypeElement::Plain(plain) if plain.ident.as_str() == "Bool"
+                ) && !operand.ty.is_infer()
+                {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidOperationOnType {
+                            operation: "logical negation".to_string(),
+                            allowed_types: "Bool".to_string(),
+                        },
+                        Some(unary.operand.span.into()),
+                    );
+                }
+                HirExpression::new(
+                    HirExpressionKind::Unary(Box::new(HirUnary {
+                        operator: unary.operator,
+                        operand,
+                    })),
+                    TypeElement::bool(),
+                    Ownership::UniqueOwned,
+                    span,
+                )
+            }
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
             ExpressionKind::Postfix(postfix) => self.lower_postfix(postfix, span),
             ExpressionKind::Modified(modified) => {

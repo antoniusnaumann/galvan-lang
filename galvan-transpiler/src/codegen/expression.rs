@@ -39,6 +39,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::Variable(ident) => sanitize_name(ident.as_str()).into_owned(),
             HirExpressionKind::Collection(collection) => collection.transpile(ctx, errors),
             HirExpressionKind::Closure(closure) => closure.transpile(ctx, errors),
+            HirExpressionKind::Unary(unary) => unary.transpile(ctx, errors),
             HirExpressionKind::Logical(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Arithmetic(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Bitwise(operation) => operation.transpile(ctx, errors),
@@ -861,6 +862,16 @@ impl Transpile for HirClosure {
             .join(", ");
         let body = self.body.transpile(ctx, errors);
         format!("|{parameters}| {body}")
+    }
+}
+
+impl Transpile for HirUnary {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        match self.operator {
+            galvan_ast::UnaryOperator::LogicalNot => {
+                transpile!(ctx, errors, "!({})", self.operand)
+            }
+        }
     }
 }
 
