@@ -4,6 +4,7 @@ use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
     RangeOperator, TypeElement, UsePath,
 };
+use galvan_hir::builtins::CheckBuiltins;
 use galvan_hir::hir::*;
 use galvan_resolver::Lookup;
 use galvan_rustdoc::{RustArgConversion, RustReturnConversion};
@@ -338,24 +339,40 @@ impl Transpile for HirAssert {
 
         match self {
             HirAssert::Eq(lhs, rhs, rest) => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "assert_eq!({}, {}, {})",
-                    lhs,
-                    rhs,
-                    args(rest, ctx, errors)
-                )
+                if lhs.ownership == Ownership::Ref || rhs.ownership == Ownership::Ref {
+                    format!(
+                        "assert!({}, {})",
+                        transpile_value_equality(lhs, rhs, ctx, errors),
+                        args(rest, ctx, errors)
+                    )
+                } else {
+                    transpile!(
+                        ctx,
+                        errors,
+                        "assert_eq!({}, {}, {})",
+                        lhs,
+                        rhs,
+                        args(rest, ctx, errors)
+                    )
+                }
             }
             HirAssert::Ne(lhs, rhs, rest) => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "assert_ne!({}, {}, {})",
-                    lhs,
-                    rhs,
-                    args(rest, ctx, errors)
-                )
+                if lhs.ownership == Ownership::Ref || rhs.ownership == Ownership::Ref {
+                    format!(
+                        "assert!(!({}), {})",
+                        transpile_value_equality(lhs, rhs, ctx, errors),
+                        args(rest, ctx, errors)
+                    )
+                } else {
+                    transpile!(
+                        ctx,
+                        errors,
+                        "assert_ne!({}, {}, {})",
+                        lhs,
+                        rhs,
+                        args(rest, ctx, errors)
+                    )
+                }
             }
             HirAssert::Truthy(arguments) => {
                 format!("assert!({})", args(arguments, ctx, errors))
@@ -865,6 +882,26 @@ impl Transpile for HirBinary<ArithmeticOperator> {
             ArithmeticOperator::Mul => transpile!(ctx, errors, "{} * {}", self.lhs, self.rhs),
             ArithmeticOperator::Div => transpile!(ctx, errors, "{} / {}", self.lhs, self.rhs),
             ArithmeticOperator::Rem => transpile!(ctx, errors, "{} % {}", self.lhs, self.rhs),
+            ArithmeticOperator::Exp
+                if self.lhs.ty.is_number()
+                    && matches!(
+                        &self.result_ty,
+                        TypeElement::Plain(result)
+                            if result.ident.as_str() != "__Number"
+                    ) =>
+            {
+                transpile!(
+                    ctx,
+                    errors,
+                    "({} as {}).pow({})",
+                    self.lhs,
+                    self.result_ty,
+                    self.rhs
+                )
+            }
+            ArithmeticOperator::Exp if self.lhs.ty.is_number() && self.result_ty.is_number() => {
+                transpile!(ctx, errors, "({} as i64).pow({})", self.lhs, self.rhs)
+            }
             ArithmeticOperator::Exp => transpile!(ctx, errors, "{}.pow({})", self.lhs, self.rhs),
         }
     }
@@ -885,8 +922,21 @@ impl Transpile for HirBinary<BitwiseOperator> {
 impl Transpile for HirBinary<ComparisonOperator> {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.operator {
+            ComparisonOperator::Equal
+                if self.lhs.ownership == Ownership::Ref || self.rhs.ownership == Ownership::Ref =>
+            {
+                transpile_value_equality(&self.lhs, &self.rhs, ctx, errors)
+            }
             ComparisonOperator::Equal => {
                 transpile!(ctx, errors, "({}).eq(&{})", self.lhs, self.rhs)
+            }
+            ComparisonOperator::NotEqual
+                if self.lhs.ownership == Ownership::Ref || self.rhs.ownership == Ownership::Ref =>
+            {
+                format!(
+                    "!({})",
+                    transpile_value_equality(&self.lhs, &self.rhs, ctx, errors)
+                )
             }
             ComparisonOperator::NotEqual => {
                 transpile!(ctx, errors, "({}).ne(&{})", self.lhs, self.rhs)
@@ -905,7 +955,7 @@ impl Transpile for HirBinary<ComparisonOperator> {
                 transpile!(
                     ctx,
                     errors,
-                    "::std::sync::Arc::ptr_eq({}, {})",
+                    "::std::sync::Arc::ptr_eq(&{}, &{})",
                     self.lhs,
                     self.rhs
                 )
@@ -914,12 +964,36 @@ impl Transpile for HirBinary<ComparisonOperator> {
                 transpile!(
                     ctx,
                     errors,
-                    "!::std::sync::Arc::ptr_eq({}, {})",
+                    "!::std::sync::Arc::ptr_eq(&{}, &{})",
                     self.lhs,
                     self.rhs
                 )
             }
         }
+    }
+}
+
+fn transpile_value_equality(
+    lhs: &HirExpression,
+    rhs: &HirExpression,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let lhs_is_ref = lhs.ownership == Ownership::Ref;
+    let rhs_is_ref = rhs.ownership == Ownership::Ref;
+    let lhs = lhs.transpile(ctx, errors);
+    let rhs = rhs.transpile(ctx, errors);
+    match (lhs_is_ref, rhs_is_ref) {
+        (true, true) => {
+            format!("::galvan::std::__ref_value_eq(&({lhs}), &({rhs}))")
+        }
+        (true, false) => {
+            format!("{{ let __left = &({lhs}); (*__left.lock().unwrap()).eq(&({rhs})) }}")
+        }
+        (false, true) => {
+            format!("{{ let __right = &({rhs}); ({lhs}).eq(&*__right.lock().unwrap()) }}")
+        }
+        (false, false) => format!("({lhs}).eq(&({rhs}))"),
     }
 }
 
@@ -966,12 +1040,30 @@ impl Transpile for HirBinary<CollectionOperator> {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.operator {
             CollectionOperator::Concat(kind) => transpile_concat(self, kind, ctx, errors),
-            CollectionOperator::Remove => {
-                errors.warning(
-                    "The remove operator '--' is not implemented yet".to_string(),
-                    None,
-                );
-                "/* unsupported remove operator */".to_string()
+            CollectionOperator::Remove(RemoveKind::Array) => transpile!(
+                ctx,
+                errors,
+                "{{ let mut result = ({}).to_owned(); for removed in ({}).iter() {{ if let Some(index) = result.iter().position(|item| item == removed) {{ result.remove(index); }} }} result }}",
+                self.lhs,
+                self.rhs
+            ),
+            CollectionOperator::Repeat(RepeatKind::Array | RepeatKind::String) => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "({}).repeat(({}) as usize)",
+                    self.lhs,
+                    self.rhs
+                )
+            }
+            CollectionOperator::Repeat(RepeatKind::Char) => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "({}).to_string().repeat(({}) as usize)",
+                    self.lhs,
+                    self.rhs
+                )
             }
             CollectionOperator::Contains => {
                 transpile!(ctx, errors, "({}).contains(&({}))", self.rhs, self.lhs)
@@ -1049,13 +1141,19 @@ fn transpile_concat(
 
 impl Transpile for HirIndex {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        match &self.base.ty {
-            TypeElement::Array(_) => {
+        match (&self.base.ty, self.kind) {
+            (TypeElement::Array(_), IndexKind::Element) => {
                 transpile!(ctx, errors, "{}[{}]", self.base, self.index)
             }
-            TypeElement::Dictionary(_)
-            | TypeElement::OrderedDictionary(_)
-            | TypeElement::Set(_) => {
+            (TypeElement::Array(_), IndexKind::Slice) => {
+                transpile!(ctx, errors, "({}[{}]).to_owned()", self.base, self.index)
+            }
+            (
+                TypeElement::Dictionary(_)
+                | TypeElement::OrderedDictionary(_)
+                | TypeElement::Set(_),
+                IndexKind::Element,
+            ) => {
                 transpile!(ctx, errors, "{}[&{}]", self.base, self.index)
             }
             _ => {

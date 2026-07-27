@@ -639,13 +639,17 @@ impl<'a> Checker<'a> {
             (Some(annotation), Some(expression)) => {
                 let expected =
                     self.declaration_expected(annotation, declaration.decl_modifier, shares_ref);
-                let value = self.lower_modified_value(
-                    expression,
-                    declaration.assignment_modifier,
-                    declaration.decl_modifier == DeclModifier::Ref,
-                    "declaration initializers",
-                );
-                let value = self.coerce(value, &expected);
+                let value = if declaration.assignment_modifier.is_none() {
+                    self.lower_expression(expression, &expected)
+                } else {
+                    let value = self.lower_modified_value(
+                        expression,
+                        declaration.assignment_modifier,
+                        declaration.decl_modifier == DeclModifier::Ref,
+                        "declaration initializers",
+                    );
+                    self.coerce(value, &expected)
+                };
                 (Some(value), annotation.clone())
             }
             (None, Some(expression)) => {

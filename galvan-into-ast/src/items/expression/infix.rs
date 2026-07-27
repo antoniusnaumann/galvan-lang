@@ -274,6 +274,7 @@ impl ReadCursor for CollectionOperator {
         let op = match cursor.kind()? {
             "concat" => Self::Concat,
             "remove" => Self::Remove,
+            "repeat" => Self::Repeat,
             "contains" => Self::Contains,
             unknown => unreachable!("Unknown collection operator: {unknown}"),
         };

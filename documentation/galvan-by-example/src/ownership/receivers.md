@@ -70,10 +70,16 @@ impl Dog {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) struct Human {
     pub(crate) name: String,
     pub(crate) dog: std::sync::Arc<std::sync::Mutex<Dog>>,
+}
+
+impl PartialEq for Human {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && ::galvan::std::__ref_value_eq(&self.dog, &other.dog)
+    }
 }
 
 pub(crate) fn __main__() {
@@ -87,7 +93,7 @@ pub(crate) fn __main__() {
         .__to_ref();
     let human: Human = Dog::share__with((::std::sync::Arc::clone(&shared_dog)), &format!("George"));
     shared_dog.lock().unwrap().name = format!("Lassie");
-    assert_eq!(human.dog.name, format!("Lassie"),);
+    assert_eq!(human.dog.lock().unwrap().name, format!("Lassie"),);
 }
 ```
 

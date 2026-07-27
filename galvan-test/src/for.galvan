@@ -114,6 +114,16 @@ test "for loop on optional and result" {
     assert total_discount == 8
 }
 
+test "homogeneous tuple iteration" {
+    mut total = 0
+
+    for (1, 2, 3) {
+        total += it
+    }
+
+    assert total == 6
+}
+
 fn load_missing_bonus() -> Int!Int {
     throw 4
 }

@@ -36,10 +36,16 @@ pub(crate) struct Dog {
     pub(crate) age: i64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Person {
     pub name: String,
     pub dog: std::sync::Arc<std::sync::Mutex<Dog>>,
+}
+
+impl PartialEq for Person {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && ::galvan::std::__ref_value_eq(&self.dog, &other.dog)
+    }
 }
 
 pub(crate) fn __main__() {
@@ -53,20 +59,16 @@ pub(crate) fn __main__() {
         dog: ::std::sync::Arc::clone(&dog),
     };
     dog.lock().unwrap().age += 1;
-    println!("{}", &format!("{}", person.dog.age));
+    println!("{}", &format!("{}", person.dog.lock().unwrap().age));
     println!("{}", &format!("{}", dog.lock().unwrap().age));
 }
 ```
 
-> [!WARNING]
-> `ref` fields are usable but their codegen still has known gaps: reading a
-> `ref` field through a chain (`person.dog.age` above misses its lock) emits
-> Rust that does not compile yet, derives such as `PartialEq` are generated
-> even though `Arc<Mutex<T>>` does not support them, and shared primitive
-> fields do not use atomics yet. The single-handle patterns on this page's
-> `dog` variable are covered by tests.
-
 </details>
+
+Chained reads through `ref` fields take the field's lock automatically.
+`PartialEq` compares the values stored behind `ref` fields. Locks are acquired
+in a stable order, and aliases of the same mutex compare immediately.
 
 The person's `dog` and the local `dog` are the same animal: mutating one is
 visible through the other. Omitting the `ref` is a compiler error, similar to how forgetting a `mut` for mutable parameters fails.

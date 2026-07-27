@@ -292,13 +292,26 @@ pub enum HirExpressionKind {
     Error(String),
 }
 
-/// Collection infix operators (`++`, `--`, `in`). The concrete generated shape
+/// Collection infix operators (`++`, `--`, `**`, `in`). The concrete generated shape
 /// depends on the stored operand types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionOperator {
     Concat(ConcatKind),
-    Remove,
+    Remove(RemoveKind),
+    Repeat(RepeatKind),
     Contains,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoveKind {
+    Array,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepeatKind {
+    Array,
+    String,
+    Char,
 }
 
 /// Shape of a `++` concatenation, decided by the typechecker from the
@@ -663,12 +676,19 @@ pub struct HirBinary<Op> {
     pub lhs: HirExpression,
     pub operator: Op,
     pub rhs: HirExpression,
+    pub result_ty: TypeElement,
 }
 
-/// Index access `base[index]`. Whether the index is borrowed depends on the
-/// stored type of `base` (dictionaries and sets index by reference).
+/// Index or slice access `base[index]`.
 #[derive(Clone, Debug)]
 pub struct HirIndex {
     pub base: HirExpression,
     pub index: HirExpression,
+    pub kind: IndexKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexKind {
+    Element,
+    Slice,
 }

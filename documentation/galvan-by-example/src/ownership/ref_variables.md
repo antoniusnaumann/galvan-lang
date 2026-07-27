@@ -35,20 +35,13 @@ pub(crate) fn __main__() {
     *counter.lock().unwrap() += 1;
     increment(::std::sync::Arc::clone(&counter));
     increment(::std::sync::Arc::clone(&counter));
-    println!("{}", &format!("{}", counter));
+    println!("{}", &format!("{}", *counter.lock().unwrap()));
 }
 ```
 
-Primitive `ref` values lower to lock-free atomics (`Arc<AtomicI64>` here) with
-`SeqCst` ordering; other types use `Arc<Mutex<T>>`. Compound assignments
-without a dedicated atomic instruction lower to a `fetch_update`
-compare-and-swap loop so the whole read-modify-write stays atomic.
-
-> [!WARNING]
-> Some `ref` codegen corners are still rough — for example printing an
-> atomic-backed `ref` directly (as the last line above does) currently emits
-> Rust that does not compile. Reading into a `let` first, comparisons, and
-> arithmetic are solid and covered by the test suite.
+All `ref` values use `Arc<Mutex<T>>`. Reads take a short-lived lock and
+mutations operate through a mutex guard, so compound assignments remain one
+atomic read-modify-write operation with respect to other users of that mutex.
 
 </details>
 

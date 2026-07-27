@@ -36,7 +36,7 @@ pub(crate) fn __main__() {
         __result
     };
     let even_doubles: ::std::vec::Vec<i64> = {
-        let mut __result: ::std::vec::Vec<_> = ::std::vec::Vec::new();
+        let mut __result: ::std::vec::Vec<i64> = ::std::vec::Vec::new();
         for it in 0..=(10) {
             if (it % 2).eq(&1) {
                 continue;

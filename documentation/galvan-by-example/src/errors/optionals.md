@@ -40,7 +40,7 @@ pub(crate) fn __main__() {
     assert_eq!(count_or_default(Some(21)), 21,);
     assert_eq!(count_or_default(missing), 0,);
     for it in selected {
-        assert_eq!(*it, 5,);
+        assert_eq!(it, 5,);
     }
 }
 ```

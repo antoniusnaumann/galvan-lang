@@ -52,7 +52,10 @@ mod test_utils {
 #[allow(unused_imports)]
 use galvan_files::Source;
 #[allow(unused_imports)]
-use galvan_transpiler::{galvan_module, transpile};
+use galvan_transpiler::{
+    galvan_module, transpile, transpile_sources_with_diagnostics_and_rustdoc_warnings,
+    DiagnosticSeverity,
+};
 use test_utils::*;
 
 generate_code_tests!(test_transpilation, TRANSPILE, trim_all {
@@ -281,6 +284,161 @@ fn primitive_ref_locals_and_params_use_mutex_storage() {
 }
 
 #[test]
+fn borrowed_optional_iteration_binds_copy_values() {
+    let output = transpile_source(
+        "fn main() {
+             let selected: Int? = 5
+             for selected {
+                 assert it == 5
+             }
+         }",
+    );
+
+    assert!(output.contains("for it in selected"), "{output}");
+    assert!(!output.contains("assert_eq!(*it"), "{output}");
+}
+
+#[test]
+fn reports_typechecker_diagnostics_without_terminating() {
+    let result = transpile_sources_with_diagnostics_and_rustdoc_warnings(
+        vec![Source::from_string("fn main() { missing }")],
+        |_| {},
+    )
+    .expect("syntax should transpile far enough to report diagnostics");
+
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Error
+            && diagnostic.code.as_deref() == Some("unknown_identifier")
+    }));
+}
+
+#[test]
+fn transpiles_explicit_same_line_semicolons() {
+    let output = transpile_source("fn main() { let a = 1; let b = 2; assert a + b == 3 }");
+
+    assert!(output.contains("let a: _ = 1"));
+    assert!(output.contains("let b: _ = 2"));
+    assert!(output.contains("assert_eq!(a + b, 3"));
+}
+
+#[test]
+fn closure_declarations_omit_impl_trait_annotations() {
+    let output = transpile_source(
+        "fn main() {
+             let add = |a: Int, b: Int| a + b
+             assert add(1, 2) == 3
+         }",
+    );
+
+    assert!(output.contains("let add = |a, b|"));
+    assert!(!output.contains("let add: impl Fn"));
+}
+
+#[test]
+fn generic_struct_construction_substitutes_receiver_parameters() {
+    let result = transpile_sources_with_diagnostics_and_rustdoc_warnings(
+        vec![Source::from_string(
+            "type Container { value: t }
+             fn get_value(self: Container<t>) -> t { self.value }
+             fn main() {
+                 let shipment = Container(value: 42)
+                 assert shipment.get_value() == 42
+             }",
+        )],
+        |_| {},
+    )
+    .expect("generic source should transpile");
+
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+}
+
+#[test]
+fn ref_fields_lock_for_chained_reads() {
+    let output = transpile_source(
+        "type Dog { age: Int }
+         type Person { ref dog: Dog }
+         fn main() {
+             ref dog = Dog(age: 5)
+             let person = Person(dog: ref dog)
+             println(\"\\(person.dog.age)\")
+         }",
+    );
+
+    assert!(output.contains("person.dog.lock().unwrap().age"));
+    assert!(output.contains("impl PartialEq for Person"));
+    assert!(output.contains(
+        "::galvan::std::__ref_value_eq(&self.dog, &other.dog)"
+    ));
+    assert!(!output.contains("#[derive(Clone, Debug, PartialEq)]\npub(crate) struct Person"));
+}
+
+#[test]
+fn reference_identity_borrows_arc_handles() {
+    let output = transpile_source(
+        "fn main() {
+             ref message = \"hello\"
+             ref alias = ref message
+             assert alias === message
+         }",
+    );
+
+    assert!(output.contains("::std::sync::Arc::ptr_eq(&alias, &message)"));
+}
+
+#[test]
+fn reference_equality_compares_locked_values() {
+    let output = transpile_source(
+        "fn main() {
+             ref first = \"hello\"
+             ref second = \"hello\"
+             assert first == second
+             let are_equal = first == second
+         }",
+    );
+
+    assert!(output.contains(
+        "::galvan::std::__ref_value_eq(&(first), &(second))"
+    ));
+}
+
+#[test]
+fn tuple_member_access_reports_out_of_bounds_indices() {
+    let result = transpile_sources_with_diagnostics_and_rustdoc_warnings(
+        vec![Source::from_string(
+            "type Pair(Int, String)
+             fn main() {
+                 let pair = Pair(1, \"one\")
+                 println(\"\\(pair.2)\")
+             }",
+        )],
+        |_| {},
+    )
+    .expect("invalid tuple member should produce a diagnostic");
+
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Error
+            && diagnostic.message.contains("does not have field `2`")
+    }));
+}
+
+#[test]
+fn bare_error_values_require_throw() {
+    let result = transpile_sources_with_diagnostics_and_rustdoc_warnings(
+        vec![Source::from_string(
+            "type Failure {}
+             fn fail(error: Failure) -> Int! { error }",
+        )],
+        |_| {},
+    )
+    .expect("bare error value should produce a diagnostic");
+
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Error
+            && diagnostic.message.contains("must be raised with `throw`")
+    }));
+}
+
+#[test]
 fn primitive_ref_mut_arguments_use_one_mutex_guard() {
     let output = transpile_source(
         "fn bump(mut value: Int) {
@@ -370,6 +528,6 @@ fn rejects_invalid_main_function_signatures() {
 fn transpiles_positional_tuple_struct_construction() {
     let output = transpile_source("type Wrapper(Int)\nfn make() -> Wrapper { Wrapper(5) }");
 
-    assert!(output.contains("struct Wrapper(i64)"));
+    assert!(output.contains("struct Wrapper(pub(crate) i64)"));
     assert!(output.contains("Wrapper(5)"));
 }

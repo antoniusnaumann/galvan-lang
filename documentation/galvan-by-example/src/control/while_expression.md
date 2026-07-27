@@ -30,7 +30,7 @@ pub(crate) fn __main__() {
             if (candidate % 2).eq(&1) {
                 continue;
             };
-            __result.push(candidate.pow(2))
+            __result.push((candidate as i64).pow(2))
         }
         __result
     };

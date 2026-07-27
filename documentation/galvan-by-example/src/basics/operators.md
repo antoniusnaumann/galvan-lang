@@ -34,7 +34,7 @@ pub(crate) fn __main__() {
     let sum: _ = 1 + 2 * 3;
     let grouped: _ = (1 + 2) * 3;
     let remainder: _ = 7 % 3;
-    let power: u32 = 2.pow(10);
+    let power: u32 = (2 as u32).pow(10);
     let both: bool = true && false;
     let either: bool = true || false;
     let one_of: bool = true ^ false;
@@ -63,12 +63,12 @@ without explicit dereferencing.
   spellings are interchangeable with their ASCII forms.
 - **Identity**: `===`/`≡` and `!==`/`≢` compare *pointer identity* of heap
   references (see [Reference Variables](../ownership/ref_variables.md)).
-- **Collections**: `++` (concatenation), `in`/`∈` (membership), `[]`
-  (indexing) — covered in [Collection Operators](../collections/operators.md).
+- **Collections**: `++` (concatenation), `--` (ordered removal), `**`
+  (repetition), `in`/`∈` (membership), and `[]` (indexing or range slicing) —
+  covered in [Collection Operators](../collections/operators.md).
 - **Ranges**: `..<`, `..=`, `..+`, `±` — covered in
   [Ranges](../control/ranges.md).
 
 > [!WARNING]
-> **Not implemented yet:** unary logical `not`, collection removal `--`,
-> repetition `**`, slicing `[:]`, and user-defined custom operators are part
-> of the operator design but do not transpile yet.
+> **Not implemented yet:** unary logical `not` and user-defined custom
+> operators are part of the operator design but do not transpile yet.

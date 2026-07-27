@@ -80,6 +80,15 @@ fn main() {
 }
 ```
 
-> [!WARNING]
-> Explicit same-line separators are not accepted by the parser yet. Newline
-> inference and multiline expressions are implemented and checked above.
+<details>
+<summary>Generated Rust</summary>
+
+```rust
+pub(crate) fn __main__() {
+    let a: _ = 1;
+    let b: _ = 2;
+    println!("{}", &format!("{}", a + b));
+}
+```
+
+</details>

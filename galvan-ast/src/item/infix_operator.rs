@@ -139,6 +139,7 @@ impl InfixOperator for BitwiseOperator {
 pub enum CollectionOperator {
     Concat,
     Remove,
+    Repeat,
     Contains,
 }
 
@@ -147,6 +148,7 @@ impl InfixOperator for CollectionOperator {
         match self {
             CollectionOperator::Concat => "++",
             CollectionOperator::Remove => "--",
+            CollectionOperator::Repeat => "**",
             CollectionOperator::Contains => "in",
         }
     }

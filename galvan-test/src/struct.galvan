@@ -3,6 +3,40 @@ type Dog {
     age: Int
 }
 
+type DogOwner {
+    name: String
+    ref dog: Dog
+}
+
+type Meters(Double)
+
+test "Read tuple fields by index" {
+    let coordinates = (3, 4)
+    let distance = Meters(1.87)
+
+    assert coordinates.0 == 3
+    assert coordinates.1 == 4
+    assert distance.0 == 1.87
+}
+
+test "Compare ref fields by value" {
+    ref first_dog = Dog(name: "Hasso", age: 5)
+    ref equal_dog = Dog(name: "Hasso", age: 5)
+
+    let first = DogOwner(name: "Ana", dog: ref first_dog)
+    let equal = DogOwner(name: "Ana", dog: ref equal_dog)
+    let alias = DogOwner(name: "Ana", dog: ref first_dog)
+
+    assert first == equal
+    assert first == alias
+    assert first_dog == equal_dog
+
+    equal_dog.age += 1
+
+    assert first != equal
+    assert first_dog != equal_dog
+}
+
 test "Create struct" {
     let dog = Dog(name: "Rex", age: 3)
     assert dog.name == "Rex"

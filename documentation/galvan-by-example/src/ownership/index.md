@@ -6,7 +6,7 @@ Galvan replaces Rust's borrow-checker vocabulary with three visible modes:
 | --- | --- | --- |
 | *(default)* | pass/assign **by value** — callee and caller are independent | borrow or clone, chosen by the transpiler |
 | `mut` | callee may **mutate the caller's value** | `&mut T` |
-| `ref` | **shared reference semantics** — one value, many handles | `Arc<Mutex<T>>` / `Arc<Atomic*>` |
+| `ref` | **shared reference semantics** — one value, many handles | `Arc<Mutex<T>>` |
 
 Two rules make the system predictable:
 

@@ -327,6 +327,8 @@ pub enum TranspileError {
     File(#[from] FileError),
     #[error(transparent)]
     Rustdoc(#[from] RustdocError),
+    #[error("transpilation failed with diagnostics: {diagnostics:?}")]
+    Diagnostics { diagnostics: Vec<Diagnostic> },
 }
 
 fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
@@ -343,12 +345,21 @@ pub fn transpile_sources_with_rustdoc_warnings(
     sources: Vec<Source>,
     rustdoc_warning: impl FnMut(&RustdocError),
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile_sources_with_diagnostics_and_rustdoc_warnings(sources, rustdoc_warning)?
+        .into_outputs()
+}
+
+/// Transpiles sources while returning all recoverable diagnostics to the caller.
+pub fn transpile_sources_with_diagnostics_and_rustdoc_warnings(
+    sources: Vec<Source>,
+    rustdoc_warning: impl FnMut(&RustdocError),
+) -> Result<TranspileResult, TranspileError> {
     let asts = sources
         .into_iter()
         .map(|s| s.try_into_ast())
         .collect::<Result<Vec<_>, _>>()?;
 
-    transpile_asts_with_rustdoc_warnings(asts, rustdoc_warning)
+    transpile_asts_with_diagnostics_and_rustdoc_warnings(asts, rustdoc_warning)
 }
 
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
@@ -358,23 +369,30 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     transpile_segmented_asts(segmented, rust_interop)
 }
 
-fn transpile_asts_with_rustdoc_warnings(
+fn transpile_asts_with_diagnostics_and_rustdoc_warnings(
     asts: Vec<Ast>,
     rustdoc_warning: impl FnMut(&RustdocError),
-) -> Result<Vec<TranspileOutput>, TranspileError> {
+) -> Result<TranspileResult, TranspileError> {
     let segmented = asts.segmented()?;
     let rust_interop = RustInterop::from_crates_and_uses_with_warnings(
         qualified_namespaces(&segmented),
         &segmented.uses,
         rustdoc_warning,
     )?;
-    transpile_segmented_asts(segmented, rust_interop)
+    transpile_segmented_asts_with_diagnostics(segmented, rust_interop)
 }
 
 fn transpile_segmented_asts(
     segmented: SegmentedAsts,
     rust_interop: RustInterop,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile_segmented_asts_with_diagnostics(segmented, rust_interop)?.into_outputs()
+}
+
+fn transpile_segmented_asts_with_diagnostics(
+    segmented: SegmentedAsts,
+    rust_interop: RustInterop,
+) -> Result<TranspileResult, TranspileError> {
     let checked = typecheck_with_interop(segmented, &rust_interop);
     let (module, mut errors) = (checked.module, checked.errors);
     let rust_types = codegen_rust_types(&rust_interop);
@@ -401,7 +419,11 @@ fn transpile_segmented_asts(
         ctx.lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
     }
 
-    transpile_module(&module, &ctx, &mut errors)
+    let outputs = transpile_module(&module, &ctx, &mut errors)?;
+    Ok(TranspileResult {
+        outputs,
+        diagnostics: errors.into_diagnostics(),
+    })
 }
 
 fn codegen_rust_types(rust_interop: &RustInterop) -> Vec<&galvan_rustdoc::RustTypeDecl> {
@@ -801,20 +823,6 @@ fn transpile_module(
         })
         .collect_vec();
 
-    // Output any collected warnings
-    for diagnostic in errors.diagnostics() {
-        match diagnostic.severity {
-            DiagnosticSeverity::Error => {
-                println!("cargo::error={}", diagnostic.message);
-                std::process::exit(1);
-            }
-            DiagnosticSeverity::Warning => {
-                println!("cargo::warning={}", diagnostic.message);
-            }
-            _ => {}
-        }
-    }
-
     Ok(type_files
         .into_iter()
         .chain(extension_files.into_iter())
@@ -1191,6 +1199,27 @@ fn extension_name(ty: &TypeElement) -> String {
 pub struct TranspileOutput {
     pub file_name: Box<str>,
     pub content: Box<str>,
+}
+
+pub struct TranspileResult {
+    pub outputs: Vec<TranspileOutput>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl TranspileResult {
+    fn into_outputs(self) -> Result<Vec<TranspileOutput>, TranspileError> {
+        if self
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        {
+            Err(TranspileError::Diagnostics {
+                diagnostics: self.diagnostics,
+            })
+        } else {
+            Ok(self.outputs)
+        }
+    }
 }
 
 pub struct TranspileErrors<'t> {

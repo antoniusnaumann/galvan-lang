@@ -43,7 +43,7 @@ pub(crate) fn __main__() {
     let args: ::std::vec::Vec<String> = ::std::env::args().collect();
     {
         for arg in args {
-            println!("{}", arg);
+            println!("{}", &arg);
         }
     };
 }

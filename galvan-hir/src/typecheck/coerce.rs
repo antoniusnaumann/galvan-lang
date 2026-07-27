@@ -100,6 +100,14 @@ pub fn types_compatible(expected: &TypeElement, actual: &TypeElement) -> bool {
                     .all(|(a, b)| types_compatible(a, b))
                 && types_compatible(&a.return_ty, &b.return_ty)
         }
+        (TypeElement::Parametric(a), TypeElement::Parametric(b)) => {
+            a.base_type == b.base_type
+                && a.type_args.len() == b.type_args.len()
+                && a.type_args
+                    .iter()
+                    .zip(&b.type_args)
+                    .all(|(a, b)| types_compatible(a, b))
+        }
         (expected, actual) => expected.is_same(actual),
     }
 }
@@ -193,15 +201,32 @@ impl Checker<'_> {
                 let expr = self.ensure_owned(expr);
                 expr.adjusted(Adjustment::WrapOk)
             }
-            // Auto-wrap error values in `Err`
-            // TODO: This should not be autocast but instead require a "throw" keyword
             (TypeElement::Result(res), actual)
                 if res
                     .error
                     .as_ref()
                     .is_some_and(|error| types_compatible(error, actual)) =>
             {
-                expr.adjusted(Adjustment::WrapErr)
+                self.errors.error_with_span(
+                    crate::TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "error value of type `{actual}` must be raised with `throw`"
+                        ),
+                    },
+                    Some(expr.span.into()),
+                );
+                expr
+            }
+            (TypeElement::Result(res), actual) if res.error.is_none() => {
+                self.errors.error_with_span(
+                    crate::TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "error value of type `{actual}` must be raised with `throw`"
+                        ),
+                    },
+                    Some(expr.span.into()),
+                );
+                expr
             }
             (TypeElement::Result(_), actual) => {
                 self.errors.warning(

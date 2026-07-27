@@ -1,5 +1,5 @@
 //@TRANSPILE
-//"#[derive(Clone, Debug, PartialEq)] pub struct SimpleTuple(i64, i64);"
+//"#[derive(Clone, Debug, PartialEq)] pub struct SimpleTuple(pub i64, pub i64);"
 //@end
 
 pub type SimpleTuple(Int, Int)

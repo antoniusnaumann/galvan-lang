@@ -25,8 +25,6 @@ commands remain subcommands.
     falling back to unknown-signature lowering
 
 - **Missing operator implementations**
-  - Remove operator `--` for collections (codegen/expression.rs renders a
-    placeholder comment)
   - Custom infix operators (typecheck/expr.rs `lower_infix`)
   - Add unary expression support for logical and bitwise not
 
@@ -35,18 +33,11 @@ commands remain subcommands.
 
 ## High Priority - Language Completeness
 
-- **Iteration** (galvan-hir/src/typecheck/expr.rs `lower_for`)
-  - Tuple iteration
-
 - **`ref` variables**
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
-  - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
-    does not implement `PartialEq`)
-  - Preserve `ref` ownership for struct fields so chained access locks the
-    field before reading its members (typecheck/expr.rs `lower_member`)
 
 - **Tuples**
-  - Tuple member access (typecheck/expr.rs `field_type`)
+  - Named tuple fields
 
 ## Medium Priority - Error Handling & Validation
 
@@ -55,10 +46,6 @@ commands remain subcommands.
   (galvan-transpiler/src/lib.rs `transpile_member_functions`)
 - Group extension impl blocks by where-clause constraints instead of taking
   the first function's where clause (galvan-transpiler/src/lib.rs)
-- Require an explicit `throw` keyword instead of auto-wrapping error values
-  in `Err` (galvan-hir/src/typecheck/coerce.rs)
-- Output collected warnings from `exec::transpile_dir`
-  (galvan-transpiler/src/exec.rs)
 
 ## Low Priority - Language Polish
 
@@ -68,12 +55,8 @@ commands remain subcommands.
 - **Warning cleanup**
   - Silence or handle unused-parameter warnings in the tree-sitter external
     scanner stub (tree-sitter-galvan/src/scanner.c)
-  - Investigate the generic-container type mismatch warning emitted while
-    building `galvan-test`
-  - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
-    instead of printing Cargo messages from the public transpilation path
-  - Resolve the synthetic `Self` type in generated `Default` constructors
-    without emitting a type-resolution warning
+  - Keep every non-aspirational Galvan by Example block warning-free and
+    compilable through the generated-crate conformance check
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
@@ -83,8 +66,9 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
-  - Accept explicit same-line statement separators without producing an
-    invalid body tree
+  - Disambiguate a paren-free call whose first argument starts with `[` from
+    index access; for example, `assert [1] == [1]` currently requires
+    `assert([1] == [1])`
 
 ## Future Enhancements
 

@@ -1,0 +1,25 @@
+test "Collection removal preserves order and duplicate counts" {
+    assert([1, 2, 3, 1] -- [1, 2, 4] == [3, 1])
+}
+
+test "Array repetition" {
+    assert([1] ** 5 == [1, 1, 1, 1, 1])
+}
+
+test "String and character repetition" {
+    assert "a" ** 5 == "aaaaa"
+    assert 'a' ** 5 == "aaaaa"
+}
+
+test "Inclusive and tolerance slicing" {
+    let a = [1, 2, 3, 4, 5]
+    assert a[0..=1] == [1, 2]
+    assert a[1+-1] == [1, 2, 3]
+}
+
+test "Collection operators read through references" {
+    ref values = [1, 2, 1]
+    assert values -- [1] == [2, 1]
+    assert values ** 2 == [1, 2, 1, 1, 2, 1]
+    assert values[0..=1] == [1, 2]
+}
