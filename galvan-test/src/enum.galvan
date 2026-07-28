@@ -5,6 +5,20 @@ pub type Color {
     Sepia
 }
 
+pub type SharedMessage(name: String, ref revision: Int) {
+    Empty
+    Text(String)
+    Styled(text: String, important: Bool)
+}
+
+fn shared_message_text(message: SharedMessage) -> String {
+    match message {
+        Empty { "empty" }
+        Text(value) { value }
+        Styled(text: value, important: _) { value }
+    }
+}
+
 test "Create enum variant" {
     let color = Color::Transparent
 
@@ -21,4 +35,64 @@ test "Create enum variant with struct value" {
     let color = Color::Rgb(r: 100, g: 10, b: 150)
 
     assert color == Color::Rgb(r: 100, g: 10, b: 150)
+}
+
+test "Construct and read common enum fields" {
+    ref revision = 1
+    let message = SharedMessage::Text(
+        name: "Greeting",
+        revision: ref revision,
+        "hello",
+    )
+
+    assert message.name == "Greeting"
+    assert message.revision == 1
+    assert shared_message_text(message) == "hello"
+}
+
+test "Match shared enums with named and empty variants" {
+    ref revision = 2
+    let styled = SharedMessage::Styled(
+        name: "Notice",
+        revision: ref revision,
+        text: "careful",
+        important: true,
+    )
+    let empty = SharedMessage::Empty(name: "Nothing", revision: ref revision)
+
+    assert shared_message_text(styled) == "careful"
+    assert shared_message_text(empty) == "empty"
+}
+
+test "Compare common enum fields and variants by value" {
+    ref first_revision = 3
+    ref equal_revision = 3
+    let first = SharedMessage::Text(
+        name: "Greeting",
+        revision: ref first_revision,
+        "hello",
+    )
+    let equal = SharedMessage::Text(
+        name: "Greeting",
+        revision: ref equal_revision,
+        "hello",
+    )
+    let different_common = SharedMessage::Text(
+        name: "Other",
+        revision: ref first_revision,
+        "hello",
+    )
+    let different_variant = SharedMessage::Styled(
+        name: "Greeting",
+        revision: ref first_revision,
+        text: "hello",
+        important: false,
+    )
+
+    assert first == equal
+    assert first != different_common
+    assert first != different_variant
+
+    equal_revision += 1
+    assert first != equal
 }

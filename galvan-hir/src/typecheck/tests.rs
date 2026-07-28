@@ -155,6 +155,31 @@ fn infers_arithmetic_types_and_ownership() {
 }
 
 #[test]
+fn unary_logical_negation_lowers_to_bool() {
+    let module = lower("fn invert(value: Bool) -> Bool { !value }");
+    let tail = trailing(function(&module, "invert"));
+
+    let HirExpressionKind::Unary(unary) = &tail.kind else {
+        panic!("expected unary expression, got {:?}", tail.kind);
+    };
+    assert_eq!(unary.operator, galvan_ast::UnaryOperator::LogicalNot);
+    assert_eq!(tail.ty, TypeElement::bool());
+}
+
+#[test]
+fn unary_logical_negation_rejects_non_booleans() {
+    let (_module, errors) = lower_with_diagnostics("fn invalid() -> Bool { not 1 }");
+
+    assert!(
+        errors
+            .errors()
+            .any(|diagnostic| diagnostic.message
+                == "Invalid operation: logical negation can only be used on Bool"),
+        "expected logical-negation type error, got: {errors}"
+    );
+}
+
+#[test]
 fn copy_parameters_are_owned_and_passed_by_value() {
     let module = lower(
         "fn multiply(a: Int, b: Int) -> Int { a * b }
@@ -536,6 +561,60 @@ fn constructor_arguments_are_owned() {
 }
 
 #[test]
+fn unlabeled_parameters_cannot_follow_labeled_parameters() {
+    let (_module, errors) = lower_with_diagnostics(
+        "fn invalid(a: Int, with b: Int, c: Int) {}
+         fn valid(a: Int, with b: Int, and c: Int) {}",
+    );
+
+    let messages = errors
+        .errors()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        ["Invalid syntax: unlabeled parameter 'c' cannot follow a labeled parameter"]
+    );
+}
+
+#[test]
+fn flexible_result_throws_convert_errors() {
+    let module = lower(
+        "type Failure {}
+         fn fail(error: Failure) -> Int! { throw error }",
+    );
+    let fail = function(&module, "fail");
+    let HirStatement::Throw(throw) = &fail.body.statements[0] else {
+        panic!("expected throw statement");
+    };
+
+    assert_eq!(
+        throw.expression.adjustments,
+        vec![Adjustment::ToOwned, Adjustment::Into]
+    );
+}
+
+#[test]
+fn bare_result_functions_return_flexible_void_results() {
+    let module = lower("fn done() -> ! {}");
+    let done = function(&module, "done");
+    let TypeElement::Result(result) = &done.signature.return_type else {
+        panic!("expected result return type");
+    };
+    assert!(result.success.is_void());
+    assert!(result.error.is_none());
+
+    let HirStatement::Expression(success) = &done.body.statements[0] else {
+        panic!("expected implicit success value");
+    };
+    assert!(matches!(
+        success.kind,
+        HirExpressionKind::Literal(HirLiteral::Unit)
+    ));
+    assert_eq!(success.adjustments, vec![Adjustment::WrapOk]);
+}
+
+#[test]
 fn constructor_defaults_are_materialized() {
     let module = lower(
         "type Book { title: String = \"Lorem Ipsum\" }
@@ -548,6 +627,33 @@ fn constructor_defaults_are_materialized() {
     };
     assert_eq!(constructor.args.len(), 1);
     assert_eq!(constructor.args[0].field.as_str(), "title");
+}
+
+#[test]
+fn all_defaulted_structs_get_lowered_default_impls() {
+    let module = lower(
+        "type Book {
+             title: String = \"Field Notes\"
+             pages: Int = 0
+         }",
+    );
+
+    assert_eq!(module.default_impls.len(), 1);
+    let default_impl = &module.default_impls[0];
+    assert_eq!(default_impl.ident, TypeIdent::new("Book"));
+    assert_eq!(default_impl.constructor.args.len(), 2);
+}
+
+#[test]
+fn partially_defaulted_structs_do_not_get_default_impls() {
+    let module = lower(
+        "type Book {
+             title: String = \"Field Notes\"
+             pages: Int
+         }",
+    );
+
+    assert!(module.default_impls.is_empty());
 }
 
 #[test]
@@ -1013,6 +1119,57 @@ fn qualified_rust_functions_are_typechecked_without_imports() {
         panic!("expected string result, got {:?}", tail.ty);
     };
     assert_eq!(ty.ident.as_str(), "String");
+}
+
+#[test]
+fn multi_segment_rust_functions_resolve_the_complete_path() {
+    let mut rust_interop = RustInterop::empty();
+    rust_interop.add_function_decl(
+        "demo",
+        "answer",
+        "::demo::nested::answer",
+        FnSignature {
+            visibility: Visibility::public(),
+            is_async: false,
+            identifier: Ident::new("answer"),
+            parameters: ParamList {
+                params: Vec::new(),
+                span: Span::default(),
+            },
+            return_type: TypeElement::Plain(BasicTypeItem {
+                ident: TypeIdent::new("Int"),
+                span: Span::default(),
+            }),
+            where_clause: None,
+            span: Span::default(),
+        }
+        .into(),
+        false,
+    );
+
+    let module = lower_with_interop(
+        "fn call() -> Int {
+             demo::nested::answer()
+         }",
+        &rust_interop,
+    );
+    let tail = trailing(function(&module, "call"));
+    let HirExpressionKind::FunctionCall(call) = &tail.kind else {
+        panic!("expected function call, got {:?}", tail.kind);
+    };
+
+    assert_eq!(
+        call.namespace.as_ref().map(|path| path
+            .segments
+            .iter()
+            .map(Ident::as_str)
+            .collect::<Vec<_>>()),
+        Some(vec!["demo", "nested"])
+    );
+    assert_eq!(
+        call.rust.as_ref().map(|rust| rust.rust_path.as_ref()),
+        Some("::demo::nested::answer")
+    );
 }
 
 #[test]
@@ -2308,6 +2465,69 @@ fn reports_enum_case_access_with_dot() {
             .any(|diagnostic| diagnostic.message.contains("accessed with ::")),
         "got: {}",
         checked.errors
+    );
+}
+
+#[test]
+fn lowers_common_enum_fields_without_diagnostics() {
+    let code = r#"
+        pub type Message(name: String) {
+            Empty
+            Text(String)
+        }
+
+        fn name(message: Message) -> String {
+            message.name
+        }
+
+        fn make() -> Message {
+            Message::Text(name: "Greeting", "hello")
+        }
+    "#;
+    let (_, errors) = lower_with_diagnostics(code);
+    assert!(
+        errors.diagnostics().is_empty(),
+        "expected no diagnostics, got: {errors}"
+    );
+}
+
+#[test]
+fn reports_missing_common_enum_constructor_field() {
+    let code = r#"
+        type Message(name: String) {
+            Empty
+        }
+
+        fn make() -> Message {
+            Message::Empty()
+        }
+    "#;
+    let (_, errors) = lower_with_diagnostics(code);
+    assert!(
+        errors.errors().any(|diagnostic| diagnostic
+            .message
+            .contains("missing common field `name`")),
+        "got: {errors}"
+    );
+}
+
+#[test]
+fn reports_bare_variant_access_for_enum_with_common_fields() {
+    let code = r#"
+        type Message(name: String) {
+            Empty
+        }
+
+        fn make() -> Message {
+            Message::Empty
+        }
+    "#;
+    let (_, errors) = lower_with_diagnostics(code);
+    assert!(
+        errors.errors().any(|diagnostic| diagnostic
+            .message
+            .contains("requires common field arguments")),
+        "got: {errors}"
     );
 }
 

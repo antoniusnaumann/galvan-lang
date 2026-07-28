@@ -1,5 +1,5 @@
 //@TRANSPILE
-//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyStruct { }"
+//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct EmptyStruct { } impl Default for EmptyStruct { fn default() -> Self { Self { } } }"
 //@end
 
 type EmptyStruct {}

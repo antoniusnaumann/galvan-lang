@@ -3,7 +3,7 @@
 //! The HIR is produced from the AST by the typechecker in [`crate::typecheck`].
 //! Compared to the AST it:
 //!
-//! - reifies control flow (`if`, `for`, `try`, `else`) into dedicated nodes
+//! - reifies control flow (`if`, `for`, `while`, `try`, `else`) into dedicated nodes
 //!   instead of magic function calls with trailing closures
 //! - resolves names: function calls are split into [`HirFunctionCall`],
 //!   [`HirMethodCall`], builtins ([`HirPrint`], [`HirAssert`]) and constructor
@@ -27,10 +27,17 @@ use galvan_files::Source;
 pub struct HirModule {
     pub uses: Vec<ToplevelItem<UseDecl>>,
     pub types: Vec<ToplevelItem<TypeDecl>>,
+    pub default_impls: Vec<HirDefaultImpl>,
     pub functions: Vec<HirFunction>,
     pub tests: Vec<HirTest>,
     pub main: Option<HirMain>,
     pub cmds: Vec<HirCmd>,
+}
+
+#[derive(Debug)]
+pub struct HirDefaultImpl {
+    pub ident: TypeIdent,
+    pub constructor: HirConstructorCall,
 }
 
 #[derive(Debug)]
@@ -212,6 +219,7 @@ impl HirExpression {
                 Adjustment::WrapSome => Ownership::UniqueOwned,
                 Adjustment::WrapOk => Ownership::UniqueOwned,
                 Adjustment::WrapErr => Ownership::UniqueOwned,
+                Adjustment::Into => Ownership::UniqueOwned,
                 Adjustment::LockRef => Ownership::MutBorrowed,
                 Adjustment::ArcClone => Ownership::UniqueOwned,
             })
@@ -240,6 +248,8 @@ pub enum Adjustment {
     WrapOk,
     /// `Err(expr)`
     WrapErr,
+    /// `(expr).into()`
+    Into,
     /// `expr.lock().unwrap()` - access the value behind a `ref` variable
     LockRef,
     /// `::std::sync::Arc::clone(&expr)` - share a `ref` variable
@@ -252,6 +262,7 @@ pub enum HirExpressionKind {
     ElseUnwrap(Box<HirElseUnwrap>),
     Try(Box<HirTry>),
     For(Box<HirFor>),
+    While(Box<HirWhile>),
     Match(Box<HirMatch>),
     Assert(Box<HirAssert>),
     Print(HirPrint),
@@ -267,6 +278,7 @@ pub enum HirExpressionKind {
     Variable(Ident),
     Collection(HirCollection),
     Closure(Box<HirClosure>),
+    Unary(Box<HirUnary>),
     Logical(Box<HirBinary<LogicalOperator>>),
     Arithmetic(Box<HirBinary<ArithmeticOperator>>),
     Bitwise(Box<HirBinary<BitwiseOperator>>),
@@ -281,13 +293,26 @@ pub enum HirExpressionKind {
     Error(String),
 }
 
-/// Collection infix operators (`++`, `--`, `in`). The concrete generated shape
+/// Collection infix operators (`++`, `--`, `**`, `in`). The concrete generated shape
 /// depends on the stored operand types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionOperator {
     Concat(ConcatKind),
-    Remove,
+    Remove(RemoveKind),
+    Repeat(RepeatKind),
     Contains,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoveKind {
+    Array,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepeatKind {
+    Array,
+    String,
+    Char,
 }
 
 /// Shape of a `++` concatenation, decided by the typechecker from the
@@ -378,6 +403,15 @@ pub struct HirFor {
 }
 
 #[derive(Clone, Debug)]
+pub struct HirWhile {
+    pub condition: HirExpression,
+    pub body: HirBlock,
+    /// `Some(element_type)` when the loop is used as an expression and
+    /// collects the value of each iteration into a vector
+    pub collect: Option<TypeElement>,
+}
+
+#[derive(Clone, Debug)]
 pub struct HirForBinding {
     pub ident: Ident,
     /// Destructure this binding with a `&` pattern when iterating borrowed
@@ -395,6 +429,7 @@ pub enum HirForIterableKind {
 pub struct HirMatch {
     pub scrutinee: HirExpression,
     pub arms: Vec<HirMatchArm>,
+    pub uses_variant_tag: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -504,6 +539,7 @@ pub struct HirRustCall {
 #[derive(Clone, Debug)]
 pub struct HirRustMethodCall {
     pub rust_path: Box<str>,
+    pub extension_trait: Option<Box<str>>,
     pub return_conversion: galvan_rustdoc::RustReturnConversion,
     pub receiver_conversion: galvan_rustdoc::RustArgConversion,
     pub arg_conversions: Vec<galvan_rustdoc::RustArgConversion>,
@@ -565,6 +601,7 @@ pub struct HirConstructorArg {
     pub field: Ident,
     pub value: HirExpression,
     pub store_as_ref: bool,
+    pub missing_ref_modifier: bool,
     pub rust_arg_conversion: galvan_rustdoc::RustArgConversion,
 }
 
@@ -572,6 +609,7 @@ pub struct HirConstructorArg {
 pub struct HirEnumConstructor {
     pub target: TypeIdent,
     pub case: TypeIdent,
+    pub common_args: Vec<HirConstructorArg>,
     pub args: Vec<HirEnumConstructorArg>,
 }
 
@@ -590,6 +628,7 @@ pub struct HirEnumAccess {
 
 #[derive(Clone, Debug)]
 pub enum HirLiteral {
+    Unit,
     Boolean(bool),
     Number(String),
     Char(char),
@@ -640,12 +679,25 @@ pub struct HirBinary<Op> {
     pub lhs: HirExpression,
     pub operator: Op,
     pub rhs: HirExpression,
+    pub result_ty: TypeElement,
 }
 
-/// Index access `base[index]`. Whether the index is borrowed depends on the
-/// stored type of `base` (dictionaries and sets index by reference).
+#[derive(Clone, Debug)]
+pub struct HirUnary {
+    pub operator: galvan_ast::UnaryOperator,
+    pub operand: HirExpression,
+}
+
+/// Index or slice access `base[index]`.
 #[derive(Clone, Debug)]
 pub struct HirIndex {
     pub base: HirExpression,
     pub index: HirExpression,
+    pub kind: IndexKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexKind {
+    Element,
+    Slice,
 }

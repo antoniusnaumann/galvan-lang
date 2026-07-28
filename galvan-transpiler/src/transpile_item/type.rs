@@ -16,7 +16,7 @@ impl_transpile!(
 );
 impl_transpile!(
     OrderedDictionaryTypeItem,
-    "::std::collections::BTreeMap<{}, {}>",
+    "::galvan::std::IndexMap<{}, {}>",
     key,
     value
 );

@@ -2,8 +2,9 @@ use itertools::Itertools;
 
 use galvan_ast::{
     ArithmeticOperator, BitwiseOperator, ComparisonOperator, Ident, LogicalOperator, Ownership,
-    RangeOperator, TypeElement, UsePath,
+    RangeOperator, TypeElement, TypeIdent, UsePath,
 };
+use galvan_hir::builtins::CheckBuiltins;
 use galvan_hir::hir::*;
 use galvan_resolver::Lookup;
 use galvan_rustdoc::{RustArgConversion, RustReturnConversion};
@@ -11,8 +12,7 @@ use galvan_rustdoc::{RustArgConversion, RustReturnConversion};
 use crate::context::Context;
 use crate::macros::transpile;
 use crate::sanitize::{mangle_function_name, sanitize_name, sanitize_path};
-use crate::ErrorCollector;
-use crate::Transpile;
+use crate::{ErrorCollector, Transpile, TranspilerError};
 
 use super::wrap_ref_storage_value;
 
@@ -23,6 +23,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::ElseUnwrap(unwrap) => unwrap.transpile(ctx, errors),
             HirExpressionKind::Try(try_expr) => try_expr.transpile(ctx, errors),
             HirExpressionKind::For(for_expr) => for_expr.transpile(ctx, errors),
+            HirExpressionKind::While(while_expr) => while_expr.transpile(ctx, errors),
             HirExpressionKind::Match(match_expr) => match_expr.transpile(ctx, errors),
             HirExpressionKind::Assert(assert) => assert.transpile(ctx, errors),
             HirExpressionKind::Print(print) => print.transpile(ctx, errors),
@@ -38,6 +39,7 @@ impl Transpile for HirExpressionKind {
             HirExpressionKind::Variable(ident) => sanitize_name(ident.as_str()).into_owned(),
             HirExpressionKind::Collection(collection) => collection.transpile(ctx, errors),
             HirExpressionKind::Closure(closure) => closure.transpile(ctx, errors),
+            HirExpressionKind::Unary(unary) => unary.transpile(ctx, errors),
             HirExpressionKind::Logical(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Arithmetic(operation) => operation.transpile(ctx, errors),
             HirExpressionKind::Bitwise(operation) => operation.transpile(ctx, errors),
@@ -180,6 +182,36 @@ impl Transpile for HirFor {
     }
 }
 
+impl Transpile for HirWhile {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let condition = self.condition.transpile(ctx, errors);
+        let mut statements = self
+            .body
+            .statements
+            .iter()
+            .map(|statement| statement.transpile(ctx, errors))
+            .collect_vec();
+
+        match &self.collect {
+            None => format!("while {condition} {{ {}; }}", statements.join(";\n")),
+            Some(elem_ty) => {
+                if let Some(last) = statements.last_mut() {
+                    *last = format!("__result.push({last})");
+                }
+                let block = statements.join(";\n");
+                let elem_ty = elem_ty.transpile(ctx, errors);
+                format!(
+                    "{{
+                let mut __result: ::std::vec::Vec<{elem_ty}> = ::std::vec::Vec::new();
+                while {condition} {{ {block} }}
+                __result
+            }}"
+                )
+            }
+        }
+    }
+}
+
 fn render_for_loop(
     kind: HirForIterableKind,
     iterable: String,
@@ -214,6 +246,11 @@ fn for_pattern(bindings: &[HirForBinding]) -> String {
 impl Transpile for HirMatch {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         let scrutinee = self.scrutinee.transpile(ctx, errors);
+        let scrutinee = if self.uses_variant_tag {
+            format!("({scrutinee}).__variant")
+        } else {
+            scrutinee
+        };
         let arms = self
             .arms
             .iter()
@@ -256,9 +293,15 @@ impl Transpile for HirMatchPattern {
 
 impl Transpile for HirEnumMatchPattern {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let target = self.target.transpile(ctx, errors);
+        let target = if enum_has_common_fields(ctx, &self.target) {
+            crate::transpile_item::r#struct::enum_tag_name(&target)
+        } else {
+            target
+        };
         let access = format!(
             "{}::{}",
-            self.target.transpile(ctx, errors),
+            target,
             self.case.as_str()
         );
 
@@ -308,24 +351,40 @@ impl Transpile for HirAssert {
 
         match self {
             HirAssert::Eq(lhs, rhs, rest) => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "assert_eq!({}, {}, {})",
-                    lhs,
-                    rhs,
-                    args(rest, ctx, errors)
-                )
+                if lhs.ownership == Ownership::Ref || rhs.ownership == Ownership::Ref {
+                    format!(
+                        "assert!({}, {})",
+                        transpile_value_equality(lhs, rhs, ctx, errors),
+                        args(rest, ctx, errors)
+                    )
+                } else {
+                    transpile!(
+                        ctx,
+                        errors,
+                        "assert_eq!({}, {}, {})",
+                        lhs,
+                        rhs,
+                        args(rest, ctx, errors)
+                    )
+                }
             }
             HirAssert::Ne(lhs, rhs, rest) => {
-                transpile!(
-                    ctx,
-                    errors,
-                    "assert_ne!({}, {}, {})",
-                    lhs,
-                    rhs,
-                    args(rest, ctx, errors)
-                )
+                if lhs.ownership == Ownership::Ref || rhs.ownership == Ownership::Ref {
+                    format!(
+                        "assert!(!({}), {})",
+                        transpile_value_equality(lhs, rhs, ctx, errors),
+                        args(rest, ctx, errors)
+                    )
+                } else {
+                    transpile!(
+                        ctx,
+                        errors,
+                        "assert_ne!({}, {}, {})",
+                        lhs,
+                        rhs,
+                        args(rest, ctx, errors)
+                    )
+                }
             }
             HirAssert::Truthy(arguments) => {
                 format!("assert!({})", args(arguments, ctx, errors))
@@ -420,6 +479,17 @@ impl Transpile for HirMethodCall {
         let ident = mangle_function_name(self.ident.as_str(), &self.labels);
 
         if let Some(rust) = &self.rust {
+            if let Some(extension_trait) = &rust.extension_trait {
+                let args = transpile_rust_arguments_vec(
+                    &self.args,
+                    rust.arg_conversions.as_slice(),
+                    ctx,
+                    errors,
+                )
+                .join(", ");
+                let call = format!("{{ use {extension_trait}; {receiver}.{ident}({args}) }}");
+                return transpile_rust_return(call, rust.return_conversion);
+            }
             let receiver =
                 transpile_rust_argument(&self.receiver, rust.receiver_conversion, ctx, errors);
             let args = std::iter::once(receiver)
@@ -435,13 +505,9 @@ impl Transpile for HirMethodCall {
         }
 
         if let Some(namespace) = &self.namespace {
-            return format!(
-                "{{ use {}::*; {}.{}({}) }}",
-                sanitize_path(namespace),
-                receiver,
-                ident,
-                args,
-            );
+            let import = scoped_extension_import(namespace, &self.receiver.ty)
+                .unwrap_or_else(|| format!("{}::*", sanitize_path(namespace)));
+            return format!("{{ use {}; {}.{}({}) }}", import, receiver, ident, args,);
         }
 
         if self.receiver_modifier == Some(galvan_ast::DeclModifier::Ref) {
@@ -502,6 +568,12 @@ fn apply_rust_arg_conversion(rendered: String, conversion: RustArgConversion) ->
     match conversion {
         RustArgConversion::None => rendered,
         RustArgConversion::SharedBorrow => format!("&{rendered}"),
+        RustArgConversion::FixedArrayBorrow => format!(
+            "{rendered}.as_slice().try_into().expect(\"Galvan array length must match Rust array length\")"
+        ),
+        RustArgConversion::FixedArrayMutBorrow => format!(
+            "{rendered}.as_mut_slice().try_into().expect(\"Galvan array length must match Rust array length\")"
+        ),
         RustArgConversion::BoxNew => format!("::std::boxed::Box::new({rendered})"),
         RustArgConversion::RcNew => format!("::std::rc::Rc::new({rendered})"),
     }
@@ -564,7 +636,11 @@ impl Transpile for HirSafeAccess {
                     args
                 );
                 match namespace {
-                    Some(namespace) => format!("{{ use {}::*; {call} }}", sanitize_path(namespace)),
+                    Some(namespace) => {
+                        let import = scoped_extension_import(namespace, &self.receiver.ty)
+                            .unwrap_or_else(|| format!("{}::*", sanitize_path(namespace)));
+                        format!("{{ use {import}; {call} }}")
+                    }
                     None => call,
                 }
             }
@@ -580,6 +656,22 @@ impl Transpile for HirSafeAccess {
             SafeAccessStyle::Move => format!("{receiver}.map(|__elem__| {{ {access} }})"),
         }
     }
+}
+
+fn scoped_extension_import(namespace: &UsePath, receiver: &TypeElement) -> Option<String> {
+    let receiver = match receiver {
+        TypeElement::Plain(receiver) => receiver.ident.as_str(),
+        TypeElement::Parametric(receiver) => receiver.base_type.as_str(),
+        TypeElement::Optional(receiver) => {
+            return scoped_extension_import(namespace, &receiver.inner)
+        }
+        _ => return None,
+    };
+    Some(format!(
+        "{}::{}_Ext",
+        sanitize_path(namespace),
+        sanitize_name(receiver)
+    ))
 }
 
 impl Transpile for HirConstructorCall {
@@ -601,6 +693,14 @@ impl Transpile for HirConstructorCall {
             .args
             .iter()
             .map(|argument| {
+                if argument.missing_ref_modifier {
+                    errors.error(TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "ref field '{}' requires the `ref` modifier during construction",
+                            argument.field
+                        ),
+                    });
+                }
                 let value = argument.value.transpile(ctx, errors);
                 let value = if argument.store_as_ref {
                     if let Some(field_ty) = constructor_field_type(self, &argument.field, ctx) {
@@ -636,13 +736,19 @@ fn constructor_field_type<'a>(
 
 impl Transpile for HirEnumConstructor {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        let target = self.target.transpile(ctx, errors);
+        let variant_target = if self.common_args.is_empty() {
+            target.clone()
+        } else {
+            crate::transpile_item::r#struct::enum_tag_name(&target)
+        };
         let access = format!(
             "{}::{}",
-            self.target.transpile(ctx, errors),
+            variant_target,
             self.case.as_str()
         );
 
-        if self.args.is_empty() {
+        let variant = if self.args.is_empty() {
             access
         } else if self.args.iter().all(|argument| argument.field.is_none()) {
             let args = self
@@ -671,8 +777,63 @@ impl Transpile for HirEnumConstructor {
                 })
                 .join(", ");
             format!("{access} {{ {args} }}")
+        };
+
+        if self.common_args.is_empty() {
+            return variant;
         }
+
+        let common_args = self
+            .common_args
+            .iter()
+            .map(|argument| {
+                if argument.missing_ref_modifier {
+                    errors.error(TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "ref field '{}' requires the `ref` modifier during construction",
+                            argument.field
+                        ),
+                    });
+                }
+                let value = argument.value.transpile(ctx, errors);
+                let value = if argument.store_as_ref {
+                    let field_ty = enum_common_field_type(self, &argument.field, ctx)
+                        .unwrap_or(&argument.value.ty);
+                    wrap_ref_storage_value(value, &argument.value, field_ty)
+                } else {
+                    value
+                };
+                format!("{}: {value}", sanitize_name(argument.field.as_str()))
+            })
+            .chain(std::iter::once(format!("__variant: {variant}")))
+            .join(", ");
+        format!("{target} {{ {common_args} }}")
     }
+}
+
+fn enum_common_field_type<'a>(
+    constructor: &HirEnumConstructor,
+    field: &Ident,
+    ctx: &'a Context<'_>,
+) -> Option<&'a TypeElement> {
+    let ty = ctx.lookup.resolve_type(&constructor.target)?;
+    let galvan_ast::TypeDecl::Enum(decl) = &ty.item else {
+        return None;
+    };
+    decl.common_fields
+        .iter()
+        .find(|member| member.ident == *field)
+        .map(|member| &member.r#type)
+}
+
+fn enum_has_common_fields(ctx: &Context<'_>, target: &TypeIdent) -> bool {
+    ctx.lookup
+        .resolve_type(target)
+        .and_then(|ty| match &ty.item {
+            galvan_ast::TypeDecl::Enum(decl) => Some(!decl.common_fields.is_empty()),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 impl Transpile for HirEnumAccess {
@@ -688,6 +849,7 @@ impl Transpile for HirEnumAccess {
 impl Transpile for HirLiteral {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self {
+            HirLiteral::Unit => "()".to_string(),
             HirLiteral::Boolean(value) => format!("{value}"),
             HirLiteral::Number(value) => value.clone(),
             HirLiteral::Char(value) => format!("'{}'", value.escape_default()),
@@ -736,7 +898,7 @@ impl Transpile for HirCollection {
                 dict_elements(items, ctx, errors)
             ),
             HirCollection::OrderedDict(items) => format!(
-                "::std::collections::BTreeMap::from([{}])",
+                "::galvan::std::IndexMap::from([{}])",
                 dict_elements(items, ctx, errors)
             ),
         }
@@ -775,6 +937,16 @@ impl Transpile for HirClosure {
     }
 }
 
+impl Transpile for HirUnary {
+    fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        match self.operator {
+            galvan_ast::UnaryOperator::LogicalNot => {
+                transpile!(ctx, errors, "!({})", self.operand)
+            }
+        }
+    }
+}
+
 impl Transpile for HirBinary<LogicalOperator> {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.operator {
@@ -793,6 +965,26 @@ impl Transpile for HirBinary<ArithmeticOperator> {
             ArithmeticOperator::Mul => transpile!(ctx, errors, "{} * {}", self.lhs, self.rhs),
             ArithmeticOperator::Div => transpile!(ctx, errors, "{} / {}", self.lhs, self.rhs),
             ArithmeticOperator::Rem => transpile!(ctx, errors, "{} % {}", self.lhs, self.rhs),
+            ArithmeticOperator::Exp
+                if self.lhs.ty.is_number()
+                    && matches!(
+                        &self.result_ty,
+                        TypeElement::Plain(result)
+                            if result.ident.as_str() != "__Number"
+                    ) =>
+            {
+                transpile!(
+                    ctx,
+                    errors,
+                    "({} as {}).pow({})",
+                    self.lhs,
+                    self.result_ty,
+                    self.rhs
+                )
+            }
+            ArithmeticOperator::Exp if self.lhs.ty.is_number() && self.result_ty.is_number() => {
+                transpile!(ctx, errors, "({} as i64).pow({})", self.lhs, self.rhs)
+            }
             ArithmeticOperator::Exp => transpile!(ctx, errors, "{}.pow({})", self.lhs, self.rhs),
         }
     }
@@ -813,8 +1005,21 @@ impl Transpile for HirBinary<BitwiseOperator> {
 impl Transpile for HirBinary<ComparisonOperator> {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.operator {
+            ComparisonOperator::Equal
+                if self.lhs.ownership == Ownership::Ref || self.rhs.ownership == Ownership::Ref =>
+            {
+                transpile_value_equality(&self.lhs, &self.rhs, ctx, errors)
+            }
             ComparisonOperator::Equal => {
                 transpile!(ctx, errors, "({}).eq(&{})", self.lhs, self.rhs)
+            }
+            ComparisonOperator::NotEqual
+                if self.lhs.ownership == Ownership::Ref || self.rhs.ownership == Ownership::Ref =>
+            {
+                format!(
+                    "!({})",
+                    transpile_value_equality(&self.lhs, &self.rhs, ctx, errors)
+                )
             }
             ComparisonOperator::NotEqual => {
                 transpile!(ctx, errors, "({}).ne(&{})", self.lhs, self.rhs)
@@ -833,7 +1038,7 @@ impl Transpile for HirBinary<ComparisonOperator> {
                 transpile!(
                     ctx,
                     errors,
-                    "::std::sync::Arc::ptr_eq({}, {})",
+                    "::std::sync::Arc::ptr_eq(&{}, &{})",
                     self.lhs,
                     self.rhs
                 )
@@ -842,12 +1047,36 @@ impl Transpile for HirBinary<ComparisonOperator> {
                 transpile!(
                     ctx,
                     errors,
-                    "!::std::sync::Arc::ptr_eq({}, {})",
+                    "!::std::sync::Arc::ptr_eq(&{}, &{})",
                     self.lhs,
                     self.rhs
                 )
             }
         }
+    }
+}
+
+fn transpile_value_equality(
+    lhs: &HirExpression,
+    rhs: &HirExpression,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let lhs_is_ref = lhs.ownership == Ownership::Ref;
+    let rhs_is_ref = rhs.ownership == Ownership::Ref;
+    let lhs = lhs.transpile(ctx, errors);
+    let rhs = rhs.transpile(ctx, errors);
+    match (lhs_is_ref, rhs_is_ref) {
+        (true, true) => {
+            format!("::galvan::std::__ref_value_eq(&({lhs}), &({rhs}))")
+        }
+        (true, false) => {
+            format!("{{ let __left = &({lhs}); (*__left.lock().unwrap()).eq(&({rhs})) }}")
+        }
+        (false, true) => {
+            format!("{{ let __right = &({rhs}); ({lhs}).eq(&*__right.lock().unwrap()) }}")
+        }
+        (false, false) => format!("({lhs}).eq(&({rhs}))"),
     }
 }
 
@@ -873,8 +1102,18 @@ impl Transpile for HirBinary<RangeOperator> {
                 )
             }
             RangeOperator::Interval => {
-                // start ..+ interval => start..(start + interval)
-                transpile!(ctx, errors, "{}..({} + {})", self.lhs, self.lhs, self.rhs)
+                // start ..+ interval => start..=(start + interval)
+                transpile!(ctx, errors, "{}..=({} + {})", self.lhs, self.lhs, self.rhs)
+            }
+            RangeOperator::Descending => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "(({} - {})..=({})).rev()",
+                    self.lhs,
+                    self.rhs,
+                    self.lhs
+                )
             }
         }
     }
@@ -884,12 +1123,30 @@ impl Transpile for HirBinary<CollectionOperator> {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
         match self.operator {
             CollectionOperator::Concat(kind) => transpile_concat(self, kind, ctx, errors),
-            CollectionOperator::Remove => {
-                errors.warning(
-                    "The remove operator '--' is not implemented yet".to_string(),
-                    None,
-                );
-                "/* unsupported remove operator */".to_string()
+            CollectionOperator::Remove(RemoveKind::Array) => transpile!(
+                ctx,
+                errors,
+                "{{ let mut result = ({}).to_owned(); for removed in ({}).iter() {{ if let Some(index) = result.iter().position(|item| item == removed) {{ result.remove(index); }} }} result }}",
+                self.lhs,
+                self.rhs
+            ),
+            CollectionOperator::Repeat(RepeatKind::Array | RepeatKind::String) => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "({}).repeat(({}) as usize)",
+                    self.lhs,
+                    self.rhs
+                )
+            }
+            CollectionOperator::Repeat(RepeatKind::Char) => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "({}).to_string().repeat(({}) as usize)",
+                    self.lhs,
+                    self.rhs
+                )
             }
             CollectionOperator::Contains => {
                 transpile!(ctx, errors, "({}).contains(&({}))", self.rhs, self.lhs)
@@ -967,13 +1224,34 @@ fn transpile_concat(
 
 impl Transpile for HirIndex {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
-        match &self.base.ty {
-            TypeElement::Array(_) => {
+        match (&self.base.ty, self.kind) {
+            (TypeElement::Array(_), IndexKind::Element) => {
                 transpile!(ctx, errors, "{}[{}]", self.base, self.index)
             }
-            TypeElement::Dictionary(_)
-            | TypeElement::OrderedDictionary(_)
-            | TypeElement::Set(_) => {
+            (TypeElement::Array(_), IndexKind::Slice) => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "{{ let __base = &({}); ({}).map(|__index| __base[__index as usize].to_owned()).collect::<::std::vec::Vec<_>>() }}",
+                    self.base,
+                    self.index
+                )
+            }
+            (TypeElement::Plain(plain), IndexKind::Slice) if plain.ident.as_str() == "String" => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "{{ let __chars = ({}).chars().collect::<::std::vec::Vec<_>>(); ({}).map(|__index| __chars[__index as usize]).collect::<::std::string::String>() }}",
+                    self.base,
+                    self.index
+                )
+            }
+            (
+                TypeElement::Dictionary(_)
+                | TypeElement::OrderedDictionary(_)
+                | TypeElement::Set(_),
+                IndexKind::Element,
+            ) => {
                 transpile!(ctx, errors, "{}[&{}]", self.base, self.index)
             }
             _ => {
@@ -1011,6 +1289,7 @@ mod tests {
                     Span::default(),
                 ),
                 store_as_ref: false,
+                missing_ref_modifier: false,
                 rust_arg_conversion: RustArgConversion::None,
             }],
         };
@@ -1019,6 +1298,72 @@ mod tests {
 
         assert_eq!(constructor.transpile(&ctx, &mut errors), "UserId(42)");
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn struct_constructors_reject_missing_ref_field_modifiers() {
+        let constructor = HirConstructorCall {
+            ident: TypeIdent::new("Owner"),
+            kind: HirConstructorKind::Struct,
+            args: vec![HirConstructorArg {
+                field: Ident::new("dog"),
+                value: HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("dog")),
+                    TypeElement::infer(),
+                    Ownership::UniqueOwned,
+                    Span::default(),
+                ),
+                store_as_ref: true,
+                missing_ref_modifier: true,
+                rust_arg_conversion: RustArgConversion::None,
+            }],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        constructor.transpile(&ctx, &mut errors);
+
+        assert!(errors.has_errors());
+        assert!(errors
+            .to_string()
+            .contains("ref field 'dog' requires the `ref` modifier during construction"));
+    }
+
+    #[test]
+    fn resolved_extension_methods_import_the_specific_trait() {
+        let method = HirMethodCall {
+            receiver: HirExpression::new(
+                HirExpressionKind::Variable(Ident::new("book")),
+                TypeElement::Plain(galvan_ast::BasicTypeItem {
+                    ident: TypeIdent::new("String"),
+                    span: Span::default(),
+                }),
+                Ownership::UniqueOwned,
+                Span::default(),
+            ),
+            receiver_modifier: None,
+            namespace: Some(UsePath {
+                segments: vec![Ident::new("reader")],
+                span: Span::default(),
+            }),
+            rust: Some(HirRustMethodCall {
+                rust_path: "<::std::string::String as ::reader::String_Ext>::read_and_judge".into(),
+                extension_trait: Some("::reader::String_Ext".into()),
+                return_conversion: RustReturnConversion::None,
+                receiver_conversion: RustArgConversion::SharedBorrow,
+                arg_conversions: Vec::new(),
+            }),
+            ident: Ident::new("read_and_judge"),
+            labels: Vec::new(),
+            args: Vec::new(),
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            method.transpile(&ctx, &mut errors),
+            "{ use ::reader::String_Ext; book.read_and_judge() }"
+        );
     }
 
     #[test]
@@ -1036,6 +1381,7 @@ mod tests {
                         Span::default(),
                     ),
                     store_as_ref: false,
+                    missing_ref_modifier: false,
                     rust_arg_conversion: RustArgConversion::BoxNew,
                 },
                 HirConstructorArg {
@@ -1047,6 +1393,7 @@ mod tests {
                         Span::default(),
                     ),
                     store_as_ref: false,
+                    missing_ref_modifier: false,
                     rust_arg_conversion: RustArgConversion::RcNew,
                 },
             ],
@@ -1075,6 +1422,7 @@ mod tests {
                     Span::default(),
                 ),
                 store_as_ref: false,
+                missing_ref_modifier: false,
                 rust_arg_conversion: RustArgConversion::BoxNew,
             }],
         };
@@ -1093,6 +1441,7 @@ mod tests {
         let constructor = HirEnumConstructor {
             target: TypeIdent::new("TicketEvent"),
             case: TypeIdent::new("Assigned"),
+            common_args: Vec::new(),
             args: vec![HirEnumConstructorArg {
                 field: None,
                 value: HirExpression::new(
@@ -1119,6 +1468,7 @@ mod tests {
         let constructor = HirEnumConstructor {
             target: TypeIdent::new("TicketEvent"),
             case: TypeIdent::new("Moved"),
+            common_args: Vec::new(),
             args: vec![HirEnumConstructorArg {
                 field: Some(Ident::new("owner")),
                 value: HirExpression::new(
@@ -1200,6 +1550,45 @@ mod tests {
         let mut errors = ErrorCollector::new();
 
         assert_eq!(call.transpile(&ctx, &mut errors), "::demo::takes_ref(&42)");
+        assert!(!errors.has_errors(), "expected no errors, got: {errors}");
+    }
+
+    #[test]
+    fn rust_calls_convert_fixed_array_borrows_at_the_boundary() {
+        let call = HirFunctionCall {
+            namespace: None,
+            rust: Some(HirRustCall {
+                rust_path: "::demo::reads_arrays".into(),
+                return_conversion: RustReturnConversion::None,
+                arg_conversions: vec![
+                    RustArgConversion::FixedArrayBorrow,
+                    RustArgConversion::FixedArrayMutBorrow,
+                ],
+            }),
+            ident: Ident::new("reads_arrays"),
+            labels: Vec::new(),
+            args: vec![
+                HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("values")),
+                    TypeElement::infer(),
+                    Ownership::Borrowed,
+                    Span::default(),
+                ),
+                HirExpression::new(
+                    HirExpressionKind::Variable(Ident::new("mutable_values")),
+                    TypeElement::infer(),
+                    Ownership::MutBorrowed,
+                    Span::default(),
+                ),
+            ],
+        };
+        let ctx = Context::new(Mapping::default());
+        let mut errors = ErrorCollector::new();
+
+        assert_eq!(
+            call.transpile(&ctx, &mut errors),
+            "::demo::reads_arrays(values.as_slice().try_into().expect(\"Galvan array length must match Rust array length\"), mutable_values.as_mut_slice().try_into().expect(\"Galvan array length must match Rust array length\"))"
+        );
         assert!(!errors.has_errors(), "expected no errors, got: {errors}");
     }
 

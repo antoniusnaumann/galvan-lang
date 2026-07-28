@@ -62,7 +62,28 @@ pub(super) fn function_is_unliftable(krate: &Crate, function: &Function) -> bool
         || function.header.is_async
         || function.sig.is_c_variadic
         || generics_contain_const_params(&function.generics)
-        || signature_contains_unliftable_type(krate, &function.sig)
+        || function
+            .sig
+            .inputs
+            .iter()
+            .any(|(_, ty)| param_type_contains_unliftable_type(krate, ty))
+        || function
+            .sig
+            .output
+            .as_ref()
+            .is_some_and(|ty| type_contains_unliftable_type(krate, ty))
+}
+
+fn param_type_contains_unliftable_type(krate: &Crate, ty: &Type) -> bool {
+    match ty {
+        Type::BorrowedRef {
+            type_: borrowed, ..
+        } => match borrowed.as_ref() {
+            Type::Array { type_: element, .. } => type_contains_unliftable_type(krate, element),
+            _ => type_contains_unliftable_type(krate, ty),
+        },
+        _ => type_contains_unliftable_type(krate, ty),
+    }
 }
 
 pub(super) fn signature_contains_unliftable_type(

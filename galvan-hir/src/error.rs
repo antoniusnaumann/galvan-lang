@@ -305,6 +305,11 @@ impl ErrorCollector {
         &self.diagnostics
     }
 
+    /// Consume the collector and return every diagnostic in emission order.
+    pub fn into_diagnostics(self) -> Vec<Diagnostic> {
+        self.diagnostics
+    }
+
     /// Get only errors
     pub fn errors(&self) -> impl Iterator<Item = &Diagnostic> {
         self.diagnostics

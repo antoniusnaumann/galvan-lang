@@ -74,10 +74,14 @@ impl Transpile for HirDeclaration {
 
         let identifier = sanitize_name(self.identifier.as_str());
 
-        let ty = self.ty.transpile(ctx, errors);
-        let ty = match self.modifier {
-            DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => format!(": {ty}"),
-            DeclModifier::Ref => format!(": {}", ref_storage_type(&self.ty, ty)),
+        let ty = if matches!(self.ty, TypeElement::Closure(_)) {
+            String::new()
+        } else {
+            let ty = self.ty.transpile(ctx, errors);
+            match self.modifier {
+                DeclModifier::Let | DeclModifier::Mut | DeclModifier::Move => format!(": {ty}"),
+                DeclModifier::Ref => format!(": {}", ref_storage_type(&self.ty, ty)),
+            }
         };
 
         match &self.value {

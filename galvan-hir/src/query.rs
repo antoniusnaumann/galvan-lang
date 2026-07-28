@@ -123,6 +123,10 @@ fn visit_expression<'m>(expression: &'m HirExpression, visit: &mut impl FnMut(&'
             visit_expression(&for_expression.iterable, visit);
             visit_block(&for_expression.body, visit);
         }
+        HirExpressionKind::While(while_expression) => {
+            visit_expression(&while_expression.condition, visit);
+            visit_block(&while_expression.body, visit);
+        }
         HirExpressionKind::Match(match_expression) => {
             visit_expression(&match_expression.scrutinee, visit);
             for arm in &match_expression.arms {
@@ -199,6 +203,7 @@ fn visit_expression<'m>(expression: &'m HirExpression, visit: &mut impl FnMut(&'
             }
         },
         HirExpressionKind::Closure(closure) => visit_block(&closure.body, visit),
+        HirExpressionKind::Unary(unary) => visit_expression(&unary.operand, visit),
         HirExpressionKind::Logical(binary) => visit_binary(binary, visit),
         HirExpressionKind::Arithmetic(binary) => visit_binary(binary, visit),
         HirExpressionKind::Bitwise(binary) => visit_binary(binary, visit),

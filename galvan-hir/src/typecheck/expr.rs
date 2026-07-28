@@ -1,6 +1,6 @@
 //! Expression lowering: turns AST expressions into typed [`HirExpression`]s.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use galvan_ast::{
     AssociatedConstant, AssociatedFunctionCall, AstNode, BasicTypeItem, Closure, ClosureParameter,
@@ -66,6 +66,32 @@ impl Checker<'_> {
                 self.lower_associated_rust_constant(constant, span)
             }
             ExpressionKind::FunctionCall(call) => self.lower_function_call(call, expected, span),
+            ExpressionKind::Unary(unary) => {
+                let operand =
+                    self.lower_expression(&unary.operand, &Expected::owned(TypeElement::bool()));
+                if !matches!(
+                    &operand.ty,
+                    TypeElement::Plain(plain) if plain.ident.as_str() == "Bool"
+                ) && !operand.ty.is_infer()
+                {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidOperationOnType {
+                            operation: "logical negation".to_string(),
+                            allowed_types: "Bool".to_string(),
+                        },
+                        Some(unary.operand.span.into()),
+                    );
+                }
+                HirExpression::new(
+                    HirExpressionKind::Unary(Box::new(HirUnary {
+                        operator: unary.operator,
+                        operand,
+                    })),
+                    TypeElement::bool(),
+                    Ownership::UniqueOwned,
+                    span,
+                )
+            }
             ExpressionKind::Infix(infix) => self.lower_infix(infix, expected, span),
             ExpressionKind::Postfix(postfix) => self.lower_postfix(postfix, span),
             ExpressionKind::Modified(modified) => {
@@ -83,12 +109,26 @@ impl Checker<'_> {
                 self.lower_constructor(constructor, expected, span)
             }
             ExpressionKind::EnumConstructor(constructor) => {
-                self.lower_enum_constructor(constructor, span)
+                self.lower_enum_constructor(constructor, expected, span)
             }
             ExpressionKind::EnumAccess(access) => {
                 self.index.reference_type(&access.target);
-                self.index
-                    .reference_member(&access.target, access.case.as_str(), access.case.span());
+                self.index.reference_member(
+                    &access.target,
+                    access.case.as_str(),
+                    access.case.span(),
+                );
+                if self.enum_has_common_fields(&access.target) {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!(
+                                "enum variant `{}::{}` requires common field arguments",
+                                access.target, access.case
+                            ),
+                        },
+                        Some(span.into()),
+                    );
+                }
                 HirExpression::new(
                     HirExpressionKind::EnumAccess(HirEnumAccess {
                         target: access.target.clone(),
@@ -234,7 +274,16 @@ impl Checker<'_> {
                 let interpolations = string
                     .interpolations
                     .iter()
-                    .map(|interpolation| self.lower_expression(interpolation, &Expected::free()))
+                    .map(|interpolation| {
+                        let lowered = self.lower_expression(interpolation, &Expected::free());
+                        if lowered.adjusted_ownership() == Ownership::Ref {
+                            lowered
+                                .adjusted(Adjustment::LockRef)
+                                .adjusted(Adjustment::Deref)
+                        } else {
+                            lowered
+                        }
+                    })
                     .collect();
                 (
                     HirLiteral::String(HirStringLiteral {
@@ -272,6 +321,7 @@ impl Checker<'_> {
                 "debug" => return self.lower_print(PrintKind::Debug, &call.arguments, span),
                 "if" => return self.lower_if(call, expected, None, span),
                 "for" => return self.lower_for(call, expected, span),
+                "while" => return self.lower_while(call, expected, span),
                 "try" => return self.lower_try(call, expected, None, span),
                 "assert" => return self.lower_assert(call, span),
                 name if BORROWED_ITERATOR_FNS.contains(&name) => {
@@ -359,14 +409,28 @@ impl Checker<'_> {
                     span,
                 });
             }
-            if let Some(function) = namespace.segments.first().and_then(|segment| {
-                self.rust_interop.function(
-                    Some(segment.as_str()),
-                    receiver_ident.as_ref(),
+            let namespace_segments = namespace
+                .segments
+                .iter()
+                .map(Ident::as_str)
+                .collect::<Vec<_>>();
+            let function = if receiver_ident.is_none() {
+                self.rust_interop.function_by_qualified_path(
+                    &namespace_segments,
                     ident,
                     &labels_ref,
                 )
-            }) {
+            } else {
+                namespace.segments.first().and_then(|segment| {
+                    self.rust_interop.function(
+                        Some(segment.as_str()),
+                        receiver_ident.as_ref(),
+                        ident,
+                        &labels_ref,
+                    )
+                })
+            };
+            if let Some(function) = function {
                 return self.lower_rust_call(RustCall {
                     function,
                     receiver,
@@ -502,7 +566,8 @@ impl Checker<'_> {
                     lookup.resolve_function(Some(receiver), ident, &receiver_label_refs)
                 }) {
                     self.index.reference_function(ident.span(), function);
-                    let signature = function.item.signature.clone();
+                    let mut signature = function.item.signature.clone();
+                    substitute_receiver_generics(&mut signature, &lowered_receiver.ty);
                     let receiver = self.lower_known_receiver(
                         lowered_receiver,
                         modifier,
@@ -533,7 +598,10 @@ impl Checker<'_> {
         match function {
             Some(function) => {
                 self.index.reference_function(ident.span(), function);
-                let signature = function.item.signature.clone();
+                let mut signature = function.item.signature.clone();
+                if let Some((receiver, _)) = &receiver {
+                    substitute_receiver_generics(&mut signature, &receiver.ty);
+                }
                 let args = self.lower_call_args(&signature.parameters.params, arguments);
                 let ty = signature.return_type.clone();
                 let kind = match receiver {
@@ -644,6 +712,7 @@ impl Checker<'_> {
                     namespace: call.namespace,
                     rust: Some(HirRustMethodCall {
                         rust_path: call.function.rust_path.clone(),
+                        extension_trait: call.function.extension_trait.clone(),
                         return_conversion: call.function.return_conversion,
                         receiver_conversion,
                         arg_conversions,
@@ -1186,6 +1255,9 @@ impl Checker<'_> {
         let scrutinee = self.lower_expression(&match_expression.scrutinee, &Expected::free());
         let scrutinee_ty = scrutinee.ty.clone();
         let target = self.match_target_type(&scrutinee_ty, span);
+        let uses_variant_tag = target
+            .as_ref()
+            .is_some_and(|target| self.enum_has_common_fields(target));
         let scrutinee = self.coerce(scrutinee, &Expected::owned(scrutinee_ty.clone()));
 
         let branch_expected = if expected.is_void() {
@@ -1212,7 +1284,11 @@ impl Checker<'_> {
         };
 
         HirExpression::new(
-            HirExpressionKind::Match(Box::new(HirMatch { scrutinee, arms })),
+            HirExpressionKind::Match(Box::new(HirMatch {
+                scrutinee,
+                arms,
+                uses_variant_tag,
+            })),
             ty,
             Ownership::UniqueOwned,
             span,
@@ -1537,6 +1613,16 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    fn enum_has_common_fields(&self, target: &TypeIdent) -> bool {
+        self.lookup
+            .resolve_type(target)
+            .and_then(|decl| match &decl.item {
+                TypeDecl::Enum(decl) => Some(!decl.common_fields.is_empty()),
+                _ => None,
+            })
+            .unwrap_or(false)
     }
 
     fn resolve_match_variant_fields(
@@ -2110,6 +2196,66 @@ impl Checker<'_> {
         )
     }
 
+    fn lower_while(
+        &mut self,
+        call: &FunctionCall,
+        expected: &Expected,
+        span: Span,
+    ) -> HirExpression {
+        if call.arguments.len() != 2 {
+            self.errors.error(TranspilerError::MissingArgument {
+                operation: "while".to_string(),
+                argument_type: "condition and body".to_string(),
+            });
+            return HirExpression::error("invalid while loop", span);
+        }
+        let Some(body) = closure_argument(&call.arguments[1]) else {
+            self.errors.error(TranspilerError::MissingArgument {
+                operation: "while".to_string(),
+                argument_type: "body expression".to_string(),
+            });
+            return HirExpression::error("invalid while body", span);
+        };
+        if !body.parameters.is_empty() {
+            self.errors.error(TranspilerError::InvalidSyntax {
+                message: "while loops do not bind closure parameters".to_string(),
+            });
+        }
+
+        let condition = self.lower_expression(
+            &call.arguments[0].expression,
+            &Expected::owned(TypeElement::bool()),
+        );
+        let collect = if expected.is_void() {
+            None
+        } else {
+            Some(iteration_type(&self.fn_return, &expected.ty))
+        };
+        let body_expected = match &collect {
+            Some(collect_ty) => Expected::owned(collect_ty.clone()),
+            None => Expected::void(),
+        };
+        let block = self.lower_block(&body.block.body, &body_expected);
+        let ty = match &collect {
+            Some(collect_ty) => TypeElement::Array(Box::new(galvan_ast::ArrayTypeItem {
+                elements: collect_ty.clone(),
+                span: Span::default(),
+            })),
+            None => TypeElement::void(),
+        };
+
+        HirExpression::new(
+            HirExpressionKind::While(Box::new(HirWhile {
+                condition,
+                body: block,
+                collect,
+            })),
+            ty,
+            Ownership::UniqueOwned,
+            span,
+        )
+    }
+
     fn for_iterable_info(&mut self, iterable_ty: &TypeElement, span: Span) -> ForIterableInfo {
         match iterable_ty {
             TypeElement::Array(array) => ForIterableInfo::single(array.elements.clone()),
@@ -2169,11 +2315,14 @@ impl Checker<'_> {
         iterable_info: &ForIterableInfo,
     ) -> HirForBinding {
         let deref = self.for_binding_deref(&binding_ty, borrows_iterable, iterable_info);
-        self.declare_local(let_variable(
-            ident.clone(),
-            binding_ty,
-            for_binding_ownership(deref),
-        ));
+        let ownership = if borrows_iterable {
+            for_binding_ownership(deref)
+        } else if self.is_copy(&binding_ty) {
+            Ownership::UniqueOwned
+        } else {
+            Ownership::SharedOwned
+        };
+        self.declare_local(let_variable(ident.clone(), binding_ty, ownership));
 
         HirForBinding { ident, deref }
     }
@@ -2290,18 +2439,6 @@ impl Checker<'_> {
         let mut lhs = self.lower_expression(lhs, &Expected::free());
         let mut rhs = self.lower_expression(rhs, &Expected::free());
 
-        // `ref` variables compare by their locked value
-        if lhs.adjusted_ownership() == Ownership::Ref {
-            lhs = lhs
-                .adjusted(Adjustment::LockRef)
-                .adjusted(Adjustment::Deref);
-        }
-        if rhs.adjusted_ownership() == Ownership::Ref {
-            rhs = rhs
-                .adjusted(Adjustment::LockRef)
-                .adjusted(Adjustment::Deref);
-        }
-
         let has_number =
             lhs.ty.is_number() || rhs.ty.is_number() || lhs.ty.is_infer() || rhs.ty.is_infer();
 
@@ -2375,6 +2512,7 @@ impl Checker<'_> {
                         lhs,
                         operator: operation.operator.clone(),
                         rhs,
+                        result_ty: TypeElement::bool(),
                     })),
                     TypeElement::bool(),
                     Ownership::UniqueOwned,
@@ -2397,10 +2535,18 @@ impl Checker<'_> {
                     }
                 }
 
-                let ty = if lhs.ty.is_infer() || lhs.ty.is_number() {
+                let inferred_ty = if lhs.ty.is_infer() || lhs.ty.is_number() {
                     rhs.ty.clone()
                 } else {
                     lhs.ty.clone()
+                };
+                let ty = if !expected.ty.is_infer()
+                    && !expected.ty.is_void()
+                    && types_compatible(&expected.ty, &inferred_ty)
+                {
+                    expected.ty.clone()
+                } else {
+                    inferred_ty
                 };
 
                 HirExpression::new(
@@ -2408,6 +2554,7 @@ impl Checker<'_> {
                         lhs,
                         operator: operation.operator.clone(),
                         rhs,
+                        result_ty: ty.clone(),
                     })),
                     ty,
                     Ownership::UniqueOwned,
@@ -2429,6 +2576,7 @@ impl Checker<'_> {
                         lhs,
                         operator: operation.operator.clone(),
                         rhs,
+                        result_ty: ty.clone(),
                     })),
                     ty,
                     Ownership::UniqueOwned,
@@ -2443,6 +2591,7 @@ impl Checker<'_> {
                         lhs,
                         operator: operation.operator.clone(),
                         rhs,
+                        result_ty: TypeElement::bool(),
                     })),
                     TypeElement::bool(),
                     Ownership::UniqueOwned,
@@ -2461,6 +2610,7 @@ impl Checker<'_> {
                         lhs,
                         operator: operation.operator.clone(),
                         rhs,
+                        result_ty: ty.clone(),
                     })),
                     ty,
                     Ownership::UniqueOwned,
@@ -2468,23 +2618,89 @@ impl Checker<'_> {
                 )
             }
             InfixExpression::Collection(operation) => {
-                let lhs = self.lower_expression(&operation.lhs, &Expected::free());
-                let rhs = self.lower_expression(&operation.rhs, &Expected::free());
-                let (operator, rhs) = match operation.operator {
+                let mut lhs = self.lower_expression(&operation.lhs, &Expected::free());
+                let mut rhs = self.lower_expression(&operation.rhs, &Expected::free());
+                let (operator, rhs, ty) = match operation.operator {
                     galvan_ast::CollectionOperator::Concat => {
                         let kind = concat_kind(&lhs.ty, &rhs.ty);
                         let rhs = self.coerce_concat_value(&lhs.ty, kind, rhs, false);
-                        (CollectionOperator::Concat(kind), rhs)
+                        (CollectionOperator::Concat(kind), rhs, lhs.ty.clone())
                     }
-                    galvan_ast::CollectionOperator::Remove => (CollectionOperator::Remove, rhs),
-                    galvan_ast::CollectionOperator::Contains => (CollectionOperator::Contains, rhs),
-                };
-                let ty = match operator {
-                    CollectionOperator::Concat(_) | CollectionOperator::Remove => lhs.ty.clone(),
-                    CollectionOperator::Contains => TypeElement::bool(),
+                    galvan_ast::CollectionOperator::Remove => {
+                        if !matches!((&lhs.ty, &rhs.ty), (TypeElement::Array(left), TypeElement::Array(right))
+                            if types_compatible(&left.elements, &right.elements))
+                        {
+                            self.errors.error_with_span(
+                                TranspilerError::InvalidOperation {
+                                    operation: "collection removal (`--`)".to_string(),
+                                    left: lhs.ty.to_string(),
+                                    right: rhs.ty.to_string(),
+                                },
+                                Some(span.into()),
+                            );
+                        }
+                        if lhs.adjusted_ownership() == Ownership::Ref {
+                            lhs = lhs.adjusted(Adjustment::LockRef);
+                        }
+                        if rhs.adjusted_ownership() == Ownership::Ref {
+                            rhs = rhs.adjusted(Adjustment::LockRef);
+                        }
+                        (
+                            CollectionOperator::Remove(RemoveKind::Array),
+                            rhs,
+                            lhs.ty.clone(),
+                        )
+                    }
+                    galvan_ast::CollectionOperator::Repeat => {
+                        let kind = match &lhs.ty {
+                            TypeElement::Array(_) => RepeatKind::Array,
+                            TypeElement::Plain(plain) if plain.ident.as_str() == "String" => {
+                                RepeatKind::String
+                            }
+                            TypeElement::Plain(plain) if plain.ident.as_str() == "Char" => {
+                                RepeatKind::Char
+                            }
+                            _ => {
+                                self.errors.error_with_span(
+                                    TranspilerError::InvalidOperationOnType {
+                                        operation: "repetition (`**`)".to_string(),
+                                        allowed_types: "arrays, strings, or characters".to_string(),
+                                    },
+                                    Some(operation.lhs.span.into()),
+                                );
+                                RepeatKind::Array
+                            }
+                        };
+                        if !is_integer_type(&rhs.ty) {
+                            self.errors.error_with_span(
+                                TranspilerError::InvalidOperationOnType {
+                                    operation: "repetition count".to_string(),
+                                    allowed_types: "integer types".to_string(),
+                                },
+                                Some(operation.rhs.span.into()),
+                            );
+                        }
+                        if lhs.adjusted_ownership() == Ownership::Ref {
+                            lhs = lhs.adjusted(Adjustment::LockRef);
+                        }
+                        let ty = if kind == RepeatKind::Char {
+                            plain_type(TypeIdent::new("String"))
+                        } else {
+                            lhs.ty.clone()
+                        };
+                        (CollectionOperator::Repeat(kind), rhs, ty)
+                    }
+                    galvan_ast::CollectionOperator::Contains => {
+                        (CollectionOperator::Contains, rhs, TypeElement::bool())
+                    }
                 };
                 HirExpression::new(
-                    HirExpressionKind::CollectionOp(Box::new(HirBinary { lhs, operator, rhs })),
+                    HirExpressionKind::CollectionOp(Box::new(HirBinary {
+                        lhs,
+                        operator,
+                        rhs,
+                        result_ty: ty.clone(),
+                    })),
                     ty,
                     Ownership::UniqueOwned,
                     span,
@@ -2521,30 +2737,14 @@ impl Checker<'_> {
                     )
                 }
                 ExpressionKind::Ident(field) => {
-                    let (receiver, locks_ref) = self.lower_access_base(&operation.lhs);
-                    let field_ty = self.field_type(&receiver.ty, field, span);
-                    if let Some(owner) = receiver_type_ident(&receiver.ty) {
-                        self.index
-                            .reference_member(&owner, field.as_str(), field.span());
-                    }
-                    let rust_return_conversion = receiver_type_ident(&receiver.ty)
-                        .map(|receiver| self.rust_interop.field_return_conversion(&receiver, field))
-                        .unwrap_or_default();
-                    let ownership = if self.is_copy(&field_ty) {
-                        Ownership::UniqueOwned
-                    } else if locks_ref {
-                        Ownership::SharedOwned
-                    } else {
-                        receiver.adjusted_ownership()
-                    };
-                    HirExpression::new(
-                        HirExpressionKind::FieldAccess(Box::new(HirFieldAccess {
-                            receiver,
-                            rust_return_conversion,
-                            field: field.clone(),
-                        })),
-                        field_ty,
-                        ownership,
+                    self.lower_field_access(&operation.lhs, field.clone(), span)
+                }
+                ExpressionKind::Literal(Literal::NumberLiteral(index))
+                    if index.value.parse::<usize>().is_ok() =>
+                {
+                    self.lower_field_access(
+                        &operation.lhs,
+                        Ident::spanned(&index.value, index.span),
                         span,
                     )
                 }
@@ -2562,6 +2762,43 @@ impl Checker<'_> {
             },
             MemberOperator::SafeCall => self.lower_safe_access(operation, span),
         }
+    }
+
+    fn lower_field_access(
+        &mut self,
+        receiver: &Expression,
+        field: Ident,
+        span: Span,
+    ) -> HirExpression {
+        let (receiver, locks_ref) = self.lower_access_base(receiver);
+        let field_ty = self.field_type(&receiver.ty, &field, span);
+        let is_ref_field = self.field_is_ref(&receiver.ty, &field);
+        if let Some(owner) = receiver_type_ident(&receiver.ty) {
+            self.index
+                .reference_member(&owner, field.as_str(), field.span());
+        }
+        let rust_return_conversion = receiver_type_ident(&receiver.ty)
+            .map(|receiver| self.rust_interop.field_return_conversion(&receiver, &field))
+            .unwrap_or_default();
+        let ownership = if is_ref_field {
+            Ownership::Ref
+        } else if self.is_copy(&field_ty) {
+            Ownership::UniqueOwned
+        } else if locks_ref {
+            Ownership::SharedOwned
+        } else {
+            receiver.adjusted_ownership()
+        };
+        HirExpression::new(
+            HirExpressionKind::FieldAccess(Box::new(HirFieldAccess {
+                receiver,
+                rust_return_conversion,
+                field,
+            })),
+            field_ty,
+            ownership,
+            span,
+        )
     }
 
     fn lower_associated_rust_constant(
@@ -2677,6 +2914,10 @@ impl Checker<'_> {
 
     /// Resolves the type of a field on a receiver type
     fn field_type(&mut self, receiver_ty: &TypeElement, field: &Ident, span: Span) -> TypeElement {
+        if let TypeElement::Tuple(tuple) = receiver_ty {
+            return self.tuple_field_type(&tuple.elements, field, span);
+        }
+
         let type_ident = match receiver_ty {
             TypeElement::Plain(basic) => basic.ident.clone(),
             TypeElement::Parametric(parametric) => parametric.base_type.clone(),
@@ -2708,29 +2949,46 @@ impl Checker<'_> {
                 .unwrap_or_else(|| {
                     self.errors.error_with_span(
                         TranspilerError::MemberAccessError {
-                            message: format!(
-                                "struct `{type_ident}` does not have field: {field}"
-                            ),
+                            message: format!("struct `{type_ident}` does not have field: {field}"),
                         },
                         Some(field.span().into()),
                     );
                     TypeElement::infer()
                 }),
-            TypeDecl::Tuple(_) => {
-                self.errors.warning(
-                    "Tuple member access not yet implemented".to_string(),
-                    Some(span.into()),
-                );
-                TypeElement::infer()
+            TypeDecl::Tuple(decl) => {
+                let elements = decl
+                    .members
+                    .iter()
+                    .map(|member| member.r#type.clone())
+                    .collect::<Vec<_>>();
+                self.tuple_field_type(&elements, field, span)
             }
-            TypeDecl::Enum(_) => {
-                self.errors.error_with_span(
-                    TranspilerError::EnumAccessError {
-                        message: "Enum cases are accessed with ::".to_string(),
-                    },
-                    Some(field.span().into()),
-                );
-                TypeElement::infer()
+            TypeDecl::Enum(decl) => {
+                if decl.common_fields.is_empty() {
+                    self.errors.error_with_span(
+                        TranspilerError::EnumAccessError {
+                            message: "Enum cases are accessed with ::".to_string(),
+                        },
+                        Some(field.span().into()),
+                    );
+                    TypeElement::infer()
+                } else {
+                    decl.common_fields
+                        .iter()
+                        .find(|member| member.ident == *field)
+                        .map(|member| member.r#type.clone())
+                        .unwrap_or_else(|| {
+                            self.errors.error_with_span(
+                                TranspilerError::MemberAccessError {
+                                    message: format!(
+                                        "enum `{type_ident}` does not have common field: {field}"
+                                    ),
+                                },
+                                Some(field.span().into()),
+                            );
+                            TypeElement::infer()
+                        })
+                }
             }
             // TODO: Handle inference for alias types
             TypeDecl::Alias(_) => TypeElement::infer(),
@@ -2744,6 +3002,54 @@ impl Checker<'_> {
                 TypeElement::infer()
             }
         }
+    }
+
+    fn tuple_field_type(
+        &mut self,
+        elements: &[TypeElement],
+        field: &Ident,
+        span: Span,
+    ) -> TypeElement {
+        let Ok(index) = field.as_str().parse::<usize>() else {
+            self.errors.error_with_span(
+                TranspilerError::MemberAccessError {
+                    message: format!("tuple fields are numeric, found `{field}`"),
+                },
+                Some(field.span().into()),
+            );
+            return TypeElement::infer();
+        };
+        elements.get(index).cloned().unwrap_or_else(|| {
+            self.errors.error_with_span(
+                TranspilerError::MemberAccessError {
+                    message: format!(
+                        "tuple with {} fields does not have field `{index}`",
+                        elements.len()
+                    ),
+                },
+                Some(span.into()),
+            );
+            TypeElement::infer()
+        })
+    }
+
+    fn field_is_ref(&self, receiver_ty: &TypeElement, field: &Ident) -> bool {
+        let type_ident = match receiver_ty {
+            TypeElement::Plain(basic) => &basic.ident,
+            TypeElement::Parametric(parametric) => &parametric.base_type,
+            _ => return false,
+        };
+        let Some(decl) = self.lookup.resolve_type(type_ident) else {
+            return false;
+        };
+        let members = match &decl.item {
+            TypeDecl::Struct(decl) => &decl.members,
+            TypeDecl::Enum(decl) => &decl.common_fields,
+            TypeDecl::Tuple(_) | TypeDecl::Alias(_) | TypeDecl::Empty(_) => return false,
+        };
+        members
+            .iter()
+            .any(|member| member.ident == *field && member.decl_modifier == Some(DeclModifier::Ref))
     }
 
     fn lower_safe_access(
@@ -2912,12 +3218,19 @@ impl Checker<'_> {
             PostfixExpression::AccessExpression(access) => {
                 let (base, locks_ref) = self.lower_access_base(&access.base);
                 let index = self.lower_expression(&access.index, &Expected::free());
-                let ty = match &base.ty {
-                    TypeElement::Array(array) => array.elements.clone(),
-                    TypeElement::Dictionary(dict) => dict.value.clone(),
-                    TypeElement::OrderedDictionary(dict) => dict.value.clone(),
-                    TypeElement::Set(set) => set.elements.clone(),
-                    TypeElement::Infer(_) => TypeElement::infer(),
+                let is_slice = expression_is_range(&index);
+                let (ty, kind) = match &base.ty {
+                    TypeElement::Array(_) if is_slice => (base.ty.clone(), IndexKind::Slice),
+                    TypeElement::Plain(plain) if is_slice && plain.ident.as_str() == "String" => {
+                        (base.ty.clone(), IndexKind::Slice)
+                    }
+                    TypeElement::Array(array) => (array.elements.clone(), IndexKind::Element),
+                    TypeElement::Dictionary(dict) => (dict.value.clone(), IndexKind::Element),
+                    TypeElement::OrderedDictionary(dict) => {
+                        (dict.value.clone(), IndexKind::Element)
+                    }
+                    TypeElement::Set(set) => (set.elements.clone(), IndexKind::Element),
+                    TypeElement::Infer(_) => (TypeElement::infer(), IndexKind::Element),
                     _ => {
                         self.errors.error_with_span(
                             TranspilerError::InvalidOperationOnType {
@@ -2926,10 +3239,10 @@ impl Checker<'_> {
                             },
                             Some(span.into()),
                         );
-                        TypeElement::infer()
+                        (TypeElement::infer(), IndexKind::Element)
                     }
                 };
-                let ownership = if self.is_copy(&ty) {
+                let ownership = if kind == IndexKind::Slice || self.is_copy(&ty) {
                     Ownership::UniqueOwned
                 } else if locks_ref {
                     Ownership::SharedOwned
@@ -2937,7 +3250,7 @@ impl Checker<'_> {
                     base.adjusted_ownership()
                 };
                 HirExpression::new(
-                    HirExpressionKind::Index(Box::new(HirIndex { base, index })),
+                    HirExpressionKind::Index(Box::new(HirIndex { base, index, kind })),
                     ty,
                     ownership,
                     span,
@@ -3085,7 +3398,8 @@ impl Checker<'_> {
             .iter()
             .map(|element| self.lower_expression(element, &Expected::free()))
             .collect();
-        let ty = self.unify_element_types(lowered.iter().map(|element| (&element.ty, element.span)));
+        let ty =
+            self.unify_element_types(lowered.iter().map(|element| (&element.ty, element.span)));
         (lowered, ty)
     }
 
@@ -3171,7 +3485,7 @@ impl Checker<'_> {
                             name.span(),
                         );
                     }
-                    let value = match provided {
+                    let (value, missing_ref_modifier) = match provided {
                         Some(argument) => {
                             let mut value = self.lower_modified_value(
                                 &argument.expression,
@@ -3179,17 +3493,25 @@ impl Checker<'_> {
                                 is_ref_field,
                                 "constructor arguments",
                             );
+                            let missing_ref_modifier = is_ref_field
+                                && argument.modifier != Some(DeclModifier::Ref)
+                                && value.adjusted_ownership() == Ownership::Ref;
                             if !is_ref_field || argument.modifier != Some(DeclModifier::Ref) {
                                 let expected = Expected::owned(member.r#type.clone());
                                 value = self.coerce(value, &expected);
                             }
-                            value
+                            collect_generic_constructor_arg_types(
+                                &member.r#type,
+                                &value.ty,
+                                &mut inferred_type_args,
+                            );
+                            (value, missing_ref_modifier)
                         }
                         None => match &member.default_value {
                             Some(default) => {
                                 let value = self.lower_expression(default, &Expected::free());
                                 let expected = Expected::owned(member.r#type.clone());
-                                self.coerce(value, &expected)
+                                (self.coerce(value, &expected), false)
                             }
                             None => {
                                 self.errors.error_with_span(
@@ -3200,7 +3522,7 @@ impl Checker<'_> {
                                     },
                                     Some(span.into()),
                                 );
-                                HirExpression::error("missing field", span)
+                                (HirExpression::error("missing field", span), false)
                             }
                         },
                     };
@@ -3208,6 +3530,7 @@ impl Checker<'_> {
                         field: member.ident.clone(),
                         value,
                         store_as_ref: is_ref_field,
+                        missing_ref_modifier,
                         rust_arg_conversion: self
                             .rust_interop
                             .field_arg_conversion(&decl.ident, &member.ident),
@@ -3254,6 +3577,7 @@ impl Checker<'_> {
                             field: tuple_field_name(argument, idx),
                             value,
                             store_as_ref: false,
+                            missing_ref_modifier: false,
                             rust_arg_conversion: rust_arg_conversions
                                 .get(idx)
                                 .copied()
@@ -3279,6 +3603,7 @@ impl Checker<'_> {
                         field: tuple_field_name(argument, idx),
                         value,
                         store_as_ref: false,
+                        missing_ref_modifier: false,
                         rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
                     }
                 })
@@ -3321,6 +3646,7 @@ impl Checker<'_> {
     fn lower_enum_constructor(
         &mut self,
         constructor: &EnumConstructor,
+        expected: &Expected,
         span: Span,
     ) -> HirExpression {
         self.index.reference_type(&constructor.enum_access.target);
@@ -3329,39 +3655,311 @@ impl Checker<'_> {
             constructor.enum_access.case.as_str(),
             constructor.enum_access.case.span(),
         );
-        let args = constructor
+        let Some(type_decl) = self.lookup.resolve_type(&constructor.enum_access.target) else {
+            self.errors.error_with_span(
+                TranspilerError::UnknownType {
+                    name: constructor.enum_access.target.to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown enum type", span);
+        };
+        let TypeDecl::Enum(enum_decl) = &type_decl.item else {
+            self.errors.error_with_span(
+                TranspilerError::InvalidOperationOnType {
+                    operation: "enum construction".to_string(),
+                    allowed_types: "enum types".to_string(),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("not an enum type", span);
+        };
+        let Some(variant) = enum_decl
+            .members
+            .iter()
+            .find(|member| member.ident == constructor.enum_access.case)
+        else {
+            self.errors.error_with_span(
+                TranspilerError::EnumAccessError {
+                    message: format!(
+                        "Enum `{}` does not have variant `{}`",
+                        constructor.enum_access.target, constructor.enum_access.case
+                    ),
+                },
+                Some(span.into()),
+            );
+            return HirExpression::error("unknown enum variant", span);
+        };
+
+        let common_names = enum_decl
+            .common_fields
+            .iter()
+            .map(|field| field.ident.as_str())
+            .collect::<HashSet<_>>();
+        for field in &variant.fields {
+            if field
+                .name
+                .as_ref()
+                .is_some_and(|name| common_names.contains(name.as_str()))
+            {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "enum variant field `{}` conflicts with a common field",
+                            field.name.as_ref().expect("checked above")
+                        ),
+                    },
+                    Some(field.span.into()),
+                );
+            }
+        }
+
+        let mut inferred_type_args = Vec::new();
+        let mut common_args = Vec::with_capacity(enum_decl.common_fields.len());
+        for field in &enum_decl.common_fields {
+            let matching = constructor
+                .arguments
+                .iter()
+                .filter(|argument| argument.field_name.as_ref() == Some(&field.ident))
+                .collect::<Vec<_>>();
+            if matching.len() > 1 {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!("duplicate enum constructor field `{}`", field.ident),
+                    },
+                    Some(span.into()),
+                );
+            }
+            let is_ref_field = field.decl_modifier == Some(DeclModifier::Ref);
+            let (value, missing_ref_modifier) = match matching.first().copied() {
+                Some(argument) => {
+                    self.index.reference_member(
+                        &constructor.enum_access.target,
+                        field.ident.as_str(),
+                        field.ident.span(),
+                    );
+                    let mut value = self.lower_modified_value(
+                        &argument.expression,
+                        argument.modifier,
+                        is_ref_field,
+                        "enum common field arguments",
+                    );
+                    let missing_ref_modifier = is_ref_field
+                        && argument.modifier != Some(DeclModifier::Ref)
+                        && value.adjusted_ownership() == Ownership::Ref;
+                    if !is_ref_field || argument.modifier != Some(DeclModifier::Ref) {
+                        value = self.coerce(value, &Expected::owned(field.r#type.clone()));
+                    }
+                    collect_generic_constructor_arg_types(
+                        &field.r#type,
+                        &value.ty,
+                        &mut inferred_type_args,
+                    );
+                    (value, missing_ref_modifier)
+                }
+                None => match &field.default_value {
+                    Some(default) => {
+                        let value = self.lower_expression(default, &Expected::free());
+                        (
+                            self.coerce(value, &Expected::owned(field.r#type.clone())),
+                            false,
+                        )
+                    }
+                    None => {
+                        self.errors.error_with_span(
+                            TranspilerError::InvalidSyntax {
+                                message: format!(
+                                    "missing common field `{}` in `{}::{}` constructor",
+                                    field.ident,
+                                    constructor.enum_access.target,
+                                    constructor.enum_access.case
+                                ),
+                            },
+                            Some(span.into()),
+                        );
+                        (HirExpression::error("missing common field", span), false)
+                    }
+                },
+            };
+            common_args.push(HirConstructorArg {
+                field: field.ident.clone(),
+                value,
+                store_as_ref: is_ref_field,
+                missing_ref_modifier,
+                rust_arg_conversion: galvan_rustdoc::RustArgConversion::None,
+            });
+        }
+
+        let named_variant = variant.fields.iter().all(|field| field.name.is_some());
+        let tuple_variant = variant.fields.iter().all(|field| field.name.is_none());
+        if !named_variant && !tuple_variant {
+            self.errors.error_with_span(
+                TranspilerError::InvalidSyntax {
+                    message: "Cannot mix named and unnamed fields in enum variant".to_string(),
+                },
+                Some(variant.span.into()),
+            );
+        }
+
+        let variant_arguments = constructor
             .arguments
             .iter()
-            .enumerate()
-            .map(|(idx, argument)| {
-                let value = self.lower_expression(&argument.expression, &Expected::free());
-                let value = match (&argument.field_name, &argument.modifier) {
-                    (None, Some(DeclModifier::Mut)) => value.adjusted(Adjustment::MutBorrow),
-                    (None, Some(DeclModifier::Ref)) => {
-                        self.lower_ref_value(value, argument.expression.span)
-                    }
-                    _ => value,
+            .filter(|argument| {
+                !argument
+                    .field_name
+                    .as_ref()
+                    .is_some_and(|name| common_names.contains(name.as_str()))
+            })
+            .collect::<Vec<_>>();
+
+        let mut args = Vec::with_capacity(variant.fields.len());
+        if named_variant {
+            for (idx, field) in variant.fields.iter().enumerate() {
+                let field_name = field.name.as_ref().expect("named variant");
+                let matching = variant_arguments
+                    .iter()
+                    .copied()
+                    .filter(|argument| argument.field_name.as_ref() == Some(field_name))
+                    .collect::<Vec<_>>();
+                if matching.len() > 1 {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!(
+                                "duplicate enum constructor field `{field_name}`"
+                            ),
+                        },
+                        Some(span.into()),
+                    );
+                }
+                let value = if let Some(argument) = matching.first().copied() {
+                    let value = self.lower_modified_value(
+                        &argument.expression,
+                        argument.modifier,
+                        false,
+                        "enum variant arguments",
+                    );
+                    self.coerce(value, &Expected::owned(field.r#type.clone()))
+                } else {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!(
+                                "missing variant field `{field_name}` in `{}::{}` constructor",
+                                constructor.enum_access.target, constructor.enum_access.case
+                            ),
+                        },
+                        Some(span.into()),
+                    );
+                    HirExpression::error("missing variant field", span)
                 };
-                HirEnumConstructorArg {
-                    field: argument.field_name.clone(),
+                collect_generic_constructor_arg_types(
+                    &field.r#type,
+                    &value.ty,
+                    &mut inferred_type_args,
+                );
+                args.push(HirEnumConstructorArg {
+                    field: Some(field_name.clone()),
                     value,
                     rust_arg_conversion: self.rust_interop.enum_variant_arg_conversion(
                         &constructor.enum_access.target,
                         &constructor.enum_access.case,
                         idx,
-                        argument.field_name.as_ref(),
+                        Some(field_name),
                     ),
+                });
+            }
+        } else {
+            let positional = variant_arguments
+                .iter()
+                .copied()
+                .filter(|argument| argument.field_name.is_none())
+                .collect::<Vec<_>>();
+            if positional.len() != variant.fields.len() {
+                self.errors.error_with_span(
+                    TranspilerError::ArgumentCountMismatch {
+                        name: format!(
+                            "{}::{}()",
+                            constructor.enum_access.target, constructor.enum_access.case
+                        ),
+                        expected: variant.fields.len() + enum_decl.common_fields.len(),
+                        found: constructor.arguments.len(),
+                    },
+                    Some(span.into()),
+                );
+            }
+            for (idx, field) in variant.fields.iter().enumerate() {
+                let value = positional.get(idx).map_or_else(
+                    || HirExpression::error("missing variant argument", span),
+                    |argument| {
+                        let value = self.lower_modified_value(
+                            &argument.expression,
+                            argument.modifier,
+                            false,
+                            "enum variant arguments",
+                        );
+                        self.coerce(value, &Expected::owned(field.r#type.clone()))
+                    },
+                );
+                collect_generic_constructor_arg_types(
+                    &field.r#type,
+                    &value.ty,
+                    &mut inferred_type_args,
+                );
+                args.push(HirEnumConstructorArg {
+                    field: None,
+                    value,
+                    rust_arg_conversion: self.rust_interop.enum_variant_arg_conversion(
+                        &constructor.enum_access.target,
+                        &constructor.enum_access.case,
+                        idx,
+                        None,
+                    ),
+                });
+            }
+        }
+
+        let known_names = enum_decl
+            .common_fields
+            .iter()
+            .map(|field| field.ident.as_str())
+            .chain(
+                variant
+                    .fields
+                    .iter()
+                    .filter_map(|field| field.name.as_ref().map(Ident::as_str)),
+            )
+            .collect::<HashSet<_>>();
+        for argument in &constructor.arguments {
+            if let Some(name) = &argument.field_name {
+                if !known_names.contains(name.as_str()) {
+                    self.errors.error_with_span(
+                        TranspilerError::InvalidSyntax {
+                            message: format!("unknown enum constructor field `{name}`"),
+                        },
+                        Some(argument.expression.span.into()),
+                    );
                 }
-            })
-            .collect();
+            } else if named_variant {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: "named enum variants require named arguments".to_string(),
+                    },
+                    Some(argument.expression.span.into()),
+                );
+            }
+        }
 
         HirExpression::new(
             HirExpressionKind::EnumConstructor(HirEnumConstructor {
                 target: constructor.enum_access.target.clone(),
                 case: constructor.enum_access.case.clone(),
+                common_args,
                 args,
             }),
-            plain_type(constructor.enum_access.target.clone()),
+            constructor_result_type(
+                &constructor.enum_access.target,
+                expected,
+                inferred_type_args,
+            ),
             Ownership::UniqueOwned,
             span,
         )
@@ -3588,6 +4186,21 @@ fn substitute_signature_generics(
         param.param_type.substitute_generics(substitutions);
     }
     signature.return_type.substitute_generics(substitutions);
+}
+
+fn substitute_receiver_generics(signature: &mut FnSignature, receiver_ty: &TypeElement) {
+    let Some(receiver) = signature.receiver() else {
+        return;
+    };
+    let mut substitutions = HashMap::new();
+    let mut conflicts = Vec::new();
+    collect_rust_call_generic_bindings(
+        &receiver.param_type,
+        receiver_ty,
+        &mut substitutions,
+        &mut conflicts,
+    );
+    substitute_signature_generics(signature, &substitutions);
 }
 
 /// The field identifier stored for a tuple-struct constructor argument. Tuple
@@ -3897,7 +4510,7 @@ fn are_compatible_numeric_types(a: &TypeIdent, b: &TypeIdent) -> bool {
         "I8", "I16", "I32", "I64", "I128", "ISize", "Int", "U8", "U16", "U32", "U64", "U128",
         "USize", "UInt",
     ];
-    let float_types = ["Float", "Double"];
+    let float_types = ["Float", "F32", "Double", "F64"];
 
     let a = a.as_str();
     let b = b.as_str();
@@ -3906,6 +4519,38 @@ fn are_compatible_numeric_types(a: &TypeIdent, b: &TypeIdent) -> bool {
         || (float_types.contains(&a) && float_types.contains(&b))
         || a.starts_with("__")
         || b.starts_with("__")
+}
+
+fn is_integer_type(ty: &TypeElement) -> bool {
+    let TypeElement::Plain(plain) = ty else {
+        return false;
+    };
+    matches!(
+        plain.ident.as_str(),
+        "__Number"
+            | "I8"
+            | "I16"
+            | "I32"
+            | "I64"
+            | "I128"
+            | "ISize"
+            | "Int"
+            | "U8"
+            | "U16"
+            | "U32"
+            | "U64"
+            | "U128"
+            | "USize"
+            | "UInt"
+    )
+}
+
+fn expression_is_range(expression: &HirExpression) -> bool {
+    match &expression.kind {
+        HirExpressionKind::Range(_) => true,
+        HirExpressionKind::Group(inner) => expression_is_range(inner),
+        _ => false,
+    }
 }
 
 fn modifier_name(modifier: DeclModifier) -> &'static str {

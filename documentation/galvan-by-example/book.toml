@@ -1,0 +1,15 @@
+[book]
+title = "Galvan by Example"
+authors = ["Antonius Naumann"]
+description = "Learn Galvan with a collection of small examples that show the language and the Rust code it generates"
+src = "src"
+language = "en"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/antoniusnaumann/galvan-lang"
+additional-js = ["theme/galvan-highlight.js"]
+
+[output.html.playground]
+runnable = false

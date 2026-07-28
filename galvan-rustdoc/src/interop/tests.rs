@@ -91,6 +91,7 @@ fn canonical_path(name: &str) -> &str {
         "HashSet" => "std::collections::hash::set::HashSet",
         "BTreeMap" => "alloc::collections::btree::map::BTreeMap",
         "BTreeSet" => "alloc::collections::btree::set::BTreeSet",
+        "IndexMap" => "indexmap::map::IndexMap",
         "Box" => "alloc::boxed::Box",
         "Rc" => "alloc::rc::Rc",
         "Arc" => "alloc::sync::Arc",
@@ -786,6 +787,62 @@ fn use_declarations_import_functions_unqualified() {
 }
 
 #[test]
+fn rustdoc_demangles_galvan_overload_labels() {
+    let mut interop = RustInterop::empty();
+    interop.add_crate(
+        "demo",
+        &crate_(vec![(
+            "pick__plus__fallback",
+            public_function(
+                "pick__plus__fallback",
+                vec![
+                    ("value", primitive("u64")),
+                    ("increment", primitive("u64")),
+                    ("fallback", primitive("u64")),
+                ],
+                primitive("u64"),
+            ),
+        )]),
+    );
+
+    let function = interop
+        .function(Some("demo"), None, &ident("pick"), &["plus", "fallback"])
+        .expect("demangled function should be callable with labels");
+    assert_eq!(function.rust_path.as_ref(), "::demo::pick__plus__fallback");
+    assert_eq!(function.decl.item.signature.identifier, ident("pick"));
+    assert_eq!(
+        function
+            .decl
+            .item
+            .signature
+            .parameters
+            .params
+            .iter()
+            .map(|param| param.call_label().map(Ident::as_str))
+            .collect::<Vec<_>>(),
+        vec![None, Some("plus"), Some("fallback")]
+    );
+}
+
+#[test]
+fn rustdoc_skips_overload_names_with_more_labels_than_parameters() {
+    let mut interop = RustInterop::empty();
+    interop.add_crate(
+        "demo",
+        &crate_(vec![(
+            "pick__one__two",
+            public_function(
+                "pick__one__two",
+                vec![("value", primitive("u64"))],
+                primitive("u64"),
+            ),
+        )]),
+    );
+
+    assert!(interop.functions.is_empty());
+}
+
+#[test]
 fn path_use_declarations_import_only_the_named_item() {
     let uses = [use_decl(&["serde_json", "to_string"])];
     let mut interop = RustInterop::empty();
@@ -871,6 +928,47 @@ fn nested_path_use_declarations_match_complete_rust_paths() {
             .rust_path
             .as_ref(),
         "::demo::http::LIMIT"
+    );
+}
+
+#[test]
+fn qualified_function_lookup_distinguishes_nested_modules() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_item_at_path(
+                "parse",
+                &["demo", "http", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+        (
+            "1",
+            public_item_at_path(
+                "parse",
+                &["demo", "db", "parse"],
+                function_item(vec![], Some(primitive("u64"))),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    assert_eq!(
+        interop
+            .function_by_qualified_path(&["demo", "http"], &ident("parse"), &[])
+            .expect("http function should resolve")
+            .rust_path
+            .as_ref(),
+        "::demo::http::parse"
+    );
+    assert_eq!(
+        interop
+            .function_by_qualified_path(&["demo", "db"], &ident("parse"), &[])
+            .expect("db function should resolve")
+            .rust_path
+            .as_ref(),
+        "::demo::db::parse"
     );
 }
 
@@ -1295,8 +1393,8 @@ fn rustdoc_lifts_common_collections_and_results() {
 
     let ordered_map = lift_type(
         &mut interop,
-        "std",
-        &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
+        "indexmap",
+        &resolved("IndexMap", vec![primitive("str"), primitive("u64")]),
     )
     .unwrap();
     let TypeElement::OrderedDictionary(ordered_map) = ordered_map else {
@@ -1304,6 +1402,18 @@ fn rustdoc_lifts_common_collections_and_results() {
     };
     assert_eq!(ordered_map.key, string_type());
     assert_eq!(ordered_map.value, u64_type());
+
+    let tree_map = lift_type(
+        &mut interop,
+        "std",
+        &resolved("BTreeMap", vec![primitive("str"), primitive("u64")]),
+    )
+    .unwrap();
+    let TypeElement::Parametric(tree_map) = tree_map else {
+        panic!("expected nominal BTreeMap, got {tree_map:?}");
+    };
+    assert_eq!(tree_map.base_type, TypeIdent::new("BTreeMap"));
+    assert_eq!(tree_map.type_args, vec![string_type(), u64_type()]);
 
     let set = lift_type(
         &mut interop,
@@ -1823,6 +1933,54 @@ fn rustdoc_preserves_shared_borrow_parameter_conversions() {
             elements: u64_type(),
             span: Span::default()
         }))
+    );
+}
+
+#[test]
+fn rustdoc_lifts_borrowed_fixed_array_parameters() {
+    let krate = crate_(vec![
+        (
+            "0",
+            public_function(
+                "reads_array",
+                vec![("values", borrowed(array(primitive("u64"))))],
+                primitive("bool"),
+            ),
+        ),
+        (
+            "1",
+            public_function(
+                "updates_array",
+                vec![("values", mut_borrowed(array(primitive("u64"))))],
+                primitive("bool"),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    let reads = interop
+        .function(Some("demo"), None, &ident("reads_array"), &[])
+        .expect("shared fixed-array parameter should lift");
+    assert_eq!(
+        reads.arg_conversions,
+        vec![RustArgConversion::FixedArrayBorrow]
+    );
+    assert!(matches!(
+        reads.decl.item.signature.parameters.params[0].param_type,
+        TypeElement::Array(_)
+    ));
+
+    let updates = interop
+        .function(Some("demo"), None, &ident("updates_array"), &[])
+        .expect("mutable fixed-array parameter should lift");
+    assert_eq!(
+        updates.arg_conversions,
+        vec![RustArgConversion::FixedArrayMutBorrow]
+    );
+    assert_eq!(
+        updates.decl.item.signature.parameters.params[0].decl_modifier,
+        Some(galvan_ast::DeclModifier::Mut)
     );
 }
 
@@ -3679,12 +3837,12 @@ fn rustdoc_does_not_import_unsafe_associated_functions() {
 fn rustdoc_imports_trait_impl_methods() {
     let krate = crate_(vec![
         ("0", public_item("Ticket", struct_plain(&[]))),
-        ("1", public_item("DisplayName", trait_(&[]))),
+        ("1", public_item("Ticket_Ext", trait_(&[]))),
         (
             "2",
             public_impl(
                 resolved_with_string_path("crate::Ticket", vec![]),
-                Some(resolved_with_string_path("$crate::DisplayName", vec![])),
+                Some(resolved_with_string_path("$crate::Ticket_Ext", vec![])),
                 &["3"],
             ),
         ),
@@ -3716,10 +3874,55 @@ fn rustdoc_imports_trait_impl_methods() {
         .expect("expected imported trait method");
     assert_eq!(
         function.rust_path.as_ref(),
-        "<::demo::Ticket as ::demo::DisplayName>::display_name"
+        "<::demo::Ticket as ::demo::Ticket_Ext>::display_name"
+    );
+    assert_eq!(
+        function.extension_trait.as_deref(),
+        Some("::demo::Ticket_Ext")
     );
     let receiver = function.decl.item.signature.receiver().unwrap();
     assert_eq!(receiver.decl_modifier, None);
     assert_eq!(receiver.param_type, plain_type(TypeIdent::new("Ticket")));
     assert_eq!(function.decl.item.signature.return_type, string_type());
+}
+
+#[test]
+fn rustdoc_does_not_surface_other_trait_impls_as_extension_methods() {
+    let krate = crate_(vec![
+        ("0", public_item("Ticket", struct_plain(&[]))),
+        ("1", public_item("DisplayName", trait_(&[]))),
+        (
+            "2",
+            public_impl(
+                resolved_with_string_path("crate::Ticket", vec![]),
+                Some(resolved_with_string_path("$crate::DisplayName", vec![])),
+                &["3"],
+            ),
+        ),
+        (
+            "3",
+            public_item_at_path(
+                "display_name",
+                &["demo", "DisplayName"],
+                function_item(
+                    vec![(
+                        "self",
+                        borrowed(resolved_with_string_path("crate::Ticket", vec![])),
+                    )],
+                    Some(primitive("str")),
+                ),
+            ),
+        ),
+    ]);
+    let mut interop = RustInterop::empty();
+    interop.add_crate("demo", &krate);
+
+    assert!(interop
+        .function(
+            Some("demo"),
+            Some(&TypeIdent::new("Ticket")),
+            &ident("display_name"),
+            &[],
+        )
+        .is_none());
 }

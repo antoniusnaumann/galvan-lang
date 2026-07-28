@@ -274,6 +274,7 @@ impl ReadCursor for CollectionOperator {
         let op = match cursor.kind()? {
             "concat" => Self::Concat,
             "remove" => Self::Remove,
+            "repeat" => Self::Repeat,
             "contains" => Self::Contains,
             unknown => unreachable!("Unknown collection operator: {unknown}"),
         };
@@ -313,6 +314,7 @@ impl ReadCursor for RangeOperator {
             "exclusive_range" => Self::Exclusive,
             "tolerance_range" => Self::Tolerance,
             "interval_range" => Self::Interval,
+            "descending_range" => Self::Descending,
             unknown => unreachable!("Unknown range operator: {unknown}"),
         };
 

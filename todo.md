@@ -25,51 +25,43 @@ commands remain subcommands.
     falling back to unknown-signature lowering
 
 - **Missing operator implementations**
-  - Remove operator `--` for collections (codegen/expression.rs renders a
-    placeholder comment)
   - Custom infix operators (typecheck/expr.rs `lower_infix`)
-  - Add unary expression support for logical and bitwise not
+  - Add unary bitwise not
 
 - **Parameter modifiers in calls** (galvan-hir/src/typecheck/expr.rs `lower_call_args`)
   - Arguments for `let`-modified parameters are not implemented
 
 ## High Priority - Language Completeness
 
-- **Iteration** (galvan-hir/src/typecheck/expr.rs `lower_for`)
-  - Tuple iteration
-
 - **`ref` variables**
   - Safe-call (`?.`) on ref variables (typecheck/expr.rs `lower_safe_access`)
-  - Fix generated derives for structs with `ref` fields (`Arc<Mutex<T>>`
-    does not implement `PartialEq`)
 
 - **Tuples**
-  - Tuple member access (typecheck/expr.rs `field_type`)
+  - Named tuple fields
 
 ## Medium Priority - Error Handling & Validation
 
 - Validate struct field modifier validity (transpile_item/struct.rs)
+- Report duplicate common/variant enum field names at the declaration even
+  when no constructor references the conflicting variant
 - Add proper error handling for invalid member function visibility
   (galvan-transpiler/src/lib.rs `transpile_member_functions`)
 - Group extension impl blocks by where-clause constraints instead of taking
   the first function's where clause (galvan-transpiler/src/lib.rs)
-- Require an explicit `throw` keyword instead of auto-wrapping error values
-  in `Err` (galvan-hir/src/typecheck/coerce.rs)
-- Output collected warnings from `exec::transpile_dir`
-  (galvan-transpiler/src/exec.rs)
 
 ## Low Priority - Language Polish
 
 - **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)
-  - Implement fully qualified name lookup / module paths
+  - Implement fully qualified type name lookup / module paths
+
+- Define and implement single-character string indexing; range slicing already
+  counts Unicode characters, while scalar indexing is currently rejected.
 
 - **Warning cleanup**
   - Silence or handle unused-parameter warnings in the tree-sitter external
     scanner stub (tree-sitter-galvan/src/scanner.c)
-  - Investigate the generic-container type mismatch warning emitted while
-    building `galvan-test`
-  - Route transpiler `ErrorCollector` diagnostics through a caller-owned sink
-    instead of printing Cargo messages from the public transpilation path
+  - Keep every non-aspirational Galvan by Example block warning-free and
+    compilable through the generated-crate conformance check
 
 - **Closure types** (galvan-transpiler/src/transpile_item/type.rs)
   - Let users declare `Fn` instead of `FnMut` closures, e.g. for
@@ -79,6 +71,9 @@ commands remain subcommands.
   - Add const/async keyword support
   - Replace annotation placeholder with actual implementation
   - Add implicit closure parameter rules
+  - Disambiguate paren-free calls whose first argument starts with `[` or `!`
+    from index access or postfix error propagation; for example,
+    `assert [1] == [1]` and `assert !false` currently require parentheses
 
 ## Future Enhancements
 
@@ -91,7 +86,6 @@ commands remain subcommands.
   - Evaluate auto-detecting compatible installed nightly toolchains now that
     the golden rustdoc fixture guards schema compatibility.
 - Extend Rust interop beyond rustdoc-backed free functions:
-  - Typecheck namespaced method calls such as `value.crate_name::method()`
   - Resolve external-target function and constant re-exports from rustdoc JSON;
     external type re-exports without target metadata are imported as empty types
   - Support qualified external Rust constant paths
@@ -110,7 +104,7 @@ commands remain subcommands.
     imported Rust types from different modules can carry distinct conversion
     metadata instead of suppressing ambiguous unqualified conversion lookups
   - Extend safe Rust wrapper lifting beyond the exact lowering-compatible cases
-    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `BTreeMap<K, V>`,
+    (`Option<T>`, `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`, `IndexMap<K, V>`,
     `Result<T, E>`, `Arc<Mutex<T>>`, `Box<T>`, and parameter-side `Rc<T>`)
     where an explicit, trait-safe conversion can preserve the Rust API's
     concrete type
@@ -146,5 +140,5 @@ commands remain subcommands.
   formatting (galvan-transpiler/src/lib.rs)
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-27*
 *This file should be updated regularly as TODOs are completed or new ones are discovered*
