@@ -54,6 +54,9 @@ commands remain subcommands.
 - **Identifier improvements** (galvan-transpiler/src/transpile_item/ident.rs)
   - Implement fully qualified type name lookup / module paths
 
+- Define and implement single-character string indexing; range slicing already
+  counts Unicode characters, while scalar indexing is currently rejected.
+
 - **Warning cleanup**
   - Silence or handle unused-parameter warnings in the tree-sitter external
     scanner stub (tree-sitter-galvan/src/scanner.c)

@@ -3221,6 +3221,9 @@ impl Checker<'_> {
                 let is_slice = expression_is_range(&index);
                 let (ty, kind) = match &base.ty {
                     TypeElement::Array(_) if is_slice => (base.ty.clone(), IndexKind::Slice),
+                    TypeElement::Plain(plain) if is_slice && plain.ident.as_str() == "String" => {
+                        (base.ty.clone(), IndexKind::Slice)
+                    }
                     TypeElement::Array(array) => (array.elements.clone(), IndexKind::Element),
                     TypeElement::Dictionary(dict) => (dict.value.clone(), IndexKind::Element),
                     TypeElement::OrderedDictionary(dict) => {

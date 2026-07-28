@@ -1229,7 +1229,22 @@ impl Transpile for HirIndex {
                 transpile!(ctx, errors, "{}[{}]", self.base, self.index)
             }
             (TypeElement::Array(_), IndexKind::Slice) => {
-                transpile!(ctx, errors, "({}[{}]).to_owned()", self.base, self.index)
+                transpile!(
+                    ctx,
+                    errors,
+                    "{{ let __base = &({}); ({}).map(|__index| __base[__index as usize].to_owned()).collect::<::std::vec::Vec<_>>() }}",
+                    self.base,
+                    self.index
+                )
+            }
+            (TypeElement::Plain(plain), IndexKind::Slice) if plain.ident.as_str() == "String" => {
+                transpile!(
+                    ctx,
+                    errors,
+                    "{{ let __chars = ({}).chars().collect::<::std::vec::Vec<_>>(); ({}).map(|__index| __chars[__index as usize]).collect::<::std::string::String>() }}",
+                    self.base,
+                    self.index
+                )
             }
             (
                 TypeElement::Dictionary(_)
