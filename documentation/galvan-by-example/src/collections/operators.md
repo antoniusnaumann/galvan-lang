@@ -71,7 +71,13 @@ pub(crate) fn __main__() {
         }
         result
     };
-    let repeated: ::std::vec::Vec<_> = (vec![1]).repeat((5) as usize);
+    let repeated: ::std::vec::Vec<_> = {
+        let __items = &(vec![1]);
+        let __count = (5) as usize;
+        (0..__count)
+            .flat_map(|_| __items.iter().cloned())
+            .collect::<::std::vec::Vec<_>>()
+    };
     let letters: String = ('a').to_string().repeat((5) as usize);
     let values: ::std::vec::Vec<_> = vec![1, 2, 3, 4, 5];
     let first_two: ::std::vec::Vec<_> = {

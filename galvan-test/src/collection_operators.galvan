@@ -4,6 +4,9 @@ test "Collection removal preserves order and duplicate counts" {
 
 test "Array repetition" {
     assert([1] ** 5 == [1, 1, 1, 1, 1])
+    assert(["hello"] ** 2 == ["hello", "hello"])
+    let items = 2
+    assert([1] ** items == [1, 1])
 }
 
 test "String and character repetition" {

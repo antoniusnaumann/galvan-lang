@@ -55,8 +55,9 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` deliberately not 
   `RustInterop` from the crate's `use` declarations (via the new
   `RustInterop::from_uses_in`, resolving against the nearest `Cargo.toml`)
   and typechecks with it. Built interops are cached process-wide per
-  (project, imported crates) pair so cargo/rustdoc only ever runs on the
-  first analysis; new `use` declarations trigger a rebuild, dependency
+  (project, `use` paths) pair so cargo/rustdoc only ever runs on the
+  first analysis; any changed `use` path (also within an already imported
+  crate) triggers a rebuild, dependency
   changes need a server restart (see `workspace/didChangeWatchedFiles`
   below).
 - [x] **Completion** — `crate::` completes the crate's lifted free

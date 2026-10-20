@@ -21,6 +21,7 @@ use galvan_hir::{typecheck_with_interop, Diagnostic, HirModule, SymbolIndex};
 use galvan_into_ast::{SegmentAst, SourceIntoAst};
 use galvan_resolver::LookupContext;
 use galvan_rustdoc::RustInterop;
+use itertools::Itertools;
 use tower_lsp::lsp_types::Url;
 
 use crate::document::Document;
@@ -47,12 +48,12 @@ enum InteropSlot {
 }
 
 /// Process-wide cache of built Rust interops, keyed by the consumer project
-/// and the set of crates the Galvan sources mention in `use` declarations.
+/// and the set of `use` paths in the Galvan sources (see [`interop_use_paths`]).
 /// Building an interop can run `cargo metadata` and rustdoc (slow); analyze()
 /// runs per keystroke and must not, so a miss spawns a background build and
 /// analysis proceeds without interop until the ready notification arrives
-/// (see [`interop_ready_events`]). The cache is only invalidated by a new
-/// `use` (new key); dependency changes are picked up on server restart.
+/// (see [`interop_ready_events`]). The cache is only invalidated by a changed
+/// `use` set (new key); dependency changes are picked up on server restart.
 fn interop_cache() -> &'static DashMap<(PathBuf, BTreeSet<String>), InteropSlot> {
     static CACHE: OnceLock<DashMap<(PathBuf, BTreeSet<String>), InteropSlot>> = OnceLock::new();
     CACHE.get_or_init(DashMap::new)
@@ -63,11 +64,11 @@ static INTEROP_EVENTS: OnceLock<tokio::sync::mpsc::UnboundedSender<PathBuf>> = O
 /// A queued interop build.
 struct InteropRequest {
     manifest_dir: PathBuf,
-    crates: BTreeSet<String>,
+    use_paths: BTreeSet<String>,
     uses: Vec<galvan_ast::ToplevelItem<galvan_ast::UseDecl>>,
 }
 
-/// The most recently requested crate set per project. Lets the build worker
+/// The most recently requested `use` path set per project. Lets the build worker
 /// skip requests that were superseded while queued (typing a `use` line
 /// changes the set on every keystroke).
 fn latest_interop_request() -> &'static DashMap<PathBuf, BTreeSet<String>> {
@@ -87,10 +88,10 @@ fn interop_build_queue() -> &'static tokio::sync::mpsc::UnboundedSender<InteropR
             .name("galvan-interop".into())
             .spawn(move || {
                 while let Some(request) = receiver.blocking_recv() {
-                    let key = (request.manifest_dir.clone(), request.crates.clone());
+                    let key = (request.manifest_dir.clone(), request.use_paths.clone());
                     let superseded = latest_interop_request()
                         .get(&request.manifest_dir)
-                        .is_some_and(|latest| *latest.value() != request.crates);
+                        .is_some_and(|latest| *latest.value() != request.use_paths);
                     if superseded {
                         // Drop the Building marker: if this set ever comes
                         // back (an undo), the next analysis re-queues it.
@@ -324,7 +325,7 @@ impl Crate {
     }
 
     /// The Rust interop for this crate's `use` declarations, built once per
-    /// (project, imported crates) pair and shared process-wide. Crates without
+    /// (project, `use` paths) pair and shared process-wide. Crates without
     /// a Cargo project or without `use` declarations get an empty interop.
     fn rust_interop(&self, segmented: &SegmentedAsts) -> (Arc<RustInterop>, Option<PathBuf>) {
         if let Some(interop) = &self.interop_override {
@@ -338,17 +339,12 @@ impl Crate {
         let Some(manifest_dir) = manifest_dir else {
             return (Arc::new(RustInterop::empty()), None);
         };
-        let crates: BTreeSet<String> = segmented
-            .uses
-            .iter()
-            .filter_map(|decl| decl.item.path.segments.first())
-            .map(|segment| segment.as_str().to_owned())
-            .collect();
-        if crates.is_empty() {
+        let use_paths = interop_use_paths(&segmented.uses);
+        if use_paths.is_empty() {
             return (Arc::new(RustInterop::empty()), Some(manifest_dir));
         }
 
-        let key = (manifest_dir.clone(), crates);
+        let key = (manifest_dir.clone(), use_paths);
         match interop_cache().entry(key.clone()) {
             dashmap::mapref::entry::Entry::Occupied(entry) => {
                 let interop = match entry.get() {
@@ -364,13 +360,30 @@ impl Crate {
                 latest_interop_request().insert(manifest_dir.clone(), key.1.clone());
                 let _ = interop_build_queue().send(InteropRequest {
                     manifest_dir: manifest_dir.clone(),
-                    crates: key.1,
+                    use_paths: key.1,
                     uses: segmented.uses.clone(),
                 });
                 (Arc::new(RustInterop::empty()), Some(manifest_dir))
             }
         }
     }
+}
+
+/// The interop cache key for a crate's `use` declarations. The interop only
+/// contains the imported items, so the full paths are part of the key:
+/// `use serde::Serialize` → `use serde::Deserialize` needs a rebuild even
+/// though the imported crate stays the same.
+fn interop_use_paths(uses: &[galvan_ast::ToplevelItem<galvan_ast::UseDecl>]) -> BTreeSet<String> {
+    uses.iter()
+        .map(|decl| {
+            decl.item
+                .path
+                .segments
+                .iter()
+                .map(|segment| segment.as_str())
+                .join("::")
+        })
+        .collect()
 }
 
 /// Convert a source to its AST, treating a conversion panic like a parse
@@ -434,4 +447,23 @@ fn upsert(sources: &mut Vec<Source>, source: Source) {
         }
     }
     sources.push(source);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn use_paths(src: &str) -> BTreeSet<String> {
+        let ast = ast_of(&Source::from_string(src.to_owned())).expect("source should parse");
+        let segmented = vec![ast].segmented().expect("source should segment");
+        interop_use_paths(&segmented.uses)
+    }
+
+    #[test]
+    fn interop_key_changes_when_use_path_changes_within_a_crate() {
+        let serialize = use_paths("use serde::Serialize\n");
+        let deserialize = use_paths("use serde::Deserialize\n");
+        assert_eq!(serialize, BTreeSet::from(["serde::Serialize".to_owned()]));
+        assert_ne!(serialize, deserialize);
+    }
 }

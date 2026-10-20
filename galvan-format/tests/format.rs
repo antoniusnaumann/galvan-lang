@@ -339,3 +339,20 @@ fn example_projects_format_idempotently() {
         }
     }
 }
+
+#[test]
+fn keeps_semicolons_the_next_line_would_not_end() {
+    assert_eq!(
+        fmt("fn main() {\n    let a = 1; 2\n}"),
+        "fn main() {\n    let a = 1;\n    2\n}\n"
+    );
+    assert_eq!(
+        fmt("fn main() {\n    let a = 1; -2\n}"),
+        "fn main() {\n    let a = 1;\n    -2\n}\n"
+    );
+    assert_eq!(
+        fmt("fn main() {\n    let a = 1; // one\n    2\n}"),
+        "fn main() {\n    let a = 1; // one\n    2\n}\n"
+    );
+    assert_eq!(fmt("fn main() {\n    foo(); bar()\n}"), "fn main() {\n    foo()\n    bar()\n}\n");
+}

@@ -1130,7 +1130,15 @@ impl Transpile for HirBinary<CollectionOperator> {
                 self.lhs,
                 self.rhs
             ),
-            CollectionOperator::Repeat(RepeatKind::Array | RepeatKind::String) => {
+            // `slice::repeat` requires `T: Copy`; cloning supports any element
+            CollectionOperator::Repeat(RepeatKind::Array) => transpile!(
+                ctx,
+                errors,
+                "{{ let __items = &({}); let __count = ({}) as usize; (0..__count).flat_map(|_| __items.iter().cloned()).collect::<::std::vec::Vec<_>>() }}",
+                self.lhs,
+                self.rhs
+            ),
+            CollectionOperator::Repeat(RepeatKind::String) => {
                 transpile!(
                     ctx,
                     errors,
