@@ -1547,6 +1547,29 @@ fn main_fn() {
 }
 
 #[test]
+fn signature_help_includes_common_enum_fields() {
+    let source = "\
+type Message(name: String) {
+    Text(value: String),
+}
+
+fn main_fn() {
+    let message = Message::Text(name: \"Greeting\", value: \"hello\")
+}
+";
+    let help = help_at(
+        source,
+        position_after(source, "Message::Text(name: \"Greeting\", ", 0),
+    )
+    .expect("expected help");
+    assert_eq!(
+        active_label(&help),
+        "Message::Text(name: String, value: String)"
+    );
+    assert_eq!(help.active_parameter, Some(1));
+}
+
+#[test]
 fn signature_help_survives_parse_error_when_siblings_parse() {
     // The current file has a dangling `helper(` and does not parse; the
     // declaration lives in a sibling file.

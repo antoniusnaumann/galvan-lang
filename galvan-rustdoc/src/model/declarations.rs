@@ -46,6 +46,7 @@ pub struct RustFunctionDecl {
     /// form), when it is not a free function.
     pub associated_receiver: Option<TypeIdent>,
     pub rust_path: Box<str>,
+    pub extension_trait: Option<Box<str>>,
     pub borrowed_return: bool,
     pub return_conversion: RustReturnConversion,
     pub arg_conversions: Vec<RustArgConversion>,

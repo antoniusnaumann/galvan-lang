@@ -11,6 +11,7 @@ pub use result::*;
 pub use std::string::ToString;
 
 pub use clap;
+pub use indexmap::IndexMap;
 pub use itertools::*;
 pub trait ItertoolsExt: Itertools {
     fn vec(self) -> Vec<Self::Item>

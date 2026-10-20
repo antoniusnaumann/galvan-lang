@@ -411,6 +411,10 @@ impl ReadCursor for EnumConstructorArg {
                         // Named field
                         field_name = Some(ident);
                         cursor.next();
+                        if cursor.kind()? == "declaration_modifier" {
+                            modifier = Some(DeclModifier::read_cursor(cursor, source)?);
+                            cursor.next();
+                        }
                     } else {
                         // Need to backtrack - this is actually part of the expression
                         // For now, let's treat it as an error and simplify

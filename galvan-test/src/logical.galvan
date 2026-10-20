@@ -28,3 +28,14 @@ test "Logical XOR" {
     assert(true xor true == false)
     assert(false xor false == false)
 }
+
+test "Logical NOT" {
+    assert not false
+    assert(!false)
+    assert not true == false
+    assert(!true == false)
+    assert not false and true
+
+    ref shared = false
+    assert(!shared)
+}

@@ -1,4 +1,4 @@
 pub(crate) mod ident;
-mod r#struct;
+pub(crate) mod r#struct;
 mod r#type;
 mod visibility;

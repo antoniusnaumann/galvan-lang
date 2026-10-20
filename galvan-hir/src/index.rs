@@ -408,6 +408,22 @@ impl IndexBuilder {
                 }
             }
             TypeDecl::Enum(decl_enum) => {
+                for field in &decl_enum.common_fields {
+                    let member_id = self.add_definition(Definition {
+                        name: field.ident.as_str().to_owned(),
+                        kind: DefinitionKind::Field {
+                            owner: ident.clone(),
+                            ty: field.r#type.clone(),
+                        },
+                        source: decl.source.clone(),
+                        span: field.ident.span(),
+                        decl_span: field.span,
+                    });
+                    self.members.insert(
+                        (ident.as_str().to_owned(), field.ident.as_str().to_owned()),
+                        member_id,
+                    );
+                }
                 for member in &decl_enum.members {
                     let member_id = self.add_definition(Definition {
                         name: member.ident.as_str().to_owned(),
@@ -540,6 +556,9 @@ impl IndexBuilder {
             }
             TypeDecl::Alias(decl) => self.reference_type_element(&decl.r#type),
             TypeDecl::Enum(decl) => {
+                for field in &decl.common_fields {
+                    self.reference_type_element(&field.r#type);
+                }
                 for member in &decl.members {
                     for field in &member.fields {
                         self.reference_type_element(&field.r#type);

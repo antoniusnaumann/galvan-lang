@@ -35,3 +35,7 @@ exec = ["galvan-files/exec"]
 name = "galvan-transpile"
 required-features = ["exec"]
 path = "src/main.rs"
+
+[[bin]]
+name = "galvan-book"
+path = "src/book.rs"

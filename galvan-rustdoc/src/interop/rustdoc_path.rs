@@ -1,5 +1,7 @@
 use rustdoc_types::{Crate, Impl, Item, Path, Type};
 
+use galvan_ast::TypeIdent;
+
 /// Fully-qualified path segments for a resolved path.
 ///
 /// Prefers the crate-aware `Crate.paths` entry (the accurate definition module
@@ -136,6 +138,20 @@ pub(super) fn impl_constant_rust_path(
     impl_: &Impl,
 ) -> Box<str> {
     impl_function_rust_path(krate, crate_name, name, item, impl_)
+}
+
+pub(super) fn extension_trait_rust_path(
+    krate: &Crate,
+    crate_name: &str,
+    impl_: &Impl,
+    receiver: &TypeIdent,
+) -> Option<Box<str>> {
+    let trait_ = impl_.trait_.as_ref()?;
+    let trait_name = resolved_type_name(trait_)?;
+    if trait_name.as_ref() != format!("{}_Ext", receiver.as_str()) {
+        return None;
+    }
+    resolved_path_rust_type_path(krate, crate_name, trait_).map(|path| format!("::{path}").into())
 }
 
 pub(super) fn resolved_type_rust_path(

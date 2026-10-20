@@ -13,6 +13,9 @@ impl Transpile for Ident {
 
 impl Transpile for TypeIdent {
     fn transpile(&self, ctx: &Context, errors: &mut ErrorCollector) -> String {
+        if self.as_str() == "Self" {
+            return "Self".to_string();
+        }
         let Some(_decl) = ctx.lookup.types.get(self) else {
             errors.warning(
                 format!("Type resolving error: Type {} not found", self),
@@ -51,6 +54,14 @@ impl TranspileType for TypeIdent {
         ownership: TypeOwnership,
         errors: &mut ErrorCollector,
     ) -> String {
+        if self.as_str() == "Self" {
+            let prefix = match ownership {
+                TypeOwnership::Owned | TypeOwnership::MutOwned => "",
+                TypeOwnership::Borrowed => "&",
+                TypeOwnership::MutBorrowed => "&mut ",
+            };
+            return format!("{prefix}Self");
+        }
         let Some(_decl) = ctx.lookup.types.get(self) else {
             errors.warning(
                 format!("Type resolving error: Type {} not found", self),

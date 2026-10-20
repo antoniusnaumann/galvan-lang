@@ -12,8 +12,8 @@ mod scope;
 
 use galvan_ast::{
     Assignment, AssignmentOperator, AstNode, BasicTypeItem, Body, DeclModifier, Declaration,
-    FnDecl, Ident, MainKind, Ownership, SegmentedAsts, Span, Statement, ToplevelItem, TypeElement,
-    TypeIdent,
+    FnDecl, Ident, MainKind, Ownership, Param, SegmentedAsts, Span, Statement, ToplevelItem,
+    TypeDecl, TypeElement, TypeIdent,
 };
 use galvan_files::Source;
 use galvan_resolver::LookupContext;
@@ -120,7 +120,7 @@ pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -
     let mapping = builtins();
     let predefined = predefined_from(&mapping, builtin_fns());
 
-    let (functions, tests, main, cmd_bodies, errors, index) = {
+    let (functions, tests, main, cmd_bodies, default_impls, errors, index) = {
         let mut lookup = LookupContext::new().with(&predefined);
         let duplicates = lookup.add_from(&asts);
         for ty in rust_interop.imported_types() {
@@ -264,11 +264,18 @@ pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -
             })
             .collect::<Vec<_>>();
 
+        let default_impls = asts
+            .types
+            .iter()
+            .filter_map(|ty| checker.lower_default_impl(&ty.item))
+            .collect();
+
         (
             functions,
             tests,
             main,
             cmd_bodies,
+            default_impls,
             checker.errors,
             checker.index.finish(),
         )
@@ -295,6 +302,7 @@ pub fn typecheck_with_interop(asts: SegmentedAsts, rust_interop: &RustInterop) -
         module: HirModule {
             uses,
             types,
+            default_impls,
             functions,
             tests,
             main,
@@ -378,6 +386,7 @@ impl<'a> Checker<'a> {
 
     fn lower_function(&mut self, func: &ToplevelItem<FnDecl>) -> HirFunction {
         let signature = func.item.signature.clone();
+        self.validate_parameter_label_order(&signature.parameters.params);
 
         if signature.is_async {
             self.errors.error_with_span(
@@ -420,7 +429,21 @@ impl<'a> Checker<'a> {
         } else {
             Expected::owned(signature.return_type.clone())
         };
-        let body = self.lower_block(&func.item.body, &expected);
+        let mut body = self.lower_block(&func.item.body, &expected);
+        if let TypeElement::Result(result) = &signature.return_type {
+            if result.success.is_void() && body.ty.is_void() {
+                body.statements.push(HirStatement::Expression(
+                    HirExpression::new(
+                        HirExpressionKind::Literal(HirLiteral::Unit),
+                        TypeElement::void(),
+                        Ownership::UniqueOwned,
+                        func.item.body.span,
+                    )
+                    .adjusted(Adjustment::WrapOk),
+                ));
+                body.ty = signature.return_type.clone();
+            }
+        }
 
         self.pop_scope();
         self.fn_return = TypeElement::void();
@@ -431,6 +454,70 @@ impl<'a> Checker<'a> {
             body,
             source: func.source.clone(),
             span: func.item.span,
+        }
+    }
+
+    fn lower_default_impl(&mut self, ty: &TypeDecl) -> Option<HirDefaultImpl> {
+        let TypeDecl::Struct(decl) = ty else {
+            return None;
+        };
+        if decl
+            .members
+            .iter()
+            .any(|member| member.default_value.is_none())
+        {
+            return None;
+        }
+
+        let args = decl
+            .members
+            .iter()
+            .map(|member| {
+                let default = member
+                    .default_value
+                    .as_ref()
+                    .expect("all fields were checked above");
+                let value = self.lower_expression(default, &Expected::free());
+                let value = self.coerce(value, &Expected::owned(member.r#type.clone()));
+                HirConstructorArg {
+                    field: member.ident.clone(),
+                    value,
+                    store_as_ref: member.decl_modifier == Some(DeclModifier::Ref),
+                    missing_ref_modifier: false,
+                    rust_arg_conversion: self
+                        .rust_interop
+                        .field_arg_conversion(&decl.ident, &member.ident),
+                }
+            })
+            .collect();
+
+        Some(HirDefaultImpl {
+            ident: decl.ident.clone(),
+            constructor: HirConstructorCall {
+                ident: TypeIdent::new("Self"),
+                kind: HirConstructorKind::Struct,
+                args,
+            },
+        })
+    }
+
+    fn validate_parameter_label_order(&mut self, params: &[Param]) {
+        let mut found_label = false;
+
+        for param in params {
+            if param.call_label().is_some() {
+                found_label = true;
+            } else if found_label {
+                self.errors.error_with_span(
+                    TranspilerError::InvalidSyntax {
+                        message: format!(
+                            "unlabeled parameter '{}' cannot follow a labeled parameter",
+                            param.identifier
+                        ),
+                    },
+                    Some(param.span.into()),
+                );
+            }
         }
     }
 
@@ -518,10 +605,23 @@ impl<'a> Checker<'a> {
                     span: ret.span,
                 })
             }
-            Statement::Throw(throw) => HirStatement::Throw(HirThrow {
-                expression: self.lower_expression(&throw.expression, &Expected::free()),
-                span: throw.span,
-            }),
+            Statement::Throw(throw) => {
+                let expression = self.lower_expression(&throw.expression, &Expected::free());
+                let expression = match &self.fn_return {
+                    TypeElement::Result(result) if result.error.is_none() => {
+                        self.ensure_owned(expression).adjusted(Adjustment::Into)
+                    }
+                    TypeElement::Result(result) => {
+                        let error = result.error.clone().unwrap_or_else(TypeElement::infer);
+                        self.coerce(expression, &Expected::owned(error))
+                    }
+                    _ => expression,
+                };
+                HirStatement::Throw(HirThrow {
+                    expression,
+                    span: throw.span,
+                })
+            }
             Statement::Break(brk) => HirStatement::Break(brk.span),
             Statement::Continue(cont) => HirStatement::Continue(cont.span),
         }
@@ -539,13 +639,17 @@ impl<'a> Checker<'a> {
             (Some(annotation), Some(expression)) => {
                 let expected =
                     self.declaration_expected(annotation, declaration.decl_modifier, shares_ref);
-                let value = self.lower_modified_value(
-                    expression,
-                    declaration.assignment_modifier,
-                    declaration.decl_modifier == DeclModifier::Ref,
-                    "declaration initializers",
-                );
-                let value = self.coerce(value, &expected);
+                let value = if declaration.assignment_modifier.is_none() {
+                    self.lower_expression(expression, &expected)
+                } else {
+                    let value = self.lower_modified_value(
+                        expression,
+                        declaration.assignment_modifier,
+                        declaration.decl_modifier == DeclModifier::Ref,
+                        "declaration initializers",
+                    );
+                    self.coerce(value, &expected)
+                };
                 (Some(value), annotation.clone())
             }
             (None, Some(expression)) => {

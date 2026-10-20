@@ -9,7 +9,9 @@ use thiserror::Error;
 
 use galvan_ast::*;
 use galvan_files::{FileError, Source};
-use galvan_hir::hir::{HirCmd, HirFunction, HirMain, HirMainKind, HirModule, HirTest};
+use galvan_hir::hir::{
+    HirCmd, HirDefaultImpl, HirFunction, HirMain, HirMainKind, HirModule, HirTest,
+};
 use galvan_hir::mapping::RustType;
 use galvan_hir::typecheck::typecheck_with_interop;
 use galvan_into_ast::{AstError, SegmentAst, SourceIntoAst};
@@ -325,6 +327,8 @@ pub enum TranspileError {
     File(#[from] FileError),
     #[error(transparent)]
     Rustdoc(#[from] RustdocError),
+    #[error("transpilation failed with diagnostics: {diagnostics:?}")]
+    Diagnostics { diagnostics: Vec<Diagnostic> },
 }
 
 fn transpile_sources(sources: Vec<Source>) -> Result<Vec<TranspileOutput>, TranspileError> {
@@ -341,12 +345,21 @@ pub fn transpile_sources_with_rustdoc_warnings(
     sources: Vec<Source>,
     rustdoc_warning: impl FnMut(&RustdocError),
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile_sources_with_diagnostics_and_rustdoc_warnings(sources, rustdoc_warning)?
+        .into_outputs()
+}
+
+/// Transpiles sources while returning all recoverable diagnostics to the caller.
+pub fn transpile_sources_with_diagnostics_and_rustdoc_warnings(
+    sources: Vec<Source>,
+    rustdoc_warning: impl FnMut(&RustdocError),
+) -> Result<TranspileResult, TranspileError> {
     let asts = sources
         .into_iter()
         .map(|s| s.try_into_ast())
         .collect::<Result<Vec<_>, _>>()?;
 
-    transpile_asts_with_rustdoc_warnings(asts, rustdoc_warning)
+    transpile_asts_with_diagnostics_and_rustdoc_warnings(asts, rustdoc_warning)
 }
 
 fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError> {
@@ -356,23 +369,30 @@ fn transpile_asts(asts: Vec<Ast>) -> Result<Vec<TranspileOutput>, TranspileError
     transpile_segmented_asts(segmented, rust_interop)
 }
 
-fn transpile_asts_with_rustdoc_warnings(
+fn transpile_asts_with_diagnostics_and_rustdoc_warnings(
     asts: Vec<Ast>,
     rustdoc_warning: impl FnMut(&RustdocError),
-) -> Result<Vec<TranspileOutput>, TranspileError> {
+) -> Result<TranspileResult, TranspileError> {
     let segmented = asts.segmented()?;
     let rust_interop = RustInterop::from_crates_and_uses_with_warnings(
         qualified_namespaces(&segmented),
         &segmented.uses,
         rustdoc_warning,
     )?;
-    transpile_segmented_asts(segmented, rust_interop)
+    transpile_segmented_asts_with_diagnostics(segmented, rust_interop)
 }
 
 fn transpile_segmented_asts(
     segmented: SegmentedAsts,
     rust_interop: RustInterop,
 ) -> Result<Vec<TranspileOutput>, TranspileError> {
+    transpile_segmented_asts_with_diagnostics(segmented, rust_interop)?.into_outputs()
+}
+
+fn transpile_segmented_asts_with_diagnostics(
+    segmented: SegmentedAsts,
+    rust_interop: RustInterop,
+) -> Result<TranspileResult, TranspileError> {
     let checked = typecheck_with_interop(segmented, &rust_interop);
     let (module, mut errors) = (checked.module, checked.errors);
     let rust_types = codegen_rust_types(&rust_interop);
@@ -399,7 +419,11 @@ fn transpile_segmented_asts(
         ctx.lookup.types.entry(ty.name.clone()).or_insert(&ty.decl);
     }
 
-    transpile_module(&module, &ctx, &mut errors)
+    let outputs = transpile_module(&module, &ctx, &mut errors)?;
+    Ok(TranspileResult {
+        outputs,
+        diagnostics: errors.into_diagnostics(),
+    })
 }
 
 fn codegen_rust_types(rust_interop: &RustInterop) -> Vec<&galvan_rustdoc::RustTypeDecl> {
@@ -485,6 +509,9 @@ fn collect_expression_namespaces(expression: &Expression, namespaces: &mut HashS
             }
         }
         ExpressionKind::Infix(infix) => collect_infix_namespaces(infix, namespaces),
+        ExpressionKind::Unary(unary) => {
+            collect_expression_namespaces(&unary.operand, namespaces);
+        }
         ExpressionKind::Postfix(postfix) => match postfix.as_ref() {
             PostfixExpression::AccessExpression(access) => {
                 collect_expression_namespaces(&access.base, namespaces);
@@ -589,6 +616,7 @@ fn collect_collection_namespaces(literal: &CollectionLiteral, namespaces: &mut H
 struct TypeFileContent<'a> {
     pub ty: &'a TypeDecl,
     pub fns: Vec<&'a HirFunction>,
+    pub default_impl: Option<&'a HirDefaultImpl>,
 }
 
 struct ExtensionFileContent<'a> {
@@ -649,6 +677,7 @@ fn transpile_module(
             TypeFileContent {
                 ty: &ty.item,
                 fns: Vec::new(),
+                default_impl: None,
             },
         ) {
             panic!(
@@ -657,6 +686,13 @@ fn transpile_module(
                 duplicate.ty.ident()
             );
         }
+    }
+
+    for default_impl in &module.default_impls {
+        let content = type_files
+            .get_mut(&module_name(&default_impl.ident))
+            .expect("default impl should belong to a lowered type");
+        content.default_impl = Some(default_impl);
     }
 
     let mut toplevel_functions = Vec::new();
@@ -764,6 +800,9 @@ fn transpile_module(
                 "use crate::*;",
                 &imports,
                 &v.ty.transpile(ctx, errors),
+                &v.default_impl
+                    .map(|default_impl| transpile_default_impl(default_impl, v.ty, ctx, errors))
+                    .unwrap_or_default(),
                 &transpile_member_functions(v.ty, &v.fns, ctx, errors),
             ]
             .join("\n\n")
@@ -786,20 +825,6 @@ fn transpile_module(
             .into(),
         })
         .collect_vec();
-
-    // Output any collected warnings
-    for diagnostic in errors.diagnostics() {
-        match diagnostic.severity {
-            DiagnosticSeverity::Error => {
-                println!("cargo::error={}", diagnostic.message);
-                std::process::exit(1);
-            }
-            DiagnosticSeverity::Warning => {
-                println!("cargo::warning={}", diagnostic.message);
-            }
-            _ => {}
-        }
-    }
 
     Ok(type_files
         .into_iter()
@@ -841,7 +866,7 @@ fn transpile_tests(
         by_name.entry(test_name(&test.name)).or_default().push(test);
     }
 
-    let resolved_tests = by_name
+    let mut resolved_tests = by_name
         .iter()
         .flat_map(|(name, tests)| {
             if tests.len() == 1 {
@@ -855,6 +880,7 @@ fn transpile_tests(
             }
         })
         .collect_vec();
+    resolved_tests.sort_by(|(left, _), (right, _)| left.as_ref().cmp(right.as_ref()));
 
     if resolved_tests.is_empty() {
         return "".into();
@@ -870,6 +896,47 @@ fn transpile_tests(
         + "\n}";
 
     test_mod
+}
+
+fn transpile_default_impl(
+    default_impl: &HirDefaultImpl,
+    ty: &TypeDecl,
+    ctx: &Context,
+    errors: &mut ErrorCollector,
+) -> String {
+    let mut generics = ty.collect_generics().into_iter().collect::<Vec<_>>();
+    generics.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    let impl_generics = if generics.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<{}>",
+            generics
+                .iter()
+                .map(|generic| {
+                    let generic = capitalize_generic(generic.as_str());
+                    format!("{generic}: ToOwned<Owned = {generic}>")
+                })
+                .join(", ")
+        )
+    };
+    let type_generics = if generics.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<{}>",
+            generics
+                .iter()
+                .map(|generic| capitalize_generic(generic.as_str()))
+                .join(", ")
+        )
+    };
+    let constructor = default_impl.constructor.transpile(ctx, errors);
+
+    format!(
+        "impl{impl_generics} Default for {}{type_generics} {{\n    fn default() -> Self {{ {constructor} }}\n}}",
+        default_impl.ident
+    )
 }
 
 fn transpile_member_functions(
@@ -1135,6 +1202,27 @@ fn extension_name(ty: &TypeElement) -> String {
 pub struct TranspileOutput {
     pub file_name: Box<str>,
     pub content: Box<str>,
+}
+
+pub struct TranspileResult {
+    pub outputs: Vec<TranspileOutput>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl TranspileResult {
+    fn into_outputs(self) -> Result<Vec<TranspileOutput>, TranspileError> {
+        if self
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        {
+            Err(TranspileError::Diagnostics {
+                diagnostics: self.diagnostics,
+            })
+        } else {
+            Ok(self.outputs)
+        }
+    }
 }
 
 pub struct TranspileErrors<'t> {

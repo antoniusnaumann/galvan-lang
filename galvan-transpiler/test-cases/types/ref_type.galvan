@@ -1,6 +1,10 @@
 //@TRANSPILE
-//"#[derive(Clone, Debug, PartialEq)] pub(crate) struct WithRef {
+//"#[derive(Clone, Debug)] pub(crate) struct WithRef {
 //    pub(crate) ref_member: std::sync::Arc<std::sync::Mutex<String>>
+//} impl PartialEq for WithRef {
+//    fn eq(&self, other: &Self) -> bool {
+//        ::galvan::std::__ref_value_eq(&self.ref_member, &other.ref_member)
+//    }
 //}"
 //@end
 

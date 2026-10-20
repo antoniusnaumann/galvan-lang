@@ -1,0 +1,12 @@
+test "ordered dictionaries preserve insertion order" {
+    let ordered: [Int: String] = [
+        2: "second",
+        1: "first",
+        3: "third",
+    ]
+    let keys = for ordered |key, value| {
+        key
+    }
+
+    assert keys == [2, 1, 3]
+}

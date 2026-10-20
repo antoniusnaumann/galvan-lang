@@ -57,9 +57,13 @@ impl ReadCursor for ResultTypeItem {
         let span = Span::from_node(node);
 
         cursor.child();
-        let success = TypeElement::read_cursor(cursor, source)?;
-
-        cursor.next();
+        let success = if cursor.kind()? == "exclamation_mark" {
+            TypeElement::void()
+        } else {
+            let success = TypeElement::read_cursor(cursor, source)?;
+            cursor.next();
+            success
+        };
         cursor_expect!(cursor, "exclamation_mark");
 
         cursor.next();

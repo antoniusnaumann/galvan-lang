@@ -167,7 +167,9 @@ fn classify_wrapper(krate: &Crate, name: &str, resolved: &Path) -> Option<Wrappe
         "Vec" if standard_wrapper => Some(WrapperShape::Array),
         "HashSet" if standard_wrapper => Some(WrapperShape::Set),
         "HashMap" if standard_wrapper => Some(WrapperShape::Dictionary),
-        "BTreeMap" if standard_wrapper => Some(WrapperShape::OrderedDictionary),
+        "IndexMap" if resolved_path_matches(krate, resolved, &["indexmap", "map", "IndexMap"]) => {
+            Some(WrapperShape::OrderedDictionary)
+        }
         "Mutex" if standard_wrapper => Some(WrapperShape::Lock),
         _ => None,
     }

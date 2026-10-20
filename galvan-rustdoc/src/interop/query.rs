@@ -10,6 +10,34 @@ use super::state::Unambiguous;
 use super::RustInterop;
 
 impl RustInterop {
+    pub fn function_by_qualified_path(
+        &self,
+        namespace: &[&str],
+        name: &Ident,
+        labels: &[&str],
+    ) -> Option<&RustFunctionDecl> {
+        if namespace.len() == 1 {
+            return self.function(namespace.first().copied(), None, name, labels);
+        }
+
+        let parent_path = format!("::{}::", namespace.join("::"));
+        self.functions.iter().find(|function| {
+            let signature = &function.decl.item.signature;
+            function.namespace.as_ref() == namespace.first().copied().unwrap_or_default()
+                && function
+                    .rust_path
+                    .strip_prefix(&parent_path)
+                    .is_some_and(|tail| !tail.contains("::"))
+                && signature.receiver().is_none()
+                && signature.identifier == *name
+                && signature
+                    .overload_labels()
+                    .iter()
+                    .map(|label| label.as_str())
+                    .eq(labels.iter().copied())
+        })
+    }
+
     pub fn function(
         &self,
         namespace: Option<&str>,

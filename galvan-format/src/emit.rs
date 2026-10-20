@@ -78,6 +78,10 @@ fn edge_kind(node: Node<'_>, first: bool) -> &'static str {
     }
 }
 
+/// Non-letter characters before which a line break ends a statement; must
+/// match the external scanner of `tree-sitter-galvan`.
+const AUTO_SEMICOLON_STARTS: &[char] = &['_', '[', '{', '(', '\'', '"', '|'];
+
 /// Tokens that no space follows (`(x`, `a.b`, `ns::name`, `0..=5`).
 const TIGHT_AFTER: &[&str] = &[
     "paren_open",
@@ -267,7 +271,7 @@ impl<'a> Ctx<'a> {
     fn block_items(&self, inner: &[Node<'_>], terminator: Option<&str>, leading: bool) -> Vec<Doc> {
         let mut parts = Vec::new();
         let mut prev: Option<Node<'_>> = None;
-        for &child in inner {
+        for (index, &child) in inner.iter().enumerate() {
             if is_comma(&child) {
                 continue;
             }
@@ -289,6 +293,9 @@ impl<'a> Ctx<'a> {
                 }
             }
             parts.push(self.doc(child));
+            if self.needs_explicit_semicolon(child, inner[index + 1..].iter()) {
+                parts.push(Doc::text(";"));
+            }
             if !is_comment(&child) {
                 if let Some(terminator) = terminator {
                     parts.push(Doc::text(terminator));
@@ -297,6 +304,28 @@ impl<'a> Ctx<'a> {
             prev = Some(child);
         }
         parts
+    }
+
+    /// Whether `statement` must keep a `;` because the statement after it
+    /// would not end it at a line break. The scanner only inserts automatic
+    /// semicolons before a line starting with one of [`AUTO_SEMICOLON_STARTS`];
+    /// dropping the `;` in `let a = 1; 2` or `let a = 1; -b` would yield a
+    /// syntax error or a continued expression (`1 - b`).
+    fn needs_explicit_semicolon<'n>(
+        &self,
+        statement: Node<'n>,
+        mut rest: impl Iterator<Item = &'n Node<'n>>,
+    ) -> bool {
+        if statement.kind() != "statement" {
+            return false;
+        }
+        let Some(next) = rest.find(|node| !is_comment(node)) else {
+            return false;
+        };
+        next.kind() == "statement"
+            && !self.src[next.start_byte()..].starts_with(|c: char| {
+                c.is_ascii_alphabetic() || AUTO_SEMICOLON_STARTS.contains(&c)
+            })
     }
 
     /// `{ ... }` statement body. Only match arms and closures may keep a

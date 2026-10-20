@@ -381,7 +381,12 @@ fn candidates(krate: &Crate, callee: &Callee, receiver_type: Option<&str>) -> Ve
                     }
                     for member in &decl_enum.members {
                         if member.ident.as_str() == case {
-                            signatures.push(enum_case_signature(owner, member, text));
+                            signatures.push(enum_case_signature(
+                                owner,
+                                &decl_enum.common_fields,
+                                member,
+                                text,
+                            ));
                         }
                     }
                 }
@@ -479,13 +484,25 @@ fn constructor_signature(decl: &ToplevelItem<TypeDecl>, source_text: &str) -> Op
 /// Render an enum case constructor as `Enum::Case(field: Type, …)`.
 fn enum_case_signature(
     owner: &str,
+    common_fields: &[galvan_ast::StructTypeMember],
     member: &galvan_ast::EnumTypeMember,
     source_text: &str,
 ) -> SignatureData {
     let mut label = format!("{owner}::{}(", member.ident.as_str());
     let mut params = Vec::new();
-    for (i, field) in member.fields.iter().enumerate() {
+    for (i, field) in common_fields.iter().enumerate() {
         if i > 0 {
+            label.push_str(", ");
+        }
+        let start = label.len();
+        label.push_str(&normalize_whitespace(span_text(source_text, field.span)));
+        params.push(ParamData {
+            range: (start, label.len()),
+            name: Some(field.ident.as_str().to_string()),
+        });
+    }
+    for (i, field) in member.fields.iter().enumerate() {
+        if i > 0 || !common_fields.is_empty() {
             label.push_str(", ");
         }
         let start = label.len();

@@ -58,3 +58,8 @@ test "Generic trailing-closure helper as member function" {
 fn my_map(self: [t], f: |t| u) -> [u] {
     for self { f(it) }
 }
+test "closure local" {
+    let add = |a: Int, b: Int| a + b
+
+    assert add(20, 22) == 42
+}

@@ -189,9 +189,13 @@ impl ReadCursor for Body {
         cursor.next();
 
         let mut statements = vec![];
-        while cursor.kind()? == "statement" {
-            let stmt = Statement::read_cursor(cursor, source)?;
-            statements.push(stmt);
+        while cursor.kind()? != "brace_close" {
+            if cursor.kind()? == "statement" {
+                let stmt = Statement::read_cursor(cursor, source)?;
+                statements.push(stmt);
+            } else if cursor.kind()? != ";" {
+                return Err(AstError::ConversionError);
+            }
             cursor.next();
         }
 

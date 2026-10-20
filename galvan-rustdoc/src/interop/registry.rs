@@ -239,6 +239,7 @@ impl RustInterop {
             decl,
             borrowed_return,
             None,
+            None,
             return_conversion,
             arg_conversions,
             source_span,
@@ -284,11 +285,12 @@ impl RustInterop {
     pub(super) fn push_function_with_associated_receiver(
         &mut self,
         crate_name: &str,
-        name: &str,
+        _name: &str,
         rust_path: Box<str>,
         decl: FnDecl,
         borrowed_return: bool,
         associated_receiver: Option<TypeIdent>,
+        extension_trait: Option<Box<str>>,
         return_conversion: RustReturnConversion,
         arg_conversions: Vec<RustArgConversion>,
         source_span: Option<RustSourceSpan>,
@@ -308,7 +310,7 @@ impl RustInterop {
                 .receiver()
                 .and_then(|param| receiver_type_ident(&param.param_type))
                 .as_ref(),
-            name,
+            decl.signature.identifier.as_str(),
             &labels,
         );
         let idx = self.functions.len();
@@ -316,6 +318,7 @@ impl RustInterop {
             namespace: crate_name.into(),
             associated_receiver: associated_receiver.clone(),
             rust_path,
+            extension_trait,
             borrowed_return,
             return_conversion,
             arg_conversions,

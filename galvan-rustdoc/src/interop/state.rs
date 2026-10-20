@@ -279,6 +279,7 @@ impl RustInterop {
             decl,
             borrowed_return,
             Some(receiver),
+            None,
             RustReturnConversion::None,
             Vec::new(),
             None,

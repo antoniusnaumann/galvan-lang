@@ -2,7 +2,7 @@
 //"
 //#[derive(Clone, Debug, PartialEq)]
 //pub(crate) struct Book;
-//pub(crate) fn judge(book: &Book) { { { use reader::*; book.read_and_judge() }; { use reader::*; book.score__with(5) }; }; }
+//pub(crate) fn judge(book: &Book) { { { use reader::Book_Ext; book.read_and_judge() }; { use reader::Book_Ext; book.score__with(5) }; }; }
 //pub(crate) fn call_score() { { reader::score(); }; }
 //"
 //@end

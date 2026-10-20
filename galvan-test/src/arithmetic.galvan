@@ -65,3 +65,13 @@ test "Exponentiation" {
 }
 
 
+
+test "F32 and F64 are aliases for Float and Double" {
+    let a: F32 = 1.5
+    let b: Float = 1.5
+    assert a == b
+
+    let c: F64 = 2.5
+    let d: Double = 2.5
+    assert c == d
+}

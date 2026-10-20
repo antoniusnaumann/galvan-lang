@@ -23,7 +23,6 @@ impl ReadCursor for StructTypeDecl {
 
         cursor.next();
         cursor_expect!(cursor, "brace_open");
-
         cursor.next();
         let mut members = vec![];
         while cursor.kind()? == "struct_field" {
@@ -109,6 +108,20 @@ impl ReadCursor for EnumTypeDecl {
         let ident = TypeIdent::read_cursor(cursor, source)?;
 
         cursor.next();
+        let mut common_fields = vec![];
+        if cursor.kind()? == "paren_open" {
+            cursor.next();
+            while cursor.kind()? == "struct_field" {
+                common_fields.push(StructTypeMember::read_cursor(cursor, source)?);
+                cursor.next();
+                while cursor.kind()? == "," {
+                    cursor.next();
+                }
+            }
+            cursor_expect!(cursor, "paren_close");
+            cursor.next();
+        }
+
         cursor_expect!(cursor, "brace_open");
 
         cursor.next();
@@ -131,6 +144,7 @@ impl ReadCursor for EnumTypeDecl {
             visibility,
             ident,
             generic_params: Vec::new(),
+            common_fields,
             members,
             span,
         })

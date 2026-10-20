@@ -2,7 +2,7 @@ use std::path::Path;
 
 use galvan_files::read_sources;
 
-use crate::{transpile, TranspileError, TranspileOutput};
+use crate::{transpile, TranspileError, TranspileOutput, TranspileResult};
 
 pub fn transpile_dir(
     path: impl AsRef<Path>,
@@ -15,8 +15,11 @@ pub(crate) fn transpile_dir_with_rustdoc_warnings(
     path: impl AsRef<Path>,
     filter: Vec<String>,
     rustdoc_warning: impl FnMut(&crate::RustdocError),
-) -> Result<Vec<TranspileOutput>, TranspileError> {
-    crate::transpile_sources_with_rustdoc_warnings(read_sources(path, filter)?, rustdoc_warning)
+) -> Result<TranspileResult, TranspileError> {
+    crate::transpile_sources_with_diagnostics_and_rustdoc_warnings(
+        read_sources(path, filter)?,
+        rustdoc_warning,
+    )
 }
 
 /// This is for use in macros and should not be used directly
@@ -33,6 +36,24 @@ pub mod __private {
             Ok(output) => output,
             Err(e) => return e.to_string(),
         };
+        for diagnostic in &transpiled.diagnostics {
+            match diagnostic.severity {
+                crate::DiagnosticSeverity::Error => {
+                    println!("cargo::error={}", diagnostic.message);
+                }
+                crate::DiagnosticSeverity::Warning => {
+                    println!("cargo::warning={}", diagnostic.message);
+                }
+                crate::DiagnosticSeverity::Info => {}
+            }
+        }
+        if transpiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == crate::DiagnosticSeverity::Error)
+        {
+            return "Galvan transpilation failed; see diagnostics above".to_string();
+        }
 
         let out_dir: PathBuf = std::env::var_os("OUT_DIR").unwrap().into();
         let mod_dir = out_dir.join(galvan_module!());
@@ -42,7 +63,7 @@ pub mod __private {
             }
         }
 
-        for file in transpiled {
+        for file in transpiled.outputs {
             let dir = if file.file_name.as_ref() == galvan_module!("rs") {
                 &out_dir
             } else {
@@ -52,8 +73,6 @@ pub mod __private {
             let path = dir.join(file.file_name.as_ref());
             fs::write(path, file.content.as_ref()).unwrap();
         }
-
-        // TODO: Output warnings here
         "".to_string()
     }
 }
